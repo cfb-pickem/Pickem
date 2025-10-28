@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CFB Genius — Shrine to the Champion</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --cfp-black:#0B0B0B;
+      --cfp-charcoal:#111213;
+      --cfp-gold:#C99210;
+      --cfp-gold-2:#E3B23C;
+      --cfp-ivory:#F7F4ED;
+      --cfp-gray:#1F2022;
+      --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+    }
+
+    body{
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        var(--cfp-charcoal);
+      background-size: 100% 100%, 24px 24px, auto;
+      color: #e7e7e7;
+      font-family: 'Roboto', system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      min-height: 100vh;
+    }
+
+    .gold-shadow{box-shadow: 0 0 0 1px rgba(233,185,73,.35), 0 0 24px rgba(233,185,73,.08) inset}
+    .stripe{background: repeating-linear-gradient(90deg, transparent 0 40px, rgba(233,185,73,.12) 40px 48px)}
+
+    .trophy-oval{width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative}
+    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
+
+    .champion-frame{
+      background: linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));
+      border: 1px solid rgba(231,231,231,.12);
+      position: relative;
+      overflow: hidden;
+    }
+    .champion-frame::before{
+      content: "";
+      position: absolute; inset: 8px;
+      border: 1px solid rgba(233,185,73,.45);
+      border-radius: 0.5rem;
+      pointer-events: none;
+    }
+
+    .laurel{
+      position:absolute; inset:auto; left:50%; top:8px; transform:translateX(-50%);
+      width: 240px; height: 240px; opacity:.25; filter: blur(.2px);
+      background:
+        radial-gradient(closest-side, rgba(233,185,73,.9), rgba(233,185,73,0) 70%),
+        conic-gradient(from 200deg, transparent 0 15deg, rgba(233,185,73,.8) 15deg 25deg, transparent 25deg 40deg,
+                       rgba(233,185,73,.8) 40deg 50deg, transparent 50deg 65deg,
+                       rgba(233,185,73,.8) 65deg 75deg, transparent 75deg 360deg);
+      border-radius: 50%;
+      mask: radial-gradient(circle at 50% 50%, #000 34%, transparent 35%);
+    }
+  </style>
+</head>
+<body>
+  <div class="max-w-7xl mx-auto p-4 md:p-6">
+    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
+      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
+        <li>
+          <a href="index.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Leaderboard</a>
+        </li>
+        <li>
+          <a href="picks.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Make Picks</a>
+        </li>
+        <li>
+          <a href="cfb-genius.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">CFB Genius</a>
+        </li>
+        <li>
+          <a href="stats.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Stats</a>
+    </nav>
+
+    <header class="cfp-card rounded-none stripe gold-shadow" style="background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)">
+      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
+        <div class="flex items-center gap-3 md:gap-4">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <div>
+            <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">
+              Breaking Horrendous - College Football Genius
+            </h1>
+          </div>
+        </div>
+      </div>
+      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
+        <span class="inline-flex items-center gap-2"><span class="trophy-oval" aria-hidden="true"></span> Celebrating excellence in prediction, nerve, and pure CFB wizardry.</span>
+      </div>
+    </header>
+
+    <section class="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+      <div class="lg:col-span-3 champion-frame gold-shadow rounded-md">
+        <div class="laurel" aria-hidden="true"></div>
+        <img src="Genius.jpeg" alt="Breaking Horrendous holding a golden college football trophy" class="w-full object-cover max-h-[640px]" />
+        <div class="p-4 md:p-6 flex items-center justify-between border-t border-[rgba(231,231,231,.08)]">
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)] tracking-wide">
+              Breaking Horrendous
+            </h2>
+            <p class="text-gray-300 text-xs md:text-sm">Reigning Champion</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="trophy-oval" aria-hidden="true"></div>
+            <span class="text-[10px] md:text-xs uppercase tracking-[.2em] text-[var(--cfp-gold-2)]">CFB Genius</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="lg:col-span-2 space-y-4">
+        <div class="gold-shadow rounded-md p-4 md:p-6" style="background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)">
+          <h3 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] mb-3 tracking-wide">Accolades</h3>
+          <ul class="text-sm leading-6 list-disc list-inside text-gray-200">
+            <li>Perfect final week to secure playoff spot</li>
+            <li>Regular season champ</li>
+            <li>Is a doctor</li>
+          </ul>
+        </div>
+        <div class="gold-shadow rounded-md p-4 md:p-6" style="background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)">
+          <h3 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] mb-3 tracking-wide">By the Numbers</h3>
+          <dl class="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <dt class="text-gray-400">Pick Accuracy</dt>
+              <dd class="text-[var(--cfp-gold-2)] text-2xl font-bold">.583</dd>
+            </div>
+            <div>
+              <dt class="text-gray-400">Perfect Weeks</dt>
+              <dd class="text-[var(--cfp-gold-2)] text-2xl font-bold">3</dd>
+            </div>
+            <div>
+              <dt class="text-gray-400">Playoff Streak</dt>
+              <dd class="text-[var(--cfp-gold-2)] text-2xl font-bold">1</dd>
+            </div>
+            <div>
+              <dt class="text-gray-400">Years in League</dt>
+              <dd class="text-[var(--cfp-gold-2)] text-2xl font-bold">2</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="gold-shadow rounded-md p-4 md:p-6" style="background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)">
+          <blockquote class="text-sm italic text-gray-200">“Fortune favors the bold and a well-scouted Big Noon kickoff.”</blockquote>
+          <p class="mt-2 text-xs text-gray-400">— Breaking Horrendous</p>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Past Champions Table -->
+    <section class="mt-6 gold-shadow rounded-md" style="background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)">
+      <div class="px-4 md:px-6 py-4">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <h3 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold tracking-wide text-[var(--cfp-ivory)]">Past Champions</h3>
+        </div>
+        <table class="min-w-full text-sm border-t border-[rgba(231,231,231,.08)]">
+          <thead class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+            <tr>
+              <th class="px-4 py-2 text-left font-semibold">Year</th>
+              <th class="px-4 py-2 text-left font-semibold">Champion</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+              <td class="px-4 py-2">2024</td>
+              <td class="px-4 py-2 text-[var(--cfp-gold-2)] font-semibold">Breaking Horrendous</td>
+            </tr>
+            <tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+              <td class="px-4 py-2">2025</td>
+              <td class="px-4 py-2 text-gray-400 italic">TBD</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CFB Pick'em — Leaderboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --cfp-black:#0B0B0B;
+      --cfp-charcoal:#111213;
+      --cfp-gold:#C99210;
+      --cfp-gold-2:#E3B23C;
+      --cfp-ivory:#F7F4ED;
+      --cfp-gray:#1F2022;
+      --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+    }
+
+    .network-line{display:inline-flex;align-items:center;font-size:10px;line-height:1;letter-spacing:.15em;text-transform:uppercase;color:var(--cfp-gold-2);margin:0}
+    .badge.inline-fix{display:inline-flex;align-items:center;line-height:1;padding-top:.125rem;padding-bottom:.125rem}
+
+    body{
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        var(--cfp-charcoal);
+      background-size:100% 100%,24px 24px,auto;
+      color:#e7e7e7;
+      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+      min-height:100vh;
+    }
+
+    .table-sticky th{position:sticky;top:0;background-color:var(--cfp-black);z-index:10}
+    .gold-shadow{box-shadow:0 0 0 1px rgba(233,185,73,.35),0 0 24px rgba(233,185,73,.08) inset}
+
+    .trophy-oval{width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative}
+    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
+
+    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
+    .cfp-select:focus{outline:none;box-shadow:var(--ring)}
+    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
+
+    .badge{font-size:.72rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.125rem .5rem;border-radius:0}
+    .badge-final{background:#6b7280;color:#fff}
+    .badge-live{background:var(--cfp-gold);color:#0b0b0b}
+    .badge-sched{background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
+
+    .table th,.table td{border-color:rgba(231,231,231,.08)}
+    .table tbody tr:hover{background:rgba(233,185,73,.06)}
+
+    .pick-win{background:rgba(88,214,141,.15);color:#8ef2b9}
+    .pick-loss{background:rgba(255,92,92,.15);color:#ffb3b3}
+    .pick-empty{color:#9ca3af}
+
+    .logo{height:32px;width:32px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
+    .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
+    .ring-gold{box-shadow:var(--ring)}
+
+    .playoff-divider td{
+      padding:.15rem 0;background:transparent;border-top:2px solid var(--cfp-gold);color:var(--cfp-ivory);
+      text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="max-w-7xl mx-auto p-4 md:p-6">
+    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
+      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
+        <li>
+          <a href="index.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Leaderboard</a>
+        </li>
+
+        <!-- Make Picks only when signed in -->
+        <li id="nav-picks" class="hidden">
+          <a href="picks.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Make Picks</a>
+        </li>
+
+        <li>
+          <a href="cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a>
+        </li>
+        <li>
+          <a href="stats.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Stats</a>
+        </li>
+
+        <!-- Auth controls -->
+        <li id="nav-signin" class="ml-auto">
+          <!-- send to picks.html; that page shows your native sign-in if no session -->
+          <a href="signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
+        </li>
+        <li id="nav-signout" class="hidden">
+          <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
+        </li>
+      </ul>
+    </nav>
+
+    <header class="cfp-card rounded-none stripe gold-shadow mb-5">
+      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
+        <div class="flex items-center gap-3 md:gap-4">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <div>
+            <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Leaderboard</h1>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 text-sm">
+          <label class="hidden md:block text-gray-300">Week</label>
+          <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
+        </div>
+      </div>
+      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
+        <span id="status">Loading…</span>
+      </div>
+    </header>
+
+    <div class="cfp-card rounded-none gold-shadow overflow-auto">
+      <table class="table min-w-full text-sm">
+        <thead class="table-sticky">
+          <tr id="thead-row" class="border-b"></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="mt-4 text-xs text-gray-300 flex flex-wrap items-center gap-3">
+      <span class="badge badge-live">Live</span>
+      <span class="badge badge-final">Final</span>
+      <span class="badge badge-sched">Scheduled</span>
+      <span class="ml-2">Win cells tint green; loss cells tint red.</span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    // ---- Supabase ----
+    const supabase = createClient(
+      'https://vopdioszofwdkwnujtiq.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw'
+    );
+
+    // ---- Nav auth gating ----
+    const navPicks   = document.getElementById('nav-picks');
+    const navSignin  = document.getElementById('nav-signin');
+    const navSignout = document.getElementById('nav-signout');
+    const signOutBtn = document.getElementById('sign-out-btn');
+
+    async function refreshAuthUI() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        navPicks?.classList.remove('hidden');
+        navSignin?.classList.add('hidden');
+        navSignout?.classList.remove('hidden');
+      } else {
+        navPicks?.classList.add('hidden');
+        navSignin?.classList.remove('hidden');
+        navSignout?.classList.add('hidden');
+      }
+    }
+    refreshAuthUI();
+    supabase.auth.onAuthStateChange(() => refreshAuthUI());
+
+    signOutBtn?.addEventListener('click', async () => {
+      await supabase.auth.signOut();
+      await refreshAuthUI();
+    });
+
+    // ---- DOM ----
+    const weekSelect = document.getElementById('week-select');
+    const statusEl   = document.getElementById('status');
+    const theadRow   = document.getElementById('thead-row');
+    const tbody      = document.getElementById('tbody');
+
+    // ---- State ----
+    let weeks = [];
+    let currentWeek = null;
+    let gameIds = [];
+    let winnerMap = {};
+    let lineMap   = {};
+    let logoByTeam = {};
+    let winsByTeam = {}; // points = wins
+
+    let liveTimer = null;
+    const LIVE_INTERVAL_MS = 30000;
+
+    // Map of game_id -> { badgeEl, networkEl }
+    const headerStatusEls = new Map();
+
+    // ---------- Helpers ----------
+    function stripAccents(s){
+      try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); }
+      catch { return s; }
+    }
+    function norm(v){
+      if(!v) return '';
+      return stripAccents(String(v))
+        .toLowerCase()
+        .replace(/&/g,' and ')
+        .replace(/\./g,'')
+        .replace(/[^a-z0-9\s]/g,' ')
+        .replace(/\s+/g,' ')
+        .trim();
+    }
+    const stToState = s => s.replace(/\bst\b/g,'state');
+    const stateToSt = s => s.replace(/\bstate\b/g,'st');
+
+    function sameTeam(a,b){
+      const na = norm(a), nb = norm(b);
+      return na === nb || stToState(na) === stToState(nb) || stateToSt(na) === stateToSt(nb);
+    }
+
+    function status(msg,isErr=false){
+      statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
+      statusEl.textContent = msg;
+    }
+
+    function formatTimeLocal(ts){
+      if(!ts) return '';
+      try{
+        const d = new Date(ts);
+        return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+      }catch{ return ''; }
+    }
+    function periodLabel(p){ return p >= 5 ? 'OT' : `Q${p||1}`; }
+
+    // ------------------------------
+
+    init();
+
+    async function init(){
+      status('Loading weeks…');
+
+      // logos
+      const { data: logoRows, error: lErr } = await supabase
+        .from('logos')
+        .select('Team, LogoURL');
+      if(lErr){
+        console.warn('logos fetch error:', lErr.message);
+        logoByTeam = {};
+      } else {
+        logoByTeam = Object.create(null);
+        (logoRows || []).forEach(r => {
+          if (!r || !r.Team || !r.LogoURL) return;
+          logoByTeam[r.Team] = r.LogoURL;
+        });
+      }
+
+      // weeks from all_games where picked = true
+      const { data: weekRows, error: werr } = await supabase
+        .from('all_games')
+        .select('week')
+        .eq('picked', true)
+        .not('week', 'is', null)
+        .order('week', { ascending: true });
+
+      if(werr) return status(werr.message, true);
+
+      weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
+      if(!weeks.length) return status('No weeks found in all_games');
+
+      weekSelect.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+      currentWeek = weeks[weeks.length-1];
+      weekSelect.value = String(currentWeek);
+      weekSelect.onchange = async ()=>{ currentWeek = Number(weekSelect.value); await loadWeek(currentWeek); };
+
+      await computeSeasonWins();
+      await loadWeek(currentWeek);
+    }
+
+    // Compute season-to-date wins per team using all picks + all_games.winner
+    async function computeSeasonWins(){
+      status('Computing points…');
+
+      const { data: decidedGames, error: dgErr } = await supabase
+        .from('all_games')
+        .select('GameId, winner')
+        .not('winner', 'is', null);
+
+      if(dgErr){ status(dgErr.message, true); return; }
+
+      const winnerByGame = Object.create(null);
+      (decidedGames||[]).forEach(g=>{ winnerByGame[g.GameId] = g.winner; });
+
+      const { data: allPicks, error: pErr } = await supabase
+        .from('picks')
+        .select('team_id, game_id, pick');
+      if(pErr){ status(pErr.message, true); return; }
+
+      winsByTeam = Object.create(null);
+      (allPicks||[]).forEach(p=>{
+        const winner = winnerByGame[p.game_id];
+        if(!winner) return;
+        if(sameTeam(p.pick, winner)){
+          winsByTeam[p.team_id] = (winsByTeam[p.team_id] || 0) + 1; // 1 point per correct pick
+        }
+      });
+    }
+
+    async function loadWeek(week){
+      status(`Loading week ${week}…`);
+      stopLiveTicker();
+      headerStatusEls.clear();
+
+      // Fetch WITHOUT server-side order (column name has spaces). We'll sort client-side.
+      const { data: gamesRaw, error: gErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network')
+        .eq('picked', true)
+        .eq('week', week);
+      if(gErr) return status(gErr.message, true);
+
+      // Client-side sort by kickoff: earliest -> latest (nulls last)
+      const games = (gamesRaw || []).slice().sort((a, b) => {
+        const ta = a?.["Start (CT)"] ? new Date(a["Start (CT)"]).getTime() : Infinity;
+        const tb = b?.["Start (CT)"] ? new Date(b["Start (CT)"]).getTime() : Infinity;
+        return ta - tb;
+      });
+
+      const gameNameMap = {};
+      winnerMap = {}; lineMap = {};
+      gameIds = games.map(g=>g.GameId);
+
+      games.forEach(g=>{
+        winnerMap[g.GameId] = g.winner ?? null;
+        lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
+        const ln = lineMap[g.GameId];
+        const lineTxt = (ln!=null && !isNaN(ln)) ? (ln>0?` (+${ln})`:` (${ln})`) : '';
+        gameNameMap[g.GameId] = `${g.Away} @ ${g.Home}${lineTxt}`;
+      });
+
+      // teams (NO points column anymore)
+      const { data: teamRows, error: tErr } = await supabase
+        .from('teams')
+        .select('team_id, team_name')
+        .order('team_name', { ascending: true });
+      if(tErr) return status(tErr.message, true);
+
+      // picks for the selected week → by game ids
+      const { data: pickRows, error: pErr } = await supabase
+        .from('picks')
+        .select('team_id, game_id, pick')
+        .in('game_id', gameIds);
+      if(pErr) return status(pErr.message, true);
+
+      const pickMap = buildPickMap(pickRows);
+
+      // Sort teams by POINTS (wins) DESC, then team_name ASC
+      const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
+        const pa = winsByTeam[a.team_id] || 0;
+        const pb = winsByTeam[b.team_id] || 0;
+        if(pb !== pa) return pb - pa;
+        return a.team_name.localeCompare(b.team_name);
+      });
+
+      renderHeader(gameNameMap, games);
+      renderTable(teamsSorted, pickMap, winnerMap);
+
+      startLiveTicker();
+      status(`Showing week ${week}.`);
+    }
+
+    function buildPickMap(rows){
+      const map = {};
+      (rows||[]).forEach(r=>{
+        if(!map[r.team_id]) map[r.team_id] = {};
+        map[r.team_id][r.game_id] = r.pick;
+      });
+      return map;
+    }
+
+    function getLogoForPickExact(pick){
+      if(!pick) return null;
+      return logoByTeam[pick] || null;
+    }
+
+    function renderHeader(gameNameMap, gameRows){
+      theadRow.innerHTML = '';
+
+      const thTeam = document.createElement('th');
+      thTeam.className = 'text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
+      thTeam.textContent = 'Team';
+      theadRow.appendChild(thTeam);
+
+      const thPts = document.createElement('th');
+      thPts.className = 'px-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
+      thPts.textContent = 'Points';
+      theadRow.appendChild(thPts);
+
+      gameIds.forEach(id=>{
+        const th = document.createElement('th');
+        th.className = 'px-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] whitespace-nowrap align-middle font-[Oswald] tracking-wide';
+
+        const title = document.createElement('div');
+        title.className = 'mb-1';
+        title.textContent = gameNameMap[id] || `Game ${id}`;
+        th.appendChild(title);
+
+        const networkLine = document.createElement('div');
+        networkLine.className = 'network-line';
+
+        const badge = document.createElement('div');
+        badge.className = 'badge badge-sched inline-fix';
+
+        const row = (gameRows||[]).find(g=>g.GameId===id);
+
+        if(row?.Status === 'final'){
+          networkLine.style.display = 'none';
+          const a = row.AwayPts ?? '';
+          const h = row.HomePts ?? '';
+          badge.textContent = `Final ${a}–${h}`;
+          badge.className = 'badge badge-final inline-fix';
+        } else if(row?.Status === 'in_progress'){
+          if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
+          else { networkLine.style.display='none'; }
+
+          const p = row?.Period || 1;
+          const clk = row?.Clock || '';
+          const a = row?.AwayPts ?? '';
+          const h = row?.HomePts ?? '';
+          const score = (a!=='' && h!=='') ? `${a}–${h}` : '';
+          badge.textContent = `${periodLabel(p)} ${clk} ${score}`.trim();
+          badge.className = 'badge badge-live inline-fix';
+        } else {
+          if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
+          else { networkLine.style.display='none'; }
+          const t = formatTimeLocal(row && row['Start (CT)']);
+          badge.textContent = t || 'Scheduled';
+          badge.className = 'badge badge-sched inline-fix';
+        }
+
+        const statusWrap = document.createElement('div');
+        statusWrap.className = 'flex items-center justify-center gap-1 w-full text-center whitespace-nowrap';
+        statusWrap.appendChild(networkLine);
+        statusWrap.appendChild(badge);
+        th.appendChild(statusWrap);
+
+        headerStatusEls.set(String(id), { badgeEl: badge, networkEl: networkLine });
+        theadRow.appendChild(th);
+      });
+    }
+
+    function renderTable(teams, pickMap, winnerMap){
+      tbody.innerHTML = '';
+
+      const pointsArray = teams.map(t => winsByTeam[t.team_id] || 0);
+      const cutoffPts = pointsArray.length ? (pointsArray[Math.min(3, pointsArray.length - 1)] || 0) : 0;
+
+      let lastCutIndex = -1;
+      for(let i = 0; i < teams.length; i++){
+        if((winsByTeam[teams[i].team_id] || 0) >= cutoffPts){
+          lastCutIndex = i;
+        } else break;
+      }
+
+      const shouldInsertDivider = lastCutIndex >= 0 && lastCutIndex < teams.length - 1;
+
+      teams.forEach((team, idx)=>{
+        const tr = document.createElement('tr');
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+
+        const tdTeam = document.createElement('td');
+        tdTeam.className = 'px-4 py-2 font-semibold text-[var(--cfp-ivory)]';
+        tdTeam.textContent = team.team_name;
+        tr.appendChild(tdTeam);
+
+        const tdPts = document.createElement('td');
+        tdPts.className = 'px-3 py-2 text-center font-semibold text-[var(--cfp-ivory)]';
+        tdPts.textContent = (winsByTeam[team.team_id] || 0).toString();
+        tr.appendChild(tdPts);
+
+        gameIds.forEach(id=>{
+          const td = document.createElement('td');
+          td.className = 'px-3 py-2 text-center text-sm align-middle';
+
+          const pick   = pickMap[team.team_id]?.[id];
+          const winner = winnerMap[id];
+          const hasPick = !!(pick && String(pick).trim() !== '');
+
+          if(hasPick){
+            if(winner && sameTeam(pick, winner)){
+              td.classList.add('pick-win');
+            }else if(winner && !sameTeam(pick, winner)){
+              td.classList.add('pick-loss');
+            }else{
+              td.classList.add('pick-empty');
+            }
+          }else{
+            td.classList.add('pick-empty');
+          }
+
+          const url = hasPick ? getLogoForPickExact(pick) : null;
+          if(url){
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = pick;
+            img.title = pick;
+            img.className = 'logo';
+            td.appendChild(img);
+          }else{
+            td.textContent = hasPick ? pick : '—';
+          }
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+
+        if(shouldInsertDivider && idx === lastCutIndex){
+          const divTr = document.createElement('tr');
+          divTr.className = 'playoff-divider';
+          const divTd = document.createElement('td');
+          divTd.colSpan = 2 + gameIds.length;
+          divTd.textContent = 'Projected Playoff';
+          divTr.appendChild(divTd);
+          tbody.appendChild(divTr);
+        }
+      });
+    }
+
+    // ------- LIVE TICKER -------
+    async function startLiveTicker(){
+      await refreshBadgesFromAllGames();
+      liveTimer = setInterval(refreshBadgesFromAllGames, LIVE_INTERVAL_MS);
+    }
+    function stopLiveTicker(){
+      if(liveTimer){ clearInterval(liveTimer); liveTimer = null; }
+    }
+
+    async function refreshBadgesFromAllGames(){
+      if(!gameIds || !gameIds.length) return;
+
+      const { data: rows, error } = await supabase
+        .from('all_games')
+        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network')
+        .in('GameId', gameIds);
+
+      if(error){
+        console.warn('all_games refresh error:', error.message);
+        return;
+      }
+
+      (rows || []).forEach(r=>{
+        const entry = headerStatusEls.get(String(r.GameId));
+        if(!entry) return;
+
+        const { badgeEl, networkEl } = entry;
+
+        if(r.Status === 'final'){
+          if (networkEl) networkEl.style.display = 'none';
+          const a = r.AwayPts ?? '';
+          const h = r.HomePts ?? '';
+          badgeEl.textContent = `Final ${a}–${h}`;
+          badgeEl.className = 'badge badge-final inline-fix';
+        }else if(r.Status === 'in_progress'){
+          if (networkEl) {
+            if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
+            else { networkEl.style.display = 'none'; }
+          }
+          const p = r.Period || 1;
+          const clk = r.Clock || '';
+          const a = r.AwayPts ?? '';
+          const h = r.HomePts ?? '';
+          const score = (a!=='' && h!=='') ? `${a}–${h}` : '';
+          badgeEl.textContent = `${periodLabel(p)} ${clk} ${score}`.trim();
+          badgeEl.className = 'badge badge-live inline-fix';
+        }else{
+          if (networkEl) {
+            if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
+            else { networkEl.style.display = 'none'; }
+          }
+          const t = formatTimeLocal(r['Start (CT)']);
+          badgeEl.textContent = t || 'Scheduled';
+          badgeEl.className = 'badge badge-sched inline-fix';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

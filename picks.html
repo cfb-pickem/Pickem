@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CFB Pick'em — Make Picks</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --cfp-black:#0B0B0B;
+      --cfp-charcoal:#111213;
+      --cfp-gold:#C99210;
+      --cfp-gold-2:#E3B23C;
+      --cfp-ivory:#F7F4ED;
+      --cfp-gray:#1F2022;
+      --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+    }
+    body{
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        var(--cfp-charcoal);
+      background-size:100% 100%,24px 24px,auto;
+      color:#e7e7e7;
+      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+      min-height:100vh;
+    }
+    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
+    .cfp-select:focus{outline:none;box-shadow:var(--ring)}
+    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
+    .gold-shadow{box-shadow:0 0 0 1px rgba(233,185,73,.35),0 0 24px rgba(233,185,73,.08) inset}
+    .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
+    .ring-gold{box-shadow:var(--ring)}
+  </style>
+</head>
+<body>
+  <div class="max-w-7xl mx-auto p-4 md:p-6">
+    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
+      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
+        <li><a href="index.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Leaderboard</a></li>
+        <li><a href="picks.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Make Picks</a></li>
+        <li><a href="cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a></li>
+        <li><a href="stats.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Stats</a></li>
+      </ul>
+    </nav>
+
+    <header class="cfp-card rounded-none stripe gold-shadow mb-5">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4 py-4 md:px-6 md:py-5">
+        <div>
+          <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
+          <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Make Your Picks</h1>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">
+          <label class="hidden md:block text-gray-300">Your Team</label>
+          <select id="team-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
+        </div>
+      </div>
+      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
+        <span id="status">Loading…</span>
+      </div>
+    </header>
+
+    <div id="games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+    <div class="mt-6 flex items-center gap-3">
+      <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">Save Picks</button>
+      <button id="clear" class="px-4 py-2 border border-white/15">Clear</button>
+      <span id="saveStatus" class="text-xs text-gray-300"></span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    const supabase = createClient(
+      'https://vopdioszofwdkwnujtiq.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw'
+    );
+
+    const statusEl = document.getElementById('status');
+    const gamesEl  = document.getElementById('games');
+    const teamSel  = document.getElementById('team-select');
+    const saveBtn  = document.getElementById('save');
+    const clearBtn = document.getElementById('clear');
+    const saveStatus = document.getElementById('saveStatus');
+
+    let currentWeek = null;
+    let currentGames = [];
+
+    function status(msg, err=false){
+      statusEl.className = 'text-xs ' + (err? 'text-red-300':'text-gray-300');
+      statusEl.textContent = msg;
+    }
+
+    function kickoff(ts){
+      if(!ts) return '';
+      try{ return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
+      catch{ return ts; }
+    }
+
+    init();
+    async function init(){
+      status('Loading current week & teams…');
+
+      const [weeksRes, teamsRes] = await Promise.all([
+        supabase.from('all_games').select('week').eq('picked', true).not('week','is',null),
+        supabase.from('teams').select('team_id, team_name').order('team_name', { ascending:true })
+      ]);
+
+      if(weeksRes.error){ status(weeksRes.error.message, true); return; }
+      if(teamsRes.error){ status(teamsRes.error.message, true); return; }
+
+      teamSel.innerHTML = (teamsRes.data||[]).map(t=>`<option value="${t.team_id}">${t.team_name}</option>`).join('');
+
+      const weeks = [...new Set((weeksRes.data||[]).map(r=>r.week))].sort((a,b)=>a-b);
+      if (!weeks.length) { status('No weeks found.', true); return; }
+      currentWeek = weeks[weeks.length - 1];
+
+      await loadGamesForWeek(currentWeek);
+      status(`Loaded week ${currentWeek}.`);
+    }
+
+    async function loadGamesForWeek(week){
+      currentWeek = week;
+      status(`Loading games for week ${week}…`);
+      gamesEl.innerHTML = '';
+
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url')
+        .eq('picked', true)
+        .eq('week', week);
+
+      if(error){ status(error.message, true); return; }
+
+      currentGames = (data||[]).map(g=>({
+        game_id: g.GameId,
+        away: g.Away,
+        home: g.Home,
+        line: (typeof g.line === 'number' ? g.line : (g.line!=null ? Number(g.line) : null)),
+        espn_url: g.espn_url || g.ESPN || g.link || null,
+        start: g['Start (CT)']
+      })).sort((a,b)=>{
+        const ta = a.start ? new Date(a.start).getTime() : Infinity;
+        const tb = b.start ? new Date(b.start).getTime() : Infinity;
+        return ta - tb;
+      });
+
+      renderGameCards(currentGames);
+    }
+
+    function renderGameCards(games){
+      gamesEl.innerHTML = games.map((g)=>{
+        const name = `game_${g.game_id}`;
+        const when = kickoff(g.start);
+        const espn = g.espn_url ? `<a href="${g.espn_url}" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>` : '';
+
+        // line is always in terms of the HOME team
+        const hasLine = g.line != null && !isNaN(g.line);
+        const fmt = (n) => (n > 0 ? `+${n}` : `${n}`);
+        const awayLabel = hasLine ? `${g.away} (${fmt(-g.line)})` : g.away;
+        const homeLabel = hasLine ? `${g.home} (${fmt(g.line)})` : g.home;
+
+        return `
+          <div class="cfp-card gold-shadow p-4">
+            <div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-2 text-center">${g.away} @ ${g.home}</div>
+            <div class="text-xs text-gray-400 text-center mb-3">${when || 'Scheduled'}${espn ? ` ${espn}` : ''}</div>
+            <div class="flex justify-center gap-6">
+              <label class="flex items-center gap-2">
+                <input type="radio" name="${name}" value="${g.away}" class="accent-[var(--cfp-gold)]"> <span>${awayLabel}</span>
+              </label>
+              <label class="flex items-center gap-2">
+                <input type="radio" name="${name}" value="${g.home}" class="accent-[var(--cfp-gold)]"> <span>${homeLabel}</span>
+              </label>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function selections(){
+      const picks = [];
+      document.querySelectorAll('input[type="radio"]:checked').forEach(inp=>{
+        const gameId = inp.name.replace('game_','');
+        picks.push({ game_id: String(gameId), pick: inp.value });
+      });
+      return picks;
+    }
+
+    async function savePicks(){
+      saveBtn.disabled = true; saveStatus.textContent = 'Saving…';
+      const week = String(currentWeek);
+      const team_id = String(teamSel.value);
+      const rows = selections().map(p => ({ week, team_id, game_id: p.game_id, pick: p.pick }));
+
+      if(!rows.length){ status('Pick at least one game before saving.', true); saveBtn.disabled=false; saveStatus.textContent=''; return; }
+
+      const { error } = await supabase
+        .from('picks')
+        .upsert(rows, { onConflict: 'team_id,week,game_id' });
+
+      saveBtn.disabled = false; saveStatus.textContent = '';
+      if(error){ status('Error saving: ' + error.message, true); }
+      else { status('Picks saved!', false); }
+    }
+
+    function clearSelections(){
+      document.querySelectorAll('input[type="radio"]').forEach(i=> i.checked=false);
+      status('Selections cleared.');
+    }
+
+    saveBtn.addEventListener('click', savePicks);
+    clearBtn.addEventListener('click', clearSelections);
+  </script>
+</body>
+</html>
