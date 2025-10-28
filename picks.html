@@ -36,16 +36,30 @@
     .gold-shadow{box-shadow:0 0 0 1px rgba(233,185,73,.35),0 0 24px rgba(233,185,73,.08) inset}
     .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
     .ring-gold{box-shadow:var(--ring)}
+    .badge{font-size:.78rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
+    .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
   </style>
 </head>
 <body>
   <div class="max-w-7xl mx-auto p-4 md:p-6">
+    <!-- Auth-aware NAV -->
     <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
       <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
         <li><a href="index.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Leaderboard</a></li>
-        <li><a href="picks.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Make Picks</a></li>
+
+        <li id="nav-picks" class="hidden">
+          <a href="picks.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Make Picks</a>
+        </li>
+
         <li><a href="cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a></li>
         <li><a href="stats.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Stats</a></li>
+
+        <li id="nav-signin" class="ml-auto">
+          <a href="signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
+        </li>
+        <li id="nav-signout" class="hidden">
+          <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
+        </li>
       </ul>
     </nav>
 
@@ -54,80 +68,157 @@
         <div>
           <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
           <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Make Your Picks</h1>
+          <div id="team-chip" class="mt-2 hidden">
+            <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
+          </div>
         </div>
-        <div class="flex flex-wrap items-center gap-3 text-sm">
-          <label class="hidden md:block text-gray-300">Your Team</label>
-          <select id="team-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
-        </div>
-      </div>
-      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
-        <span id="status">Loading…</span>
+        <div class="text-xs text-gray-300"><span id="status">Loading…</span></div>
       </div>
     </header>
 
-    <div id="games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    <!-- Gate for signed-out users -->
+    <div id="auth-gate" class="cfp-card callout gold-shadow p-4 md:p-6 hidden">
+      <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Sign in required</h2>
+      <p class="text-sm text-gray-200">
+        Please <a href="signin.html" class="text-[var(--cfp-gold-2)] underline">sign in</a> to make your picks.
+      </p>
+    </div>
 
-    <div class="mt-6 flex items-center gap-3">
-      <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">Save Picks</button>
-      <button id="clear" class="px-4 py-2 border border-white/15">Clear</button>
-      <span id="saveStatus" class="text-xs text-gray-300"></span>
+    <!-- Content for signed-in users -->
+    <div id="games-wrap" class="hidden">
+      <div id="games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      <div class="mt-6 flex items-center gap-3">
+        <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">Save Picks</button>
+        <button id="clear" class="px-4 py-2 border border-white/15">Clear</button>
+        <span id="saveStatus" class="text-xs text-gray-300"></span>
+      </div>
     </div>
   </div>
 
   <script type="module">
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+    // ---- Supabase ----
     const supabase = createClient(
       'https://vopdioszofwdkwnujtiq.supabase.co',
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw'
     );
 
-    const statusEl = document.getElementById('status');
-    const gamesEl  = document.getElementById('games');
-    const teamSel  = document.getElementById('team-select');
-    const saveBtn  = document.getElementById('save');
-    const clearBtn = document.getElementById('clear');
+    // ---- DOM ----
+    const statusEl   = document.getElementById('status');
+    const authGate   = document.getElementById('auth-gate');
+    const gamesWrap  = document.getElementById('games-wrap');
+    const gamesEl    = document.getElementById('games');
+    const saveBtn    = document.getElementById('save');
+    const clearBtn   = document.getElementById('clear');
     const saveStatus = document.getElementById('saveStatus');
+    const teamChip   = document.getElementById('team-chip');
+    const teamNameEl = document.getElementById('team-name');
 
+    // Nav auth elements
+    const navPicks   = document.getElementById('nav-picks');
+    const navSignin  = document.getElementById('nav-signin');
+    const navSignout = document.getElementById('nav-signout');
+    const signOutBtn = document.getElementById('sign-out-btn');
+
+    // ---- State ----
+    let session = null;
     let currentWeek = null;
     let currentGames = [];
+    let selectedTeamId = null;
+    let selectedTeamName = '';
 
-    function status(msg, err=false){
+    function setStatus(msg, err=false){
       statusEl.className = 'text-xs ' + (err? 'text-red-300':'text-gray-300');
       statusEl.textContent = msg;
     }
 
     function kickoff(ts){
       if(!ts) return '';
-      try{ return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
-      catch{ return ts; }
+      try {
+        return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+      } catch { return ts; }
     }
 
+    async function refreshAuthUI() {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      session = s || null;
+
+      if (session) {
+        navPicks?.classList.remove('hidden');
+        navSignin?.classList.add('hidden');
+        navSignout?.classList.remove('hidden');
+
+        authGate.classList.add('hidden');
+        gamesWrap.classList.remove('hidden');
+      } else {
+        navPicks?.classList.add('hidden');
+        navSignin?.classList.remove('hidden');
+        navSignout?.classList.add('hidden');
+
+        gamesWrap.classList.add('hidden');
+        authGate.classList.remove('hidden');
+      }
+    }
+
+    signOutBtn?.addEventListener('click', async () => {
+      await supabase.auth.signOut();
+      await refreshAuthUI();
+      setStatus('Signed out.');
+    });
+
+    supabase.auth.onAuthStateChange(async () => {
+      await refreshAuthUI();
+      if (session) init(); // re-init when a user signs in
+    });
+
+    // ------- INIT -------
     init();
     async function init(){
-      status('Loading current week & teams…');
+      await refreshAuthUI();
+      if (!session) { setStatus('Sign in to make picks.'); return; }
 
-      const [weeksRes, teamsRes] = await Promise.all([
-        supabase.from('all_games').select('week').eq('picked', true).not('week','is',null),
-        supabase.from('teams').select('team_id, team_name').order('team_name', { ascending:true })
-      ]);
+      setStatus('Loading your team & current week…');
 
-      if(weeksRes.error){ status(weeksRes.error.message, true); return; }
-      if(teamsRes.error){ status(teamsRes.error.message, true); return; }
+      // latest week with picked games
+      const { data: weekRows, error: wErr } = await supabase
+        .from('all_games')
+        .select('week')
+        .eq('picked', true)
+        .not('week','is',null);
 
-      teamSel.innerHTML = (teamsRes.data||[]).map(t=>`<option value="${t.team_id}">${t.team_name}</option>`).join('');
+      if (wErr) { setStatus(wErr.message, true); return; }
 
-      const weeks = [...new Set((weeksRes.data||[]).map(r=>r.week))].sort((a,b)=>a-b);
-      if (!weeks.length) { status('No weeks found.', true); return; }
+      const weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
+      if (!weeks.length) { setStatus('No weeks found.', true); return; }
       currentWeek = weeks[weeks.length - 1];
 
+      // auto-select user's team (first alphabetically if multiple)
+      const { data: myTeams, error: tErr } = await supabase
+        .from('teams')
+        .select('team_id, team_name, user_id')
+        .eq('user_id', session.user.id)
+        .order('team_name', { ascending: true });
+
+      if (tErr) { setStatus(tErr.message, true); return; }
+      if (!myTeams || myTeams.length === 0) {
+        setStatus('No team found for your account. Contact the commissioner to add your team.', true);
+        gamesWrap.classList.add('hidden');
+        return;
+      }
+
+      selectedTeamId = String(myTeams[0].team_id);
+      selectedTeamName = myTeams[0].team_name || `Team ${selectedTeamId}`;
+      teamNameEl.textContent = selectedTeamName;
+      teamChip.classList.remove('hidden');
+
       await loadGamesForWeek(currentWeek);
-      status(`Loaded week ${currentWeek}.`);
+      setStatus(`Loaded week ${currentWeek}.`);
     }
 
     async function loadGamesForWeek(week){
       currentWeek = week;
-      status(`Loading games for week ${week}…`);
+      setStatus(`Loading games for week ${week}…`);
       gamesEl.innerHTML = '';
 
       const { data, error } = await supabase
@@ -136,14 +227,14 @@
         .eq('picked', true)
         .eq('week', week);
 
-      if(error){ status(error.message, true); return; }
+      if (error) { setStatus(error.message, true); return; }
 
-      currentGames = (data||[]).map(g=>({
+      currentGames = (data||[]).map(g => ({
         game_id: g.GameId,
         away: g.Away,
         home: g.Home,
-        line: (typeof g.line === 'number' ? g.line : (g.line!=null ? Number(g.line) : null)),
-        espn_url: g.espn_url || g.ESPN || g.link || null,
+        line: (typeof g.line === 'number' ? g.line : (g.line != null ? Number(g.line) : null)),
+        espn_url: g.espn_url || null,
         start: g['Start (CT)']
       })).sort((a,b)=>{
         const ta = a.start ? new Date(a.start).getTime() : Infinity;
@@ -155,31 +246,39 @@
     }
 
     function renderGameCards(games){
-      gamesEl.innerHTML = games.map((g)=>{
+      // Use array -> join; avoid nested backticks inside template interpolations
+      const cards = games.map(g => {
         const name = `game_${g.game_id}`;
         const when = kickoff(g.start);
-        const espn = g.espn_url ? `<a href="${g.espn_url}" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>` : '';
+        const espnLink = g.espn_url
+          ? '<a href="' + g.espn_url + '" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>'
+          : '';
 
-        // line is always in terms of the HOME team
+        // line in terms of HOME team; display + for positive
         const hasLine = g.line != null && !isNaN(g.line);
-        const fmt = (n) => (n > 0 ? `+${n}` : `${n}`);
-        const awayLabel = hasLine ? `${g.away} (${fmt(-g.line)})` : g.away;
-        const homeLabel = hasLine ? `${g.home} (${fmt(g.line)})` : g.home;
+        const fmt = (n) => (n > 0 ? ('+' + n) : String(n));
+        const awayLabel = hasLine ? (g.away + ' (' + fmt(-g.line) + ')') : g.away;
+        const homeLabel = hasLine ? (g.home + ' (' + fmt(g.line) + ')') : g.home;
 
-        return `
-          <div class="cfp-card gold-shadow p-4">
-            <div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-2 text-center">${g.away} @ ${g.home}</div>
-            <div class="text-xs text-gray-400 text-center mb-3">${when || 'Scheduled'}${espn ? ` ${espn}` : ''}</div>
-            <div class="flex justify-center gap-6">
-              <label class="flex items-center gap-2">
-                <input type="radio" name="${name}" value="${g.away}" class="accent-[var(--cfp-gold)]"> <span>${awayLabel}</span>
-              </label>
-              <label class="flex items-center gap-2">
-                <input type="radio" name="${name}" value="${g.home}" class="accent-[var(--cfp-gold)]"> <span>${homeLabel}</span>
-              </label>
-            </div>
-          </div>`;
-      }).join('');
+        return (
+          '<div class="cfp-card gold-shadow p-4">' +
+            '<div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-2 text-center">' + g.away + ' @ ' + g.home + '</div>' +
+            '<div class="text-xs text-gray-400 text-center mb-3">' + (when || 'Scheduled') + (espnLink ? (' ' + espnLink) : '') + '</div>' +
+            '<div class="flex justify-center gap-6">' +
+              '<label class="flex items-center gap-2">' +
+                '<input type="radio" name="' + name + '" value="' + g.away.replace(/"/g,'&quot;') + '" class="accent-[var(--cfp-gold)]"> ' +
+                '<span>' + awayLabel + '</span>' +
+              '</label>' +
+              '<label class="flex items-center gap-2">' +
+                '<input type="radio" name="' + name + '" value="' + g.home.replace(/"/g,'&quot;') + '" class="accent-[var(--cfp-gold)]"> ' +
+                '<span>' + homeLabel + '</span>' +
+              '</label>' +
+            '</div>' +
+          '</div>'
+        );
+      });
+
+      gamesEl.innerHTML = cards.join('');
     }
 
     function selections(){
@@ -192,29 +291,44 @@
     }
 
     async function savePicks(){
-      saveBtn.disabled = true; saveStatus.textContent = 'Saving…';
-      const week = String(currentWeek);
-      const team_id = String(teamSel.value);
-      const rows = selections().map(p => ({ week, team_id, game_id: p.game_id, pick: p.pick }));
+      if (!session) { setStatus('Please sign in to save picks.', true); return; }
+      if (!selectedTeamId) { setStatus('No team found for your account.', true); return; }
 
-      if(!rows.length){ status('Pick at least one game before saving.', true); saveBtn.disabled=false; saveStatus.textContent=''; return; }
+      saveBtn.disabled = true;
+      saveStatus.textContent = 'Saving…';
+
+      const week = String(currentWeek);
+      const rows = selections().map(p => ({
+        week,
+        team_id: selectedTeamId,
+        game_id: p.game_id,
+        pick: p.pick
+      }));
+
+      if (!rows.length){
+        setStatus('Pick at least one game before saving.', true);
+        saveBtn.disabled = false;
+        saveStatus.textContent = '';
+        return;
+      }
 
       const { error } = await supabase
         .from('picks')
         .upsert(rows, { onConflict: 'team_id,week,game_id' });
 
-      saveBtn.disabled = false; saveStatus.textContent = '';
-      if(error){ status('Error saving: ' + error.message, true); }
-      else { status('Picks saved!', false); }
+      saveBtn.disabled = false;
+      saveStatus.textContent = '';
+      if (error) setStatus('Error saving: ' + error.message, true);
+      else setStatus('Picks saved!');
     }
 
     function clearSelections(){
       document.querySelectorAll('input[type="radio"]').forEach(i=> i.checked=false);
-      status('Selections cleared.');
+      setStatus('Selections cleared.');
     }
 
-    saveBtn.addEventListener('click', savePicks);
-    clearBtn.addEventListener('click', clearSelections);
+    document.getElementById('save').addEventListener('click', savePicks);
+    document.getElementById('clear').addEventListener('click', clearSelections);
   </script>
 </body>
 </html>
