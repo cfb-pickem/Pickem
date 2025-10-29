@@ -10,6 +10,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
+  <!-- Optional: warm up your modules -->
+  <link rel="modulepreload" href="/js/supabaseClient.js">
+  <link rel="modulepreload" href="/js/nav.js">
+
   <style>
     :root{
       --cfp-black:#0B0B0B;
@@ -67,36 +71,12 @@
     }
   </style>
 </head>
-<body>
+
+<!-- Mark this page so nav.js can highlight "Leaderboard" -->
+<body data-page="leaderboard">
   <div class="max-w-7xl mx-auto p-4 md:p-6">
-    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
-        <li>
-          <a href="index.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Leaderboard</a>
-        </li>
-
-        <!-- Make Picks only when signed in -->
-        <li id="nav-picks" class="hidden">
-          <a href="picks.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Make Picks</a>
-        </li>
-
-        <li>
-          <a href="cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a>
-        </li>
-        <li>
-          <a href="stats.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Stats</a>
-        </li>
-
-        <!-- Auth controls -->
-        <li id="nav-signin" class="ml-auto">
-          <!-- send to picks.html; that page shows your native sign-in if no session -->
-          <a href="signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
-        </li>
-        <li id="nav-signout" class="hidden">
-          <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
-        </li>
-      </ul>
-    </nav>
+    <!-- Shared nav mounts here -->
+    <div id="site-nav"></div>
 
     <header class="cfp-card rounded-none stripe gold-shadow mb-5">
       <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
@@ -134,40 +114,13 @@
     </div>
   </div>
 
+  <!-- Page script -->
   <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    import initNav from '/js/nav.js';
+    import { supabase } from '/js/supabaseClient.js';
 
-    // ---- Supabase ----
-    const supabase = createClient(
-      'https://vopdioszofwdkwnujtiq.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw'
-    );
-
-    // ---- Nav auth gating ----
-    const navPicks   = document.getElementById('nav-picks');
-    const navSignin  = document.getElementById('nav-signin');
-    const navSignout = document.getElementById('nav-signout');
-    const signOutBtn = document.getElementById('sign-out-btn');
-
-    async function refreshAuthUI() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        navPicks?.classList.remove('hidden');
-        navSignin?.classList.add('hidden');
-        navSignout?.classList.remove('hidden');
-      } else {
-        navPicks?.classList.add('hidden');
-        navSignin?.classList.remove('hidden');
-        navSignout?.classList.add('hidden');
-      }
-    }
-    refreshAuthUI();
-    supabase.auth.onAuthStateChange(() => refreshAuthUI());
-
-    signOutBtn?.addEventListener('click', async () => {
-      await supabase.auth.signOut();
-      await refreshAuthUI();
-    });
+    // Mount shared navigation
+    initNav();
 
     // ---- DOM ----
     const weekSelect = document.getElementById('week-select');
