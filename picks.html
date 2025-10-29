@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- Match the working imports used on your index page -->
+  <!-- Match the working imports from index.html -->
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
@@ -42,11 +42,15 @@
     .ring-gold{box-shadow:var(--ring)}
     .badge{font-size:.78rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
     .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
+    .debug{background:rgba(227,178,60,.12);border:1px solid rgba(227,178,60,.45);color:#e3b23c}
   </style>
 </head>
 <body data-page="picks">
   <div class="max-w-7xl mx-auto p-4 md:p-6">
     <div id="site-nav"></div>
+
+    <!-- Debug banner (auto-hides if empty) -->
+    <div id="debug" class="debug cfp-card gold-shadow rounded-none p-3 text-xs mb-3 hidden"></div>
 
     <header class="cfp-card rounded-none stripe gold-shadow mb-5">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4 py-4 md:px-6 md:py-5">
@@ -79,16 +83,18 @@
   </div>
 
   <script type="module">
-    import initNav from './js/nav.js';            // keep consistent with index.html
+    import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
 
-    // --- tiny CSS.escape polyfill (older Safari/Edge) ---
-    if (typeof CSS === 'undefined' || typeof CSS.escape !== 'function') {
+    // --- CSS.escape polyfill (old Safari/Edge) ---
+    if (!window.CSS || typeof CSS.escape !== 'function') {
       window.CSS = window.CSS || {};
       window.CSS.escape = (s) => String(s).replace(/[^a-zA-Z0-9_\-]/g, (c) =>
         '\\' + c.codePointAt(0).toString(16) + ' ');
     }
 
+    // --- DOM refs ---
+    const debugEl    = document.getElementById('debug');
     const statusEl   = document.getElementById('status');
     const authGate   = document.getElementById('auth-gate');
     const gamesWrap  = document.getElementById('games-wrap');
@@ -99,6 +105,7 @@
     const teamChip   = document.getElementById('team-chip');
     const teamNameEl = document.getElementById('team-name');
 
+    // --- Global state ---
     let session = null;
     let currentWeek = null;
     let currentGames = [];
@@ -106,9 +113,16 @@
     let selectedTeamName = '';
     let existingPicks = new Map(); // game_id -> pick
 
+    // --- Helpers ---
     function setStatus(msg, err=false){
       statusEl.className = 'text-xs ' + (err? 'text-red-300':'text-gray-300');
       statusEl.textContent = msg;
+    }
+    function showDebug(msg){
+      if(!msg){ debugEl.classList.add('hidden'); debugEl.textContent = ''; return; }
+      debugEl.textContent = 'Debug: ' + msg;
+      debugEl.classList.remove('hidden');
+      console.error('[picks] ' + msg);
     }
     function kickoff(ts){
       if(!ts) return '';
@@ -117,20 +131,36 @@
       } catch { return ts; }
     }
 
+    // Catch unhandled errors so the page doesn’t look frozen
+    window.addEventListener('error', (e)=> showDebug(e.message || 'Unhandled error'));
+    window.addEventListener('unhandledrejection', (e)=> showDebug((e.reason && e.reason.message) || 'Unhandled promise rejection'));
+
     async function refreshAuthUI() {
-      const { data: { session: s } } = await supabase.auth.getSession();
-      session = s || null;
-      if (session) {
-        authGate.classList.add('hidden');
-        gamesWrap.classList.remove('hidden');
-      } else {
+      try{
+        const { data: { session: s }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        session = s || null;
+        if (session) {
+          authGate.classList.add('hidden');
+          gamesWrap.classList.remove('hidden');
+        } else {
+          gamesWrap.classList.add('hidden');
+          authGate.classList.remove('hidden');
+        }
+      }catch(err){
+        showDebug('auth.getSession: ' + (err?.message || err));
+        // Fail-safe: show auth gate
         gamesWrap.classList.add('hidden');
         authGate.classList.remove('hidden');
       }
     }
 
     async function startup() {
-      await initNav();       // nav registers its single auth listener
+      try {
+        await initNav();
+      } catch (e) {
+        showDebug('nav init failed (check ./js/nav.js path): ' + (e?.message || e));
+      }
       await initPage();
     }
     startup();
@@ -141,43 +171,55 @@
 
       setStatus('Loading your team & current week…');
 
-      // 1) Determine latest week having picked games
-      const { data: weekRows, error: wErr } = await supabase
-        .from('all_games')
-        .select('week')
-        .eq('picked', true)
-        .not('week','is',null);
+      try {
+        // 1) Latest week with picked games
+        const { data: weekRows, error: wErr } = await supabase
+          .from('all_games')
+          .select('week')
+          .eq('picked', true)
+          .not('week','is',null);
+        if (wErr) throw wErr;
 
-      if (wErr) { setStatus(wErr.message, true); return; }
+        const weeks = [...new Set((weekRows||[]).map(r=>Number(r.week)))].sort((a,b)=>a-b);
+        if (!weeks.length) { setStatus('No weeks found.', true); return; }
+        currentWeek = weeks[weeks.length - 1];
 
-      const weeks = [...new Set((weekRows||[]).map(r=>Number(r.week)))].sort((a,b)=>a-b);
-      if (!weeks.length) { setStatus('No weeks found.', true); return; }
-      currentWeek = weeks[weeks.length - 1];
+        // 2) User's team
+        const { data: myTeams, error: tErr } = await supabase
+          .from('teams')
+          .select('team_id, team_name')
+          .eq('user_id', session.user.id)
+          .order('team_name', { ascending: true });
+        if (tErr) throw tErr;
 
-      // 2) Get user's team (first alphabetically if they have multiple)
-      const { data: myTeams, error: tErr } = await supabase
-        .from('teams')
-        .select('team_id, team_name, user_id')
-        .eq('user_id', session.user.id)
-        .order('team_name', { ascending: true });
+        if (!myTeams || myTeams.length === 0) {
+          setStatus('No team found for your account. Contact the commissioner to add your team.', true);
+          gamesWrap.classList.add('hidden');
+          return;
+        }
 
-      if (tErr) { setStatus(tErr.message, true); return; }
-      if (!myTeams || myTeams.length === 0) {
-        setStatus('No team found for your account. Contact the commissioner to add your team.', true);
-        gamesWrap.classList.add('hidden');
-        return;
+        selectedTeamId = Number(myTeams[0].team_id);
+        selectedTeamName = myTeams[0].team_name || `Team ${selectedTeamId}`;
+        teamNameEl.textContent = selectedTeamName;
+        teamChip.classList.remove('hidden');
+
+        // 3) Load games and existing picks
+        await loadGamesForWeek(currentWeek);
+        await loadExistingPicksForVisibleGames();
+
+        if (currentGames.length === 0) {
+          gamesEl.innerHTML = `
+            <div class="cfp-card gold-shadow p-6 text-sm text-gray-300">
+              No games are open for picking this week. Check back later.
+            </div>`;
+        }
+
+        setStatus(`Loaded week ${currentWeek}.`);
+        showDebug(''); // clear
+      } catch (err){
+        setStatus('Problem loading page. See debug.', true);
+        showDebug(err?.message || String(err));
       }
-
-      selectedTeamId = Number(myTeams[0].team_id); // keep numeric to match typical schema
-      selectedTeamName = myTeams[0].team_name || `Team ${selectedTeamId}`;
-      teamNameEl.textContent = selectedTeamName;
-      teamChip.classList.remove('hidden');
-
-      // 3) Load games for that week, then prefill existing picks for those games
-      await loadGamesForWeek(currentWeek);
-      await loadExistingPicksForVisibleGames();
-
-      setStatus(`Loaded week ${currentWeek}.`);
     }
 
     async function loadGamesForWeek(week){
@@ -185,47 +227,53 @@
       setStatus(`Loading games for week ${week}…`);
       gamesEl.innerHTML = '';
 
-      const { data, error } = await supabase
-        .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", espn_url')
-        .eq('picked', true)
-        .eq('week', week);
+      try{
+        const { data, error } = await supabase
+          .from('all_games')
+          .select('GameId, Away, Home, line, "Start (CT)", espn_url')
+          .eq('picked', true)
+          .eq('week', week);
+        if (error) throw error;
 
-      if (error) { setStatus(error.message, true); return; }
+        currentGames = (data||[]).map(g => ({
+          game_id: Number(g.GameId),
+          away: g.Away,
+          home: g.Home,
+          line: (g.line == null ? null : Number(g.line)),
+          espn_url: g.espn_url || null,
+          start: g['Start (CT)']
+        })).sort((a,b)=>{
+          const ta = a.start ? new Date(a.start).getTime() : Infinity;
+          const tb = b.start ? new Date(b.start).getTime() : Infinity;
+          return ta - tb;
+        });
 
-      currentGames = (data||[]).map(g => ({
-        game_id: Number(g.GameId),
-        away: g.Away,
-        home: g.Home,
-        line: (g.line == null ? null : Number(g.line)),
-        espn_url: g.espn_url || null,
-        start: g['Start (CT)']
-      })).sort((a,b)=>{
-        const ta = a.start ? new Date(a.start).getTime() : Infinity;
-        const tb = b.start ? new Date(b.start).getTime() : Infinity;
-        return ta - tb;
-      });
-
-      renderGameCards(currentGames);
+        renderGameCards(currentGames);
+      }catch(err){
+        showDebug('loadGamesForWeek: ' + (err?.message || err));
+        setStatus('Could not load games for this week.', true);
+      }
     }
 
     async function loadExistingPicksForVisibleGames(){
-      existingPicks.clear();
-      const gameIds = currentGames.map(g => g.game_id);
-      if (!gameIds.length) return;
+      try{
+        existingPicks.clear();
+        const gameIds = currentGames.map(g => g.game_id);
+        if (!gameIds.length) return;
 
-      const { data, error } = await supabase
-        .from('picks')
-        .select('game_id, pick')
-        .eq('team_id', selectedTeamId)
-        .in('game_id', gameIds);
+        const { data, error } = await supabase
+          .from('picks')
+          .select('game_id, pick')
+          .eq('team_id', selectedTeamId)
+          .in('game_id', gameIds);
+        if (error) throw error;
 
-      if (error) {
-        console.warn('picks fetch error:', error.message);
-        return; // non-fatal
+        (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
+        prefillSelections();
+      }catch(err){
+        showDebug('loadExistingPicks: ' + (err?.message || err));
+        // not fatal
       }
-      (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
-      prefillSelections();
     }
 
     function renderGameCards(games){
@@ -264,9 +312,8 @@
 
     function prefillSelections(){
       existingPicks.forEach((pick, gameId) => {
-        const input = document.querySelector(
-          'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]'
-        );
+        const sel = 'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]';
+        const input = document.querySelector(sel);
         if (input) input.checked = true;
       });
     }
@@ -291,7 +338,7 @@
         team_id: Number(selectedTeamId),
         game_id: Number(p.game_id),
         pick: p.pick,
-        week: Number(currentWeek) // optional metadata (not in conflict key)
+        week: Number(currentWeek) // optional metadata
       }));
 
       if (!rows.length){
@@ -301,18 +348,20 @@
         return;
       }
 
-      const { error } = await supabase
-        .from('picks')
-        .upsert(rows, { onConflict: 'team_id,game_id' });
+      try{
+        const { error } = await supabase
+          .from('picks')
+          .upsert(rows, { onConflict: 'team_id,game_id' });
+        if (error) throw error;
 
-      saveBtn.disabled = false;
-      saveStatus.textContent = '';
-      if (error) {
-        setStatus('Error saving: ' + error.message, true);
-      } else {
-        setStatus('Picks saved!');
-        // refresh local cache so prefill stays accurate
         rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
+        setStatus('Picks saved!');
+      }catch(err){
+        setStatus('Error saving: ' + (err?.message || err), true);
+        showDebug('savePicks: ' + (err?.message || err));
+      }finally{
+        saveBtn.disabled = false;
+        saveStatus.textContent = '';
       }
     }
 
@@ -321,8 +370,8 @@
       setStatus('Selections cleared.');
     }
 
-    saveBtn.addEventListener('click', savePicks);
-    clearBtn.addEventListener('click', clearSelections);
+    document.getElementById('save').addEventListener('click', savePicks);
+    document.getElementById('clear').addEventListener('click', clearSelections);
   </script>
 </body>
 </html>
