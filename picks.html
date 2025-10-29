@@ -44,19 +44,31 @@
     .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
 
     /* === Highlight chosen pick === */
-    .pick-label{
+    .pick-label {
       transition: background-color .25s, color .25s, transform .12s;
-      padding: .25rem .5rem;
-      border-radius: .375rem; /* md */
+      padding: .25rem .75rem;
+      border-radius: .375rem;
       cursor: pointer;
       user-select: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 120px;
+      text-align: center;
     }
-    .pick-label.selected{
+
+    .pick-label input[type="radio"] {
+      display: none; /* hides the selection circle */
+    }
+
+    .pick-label.selected {
       background: var(--cfp-gold);
       color: var(--cfp-black);
       font-weight: 600;
       transform: scale(1.05);
+      box-shadow: 0 0 0 2px var(--cfp-gold-2);
     }
+
   </style>
 </head>
 <body data-page="picks">
