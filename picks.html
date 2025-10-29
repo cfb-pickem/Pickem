@@ -133,15 +133,16 @@
       }
     }
 
-    // --- REMOVED: signOutBtn listener (nav.js handles this) ---
-    
-    // --- REMOVED: onAuthStateChange listener (nav.js handles this by reloading) ---
+    // Create a single async function to control startup
+    async function startup() {
+      await initNav(); // 1. Wait for nav to load (and auth listener to be ready)
+      await initPage();  // 2. Run page logic *after* nav is done
+    }
 
-    // ------- INIT -------
-    initNav(); // 1. Initialize the shared navigation
-    initPage();  // 2. Initialize the page-specific logic
-    
+    startup(); // Run the main startup function
+
     async function initPage(){
+    // ... rest of the file
       await refreshAuthUI(); // Checks if user is signed in
       if (!session) { setStatus('Sign in to make picks.'); return; }
 

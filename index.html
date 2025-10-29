@@ -184,9 +184,17 @@
 
     // ------------------------------
 
-    init();
+    // ------------------------------
+
+    async function startup() {
+      await initNav(); // 1. Wait for nav
+      await init();    // 2. Run page logic
+    }
+    
+    startup();
 
     async function init(){
+    // ... rest of init
       status('Loading weeks…');
 
       // logos

@@ -10,7 +10,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- Use relative paths for GitHub Pages -->
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
@@ -49,7 +48,6 @@
 
 <body data-page="stats">
   <div class="max-w-7xl mx-auto p-4 md:p-6">
-    <!-- Shared nav mounts here -->
     <div id="site-nav"></div>
 
     <header class="cfp-card rounded-none stripe gold-shadow mb-5">
@@ -66,7 +64,6 @@
     </header>
 
     <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Perfect Weeks -->
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
@@ -85,7 +82,6 @@
         </div>
       </div>
 
-      <!-- Zero-Week Club -->
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
@@ -104,9 +100,8 @@
         </div>
       </div>
 
-      <!-- Win % in last 8 decided picks -->
       <div class="cfp-card gold-shadow rounded-none">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,2S31,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
           <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Win % in Last 8 Picks</h2>
         </div>
@@ -131,8 +126,7 @@
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
 
-    // Init shared navigation
-    initNav();
+    // --- REMOVED: initNav() call was here ---
 
     // ------- Stats logic -------
     const statusEl    = document.getElementById('status');
@@ -286,7 +280,13 @@
       setStatus('Loaded');
     }
 
-    main();
+    // --- NEW: Create a single startup function ---
+    async function startup() {
+      await initNav(); // 1. Wait for nav to load
+      await main();    // 2. Run page logic *after* nav is done
+    }
+
+    startup(); // Run the main startup function
   </script>
 </body>
 </html>
