@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>CFB Pick'em — Sign in</title>
+  <title>CFB Pick'em — Stats (CFP Theme)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,108 +20,113 @@
       --cfp-gray:#1F2022;
       --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
     }
+
     body{
       background:
         radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
         linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
         var(--cfp-charcoal);
-      background-size:100% 100%,24px 24px,auto;
-      color:#e7e7e7;
-      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
-      min-height:100vh;
+      background-size: 100% 100%, 24px 24px, auto;
+      color: #e7e7e7;
+      font-family: 'Roboto', system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      min-height: 100vh;
     }
-    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
-    .cfp-input{background:var(--cfp-black);border:1px solid rgba(231,231,231,.12);color:#f1f1f1}
-    .cfp-input:focus{outline:none;box-shadow:var(--ring)}
-    .btn{background:var(--cfp-gold);color:#0b0b0b}
-    .btn:hover{filter:brightness(1.05)}
+
+    .gold-shadow{box-shadow: 0 0 0 1px rgba(233, 185, 73, .35), 0 0 24px rgba(233, 185, 73, .08) inset}
+    .cfp-card{background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
+    .stripe{background: repeating-linear-gradient(90deg, transparent 0 40px, rgba(233,185,73,.12) 40px 48px)}
+    .trophy-oval{width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative}
+    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
+
+    .table th,.table td{border-color:rgba(231,231,231,.08)}
+    .table tbody tr:hover{background:rgba(233,185,73,.06)}
   </style>
 </head>
 <body>
   <div class="max-w-7xl mx-auto p-4 md:p-6">
-    <!-- NAV -->
     <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
       <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
+        <li><a href="./index.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Leaderboard</a></li>
         <li>
-          <a href="index.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Leaderboard</a>
+          <a href="./picks.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Make Picks</a>
         </li>
-        <li id="nav-picks" class="hidden">
-          <a href="picks.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Make Picks</a>
-        </li>
-        <li>
-          <a href="cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a>
-        </li>
-        <li>
-          <a href="stats.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Stats</a>
-        </li>
-        <li id="nav-signin" class="ml-auto">
-          <a href="signin.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Sign in</a>
-        </li>
-        <li id="nav-signout" class="hidden">
-          <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
-        </li>
+        <li><a href="./cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a></li>
+        <li><a href="./stats.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Stats</a></li>
       </ul>
     </nav>
 
-    <!-- HEADER -->
-    <header class="cfp-card rounded-none stripe gold-shadow mb-6">
-      <div class="flex items-center gap-3 md:gap-4 px-4 py-4 md:px-6 md:py-5">
-        <span class="trophy-oval" aria-hidden="true" style="width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative"></span>
-        <div>
-          <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-          <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Sign in</h1>
+    <header class="cfp-card rounded-none stripe gold-shadow mb-5">
+      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
+        <div class="flex items-center gap-3 md:gap-4">
+          <span class="trophy-oval"></span>
+          <div>
+            <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Season Stats</h1>
+          </div>
         </div>
+        <div class="text-xs text-gray-300" id="status">Loading…</div>
       </div>
     </header>
 
-    <!-- AUTH CARD -->
-    <div class="max-w-xl mx-auto cfp-card p-6 md:p-8">
-      <div id="auth-tabs" class="flex gap-2 mb-6 text-sm">
-        <button data-tab="signin" class="tab-btn btn px-3 py-1.5">Sign in</button>
-        <button data-tab="signup" class="tab-btn px-3 py-1.5 border border-[rgba(231,231,231,.12)]">Create account</button>
-        <button data-tab="reset"  class="tab-btn px-3 py-1.5 border border-[rgba(231,231,231,.12)]">Reset password</button>
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Perfect Weeks -->
+      <div class="cfp-card gold-shadow rounded-none">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval"></span>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Perfect Week Club</h2>
+        </div>
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead>
+              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                <th class="px-4 py-2 text-left font-semibold">Team</th>
+                <th class="px-4 py-2 text-left font-semibold">Week</th>
+              </tr>
+            </thead>
+            <tbody id="perfect-body"></tbody>
+          </table>
+        </div>
       </div>
 
-      <!-- Status -->
-      <div id="status" class="text-sm text-gray-300 mb-4"></div>
+      <!-- Zero-Week Club (tally of weeks with 0 wins) -->
+      <div class="cfp-card gold-shadow rounded-none">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval"></span>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Zero-Week Club</h2>
+        </div>
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead>
+              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                <th class="px-4 py-2 text-left font-semibold">Team</th>
+                <th class="px-4 py-2 text-left font-semibold">Zero Weeks</th>
+              </tr>
+            </thead>
+            <tbody id="zero-body"></tbody>
+          </table>
+        </div>
+      </div>
 
-      <!-- Sign in form -->
-      <form id="form-signin" class="space-y-3">
-        <div>
-          <label class="block text-xs text-gray-300 mb-1">Email</label>
-          <input id="si-email" type="email" required class="cfp-input w-full px-3 py-2 rounded-none"/>
+      <!-- Win % in last 8 decided picks -->
+      <div class="cfp-card gold-shadow rounded-none">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval"></span>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Win % in Last 8 Picks</h2>
         </div>
-        <div>
-          <label class="block text-xs text-gray-300 mb-1">Password</label>
-          <input id="si-password" type="password" required class="cfp-input w-full px-3 py-2 rounded-none"/>
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead>
+              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                <th class="px-4 py-2 text-left font-semibold">Team</th>
+                <th class="px-4 py-2 text-left font-semibold">Record</th>
+                <th class="px-4 py-2 text-left font-semibold">Win %</th>
+              </tr>
+            </thead>
+            <tbody id="form-body"></tbody>
+          </table>
         </div>
-        <button type="submit" class="btn px-4 py-2 w-full rounded-none font-semibold">Sign in</button>
-      </form>
-
-      <!-- Sign up form -->
-      <form id="form-signup" class="space-y-3 hidden">
-        <div>
-          <label class="block text-xs text-gray-300 mb-1">Email</label>
-          <input id="su-email" type="email" required class="cfp-input w-full px-3 py-2 rounded-none"/>
-        </div>
-        <div>
-          <label class="block text-xs text-gray-300 mb-1">Password</label>
-          <input id="su-password" type="password" required minlength="6" class="cfp-input w-full px-3 py-2 rounded-none"/>
-        </div>
-        <button type="submit" class="btn px-4 py-2 w-full rounded-none font-semibold">Create account</button>
-        <p class="text-xs text-gray-400">After confirming your email (if enabled), you’ll be signed in automatically.</p>
-      </form>
-
-      <!-- Reset form -->
-      <form id="form-reset" class="space-y-3 hidden">
-        <div>
-          <label class="block text-xs text-gray-300 mb-1">Email</label>
-          <input id="rs-email" type="email" required class="cfp-input w-full px-3 py-2 rounded-none"/>
-        </div>
-        <button type="submit" class="btn px-4 py-2 w-full rounded-none font-semibold">Send reset link</button>
-        <p class="text-xs text-gray-400">Check your email for a secure password reset link.</p>
-      </form>
-    </div>
+      </div>
+    </section>
   </div>
 
   <script type="module">
@@ -132,107 +137,174 @@
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw'
     );
 
-    const statusEl   = document.getElementById('status');
-    const navPicks   = document.getElementById('nav-picks');
-    const navSignin  = document.getElementById('nav-signin');
-    const navSignout = document.getElementById('nav-signout');
-    const signOutBtn = document.getElementById('sign-out-btn');
+    const statusEl    = document.getElementById('status');
+    const perfectBody = document.getElementById('perfect-body');
+    const zeroBody    = document.getElementById('zero-body');
+    const formBody    = document.getElementById('form-body');
+
+    function stripAccents(s){ try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); } catch { return s; } }
+    function norm(v){
+      if(!v) return '';
+      return stripAccents(String(v))
+        .toLowerCase()
+        .replace(/&/g,' and ')
+        .replace(/\./g,'')
+        .replace(/[^a-z0-9\s]/g,' ')
+        .replace(/\s+/g,' ')
+        .trim();
+    }
+    const stToState = s => s.replace(/\bst\b/g,'state');
+    const stateToSt = s => s.replace(/\bstate\b/g,'st');
+    function sameTeam(a,b){ const na=norm(a), nb=norm(b); return na===nb || stToState(na)===stToState(nb) || stateToSt(na)===stateToSt(nb); }
 
     function setStatus(msg, isErr=false){
-      statusEl.className = 'text-sm mb-4 ' + (isErr ? 'text-red-300' : 'text-gray-300');
+      statusEl.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
     }
 
-    // Auth-aware nav
-    async function refreshAuthUI() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        navPicks?.classList.remove('hidden');
-        navSignin?.classList.add('hidden');
-        navSignout?.classList.remove('hidden');
-      } else {
-        navPicks?.classList.add('hidden');
-        navSignin?.classList.remove('hidden');
-        navSignout?.classList.add('hidden');
-      }
+    function escapeHtml(str){
+      return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s]));
     }
-    refreshAuthUI();
-    supabase.auth.onAuthStateChange(async (_evt, session) => {
-      await refreshAuthUI();
-      if (session) {
-        // Already signed in → go make picks
-        location.href = 'picks.html';
+
+    async function main(){
+      setStatus('Loading data…');
+
+      // 1) Pull decided games from all_games for picked games only
+      const { data: allGames, error: gErr } = await supabase
+        .from('all_games')
+        .select('GameId, week, winner, picked')
+        .eq('picked', true); // only games we actually picked
+
+      if(gErr){ console.error(gErr); return setStatus('Error loading games', true); }
+
+      // Map GameId -> { week, winner } (winner may be null; we'll filter when needed)
+      const gameMeta = Object.create(null);
+      const gameIds  = [];
+      for(const g of (allGames||[])){
+        if(g && g.GameId != null){
+          gameMeta[g.GameId] = { week: g.week ?? null, winner: g.winner ?? null };
+          gameIds.push(g.GameId);
+        }
       }
-    });
 
-    signOutBtn?.addEventListener('click', async () => {
-      await supabase.auth.signOut();
-      await refreshAuthUI();
-      setStatus('Signed out.');
-    });
+      if(!gameIds.length){ return setStatus('No picked games found', true); }
 
-    // If already signed in, bounce to picks
-    (async ()=>{
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) location.replace('picks.html');
-    })();
+      // 2) Pull all picks that correspond to those gameIds
+      const { data: picks, error: pErr } = await supabase
+        .from('picks')
+        .select('team_id, game_id, pick')
+        .in('game_id', gameIds);
 
-    // Tabs
-    const tabs = document.querySelectorAll('.tab-btn');
-    const forms = {
-      signin: document.getElementById('form-signin'),
-      signup: document.getElementById('form-signup'),
-      reset:  document.getElementById('form-reset')
-    };
-    function showTab(name){
-      Object.entries(forms).forEach(([k,el])=>{
-        el.classList.toggle('hidden', k !== name);
-      });
-      tabs.forEach(b=>{
-        const active = b.dataset.tab === name;
-        b.classList.toggle('btn', active);
-        b.classList.toggle('border', !active);
-        b.classList.toggle('border-[rgba(231,231,231,.12)]', !active);
-      });
-      setStatus('');
+      if(pErr){ console.error(pErr); return setStatus('Error loading picks', true); }
+
+      // 3) Team names
+      const { data: teams, error: tErr } = await supabase
+        .from('teams')
+        .select('team_id, team_name');
+
+      if(tErr){ console.error(tErr); return setStatus('Error loading teams', true); }
+
+      const teamName = new Map((teams||[]).map(t => [t.team_id, t.team_name]));
+
+      // ---------- Build indexes ----------
+      // byTeamWeek: team_id|week -> picks[] (decided only when computing)
+      const byTeamWeek = new Map();
+      // byTeamDecided: team_id -> all decided picks across season (for last-8 form)
+      const byTeamDecided = new Map();
+
+      for(const p of (picks||[])){
+        const meta = gameMeta[p.game_id];
+        if(!meta) continue; // safety
+        const week = meta.week;
+        const winner = meta.winner;
+
+        // Group by team+week (we'll consider decided subset when computing)
+        const twKey = `${p.team_id}|${week}`;
+        if(!byTeamWeek.has(twKey)) byTeamWeek.set(twKey, []);
+        byTeamWeek.get(twKey).push({ ...p, week, winner });
+
+        // For form guide, collect only decided picks
+        if(winner != null){
+          if(!byTeamDecided.has(p.team_id)) byTeamDecided.set(p.team_id, []);
+          byTeamDecided.get(p.team_id).push({ ...p, week, winner });
+        }
+      }
+
+      // ---------- Perfect Weeks & Zero-Week tally ----------
+      const perfectRows = [];
+      const zeroTally = new Map(); // team_id -> count of weeks with 0 wins (with at least one decided pick)
+
+      for(const [key, rows] of byTeamWeek.entries()){
+        // Filter to decided picks only for this team-week
+        const decided = rows.filter(r => r.winner != null);
+        if(decided.length === 0) continue; // skip weeks with no decided games
+
+        let correct = 0;
+        for(const r of decided){
+          if(sameTeam(r.pick, r.winner)) correct++;
+        }
+
+        const [teamIdStr, wkStr] = key.split('|');
+        const team_id = Number(teamIdStr);
+        const week = Number(wkStr);
+
+        if(correct === decided.length){
+          perfectRows.push({ team: teamName.get(team_id) || `Team ${team_id}`, week });
+        }
+        if(correct === 0){
+          zeroTally.set(team_id, (zeroTally.get(team_id)||0) + 1);
+        }
+      }
+
+      perfectRows.sort((a,b)=> a.week - b.week || a.team.localeCompare(b.team));
+      perfectBody.innerHTML = perfectRows.map(r =>
+        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+           <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+           <td class="px-4 py-2">${r.week}</td>
+         </tr>`).join('');
+
+      const zeroRows = [...zeroTally.entries()]
+        .map(([team_id, cnt]) => ({ team: teamName.get(team_id) || `Team ${team_id}`, cnt }))
+        .sort((a,b)=> b.cnt - a.cnt || a.team.localeCompare(b.team));
+
+      zeroBody.innerHTML = zeroRows.map(r =>
+        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+           <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+           <td class="px-4 py-2">${r.cnt}</td>
+         </tr>`).join('');
+
+      // ---------- Form Guide: last 8 decided picks ----------
+      const formRows = [];
+      for(const [team_id, arr] of byTeamDecided.entries()){
+        // Sort by (week asc, game_id asc) for a consistent chronology
+        const decidedSorted = [...arr].sort((a,b)=> (a.week - b.week) || (a.game_id - b.game_id));
+        const last8 = decidedSorted.slice(-8);
+        if(last8.length === 0) continue;
+
+        let wins = 0;
+        for(const r of last8){
+          if(sameTeam(r.pick, r.winner)) wins++;
+        }
+        const pct = (wins / last8.length) * 100;
+        formRows.push({
+          team: teamName.get(team_id) || `Team ${team_id}`,
+          record: `${wins}-${last8.length - wins}`,
+          pct: pct
+        });
+      }
+
+      formRows.sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
+      formBody.innerHTML = formRows.map(r =>
+        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+           <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+           <td class="px-4 py-2">${r.record}</td>
+           <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
+         </tr>`).join('');
+
+      setStatus('Loaded');
     }
-    tabs.forEach(b=> b.addEventListener('click', ()=> showTab(b.dataset.tab)));
-    showTab('signin');
 
-    // Sign in
-    forms.signin.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      setStatus('Signing in…');
-      const email = document.getElementById('si-email').value.trim();
-      const password = document.getElementById('si-password').value;
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return setStatus(error.message, true);
-      setStatus('Signed in! Redirecting…');
-      location.href = 'picks.html';
-    });
-
-    // Sign up
-    forms.signup.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      setStatus('Creating account…');
-      const email = document.getElementById('su-email').value.trim();
-      const password = document.getElementById('su-password').value;
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) return setStatus(error.message, true);
-      setStatus('Check your email to confirm your account (if required).');
-    });
-
-    // Reset
-    forms.reset.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      setStatus('Sending reset link…');
-      const email = document.getElementById('rs-email').value.trim();
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: location.origin + '/signin.html'
-      });
-      if (error) return setStatus(error.message, true);
-      setStatus('Reset link sent. Check your email.');
-    });
+    main();
   </script>
 </body>
 </html>

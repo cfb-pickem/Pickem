@@ -10,9 +10,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
+  <!-- IMPORTANT for GitHub Pages: use relative paths (no leading /) -->
   <!-- Optional: warm up your modules -->
-  <link rel="modulepreload" href="/js/supabaseClient.js">
-  <link rel="modulepreload" href="/js/nav.js">
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <link rel="modulepreload" href="./js/nav.js">
 
   <style>
     :root{
@@ -116,8 +117,9 @@
 
   <!-- Page script -->
   <script type="module">
-    import initNav from '/js/nav.js';
-    import { supabase } from '/js/supabaseClient.js';
+    // IMPORTANT for GitHub Pages: use relative imports (no leading slash)
+    import initNav from './js/nav.js';
+    import { supabase } from './js/supabaseClient.js';
 
     // Mount shared navigation
     initNav();
