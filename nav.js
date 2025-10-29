@@ -1,8 +1,8 @@
-// /js/nav.js
+// /js/nav.js — fixed, top-level nav that can't be covered by overlays
 let supabase = null;
 (async () => {
   try { ({ supabase } = await import('./supabaseClient.js')); }
-  catch (e) { console.warn('supabaseClient.js not available; rendering nav without auth.', e); }
+  catch (e) { console.warn('supabase not available; nav renders without auth.', e); }
 })();
 
 const LINKS = [
@@ -21,9 +21,7 @@ function clsActive(isActive){
 let authListenerSet = false;
 
 export default async function initNav() {
-  const mount = document.getElementById('site-nav');
-  if (!mount) return;
-
+  const mount = document.getElementById('site-nav'); // placeholder (we’ll replace with a fixed bar)
   const current = document.body?.dataset?.page || '';
   let signedIn = false;
 
@@ -31,7 +29,7 @@ export default async function initNav() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       signedIn = !!session;
-    } catch (e) { console.warn('getSession failed:', e); }
+    } catch {}
   }
 
   const itemsHtml = LINKS
@@ -40,53 +38,71 @@ export default async function initNav() {
       const active = l.key === current;
       return `
         <li ${l.id ? `id="${l.id}"` : ''}>
-          <a data-nav href="${l.href}"
-             class="block px-3 py-3 ${clsActive(active)}"
-             role="link">${l.label}</a>
+          <a data-nav href="${l.href}" class="block px-3 py-3 ${clsActive(active)}">${l.label}</a>
         </li>`;
     }).join('');
 
-  // High z-index and pointer events so nothing blocks clicks
-  mount.innerHTML = `
-    <nav class="relative z-[9999] mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-      <ul class="pointer-events-auto flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
-        ${itemsHtml}
-        <li class="ml-auto ${signedIn ? 'hidden' : ''}" id="nav-signin">
-          <a data-nav href="./signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
-        </li>
-        <li class="${signedIn ? '' : 'hidden'}" id="nav-signout">
-          <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
-        </li>
-      </ul>
-    </nav>
-  `;
+  // Build a fixed, top-level bar (outside any stacking context)
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = `
+    <div id="fixed-nav-wrap"
+         class="fixed top-0 left-0 right-0 z-[2147483647] pointer-events-auto">
+      <nav class="w-full bg-[rgba(11,11,11,.9)] backdrop-blur mb-0 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif] border-b border-[rgba(231,231,231,.08)]">
+        <ul class="flex items-center gap-2">
+          ${itemsHtml}
+          <li class="ml-auto ${signedIn ? 'hidden' : ''}" id="nav-signin">
+            <a data-nav href="./signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
+          </li>
+          <li class="${signedIn ? '' : 'hidden'}" id="nav-signout">
+            <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  `.trim();
 
-  // Force navigation even if some other script calls preventDefault
-  mount.querySelectorAll('a[data-nav]').forEach(a => {
+  const fixedNav = wrapper.firstElementChild;
+  document.body.prepend(fixedNav);
+
+  // Add/adjust spacer so content isn't hidden under fixed bar
+  let spacer = document.getElementById('site-nav-spacer');
+  if (!spacer) {
+    spacer = document.createElement('div');
+    spacer.id = 'site-nav-spacer';
+    document.body.insertBefore(spacer, document.body.children[1]);
+  }
+  const h = fixedNav.getBoundingClientRect().height || 56;
+  spacer.style.height = `${Math.ceil(h)}px`;
+
+  // Remove placeholder mount to avoid duplicate space
+  if (mount) mount.remove();
+
+  // Force navigation on click (works even if some script calls preventDefault)
+  fixedNav.querySelectorAll('a[data-nav]').forEach(a => {
     a.addEventListener('click', (e) => {
-      // If another handler tried to cancel, override by navigating explicitly.
-      // Don't rely on default; just drive the navigation.
-      const url = a.getAttribute('href');
-      // Stop bubbling in case a parent is blocking anchors.
       e.stopPropagation();
-      // Let the click ripple for a tick, then navigate.
-      setTimeout(() => { window.location.href = url; }, 0);
+      const url = a.getAttribute('href');
+      // Navigate immediately — don’t rely on default
+      window.location.assign(url);
     }, { capture: true });
   });
 
-  // Sign out (if supabase loaded)
-  const signOutBtn = document.getElementById('sign-out-btn');
+  // Sign out
+  const signOutBtn = fixedNav.querySelector('#sign-out-btn');
   if (signOutBtn && supabase) {
     signOutBtn.addEventListener('click', async () => {
       try { await supabase.auth.signOut(); } catch {}
-      window.location.href = './index.html';
+      window.location.assign('./index.html');
     });
   }
 
-  // Only set one auth listener
+  // One auth listener to re-render when auth changes
   if (supabase && !authListenerSet) {
     authListenerSet = true;
     supabase.auth.onAuthStateChange(() => {
+      // Remove old fixed nav & spacer, then rebuild
+      document.getElementById('fixed-nav-wrap')?.remove();
+      document.getElementById('site-nav-spacer')?.remove();
       initNav();
     });
   }
