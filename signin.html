@@ -162,27 +162,53 @@
     switchToPassword.addEventListener('click', (e) => { e.preventDefault(); setActiveTab('password'); });
     setActiveTab('password');
 
-    // ---------- Claim-aware redirect helpers ----------
+    // ---------- Team lookup helpers ----------
     async function ensureProfile(userId){
-      // Create profile row if missing
+      // Create profile row if missing (does not overwrite existing team_id)
       await supabase.from('profiles').upsert({ id: userId }, { onConflict: 'id' });
     }
 
+    async function fetchAssignedTeamId(userId){
+      // 1) Check profiles.team_id
+      const { data: prof, error: pErr } = await supabase
+        .from('profiles')
+        .select('team_id')
+        .eq('id', userId)
+        .maybeSingle();
+      if (pErr) throw pErr;
+      if (prof?.team_id) return prof.team_id;
+
+      // 2) Fallback: check teams.user_id (legacy/alternate binding)
+      const { data: team, error: tErr } = await supabase
+        .from('teams')
+        .select('team_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (tErr) throw tErr;
+
+      // If found in teams, fix the profile so next time it's instant
+      if (team?.team_id) {
+        await supabase.from('profiles').upsert({ id: userId, team_id: team.team_id }, { onConflict: 'id' });
+        return team.team_id;
+      }
+      return null;
+    }
+
+    let didRedirect = false; // guard against double-redirect on magic-link hash + getSession()
+
     async function redirectPostAuth(user){
+      if (didRedirect) return;
       try{
         await ensureProfile(user.id);
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('team_id')
-          .eq('id', user.id)
-          .maybeSingle();
-        if(error){ console.error(error); setStatus('Signed in, but profile lookup failed.', 'error'); return; }
-        const dest = (!data || !data.team_id) ? (BASE + 'claim-team.html') : (BASE + 'index.html');
+        const teamId = await fetchAssignedTeamId(user.id);
+        const dest = teamId ? (BASE + 'index.html') : (BASE + 'claim-team.html');
+        didRedirect = true;
         window.location.href = dest;
       }catch(e){
         console.error(e);
-        // fallback to claim page
-        window.location.href = BASE + 'claim-team.html';
+        // safest fallback: if we can't determine, send to index (not claim)
+        didRedirect = true;
+        window.location.href = BASE + 'index.html';
       }
     }
 
