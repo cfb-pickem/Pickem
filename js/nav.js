@@ -1,11 +1,11 @@
-// /js/nav.js  (fixed)
+// /js/nav.js
 import { supabase } from './supabaseClient.js';
 
 const LINKS = [
-  { href: './index.html',      key: 'leaderboard', label: 'Leaderboard' },
-  { href: './picks.html',      key: 'picks',       label: 'Make Picks', authOnly: true, id: 'nav-picks' },
-  { href: './cfb-genius.html', key: 'genius',      label: 'CFB Genius' },
-  { href: './stats.html',      key: 'stats',       label: 'Stats' }
+  { href: './index.html',      key: 'leaderboard', label: "Leaderboard" },
+  { href: './picks.html',      key: 'picks',       label: "Make Picks", authOnly: true, id: 'nav-picks' },
+  { href: './cfb-genius.html', key: 'genius',      label: "CFB Genius" },
+  { href: './stats.html',      key: 'stats',       label: "Stats" }
 ];
 
 function clsActive(isActive){
@@ -14,10 +14,7 @@ function clsActive(isActive){
     : 'text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors';
 }
 
-// Guard so we subscribe only once
-let didSubscribe = false;
-
-export default async function initNav(){
+export default async function initNav() {
   const mount = document.getElementById('site-nav');
   if (!mount) return;
 
@@ -25,12 +22,16 @@ export default async function initNav(){
   const { data: { session } } = await supabase.auth.getSession();
   const signedIn = !!session;
 
+  // Build nav HTML
   const items = LINKS
     .filter(l => !l.authOnly || signedIn)
     .map(l => {
       const active = l.key === current;
-      const id = l.id ? ` id="${l.id}"` : '';
-      return `<li${id}><a href="${l.href}" class="block px-3 py-3 ${clsActive(active)}">${l.label}</a></li>`;
+      return `
+        <li ${l.id ? `id="${l.id}"` : ''}>
+          <a href="${l.href}" class="block px-3 py-3 ${clsActive(active)}">${l.label}</a>
+        </li>
+      `;
     }).join('');
 
   mount.innerHTML = `
@@ -47,24 +48,16 @@ export default async function initNav(){
     </nav>
   `;
 
-  // Wire sign-out once nav is in the DOM
+  // Wire sign out
   const signOutBtn = document.getElementById('sign-out-btn');
   signOutBtn?.addEventListener('click', async () => {
     await supabase.auth.signOut();
-    // ✅ FIX 1: Corrected file extension from .HtmL to .html
-    window.location.href = './index.html';
+    // Refresh to rebuild menu in signed-out state
+    location.href = './index.html';
   });
 
-  // Subscribe exactly once; on auth change, do a simple reload
-  if (!didSubscribe) {
-    didSubscribe = true;
-    
-    // ✅ FIX 2: Only reload on *actual* sign-in or sign-out events.
-    // This stops the reload loop on every page load.
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        window.location.reload();
-      }
-    });
-  }
+  // React to auth changes live (e.g., after sign-in on another page)
+  supabase.auth.onAuthStateChange(() => {
+    initNav();
+  });
 }
