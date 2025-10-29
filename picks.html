@@ -15,12 +15,24 @@
   <link rel="modulepreload" href="./js/nav.js">
 
   <style>
-    :root{ --cfp-black:#0B0B0B; --cfp-charcoal:#111213; --cfp-gold:#C99210; --cfp-gold-2:#E3B23C; --cfp-ivory:#F7F4ED; --cfp-gray:#1F2022; --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);}
+    :root{
+      --cfp-black:#0B0B0B;
+      --cfp-charcoal:#111213;
+      --cfp-gold:#C99210;
+      --cfp-gold-2:#E3B23C;
+      --cfp-ivory:#F7F4ED;
+      --cfp-gray:#1F2022;
+      --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+    }
     body{
-      background: radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
-                 linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
-                 var(--cfp-charcoal);
-      background-size:100% 100%,24px 24px,auto; color:#e7e7e7; font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif; min-height:100vh;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        var(--cfp-charcoal);
+      background-size:100% 100%,24px 24px,auto;
+      color:#e7e7e7;
+      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+      min-height:100vh;
     }
     .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
     .cfp-select:focus{outline:none;box-shadow:var(--ring)}
@@ -30,6 +42,21 @@
     .ring-gold{box-shadow:var(--ring)}
     .badge{font-size:.78rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
     .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
+
+    /* === Highlight chosen pick === */
+    .pick-label{
+      transition: background-color .25s, color .25s, transform .12s;
+      padding: .25rem .5rem;
+      border-radius: .375rem; /* md */
+      cursor: pointer;
+      user-select: none;
+    }
+    .pick-label.selected{
+      background: var(--cfp-gold);
+      color: var(--cfp-black);
+      font-weight: 600;
+      transform: scale(1.05);
+    }
   </style>
 </head>
 <body data-page="picks">
@@ -195,7 +222,7 @@
       if (error) return;
 
       (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
-      prefillSelections();
+      prefillSelections(); // also applies highlight
     }
 
     function renderGameCards(games){
@@ -216,11 +243,11 @@
             '<div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-2 text-center">' + g.away + ' @ ' + g.home + '</div>' +
             '<div class="text-xs text-gray-400 text-center mb-3">' + (when || 'Scheduled') + (espnLink ? (' ' + espnLink) : '') + '</div>' +
             '<div class="flex justify-center gap-6">' +
-              '<label class="flex items-center gap-2">' +
+              '<label class="pick-label flex items-center gap-2">' +
                 '<input type="radio" name="' + name + '" value="' + g.away.replace(/"/g,'&quot;') + '" class="accent-[var(--cfp-gold)]"> ' +
                 '<span>' + awayLabel + '</span>' +
               '</label>' +
-              '<label class="flex items-center gap-2">' +
+              '<label class="pick-label flex items-center gap-2">' +
                 '<input type="radio" name="' + name + '" value="' + g.home.replace(/"/g,'&quot;') + '" class="accent-[var(--cfp-gold)]"> ' +
                 '<span>' + homeLabel + '</span>' +
               '</label>' +
@@ -230,14 +257,36 @@
       });
 
       gamesEl.innerHTML = cards.join('');
+      addPickHighlighting(); // wire up the highlight behavior
+    }
+
+    function addPickHighlighting(){
+      // Clear then apply highlight on change within each radio group
+      document.querySelectorAll('.pick-label input[type="radio"]').forEach(input => {
+        input.addEventListener('change', () => {
+          const group = input.name;
+          document.querySelectorAll(`input[name="${group}"]`).forEach(r => {
+            r.parentElement.classList.remove('selected');
+          });
+          input.parentElement.classList.add('selected');
+        });
+      });
     }
 
     function prefillSelections(){
+      // Mark checked radios based on existing picks and apply highlight to the label
       existingPicks.forEach((pick, gameId) => {
-        const input = document.querySelector(
-          'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]'
-        );
-        if (input) input.checked = true;
+        const sel = 'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]';
+        const input = document.querySelector(sel);
+        if (input) {
+          input.checked = true;
+          // Clear any previous highlight in this group, then set selected
+          const group = input.name;
+          document.querySelectorAll(`input[name="${group}"]`).forEach(r => {
+            r.parentElement.classList.remove('selected');
+          });
+          input.parentElement.classList.add('selected');
+        }
       });
     }
 
@@ -273,16 +322,21 @@
 
       const { error } = await supabase
         .from('picks')
-        .upsert(rows, { onConflict: 'team_id,game_id' });
+        .upsert(rows, { onConflict: 'team_id,game_id', returning: 'minimal' });
 
       saveBtn.disabled = false;
       saveStatus.textContent = '';
       if (error) setStatus('Error saving: ' + error.message, true);
-      else { setStatus('Picks saved!'); rows.forEach(r => existingPicks.set(String(r.game_id), r.pick)); }
+      else {
+        setStatus('Picks saved!');
+        rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
+        prefillSelections(); // ensure highlight matches saved state
+      }
     }
 
     function clearSelections(){
       document.querySelectorAll('input[type="radio"]').forEach(i=> i.checked=false);
+      document.querySelectorAll('.pick-label').forEach(l => l.classList.remove('selected'));
       setStatus('Selections cleared.');
     }
 
