@@ -1,70 +1,126 @@
-// /js/nav.js  (fixed)
+// nav.js
 import { supabase } from './supabaseClient.js';
 
-const LINKS = [
-  { href: './index.html',      key: 'leaderboard', label: 'Leaderboard' },
-  { href: './picks.html',      key: 'picks',       label: 'Make Picks', authOnly: true, id: 'nav-picks' },
-  { href: './cfb-genius.html', key: 'genius',      label: 'CFB Genius' },
-  { href: './stats.html',      key: 'stats',       label: 'Stats' }
+let authSubscription = null;  // ensure we only register once
+let isMounted = false;        // prevent duplicate init work
+let lastUserId = null;        // simple guard to avoid redundant re-renders
+
+// Map page keys to hrefs and labels (adjust to your actual pages)
+const NAV_ITEMS = [
+  { key: 'home',  href: './index.html',       label: 'Home' },
+  { key: 'picks', href: './picks.html',       label: 'Make Picks' },
+  { key: 'stats', href: './stats.html',       label: 'Stats' },
+  { key: 'genius',href: './cfb-genius.html',  label: 'CFB Genius' },
 ];
 
-function clsActive(isActive){
-  return isActive
-    ? 'text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]'
-    : 'text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors';
+function currentPageKey() {
+  // Prefer explicit data attribute set by pages (e.g., <body data-page="picks">)
+  const dataPage = document.body?.dataset?.page;
+  if (dataPage) return String(dataPage).toLowerCase();
+
+  // Fallback: infer from path
+  const path = (location.pathname || '').toLowerCase();
+  if (path.includes('picks'))  return 'picks';
+  if (path.includes('stats'))  return 'stats';
+  if (path.includes('genius')) return 'genius';
+  return 'home';
 }
 
-// Guard so we subscribe only once
-let didSubscribe = false;
+function renderNavHTML({ signedIn, userEmail }) {
+  const active = currentPageKey();
 
-export default async function initNav(){
+  const links = NAV_ITEMS.map(item => {
+    const isActive = item.key === active;
+    const base =
+      'px-3 py-2 rounded-md text-sm font-medium hover:bg-white/5 transition';
+    const cls = isActive
+      ? `${base} text-[var(--cfp-ivory)] bg-white/10`
+      : `${base} text-gray-300`;
+    return `<a href="${item.href}" class="${cls}">${item.label}</a>`;
+  }).join('');
+
+  const rightSide = signedIn
+    ? `
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-gray-300 hidden sm:inline">Signed in${userEmail ? `: ${userEmail}` : ''}</span>
+        <button id="sign-out-btn" class="px-3 py-1.5 text-sm font-semibold bg-[var(--cfp-gold)] text-black rounded ring-gold">
+          Sign out
+        </button>
+      </div>
+    `
+    : `
+      <a href="./signin.html" class="px-3 py-1.5 text-sm font-semibold bg-[var(--cfp-gold)] text-black rounded ring-gold">
+        Sign in
+      </a>
+    `;
+
+  return /* html */`
+    <nav class="cfp-card gold-shadow mb-4">
+      <div class="px-4 py-3 md:px-6 md:py-4 flex items-center justify-between">
+        <div class="flex items-center gap-6">
+          <a href="./index.html" class="text-[var(--cfp-ivory)] font-bold tracking-wide">
+            CFB Pick'em
+          </a>
+          <div class="hidden md:flex items-center gap-2">
+            ${links}
+          </div>
+        </div>
+        ${rightSide}
+      </div>
+      <!-- Simple mobile row -->
+      <div class="px-4 pb-3 md:hidden flex flex-wrap gap-2">
+        ${links}
+      </div>
+    </nav>
+  `;
+}
+
+async function renderNav() {
   const mount = document.getElementById('site-nav');
   if (!mount) return;
 
-  const current = document.body?.dataset?.page || '';
   const { data: { session } } = await supabase.auth.getSession();
   const signedIn = !!session;
+  const userEmail = session?.user?.email || '';
 
-  const items = LINKS
-    .filter(l => !l.authOnly || signedIn)
-    .map(l => {
-      const active = l.key === current;
-      const id = l.id ? ` id="${l.id}"` : '';
-      return `<li${id}><a href="${l.href}" class="block px-3 py-3 ${clsActive(active)}">${l.label}</a></li>`;
-    }).join('');
+  // Basic guard: if same user state, avoid pointless re-render churn
+  const currentId = session?.user?.id || null;
+  if (lastUserId === currentId && mount.dataset.rendered === '1') {
+    return;
+  }
+  lastUserId = currentId;
 
-  mount.innerHTML = `
-    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
-        ${items}
-        <li class="ml-auto ${signedIn ? 'hidden' : ''}" id="nav-signin">
-          <a href="./signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
-        </li>
-        <li class="${signedIn ? '' : 'hidden'}" id="nav-signout">
-          <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
-        </li>
-      </ul>
-    </nav>
-  `;
+  mount.innerHTML = renderNavHTML({ signedIn, userEmail });
+  mount.dataset.rendered = '1';
 
-  // Wire sign-out once nav is in the DOM
+  // Wire up sign-out if shown
   const signOutBtn = document.getElementById('sign-out-btn');
-  signOutBtn?.addEventListener('click', async () => {
-    await supabase.auth.signOut();
-    // ✅ FIX 1: Corrected file extension from .HtmL to .html
-    window.location.href = './index.html';
-  });
-
-  // Subscribe exactly once; on auth change, do a simple reload
-  if (!didSubscribe) {
-    didSubscribe = true;
-    
-    // ✅ FIX 2: Only reload on *actual* sign-in or sign-out events.
-    // This stops the reload loop on every page load.
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-        window.location.reload();
+  if (signOutBtn) {
+    signOutBtn.addEventListener('click', async () => {
+      try {
+        await supabase.auth.signOut();
+        // After sign-out, re-render nav and send them to home
+        await renderNav();
+        location.href = './index.html';
+      } catch (e) {
+        console.error('Sign-out failed:', e);
       }
     });
   }
+}
+
+export default async function initNav() {
+  // Render immediately
+  await renderNav();
+
+  // Register a single global auth listener that just re-renders the nav
+  if (!authSubscription) {
+    const { data: sub } = supabase.auth.onAuthStateChange(async () => {
+      // Re-render on auth state changes (sign in/out)
+      await renderNav();
+    });
+    authSubscription = sub;
+  }
+
+  isMounted = true;
 }
