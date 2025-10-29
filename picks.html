@@ -43,8 +43,8 @@
     .badge{font-size:.78rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
     .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
 
-    /* === Highlight chosen pick === */
-    .pick-label {
+    /* Highlight chosen pick; hide radio circles */
+    .pick-label{
       transition: background-color .25s, color .25s, transform .12s;
       padding: .25rem .75rem;
       border-radius: .375rem;
@@ -56,19 +56,14 @@
       min-width: 120px;
       text-align: center;
     }
-
-    .pick-label input[type="radio"] {
-      display: none; /* hides the selection circle */
-    }
-
-    .pick-label.selected {
+    .pick-label input[type="radio"]{ display:none; }
+    .pick-label.selected{
       background: var(--cfp-gold);
       color: var(--cfp-black);
       font-weight: 600;
       transform: scale(1.05);
       box-shadow: 0 0 0 2px var(--cfp-gold-2);
     }
-
   </style>
 </head>
 <body data-page="picks">
@@ -142,6 +137,33 @@
       catch { return ts; }
     }
 
+    // ---------- Draft autosave helpers ----------
+    function draftKey(){
+      return (selectedTeamId && currentWeek)
+        ? `picks_draft_${selectedTeamId}_${currentWeek}`
+        : null;
+    }
+    function saveDraft(){
+      const key = draftKey();
+      if (!key) return;
+      const draft = selections(); // [{ game_id, pick }]
+      try { localStorage.setItem(key, JSON.stringify(draft)); } catch {}
+      // Optional: mild UX hint
+      saveStatus.textContent = 'Draft saved locally';
+      setTimeout(()=>{ if (saveStatus.textContent === 'Draft saved locally') saveStatus.textContent=''; }, 1200);
+    }
+    function loadDraft(){
+      const key = draftKey();
+      if (!key) return [];
+      try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+    }
+    function clearDraft(){
+      const key = draftKey();
+      if (!key) return;
+      try { localStorage.removeItem(key); } catch {}
+    }
+    // -------------------------------------------
+
     async function refreshAuthUI() {
       const { data: { session: s } } = await supabase.auth.getSession();
       session = s || null;
@@ -188,9 +210,15 @@
       teamChip.classList.remove('hidden');
 
       await loadGamesForWeek(currentWeek);
-      await loadExistingPicksForVisibleGames();
+      await loadExistingPicksForVisibleGames(); // fills & highlights saved picks
+      overlayDraft(); // then overlay any local draft on top
 
       setStatus(`Loaded week ${currentWeek}.`);
+
+      // Save draft when tab is hidden (belt-and-suspenders)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') saveDraft();
+      });
     }
 
     async function loadGamesForWeek(week){
@@ -256,11 +284,11 @@
             '<div class="text-xs text-gray-400 text-center mb-3">' + (when || 'Scheduled') + (espnLink ? (' ' + espnLink) : '') + '</div>' +
             '<div class="flex justify-center gap-6">' +
               '<label class="pick-label flex items-center gap-2">' +
-                '<input type="radio" name="' + name + '" value="' + g.away.replace(/"/g,'&quot;') + '" class="accent-[var(--cfp-gold)]"> ' +
+                '<input type="radio" name="' + name + '" value="' + g.away.replace(/"/g,'&quot;') + '"> ' +
                 '<span>' + awayLabel + '</span>' +
               '</label>' +
               '<label class="pick-label flex items-center gap-2">' +
-                '<input type="radio" name="' + name + '" value="' + g.home.replace(/"/g,'&quot;') + '" class="accent-[var(--cfp-gold)]"> ' +
+                '<input type="radio" name="' + name + '" value="' + g.home.replace(/"/g,'&quot;') + '"> ' +
                 '<span>' + homeLabel + '</span>' +
               '</label>' +
             '</div>' +
@@ -269,11 +297,10 @@
       });
 
       gamesEl.innerHTML = cards.join('');
-      addPickHighlighting(); // wire up the highlight behavior
+      addPickHighlighting(); // wire up highlight + draft save on change
     }
 
     function addPickHighlighting(){
-      // Clear then apply highlight on change within each radio group
       document.querySelectorAll('.pick-label input[type="radio"]').forEach(input => {
         input.addEventListener('change', () => {
           const group = input.name;
@@ -281,22 +308,36 @@
             r.parentElement.classList.remove('selected');
           });
           input.parentElement.classList.add('selected');
+          saveDraft(); // save draft on every change
         });
       });
     }
 
     function prefillSelections(){
-      // Mark checked radios based on existing picks and apply highlight to the label
+      // Apply saved picks from DB
       existingPicks.forEach((pick, gameId) => {
         const sel = 'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]';
         const input = document.querySelector(sel);
         if (input) {
           input.checked = true;
-          // Clear any previous highlight in this group, then set selected
           const group = input.name;
-          document.querySelectorAll(`input[name="${group}"]`).forEach(r => {
-            r.parentElement.classList.remove('selected');
-          });
+          document.querySelectorAll(`input[name="${group}"]`).forEach(r => r.parentElement.classList.remove('selected'));
+          input.parentElement.classList.add('selected');
+        }
+      });
+    }
+
+    function overlayDraft(){
+      // Overlay local draft on top of DB picks
+      const draft = loadDraft();
+      if (!draft?.length) return;
+      draft.forEach(({ game_id, pick }) => {
+        const sel = `input[name="game_${game_id}"][value="${CSS.escape(pick)}"]`;
+        const input = document.querySelector(sel);
+        if (input) {
+          input.checked = true;
+          const group = input.name;
+          document.querySelectorAll(`input[name="${group}"]`).forEach(r => r.parentElement.classList.remove('selected'));
           input.parentElement.classList.add('selected');
         }
       });
@@ -338,17 +379,20 @@
 
       saveBtn.disabled = false;
       saveStatus.textContent = '';
-      if (error) setStatus('Error saving: ' + error.message, true);
-      else {
+      if (error) {
+        setStatus('Error saving: ' + error.message, true);
+      } else {
         setStatus('Picks saved!');
         rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
-        prefillSelections(); // ensure highlight matches saved state
+        clearDraft();      // only clear draft on successful save
+        prefillSelections();
       }
     }
 
     function clearSelections(){
       document.querySelectorAll('input[type="radio"]').forEach(i=> i.checked=false);
       document.querySelectorAll('.pick-label').forEach(l => l.classList.remove('selected'));
+      saveDraft(); // reflect the cleared state
       setStatus('Selections cleared.');
     }
 
