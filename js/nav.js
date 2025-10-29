@@ -2,10 +2,10 @@
 import { supabase } from './supabaseClient.js';
 
 const LINKS = [
-  { href: 'index.html',       key: 'leaderboard', label: "Leaderboard" },
-  { href: 'picks.html',       key: 'picks',       label: "Make Picks", authOnly: true, id: 'nav-picks' },
-  { href: 'cfb-genius.html',  key: 'genius',      label: "CFB Genius" },
-  { href: 'stats.html',       key: 'stats',       label: "Stats" }
+  { href: './index.html',      key: 'leaderboard', label: "Leaderboard" },
+  { href: './picks.html',      key: 'picks',       label: "Make Picks", authOnly: true, id: 'nav-picks' },
+  { href: './cfb-genius.html', key: 'genius',      label: "CFB Genius" },
+  { href: './stats.html',      key: 'stats',       label: "Stats" }
 ];
 
 function clsActive(isActive){
@@ -39,7 +39,7 @@ export default async function initNav() {
       <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
         ${items}
         <li class="ml-auto ${signedIn ? 'hidden' : ''}" id="nav-signin">
-          <a href="signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
+          <a href="./signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
         </li>
         <li class="${signedIn ? '' : 'hidden'}" id="nav-signout">
           <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
@@ -52,13 +52,12 @@ export default async function initNav() {
   const signOutBtn = document.getElementById('sign-out-btn');
   signOutBtn?.addEventListener('click', async () => {
     await supabase.auth.signOut();
-    // Simple: refresh to let initNav rebuild the menu in signed-out state
-    location.href = 'index.html';
+    // Refresh to rebuild menu in signed-out state
+    location.href = './index.html';
   });
 
   // React to auth changes live (e.g., after sign-in on another page)
   supabase.auth.onAuthStateChange(() => {
-    // Re-run to update visibility
     initNav();
   });
 }
