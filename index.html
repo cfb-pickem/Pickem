@@ -88,7 +88,8 @@
       .logo{height:24px;width:24px}
       th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
       thead th { font-size: .8rem; }
-      .network-line { display:none; }
+      /* keep network visible; just make it a bit smaller on phones */
+      .network-line{ font-size:9px; letter-spacing:.12em; }
       .badge { font-size: .65rem; padding: .1rem .4rem; }
       .table tbody td { font-size: .85rem; }
       thead th div:first-child{
@@ -175,7 +176,6 @@
     let isPhone = phoneMQ.matches;
     phoneMQ.addEventListener?.('change', (e) => {
       isPhone = e.matches;
-      // Rebuild header labels when crossing breakpoint
       if (lastGames.length) {
         const nameMap = buildGameNameMap(lastGames);
         renderHeader(nameMap, lastGames);
@@ -635,6 +635,7 @@
         .from('all_games')
         .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network')
         .in('GameId', gameIds);
+      iferror:
       if(error){
         console.warn('all_games refresh error:', error.message);
         return;
@@ -654,7 +655,7 @@
           badgeEl.className = 'badge badge-final inline-fix';
         }else if(r.Status === 'in_progress'){
           if (networkEl) {
-            if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
+            if (r.Network) { networkLine.textContent = r.Network; networkEl.style.display = ''; }
             else { networkEl.style.display = 'none'; }
           }
           const p = r.Period || 1;
