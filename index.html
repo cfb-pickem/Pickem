@@ -76,13 +76,12 @@
       left: 0;
       z-index: 25;
       background: var(--cfp-black);
-      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset; /* subtle divider; remove if you want zero seam */
+      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
     }
     thead th.sticky-col-1{ z-index: 50; }
 
-    /* No scroll-edge fades at all */
+    /* No scroll-edge fades */
     .scroll-shadows{ position: relative; }
-    /* intentionally no ::before or ::after */
 
     /* Mobile tweaks */
     @media (max-width: 640px){
@@ -124,7 +123,6 @@
       </div>
     </header>
 
-    <!-- Scroll container with sticky first column -->
     <div class="cfp-card rounded-none gold-shadow overflow-auto scroll-shadows">
       <table class="table min-w-full text-sm" style="table-layout:auto;">
         <thead class="table-sticky">
@@ -160,15 +158,29 @@
     let winnerMap = {};
     let lineMap   = {};
     let logoByTeam = {};
+    let abbrByTeam = {};
     let winsByTeam = {}; // points = wins
 
     // Cache to re-render quickly
     let lastTeams = [];
     let lastPickMap = {};
+    let lastGames = [];
 
     // Reveal control
     let weekStartTs = null; // earliest kickoff among "picked" games for the week
     let showPicks = true;
+
+    // Phone detection (same breakpoint as CSS)
+    const phoneMQ = window.matchMedia('(max-width: 640px)');
+    let isPhone = phoneMQ.matches;
+    phoneMQ.addEventListener?.('change', (e) => {
+      isPhone = e.matches;
+      // Rebuild header labels when crossing breakpoint
+      if (lastGames.length) {
+        const nameMap = buildGameNameMap(lastGames);
+        renderHeader(nameMap, lastGames);
+      }
+    });
 
     let liveTimer = null;
     const LIVE_INTERVAL_MS = 30000;
@@ -180,6 +192,8 @@
       lastWeek: 'cfb_last_week_v1',
       logos: 'cfb_logos_v1',
       logosTTL: 'cfb_logos_ttl_v1',
+      abbrev: 'cfb_abbrev_v1',
+      abbrevTTL: 'cfb_abbrev_ttl_v1',
     };
     const LOGOS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -190,19 +204,19 @@
     function setCachedWeek(week) {
       if (Number.isFinite(week)) localStorage.setItem(STORAGE_KEYS.lastWeek, String(week));
     }
-    function getCachedLogos() {
-      try {
-        const ttl = Number(localStorage.getItem(STORAGE_KEYS.logosTTL) || 0);
+    function getCachedMap(key, ttlKey){
+      try{
+        const ttl = Number(localStorage.getItem(ttlKey) || 0);
         if (Date.now() > ttl) return null;
-        const raw = localStorage.getItem(STORAGE_KEYS.logos);
+        const raw = localStorage.getItem(key);
         return raw ? JSON.parse(raw) : null;
-      } catch { return null; }
+      }catch{ return null; }
     }
-    function setCachedLogos(mapObj) {
-      try {
-        localStorage.setItem(STORAGE_KEYS.logos, JSON.stringify(mapObj || {}));
-        localStorage.setItem(STORAGE_KEYS.logosTTL, String(Date.now() + LOGOS_TTL_MS));
-      } catch {}
+    function setCachedMap(key, ttlKey, obj){
+      try{
+        localStorage.setItem(key, JSON.stringify(obj || {}));
+        localStorage.setItem(ttlKey, String(Date.now() + LOGOS_TTL_MS));
+      }catch{}
     }
 
     // ---------- Helpers ----------
@@ -239,6 +253,21 @@
       }catch{ return ''; }
     }
 
+    // Build header display name for a game, using abbrev on phones
+    function teamLabel(name){
+      if (isPhone && abbrByTeam[name]) return abbrByTeam[name];
+      return name;
+    }
+    function buildGameNameMap(games){
+      const map = {};
+      games.forEach(g=>{
+        const ln = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
+        const lineTxt = (ln!=null && !isNaN(ln)) ? (ln>0?` (+${ln})`:` (${ln})`) : '';
+        map[g.GameId] = `${teamLabel(g.Away)} @ ${teamLabel(g.Home)}${lineTxt}`;
+      });
+      return map;
+    }
+
     // ---------- App startup ----------
     async function startup() {
       await initNav();
@@ -257,12 +286,16 @@
     async function init(){
       status('Loading weeks…');
 
-      const logoCached = getCachedLogos();
+      // Load cached maps
+      const logoCached = getCachedMap(STORAGE_KEYS.logos, STORAGE_KEYS.logosTTL);
+      const abbrCached = getCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL);
       if (logoCached) logoByTeam = logoCached;
+      if (abbrCached) abbrByTeam = abbrCached;
 
+      // Fetch logos + abbrevs & week list
       const logosPromise = supabase
         .from('logos')
-        .select('Team, LogoURL');
+        .select('Team, LogoURL, Abbrev');
 
       const weeksPromise = supabase
         .from('all_games')
@@ -275,12 +308,18 @@
         await Promise.all([logosPromise, weeksPromise]);
 
       if(!lErr) {
-        const merged = { ...(logoCached || {}) };
+        const mergedLogos = { ...(logoCached || {}) };
+        const mergedAbbrs = { ...(abbrCached || {}) };
         (logoRows || []).forEach(r => {
-          if (r?.Team && r?.LogoURL) merged[r.Team] = r.LogoURL;
+          if (r?.Team) {
+            if (r.LogoURL) mergedLogos[r.Team] = r.LogoURL;
+            if (r.Abbrev)  mergedAbbrs[r.Team] = r.Abbrev;
+          }
         });
-        logoByTeam = merged;
-        setCachedLogos(logoByTeam);
+        logoByTeam = mergedLogos;
+        abbrByTeam = mergedAbbrs;
+        setCachedMap(STORAGE_KEYS.logos,  STORAGE_KEYS.logosTTL,  logoByTeam);
+        setCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL, abbrByTeam);
       }
 
       if(werr) return status(werr.message, true);
@@ -353,6 +392,7 @@
         const tb = b?.["Start (CT)"] ? new Date(b["Start (CT)"]).getTime() : Infinity;
         return ta - tb;
       });
+      lastGames = games;
 
       // Earliest kickoff timestamp among this week's picked games
       weekStartTs = null;
@@ -364,16 +404,12 @@
       }
       showPicks = (weekStartTs == null) ? true : (Date.now() >= weekStartTs);
 
-      const gameNameMap = {};
       winnerMap = {}; lineMap = {};
       gameIds = games.map(g=>g.GameId);
 
       games.forEach(g=>{
         winnerMap[g.GameId] = g.winner ?? null;
         lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
-        const ln = lineMap[g.GameId];
-        const lineTxt = (ln!=null && !isNaN(ln)) ? (ln>0?` (+${ln})`:` (${ln})`) : '';
-        gameNameMap[g.GameId] = `${g.Away} @ ${g.Home}${lineTxt}`;
       });
 
       const { data: teamRows, error: tErr } = await supabase
@@ -400,6 +436,7 @@
       lastTeams = teamsSorted;
       lastPickMap = pickMap;
 
+      const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap, showPicks);
 
