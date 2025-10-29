@@ -1,16 +1,16 @@
 // nav.js
 import { supabase } from './supabaseClient.js';
 
-let authSubscription = null;  // ensure we only register once
-let isMounted = false;        // prevent duplicate init work
-let lastUserId = null;        // simple guard to avoid redundant re-renders
+let authSubscription = null;   // ensure we only register once
+let isMounted = false;         // prevent duplicate init work
+let lastUserId = null;         // avoid redundant re-renders for the same user
 
 // Map page keys to hrefs and labels (adjust to your actual pages)
 const NAV_ITEMS = [
-  { key: 'home',  href: './index.html',       label: 'Home' },
-  { key: 'picks', href: './picks.html',       label: 'Make Picks' },
-  { key: 'stats', href: './stats.html',       label: 'Stats' },
-  { key: 'genius',href: './cfb-genius.html',  label: 'CFB Genius' },
+  { key: 'home',   href: './index.html',      label: 'Home' },
+  { key: 'picks',  href: './picks.html',      label: 'Make Picks' },
+  { key: 'stats',  href: './stats.html',      label: 'Stats' },
+  { key: 'genius', href: './cfb-genius.html', label: 'CFB Genius' },
 ];
 
 function currentPageKey() {
@@ -83,7 +83,7 @@ async function renderNav() {
   const signedIn = !!session;
   const userEmail = session?.user?.email || '';
 
-  // Basic guard: if same user state, avoid pointless re-render churn
+  // Short-circuit if same user and we've already rendered
   const currentId = session?.user?.id || null;
   if (lastUserId === currentId && mount.dataset.rendered === '1') {
     return;
@@ -99,9 +99,14 @@ async function renderNav() {
     signOutBtn.addEventListener('click', async () => {
       try {
         await supabase.auth.signOut();
-        // After sign-out, re-render nav and send them to home
-        await renderNav();
-        location.href = './index.html';
+        // Minimal navigation on explicit sign-out:
+        // If the current page needs auth, send to signin; otherwise just re-render.
+        const needsAuth = document.body?.dataset?.page === 'picks';
+        if (needsAuth) {
+          location.href = './signin.html';
+        } else {
+          await renderNav();
+        }
       } catch (e) {
         console.error('Sign-out failed:', e);
       }
@@ -110,17 +115,30 @@ async function renderNav() {
 }
 
 export default async function initNav() {
-  // Render immediately
+  if (isMounted) return;
+  isMounted = true;
+
   await renderNav();
 
-  // Register a single global auth listener that just re-renders the nav
+  // Register a single global auth listener that *does not* reload the page.
   if (!authSubscription) {
-    const { data: sub } = supabase.auth.onAuthStateChange(async () => {
-      // Re-render on auth state changes (sign in/out)
-      await renderNav();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Only re-render on meaningful boundary changes.
+      // Do NOT reload on TOKEN_REFRESHED / USER_UPDATED (these often fire on tab focus).
+      switch (event) {
+        case 'SIGNED_IN':
+        case 'SIGNED_OUT':
+          await renderNav();
+          break;
+        // Optional: if you'd like the email to refresh after profile edits:
+        // case 'USER_UPDATED':
+        //   await renderNav();
+        //   break;
+        default:
+          // TOKEN_REFRESHED, PASSWORD_RECOVERY, etc. → ignore (no reloads).
+          break;
+      }
     });
-    authSubscription = sub;
+    authSubscription = subscription;
   }
-
-  isMounted = true;
 }
