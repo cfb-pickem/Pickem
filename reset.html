@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CFB Pick'em — Reset Password</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <style>
+    :root{
+      --cfp-black:#0B0B0B;
+      --cfp-charcoal:#111213;
+      --cfp-gold:#C99210;
+      --cfp-gold-2:#E3B23C;
+      --cfp-ivory:#F7F4ED;
+      --cfp-gray:#1F2022;
+      --ring:0 0 0 2px var(--cfp-gold) inset,0 0 0 2px var(--cfp-gold);
+    }
+    body{
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        var(--cfp-charcoal);
+      background-size:100% 100%,24px 24px,auto;
+      color:#e7e7e7;
+      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+      min-height:100vh;
+      display:flex;justify-content:center;align-items:center;
+    }
+    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
+    .cfp-input{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
+    .cfp-input:focus{outline:none;box-shadow:var(--ring)}
+    .ring-gold{box-shadow:var(--ring)}
+  </style>
+</head>
+
+<body>
+  <div class="max-w-md w-full p-6">
+    <div class="cfp-card p-6 md:p-8">
+      <h1 class="font-['Oswald',_sans-serif] text-3xl font-bold text-[var(--cfp-ivory)] text-center mb-4">Reset Password</h1>
+      <p class="text-sm text-gray-300 text-center mb-6">Enter a new password for your account.</p>
+
+      <form id="reset-form" class="space-y-4">
+        <div>
+          <label for="password" class="block text-sm font-medium text-gray-300">New Password</label>
+          <input type="password" id="password" name="password" required minlength="6"
+                 class="cfp-input mt-1 block w-full px-3 py-2 rounded-none text-sm"
+                 placeholder="Enter new password">
+        </div>
+        <div>
+          <label for="password2" class="block text-sm font-medium text-gray-300">Confirm Password</label>
+          <input type="password" id="password2" name="password2" required minlength="6"
+                 class="cfp-input mt-1 block w-full px-3 py-2 rounded-none text-sm"
+                 placeholder="Re-enter new password">
+        </div>
+        <button type="submit" id="submit-btn"
+                class="w-full px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">
+          Update Password
+        </button>
+      </form>
+
+      <div id="status" class="mt-4 text-sm text-center"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { supabase } from './js/supabaseClient.js';
+
+    const form = document.getElementById('reset-form');
+    const statusEl = document.getElementById('status');
+    const submitBtn = document.getElementById('submit-btn');
+
+    function setStatus(msg, type='info'){
+      const cls = type==='error'?'text-red-300':type==='success'?'text-green-300':'text-gray-300';
+      statusEl.className = 'mt-4 text-sm text-center ' + cls;
+      statusEl.textContent = msg;
+    }
+
+    async function init(){
+      // Ensure Supabase recovery session is applied
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if(!session){
+        // Try to recover from the URL hash (#access_token, etc)
+        const { error: recoverError } = await supabase.auth.exchangeCodeForSession(window.location.hash);
+        if(recoverError){
+          setStatus('Session could not be restored. Please re-open the password reset link.', 'error');
+          form.style.display = 'none';
+          return;
+        }
+      }
+    }
+    init();
+
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const pw1 = form.password.value.trim();
+      const pw2 = form.password2.value.trim();
+      if(pw1 !== pw2){
+        setStatus('Passwords do not match.', 'error');
+        return;
+      }
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Updating…';
+      try {
+        const { data, error } = await supabase.auth.updateUser({ password: pw1 });
+        if(error){
+          setStatus(error.message || 'Failed to update password.', 'error');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Update Password';
+          return;
+        }
+        setStatus('Password updated! Redirecting to sign-in…', 'success');
+        setTimeout(()=>window.location.href='./signin.html',1500);
+      } catch (err) {
+        setStatus('Unexpected error updating password.', 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Update Password';
+      }
+    });
+  </script>
+</body>
+</html>

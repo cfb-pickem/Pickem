@@ -33,7 +33,7 @@
       font-family: 'Roboto', system-ui, -apple-system, Segoe UI, Arial, sans-serif;
       min-height: 100vh;
     }
-    .gold-shadow{box-shadow: 0 0 0 1px rgba(233, 185, 73, .35), 0 0 24px rgba(233, 185, 73, .08) inset}
+    .gold-shadow{box-shadow: 0 0 0 1px rgba(233,185,73,.35), 0 0 24px rgba(233,185,73,.08) inset}
     .cfp-card{background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
     .cfp-input{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
     .cfp-input:focus{outline:none;box-shadow:var(--ring)}
@@ -54,16 +54,16 @@
           Sign In
         </h1>
         <p class="text-sm text-gray-300 mb-6 text-center">
-          Use your password (faster) or get a one-time magic link.
+          Sign in with your password. If you’ve only used magic links before, create a password first.
         </p>
 
         <!-- Tabs -->
         <div class="flex gap-2 mb-6">
-          <button id="tab-password" class="tab-btn active">Password</button>
-          <button id="tab-magic" class="tab-btn">Magic Link</button>
+          <button id="tab-password" class="tab-btn active" type="button">Password</button>
+          <button id="tab-magic" class="tab-btn" type="button">Magic Link</button>
         </div>
 
-        <!-- PASSWORD FORM -->
+        <!-- PASSWORD FORM (default) -->
         <form id="password-form" class="space-y-4">
           <div>
             <label for="email_pw" class="block text-sm font-medium text-gray-300">Email</label>
@@ -81,12 +81,13 @@
                   class="w-full px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">
             Sign In
           </button>
-          <p class="text-xs text-gray-400 text-center">
-            Don’t have a password? Switch to <a href="#" id="switch-to-magic" class="link">Magic Link</a>.
-          </p>
+          <div class="text-xs text-gray-400 text-center space-y-1">
+            <p><a href="#" id="send-reset" class="link">Create/Reset password</a></p>
+            <p>Prefer email links? <a href="#" id="switch-to-magic" class="link">Use Magic Link</a></p>
+          </div>
         </form>
 
-        <!-- MAGIC LINK FORM -->
+        <!-- MAGIC LINK FORM (hidden until tab switch) -->
         <form id="magic-form" class="space-y-4 hidden">
           <div>
             <label for="email_magic" class="block text-sm font-medium text-gray-300">Email</label>
@@ -99,7 +100,7 @@
             Send Magic Link
           </button>
           <p class="text-xs text-gray-400 text-center">
-            Prefer a password? Switch to <a href="#" id="switch-to-password" class="link">Password</a>.
+            Back to <a href="#" id="switch-to-password" class="link">Password</a>.
           </p>
         </form>
 
@@ -126,6 +127,7 @@
     const emailMagic  = document.getElementById('email_magic');
     const switchToMagic = document.getElementById('switch-to-magic');
     const switchToPassword = document.getElementById('switch-to-password');
+    const sendReset   = document.getElementById('send-reset');
 
     // Prefill last email if we have one
     const LAST_EMAIL_KEY = 'cfb_last_email_v1';
@@ -166,7 +168,7 @@
       if (session) window.location.href = './index.html';
     });
 
-    // PASSWORD SIGN-IN
+    // PASSWORD SIGN-IN (no magic link)
     pwForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       setStatus('');
@@ -179,8 +181,17 @@
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-          // Common codes: invalid_credentials, invalid_grant
-          setStatus(error.message || 'Sign-in failed.', 'error');
+          // Typical errors:
+          //  - invalid_grant / invalid_credentials: wrong email or password not set
+          //  - email_not_confirmed: if confirm email is required
+          const msg = (error?.message || '').toLowerCase();
+          if (msg.includes('invalid_grant') || msg.includes('invalid') || msg.includes('password')) {
+            setStatus('Incorrect email or password. If you never set a password, click "Create/Reset password" below.', 'error');
+          } else if (msg.includes('email') && msg.includes('confirm')) {
+            setStatus('Please confirm your email before signing in (check your inbox for a confirmation email).', 'error');
+          } else {
+            setStatus(error.message || 'Sign-in failed.', 'error');
+          }
           pwSubmit.disabled = false;
           pwSubmit.textContent = 'Sign In';
           return;
@@ -196,7 +207,32 @@
       }
     });
 
-    // MAGIC LINK SIGN-IN
+    // CREATE/RESET PASSWORD (for users who only used magic links before)
+    sendReset.addEventListener('click', async (e) => {
+      e.preventDefault();
+      setStatus('');
+      const email = (emailPw.value || emailMagic.value || '').trim();
+      if (!email) {
+        setStatus('Enter your email first, then click Create/Reset.', 'error');
+        return;
+      }
+      try {
+        // This sends a secure link that opens your site where the user can set a new password.
+        // Configure the redirect URL below to a page that handles the "update password" step.
+        const base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+        const redirectTo = base + 'reset.html'; // create this page to call supabase.auth.updateUser({ password })
+        const { data, error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) {
+          setStatus(error.message || 'Could not send reset email.', 'error');
+          return;
+        }
+        setStatus('Password reset email sent. Check your inbox and follow the link to set a password.', 'success');
+      } catch (err) {
+        setStatus('Unexpected error sending reset email.', 'error');
+      }
+    });
+
+    // MAGIC LINK (optional)
     magicForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       setStatus('');
@@ -209,9 +245,7 @@
       try {
         const { error } = await supabase.auth.signInWithOtp({
           email,
-          options: {
-            emailRedirectTo: base + 'index.html',
-          }
+          options: { emailRedirectTo: base + 'index.html' }
         });
         if (error) {
           setStatus(error.message || 'Could not send magic link.', 'error');
