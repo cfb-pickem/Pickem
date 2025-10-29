@@ -10,29 +10,17 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- Match the working imports from index.html -->
+  <!-- match your working index.html -->
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
   <style>
-    :root{
-      --cfp-black:#0B0B0B;
-      --cfp-charcoal:#111213;
-      --cfp-gold:#C99210;
-      --cfp-gold-2:#E3B23C;
-      --cfp-ivory:#F7F4ED;
-      --cfp-gray:#1F2022;
-      --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
-    }
+    :root{ --cfp-black:#0B0B0B; --cfp-charcoal:#111213; --cfp-gold:#C99210; --cfp-gold-2:#E3B23C; --cfp-ivory:#F7F4ED; --cfp-gray:#1F2022; --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);}
     body{
-      background:
-        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
-        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
-        var(--cfp-charcoal);
-      background-size:100% 100%,24px 24px,auto;
-      color:#e7e7e7;
-      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
-      min-height:100vh;
+      background: radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+                 linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+                 var(--cfp-charcoal);
+      background-size:100% 100%,24px 24px,auto; color:#e7e7e7; font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif; min-height:100vh;
     }
     .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
     .cfp-select:focus{outline:none;box-shadow:var(--ring)}
@@ -42,15 +30,11 @@
     .ring-gold{box-shadow:var(--ring)}
     .badge{font-size:.78rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
     .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
-    .debug{background:rgba(227,178,60,.12);border:1px solid rgba(227,178,60,.45);color:#e3b23c}
   </style>
 </head>
 <body data-page="picks">
   <div class="max-w-7xl mx-auto p-4 md:p-6">
     <div id="site-nav"></div>
-
-    <!-- Debug banner (auto-hides if empty) -->
-    <div id="debug" class="debug cfp-card gold-shadow rounded-none p-3 text-xs mb-3 hidden"></div>
 
     <header class="cfp-card rounded-none stripe gold-shadow mb-5">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4 py-4 md:px-6 md:py-5">
@@ -86,15 +70,12 @@
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
 
-    // --- CSS.escape polyfill (old Safari/Edge) ---
+    // CSS.escape polyfill (older browsers)
     if (!window.CSS || typeof CSS.escape !== 'function') {
       window.CSS = window.CSS || {};
-      window.CSS.escape = (s) => String(s).replace(/[^a-zA-Z0-9_\-]/g, (c) =>
-        '\\' + c.codePointAt(0).toString(16) + ' ');
+      window.CSS.escape = s => String(s).replace(/[^a-zA-Z0-9_\-]/g, c => '\\' + c.codePointAt(0).toString(16) + ' ');
     }
 
-    // --- DOM refs ---
-    const debugEl    = document.getElementById('debug');
     const statusEl   = document.getElementById('status');
     const authGate   = document.getElementById('auth-gate');
     const gamesWrap  = document.getElementById('games-wrap');
@@ -105,7 +86,6 @@
     const teamChip   = document.getElementById('team-chip');
     const teamNameEl = document.getElementById('team-name');
 
-    // --- Global state ---
     let session = null;
     let currentWeek = null;
     let currentGames = [];
@@ -113,56 +93,24 @@
     let selectedTeamName = '';
     let existingPicks = new Map(); // game_id -> pick
 
-    // --- Helpers ---
     function setStatus(msg, err=false){
       statusEl.className = 'text-xs ' + (err? 'text-red-300':'text-gray-300');
       statusEl.textContent = msg;
     }
-    function showDebug(msg){
-      if(!msg){ debugEl.classList.add('hidden'); debugEl.textContent = ''; return; }
-      debugEl.textContent = 'Debug: ' + msg;
-      debugEl.classList.remove('hidden');
-      console.error('[picks] ' + msg);
-    }
     function kickoff(ts){
       if(!ts) return '';
-      try {
-        return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
-      } catch { return ts; }
+      try { return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
+      catch { return ts; }
     }
-
-    // Catch unhandled errors so the page doesn’t look frozen
-    window.addEventListener('error', (e)=> showDebug(e.message || 'Unhandled error'));
-    window.addEventListener('unhandledrejection', (e)=> showDebug((e.reason && e.reason.message) || 'Unhandled promise rejection'));
 
     async function refreshAuthUI() {
-      try{
-        const { data: { session: s }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        session = s || null;
-        if (session) {
-          authGate.classList.add('hidden');
-          gamesWrap.classList.remove('hidden');
-        } else {
-          gamesWrap.classList.add('hidden');
-          authGate.classList.remove('hidden');
-        }
-      }catch(err){
-        showDebug('auth.getSession: ' + (err?.message || err));
-        // Fail-safe: show auth gate
-        gamesWrap.classList.add('hidden');
-        authGate.classList.remove('hidden');
-      }
+      const { data: { session: s } } = await supabase.auth.getSession();
+      session = s || null;
+      if (session) { authGate.classList.add('hidden'); gamesWrap.classList.remove('hidden'); }
+      else { gamesWrap.classList.add('hidden'); authGate.classList.remove('hidden'); }
     }
 
-    async function startup() {
-      try {
-        await initNav();
-      } catch (e) {
-        showDebug('nav init failed (check ./js/nav.js path): ' + (e?.message || e));
-      }
-      await initPage();
-    }
+    async function startup() { await initNav(); await initPage(); }
     startup();
 
     async function initPage(){
@@ -171,55 +119,39 @@
 
       setStatus('Loading your team & current week…');
 
-      try {
-        // 1) Latest week with picked games
-        const { data: weekRows, error: wErr } = await supabase
-          .from('all_games')
-          .select('week')
-          .eq('picked', true)
-          .not('week','is',null);
-        if (wErr) throw wErr;
+      // Latest week with picked games
+      const { data: weekRows, error: wErr } = await supabase
+        .from('all_games')
+        .select('week')
+        .eq('picked', true)
+        .not('week','is',null);
+      if (wErr) { setStatus(wErr.message, true); return; }
 
-        const weeks = [...new Set((weekRows||[]).map(r=>Number(r.week)))].sort((a,b)=>a-b);
-        if (!weeks.length) { setStatus('No weeks found.', true); return; }
-        currentWeek = weeks[weeks.length - 1];
+      const weeks = [...new Set((weekRows||[]).map(r=>Number(r.week)))].sort((a,b)=>a-b);
+      if (!weeks.length) { setStatus('No weeks found.', true); return; }
+      currentWeek = weeks[weeks.length - 1];
 
-        // 2) User's team
-        const { data: myTeams, error: tErr } = await supabase
-          .from('teams')
-          .select('team_id, team_name')
-          .eq('user_id', session.user.id)
-          .order('team_name', { ascending: true });
-        if (tErr) throw tErr;
-
-        if (!myTeams || myTeams.length === 0) {
-          setStatus('No team found for your account. Contact the commissioner to add your team.', true);
-          gamesWrap.classList.add('hidden');
-          return;
-        }
-
-        selectedTeamId = Number(myTeams[0].team_id);
-        selectedTeamName = myTeams[0].team_name || `Team ${selectedTeamId}`;
-        teamNameEl.textContent = selectedTeamName;
-        teamChip.classList.remove('hidden');
-
-        // 3) Load games and existing picks
-        await loadGamesForWeek(currentWeek);
-        await loadExistingPicksForVisibleGames();
-
-        if (currentGames.length === 0) {
-          gamesEl.innerHTML = `
-            <div class="cfp-card gold-shadow p-6 text-sm text-gray-300">
-              No games are open for picking this week. Check back later.
-            </div>`;
-        }
-
-        setStatus(`Loaded week ${currentWeek}.`);
-        showDebug(''); // clear
-      } catch (err){
-        setStatus('Problem loading page. See debug.', true);
-        showDebug(err?.message || String(err));
+      // User's team (first alphabetically)
+      const { data: myTeams, error: tErr } = await supabase
+        .from('teams')
+        .select('team_id, team_name')
+        .eq('user_id', session.user.id)
+        .order('team_name', { ascending: true });
+      if (tErr) { setStatus(tErr.message, true); return; }
+      if (!myTeams?.length) {
+        setStatus('No team found for your account. Contact the commissioner to add your team.', true);
+        gamesWrap.classList.add('hidden'); return;
       }
+
+      selectedTeamId = Number(myTeams[0].team_id);
+      selectedTeamName = myTeams[0].team_name || `Team ${selectedTeamId}`;
+      teamNameEl.textContent = selectedTeamName;
+      teamChip.classList.remove('hidden');
+
+      await loadGamesForWeek(currentWeek);
+      await loadExistingPicksForVisibleGames();
+
+      setStatus(`Loaded week ${currentWeek}.`);
     }
 
     async function loadGamesForWeek(week){
@@ -227,53 +159,43 @@
       setStatus(`Loading games for week ${week}…`);
       gamesEl.innerHTML = '';
 
-      try{
-        const { data, error } = await supabase
-          .from('all_games')
-          .select('GameId, Away, Home, line, "Start (CT)", espn_url')
-          .eq('picked', true)
-          .eq('week', week);
-        if (error) throw error;
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url')
+        .eq('picked', true)
+        .eq('week', week);
+      if (error) { setStatus(error.message, true); return; }
 
-        currentGames = (data||[]).map(g => ({
-          game_id: Number(g.GameId),
-          away: g.Away,
-          home: g.Home,
-          line: (g.line == null ? null : Number(g.line)),
-          espn_url: g.espn_url || null,
-          start: g['Start (CT)']
-        })).sort((a,b)=>{
-          const ta = a.start ? new Date(a.start).getTime() : Infinity;
-          const tb = b.start ? new Date(b.start).getTime() : Infinity;
-          return ta - tb;
-        });
+      currentGames = (data||[]).map(g => ({
+        game_id: Number(g.GameId),
+        away: g.Away,
+        home: g.Home,
+        line: (g.line == null ? null : Number(g.line)),
+        espn_url: g.espn_url || null,
+        start: g['Start (CT)']
+      })).sort((a,b)=>{
+        const ta = a.start ? new Date(a.start).getTime() : Infinity;
+        const tb = b.start ? new Date(b.start).getTime() : Infinity;
+        return ta - tb;
+      });
 
-        renderGameCards(currentGames);
-      }catch(err){
-        showDebug('loadGamesForWeek: ' + (err?.message || err));
-        setStatus('Could not load games for this week.', true);
-      }
+      renderGameCards(currentGames);
     }
 
     async function loadExistingPicksForVisibleGames(){
-      try{
-        existingPicks.clear();
-        const gameIds = currentGames.map(g => g.game_id);
-        if (!gameIds.length) return;
+      existingPicks.clear();
+      const gameIds = currentGames.map(g => g.game_id);
+      if (!gameIds.length) return;
 
-        const { data, error } = await supabase
-          .from('picks')
-          .select('game_id, pick')
-          .eq('team_id', selectedTeamId)
-          .in('game_id', gameIds);
-        if (error) throw error;
+      const { data, error } = await supabase
+        .from('picks')
+        .select('game_id, pick')
+        .eq('team_id', selectedTeamId)
+        .in('game_id', gameIds);
+      if (error) return;
 
-        (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
-        prefillSelections();
-      }catch(err){
-        showDebug('loadExistingPicks: ' + (err?.message || err));
-        // not fatal
-      }
+      (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
+      prefillSelections();
     }
 
     function renderGameCards(games){
@@ -312,8 +234,9 @@
 
     function prefillSelections(){
       existingPicks.forEach((pick, gameId) => {
-        const sel = 'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]';
-        const input = document.querySelector(sel);
+        const input = document.querySelector(
+          'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]'
+        );
         if (input) input.checked = true;
       });
     }
@@ -338,7 +261,7 @@
         team_id: Number(selectedTeamId),
         game_id: Number(p.game_id),
         pick: p.pick,
-        week: Number(currentWeek) // optional metadata
+        week: Number(currentWeek)
       }));
 
       if (!rows.length){
@@ -348,21 +271,14 @@
         return;
       }
 
-      try{
-        const { error } = await supabase
-          .from('picks')
-          .upsert(rows, { onConflict: 'team_id,game_id' });
-        if (error) throw error;
+      const { error } = await supabase
+        .from('picks')
+        .upsert(rows, { onConflict: 'team_id,game_id' });
 
-        rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
-        setStatus('Picks saved!');
-      }catch(err){
-        setStatus('Error saving: ' + (err?.message || err), true);
-        showDebug('savePicks: ' + (err?.message || err));
-      }finally{
-        saveBtn.disabled = false;
-        saveStatus.textContent = '';
-      }
+      saveBtn.disabled = false;
+      saveStatus.textContent = '';
+      if (error) setStatus('Error saving: ' + error.message, true);
+      else { setStatus('Picks saved!'); rows.forEach(r => existingPicks.set(String(r.game_id), r.pick)); }
     }
 
     function clearSelections(){
