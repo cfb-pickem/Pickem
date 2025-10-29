@@ -43,7 +43,7 @@
     .badge{font-size:.78rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
     .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
 
-    /* Highlight chosen pick; hide radio circles */
+    /* Pick styling */
     .pick-label{
       transition: background-color .25s, color .25s, transform .12s;
       padding: .25rem .75rem;
@@ -65,7 +65,7 @@
       box-shadow: 0 0 0 2px var(--cfp-gold-2);
     }
 
-    /* Locked state styling */
+    /* Locked state */
     .locked .pick-label{
       opacity:.5;
       cursor:not-allowed;
@@ -86,17 +86,12 @@
       filter: saturate(0.9);
     }
     .btn-success {
-      background: #22c55e !important; /* Tailwind green-500 */
-      color: #0b2913 !important;
+      background: #ffffff !important; /* white */
+      color: #000000 !important;      /* black text */
+      border: 1px solid rgba(0,0,0,.15) !important;
     }
-    .spin {
-      animation: spin 1s linear infinite;
-      transform-origin: center;
-    }
-    @keyframes spin {
-      from { transform: rotate(0deg); }
-      to   { transform: rotate(360deg); }
-    }
+    .spin { animation: spin 1s linear infinite; transform-origin: center; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   </style>
 </head>
 <body data-page="picks">
@@ -304,16 +299,12 @@
         espn_url: g.espn_url || null,
         start: g['Start (CT)']
       })).sort((a,b)=>{
-        const ta = gTime(a);
-        const tb = gTime(b);
+        const ta = g.start ? new Date(g.start).getTime() : Infinity;
+        const tb = b.start ? new Date(b.start).getTime() : Infinity;
         return ta - tb;
       });
 
       renderGameCards(currentGames);
-    }
-
-    function gTime(g){
-      return g.start ? new Date(g.start).getTime() : Infinity;
     }
 
     async function loadExistingPicksForVisibleGames(){
@@ -446,9 +437,7 @@
 
       // Disable inputs + buttons when locked
       gamesEl.classList.toggle('locked', isLocked);
-      document.querySelectorAll('input[type="radio"]').forEach(inp => {
-        inp.disabled = isLocked;
-      });
+      document.querySelectorAll('input[type="radio"]').forEach(inp => { inp.disabled = isLocked; });
       saveBtn.disabled = isLocked;
       clearBtn.disabled = isLocked;
 
@@ -471,18 +460,14 @@
     function renderSaved(){
       saveBtn.classList.remove('btn-saving');
       saveBtn.classList.add('btn-success');
-      saveBtn.disabled = false; // allow immediate re-save if needed
+      saveBtn.disabled = false;
       saveBtn.innerHTML = `
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <span>Saved!</span>
       `;
-      // revert to default after a short delay
-      setTimeout(() => {
-        if (isLocked) return; // if locked meanwhile, leave as-is
-        renderSaveDefault();
-      }, 1400);
+      setTimeout(() => { if (!isLocked) renderSaveDefault(); }, 1400);
     }
     function renderSaveDefault(){
       saveBtn.classList.remove('btn-saving','btn-success');
@@ -490,7 +475,6 @@
       saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
     }
     function renderSaveError(){
-      // Show default label and re-enable; status text conveys the error
       saveBtn.classList.remove('btn-saving','btn-success');
       saveBtn.disabled = false;
       saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
@@ -526,7 +510,7 @@
         renderSaveError();
         setStatus('Error saving: ' + error.message, true);
       } else {
-        setStatus('Picks saved!');
+        // removed top status "Picks saved!" per request
         rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
         clearDraft();
         prefillSelections();
@@ -538,7 +522,7 @@
       if (isLocked) { setStatus('Picks are locked — cannot clear.', true); return; }
       document.querySelectorAll('input[type="radio"]').forEach(i=> i.checked=false);
       document.querySelectorAll('.pick-label').forEach(l => l.classList.remove('selected'));
-      saveDraft(); // reflect the cleared state
+      saveDraft();
       setStatus('Selections cleared.');
     }
 
