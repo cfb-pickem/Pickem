@@ -10,8 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <link rel="modulepreload" href="./js/supabaseClient.js">
-  <link rel="modulepreload" href="./js/nav.js">
+  <!-- If your files live in a /js folder, change to ./js/supabaseClient.js and ./js/nav.js -->
+  <link rel="modulepreload" href="./supabaseClient.js">
+  <link rel="modulepreload" href="./nav.js">
 
   <style>
     :root{
@@ -45,7 +46,6 @@
 </head>
 <body data-page="picks">
   <div class="max-w-7xl mx-auto p-4 md:p-6">
-    
     <div id="site-nav"></div>
 
     <header class="cfp-card rounded-none stripe gold-shadow mb-5">
@@ -79,13 +79,9 @@
   </div>
 
   <script type="module">
-    // --- NEW: Import shared modules ---
-    import initNav from './js/nav.js';
-    import { supabase } from './js/supabaseClient.js';
-    
-    // --- REMOVED: Old Supabase client creation ---
+    import initNav from './nav.js';               // change to ./js/nav.js if needed
+    import { supabase } from './supabaseClient.js';
 
-    // ---- DOM (Page-specific only) ----
     const statusEl   = document.getElementById('status');
     const authGate   = document.getElementById('auth-gate');
     const gamesWrap  = document.getElementById('games-wrap');
@@ -96,20 +92,17 @@
     const teamChip   = document.getElementById('team-chip');
     const teamNameEl = document.getElementById('team-name');
 
-    // --- REMOVED: Nav auth element variables ---
-
-    // ---- State ----
     let session = null;
     let currentWeek = null;
     let currentGames = [];
     let selectedTeamId = null;
     let selectedTeamName = '';
+    let existingPicks = new Map(); // game_id -> pick
 
     function setStatus(msg, err=false){
       statusEl.className = 'text-xs ' + (err? 'text-red-300':'text-gray-300');
       statusEl.textContent = msg;
     }
-
     function kickoff(ts){
       if(!ts) return '';
       try {
@@ -117,38 +110,31 @@
       } catch { return ts; }
     }
 
-    // --- SIMPLIFIED: This function only controls PAGE content now ---
     async function refreshAuthUI() {
       const { data: { session: s } } = await supabase.auth.getSession();
       session = s || null;
-
       if (session) {
-        // Show the page content
         authGate.classList.add('hidden');
         gamesWrap.classList.remove('hidden');
       } else {
-        // Show the auth gate
         gamesWrap.classList.add('hidden');
         authGate.classList.remove('hidden');
       }
     }
 
-    // Create a single async function to control startup
     async function startup() {
-      await initNav(); // 1. Wait for nav to load (and auth listener to be ready)
-      await initPage();  // 2. Run page logic *after* nav is done
+      await initNav();       // nav should register its auth listener once
+      await initPage();
     }
-
-    startup(); // Run the main startup function
+    startup();
 
     async function initPage(){
-    // ... rest of the file
-      await refreshAuthUI(); // Checks if user is signed in
+      await refreshAuthUI();
       if (!session) { setStatus('Sign in to make picks.'); return; }
 
       setStatus('Loading your team & current week…');
 
-      // latest week with picked games
+      // Latest week with picked games
       const { data: weekRows, error: wErr } = await supabase
         .from('all_games')
         .select('week')
@@ -157,14 +143,14 @@
 
       if (wErr) { setStatus(wErr.message, true); return; }
 
-      const weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
+      const weeks = [...new Set((weekRows||[]).map(r=>Number(r.week)))].sort((a,b)=>a-b);
       if (!weeks.length) { setStatus('No weeks found.', true); return; }
       currentWeek = weeks[weeks.length - 1];
 
-      // auto-select user's team (first alphabetically if multiple)
+      // Get user's team (first alphabetically)
       const { data: myTeams, error: tErr } = await supabase
         .from('teams')
-        .select('team_id, team_name, user_id')
+        .select('team_id, team_name')
         .eq('user_id', session.user.id)
         .order('team_name', { ascending: true });
 
@@ -175,12 +161,15 @@
         return;
       }
 
-      selectedTeamId = String(myTeams[0].team_id);
+      selectedTeamId = Number(myTeams[0].team_id);
       selectedTeamName = myTeams[0].team_name || `Team ${selectedTeamId}`;
       teamNameEl.textContent = selectedTeamName;
       teamChip.classList.remove('hidden');
 
+      // Load games then any existing picks just for these games
       await loadGamesForWeek(currentWeek);
+      await loadExistingPicksForVisibleGames();
+
       setStatus(`Loaded week ${currentWeek}.`);
     }
 
@@ -198,10 +187,10 @@
       if (error) { setStatus(error.message, true); return; }
 
       currentGames = (data||[]).map(g => ({
-        game_id: g.GameId,
+        game_id: Number(g.GameId),
         away: g.Away,
         home: g.Home,
-        line: (typeof g.line === 'number' ? g.line : (g.line != null ? Number(g.line) : null)),
+        line: (g.line == null ? null : Number(g.line)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)']
       })).sort((a,b)=>{
@@ -213,8 +202,23 @@
       renderGameCards(currentGames);
     }
 
+    async function loadExistingPicksForVisibleGames(){
+      existingPicks.clear();
+      const gameIds = currentGames.map(g => g.game_id);
+      if (!gameIds.length) return;
+
+      const { data, error } = await supabase
+        .from('picks')
+        .select('game_id, pick')
+        .eq('team_id', selectedTeamId)
+        .in('game_id', gameIds);
+
+      if (error) return; // non-fatal
+      (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
+      prefillSelections();
+    }
+
     function renderGameCards(games){
-      // Use array -> join; avoid nested backticks inside template interpolations
       const cards = games.map(g => {
         const name = `game_${g.game_id}`;
         const when = kickoff(g.start);
@@ -222,7 +226,6 @@
           ? '<a href="' + g.espn_url + '" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>'
           : '';
 
-        // line in terms of HOME team; display + for positive
         const hasLine = g.line != null && !isNaN(g.line);
         const fmt = (n) => (n > 0 ? ('+' + n) : String(n));
         const awayLabel = hasLine ? (g.away + ' (' + fmt(-g.line) + ')') : g.away;
@@ -249,11 +252,20 @@
       gamesEl.innerHTML = cards.join('');
     }
 
+    function prefillSelections(){
+      existingPicks.forEach((pick, gameId) => {
+        const input = document.querySelector(
+          'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]'
+        );
+        if (input) input.checked = true;
+      });
+    }
+
     function selections(){
       const picks = [];
       document.querySelectorAll('input[type="radio"]:checked').forEach(inp=>{
-        const gameId = inp.name.replace('game_','');
-        picks.push({ game_id: String(gameId), pick: inp.value });
+        const gameId = Number(inp.name.replace('game_',''));
+        picks.push({ game_id: gameId, pick: inp.value });
       });
       return picks;
     }
@@ -265,12 +277,12 @@
       saveBtn.disabled = true;
       saveStatus.textContent = 'Saving…';
 
-      const week = String(currentWeek);
+      const week = Number(currentWeek);
       const rows = selections().map(p => ({
-        week,
-        team_id: selectedTeamId,
-        game_id: p.game_id,
-        pick: p.pick
+        team_id: Number(selectedTeamId),
+        game_id: Number(p.game_id),
+        pick: p.pick,
+        week // optional metadata, not part of the conflict key
       }));
 
       if (!rows.length){
@@ -282,12 +294,16 @@
 
       const { error } = await supabase
         .from('picks')
-        .upsert(rows, { onConflict: 'team_id,week,game_id' });
+        .upsert(rows, { onConflict: 'team_id,game_id' });
 
       saveBtn.disabled = false;
       saveStatus.textContent = '';
       if (error) setStatus('Error saving: ' + error.message, true);
-      else setStatus('Picks saved!');
+      else {
+        setStatus('Picks saved!');
+        // refresh local cache so prefill stays accurate
+        rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
+      }
     }
 
     function clearSelections(){
@@ -295,8 +311,8 @@
       setStatus('Selections cleared.');
     }
 
-    document.getElementById('save').addEventListener('click', savePicks);
-    document.getElementById('clear').addEventListener('click', clearSelections);
+    saveBtn.addEventListener('click', savePicks);
+    clearBtn.addEventListener('click', clearSelections);
   </script>
 </body>
 </html>
