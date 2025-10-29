@@ -162,51 +162,30 @@
     switchToPassword.addEventListener('click', (e) => { e.preventDefault(); setActiveTab('password'); });
     setActiveTab('password');
 
-    // ---------- Team lookup helpers ----------
-    async function ensureProfile(userId){
-      // Create profile row if missing (does not overwrite existing team_id)
-      await supabase.from('profiles').upsert({ id: userId }, { onConflict: 'id' });
-    }
-
-    async function fetchAssignedTeamId(userId){
-      // 1) Check profiles.team_id
-      const { data: prof, error: pErr } = await supabase
-        .from('profiles')
-        .select('team_id')
-        .eq('id', userId)
-        .maybeSingle();
-      if (pErr) throw pErr;
-      if (prof?.team_id) return prof.team_id;
-
-      // 2) Fallback: check teams.user_id (legacy/alternate binding)
-      const { data: team, error: tErr } = await supabase
+    // ---------- Check ONLY the teams table ----------
+    async function userHasTeam(userId){
+      const { data, error } = await supabase
         .from('teams')
         .select('team_id')
         .eq('user_id', userId)
+        .limit(1)
         .maybeSingle();
-      if (tErr) throw tErr;
-
-      // If found in teams, fix the profile so next time it's instant
-      if (team?.team_id) {
-        await supabase.from('profiles').upsert({ id: userId, team_id: team.team_id }, { onConflict: 'id' });
-        return team.team_id;
-      }
-      return null;
+      if (error) throw error;
+      return !!data; // has a row => has a team
     }
 
-    let didRedirect = false; // guard against double-redirect on magic-link hash + getSession()
+    let didRedirect = false;
 
     async function redirectPostAuth(user){
       if (didRedirect) return;
       try{
-        await ensureProfile(user.id);
-        const teamId = await fetchAssignedTeamId(user.id);
-        const dest = teamId ? (BASE + 'index.html') : (BASE + 'claim-team.html');
+        const hasTeam = await userHasTeam(user.id);
+        const dest = hasTeam ? (BASE + 'index.html') : (BASE + 'claim-team.html');
         didRedirect = true;
         window.location.href = dest;
       }catch(e){
         console.error(e);
-        // safest fallback: if we can't determine, send to index (not claim)
+        // If we can't determine, default to index
         didRedirect = true;
         window.location.href = BASE + 'index.html';
       }
@@ -268,7 +247,6 @@
         return;
       }
       try {
-        // Always send them back to reset.html on the same host/path
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: BASE + 'reset.html'
         });
