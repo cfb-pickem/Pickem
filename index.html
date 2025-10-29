@@ -70,26 +70,19 @@
       text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
     }
 
-    /* Sticky first column (auto width, no extra buffer) */
+    /* Sticky first column (auto width, tight to Points) */
     th.sticky-col-1, td.sticky-col-1{
       position: sticky;
       left: 0;
       z-index: 25;
       background: var(--cfp-black);
-      /* no fixed min/max width – let content define it */
-      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset; /* subtle column divider */
+      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset; /* subtle divider; remove if you want zero seam */
     }
     thead th.sticky-col-1{ z-index: 50; }
 
-    /* Scroll container shadow: keep only right-edge hint, remove the left one */
+    /* No scroll-edge fades at all */
     .scroll-shadows{ position: relative; }
-    .scroll-shadows::after{
-      content:""; position:absolute; top:0; bottom:0; right:0; width:24px; pointer-events:none; z-index:40;
-      background:linear-gradient(to left, rgba(0,0,0,0.0), rgba(0,0,0,.35));
-    }
-
-    /* Tighten spacing between Team and Points */
-    /* Default th/td paddings are kept; we'll override first two columns inline via classes */
+    /* intentionally no ::before or ::after */
 
     /* Mobile tweaks */
     @media (max-width: 640px){
