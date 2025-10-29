@@ -135,6 +135,10 @@
     let logoByTeam = {};
     let winsByTeam = {}; // points = wins
 
+    // NEW: track week start
+    let weekStarted = false;
+    let earliestKickoffMs = null;
+
     let liveTimer = null;
     const LIVE_INTERVAL_MS = 30000;
 
@@ -204,6 +208,16 @@
       }catch{ return ''; }
     }
     function periodLabel(p){ return p >= 5 ? 'OT' : `Q${p||1}`; }
+    function parseCTToMs(ts){
+      if(!ts) return null;
+      try { return new Date(ts).getTime(); } catch { return null; }
+    }
+    function hasWeekStartedNow(){
+      if (weekStarted) return true;
+      const now = Date.now();
+      if (Number.isFinite(earliestKickoffMs) && now >= earliestKickoffMs) return true;
+      return false;
+    }
 
     // ---------- App startup with optimistic preload ----------
     async function startup() {
@@ -256,7 +270,7 @@
       if(werr) return status(werr.message, true);
 
       weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
-      if(!weeks.length) return status('No weeks found in all_games');
+      if(!weeks.length) return status('No weeks found in all_games', true);
 
       weekSelect.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
 
@@ -326,6 +340,18 @@
         return ta - tb;
       });
 
+      // NEW: compute earliest kickoff and whether week has started
+      earliestKickoffMs = null;
+      for (const g of games) {
+        const ms = parseCTToMs(g && g['Start (CT)']);
+        if (Number.isFinite(ms)) {
+          earliestKickoffMs = (earliestKickoffMs==null) ? ms : Math.min(earliestKickoffMs, ms);
+        }
+      }
+      // If any game is already live/final, consider week started
+      const anyLiveOrFinal = (games || []).some(g => g?.Status === 'in_progress' || g?.Status === 'final');
+      weekStarted = anyLiveOrFinal || hasWeekStartedNow();
+
       const gameNameMap = {};
       winnerMap = {}; lineMap = {};
       gameIds = games.map(g=>g.GameId);
@@ -363,7 +389,13 @@
       renderTable(teamsSorted, pickMap, winnerMap);
 
       startLiveTicker();
-      status(`Showing week ${week}.`);
+
+      if (!weekStarted) {
+        const kickoffTxt = earliestKickoffMs ? new Date(earliestKickoffMs).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) : 'kickoff';
+        status(`Showing week ${week}. Picks will unlock at ${kickoffTxt}.`);
+      } else {
+        status(`Showing week ${week}. Picks unlocked.`);
+      }
     }
 
     function buildPickMap(rows){
@@ -483,6 +515,16 @@
           const winner = winnerMap[id];
           const hasPick = !!(pick && String(pick).trim() !== '');
 
+          // NEW: If week not started, show a lock placeholder and skip coloring
+          if (!weekStarted) {
+            td.classList.add('pick-empty');
+            td.title = 'Picks unlock at first kickoff';
+            td.textContent = '🔒';
+            tr.appendChild(td);
+            return;
+          }
+
+          // Normal coloring once unlocked
           if(hasPick){
             if(winner && sameTeam(pick, winner)){
               td.classList.add('pick-win');
@@ -580,6 +622,34 @@
           badgeEl.className = 'badge badge-sched inline-fix';
         }
       });
+
+      // NEW: detect week start and unlock picks once
+      if (!weekStarted) {
+        const anyLiveOrFinal = (rows || []).some(r => r?.Status === 'in_progress' || r?.Status === 'final');
+        if (anyLiveOrFinal || hasWeekStartedNow()) {
+          weekStarted = true;
+          status(`Showing week ${currentWeek}. Picks unlocked.`);
+          // Re-render table with picks now visible
+          const { data: teamRows } = await supabase
+            .from('teams')
+            .select('team_id, team_name')
+            .order('team_name', { ascending: true });
+
+          const { data: pickRows } = await supabase
+            .from('picks')
+            .select('team_id, game_id, pick')
+            .in('game_id', gameIds);
+
+          const pickMap = buildPickMap(pickRows || []);
+          const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
+            const pa = winsByTeam[a.team_id] || 0;
+            const pb = winsByTeam[b.team_id] || 0;
+            if(pb !== pa) return pb - pa;
+            return a.team_name.localeCompare(b.team_name);
+          });
+          renderTable(teamsSorted, pickMap, winnerMap);
+        }
+      }
     }
   </script>
 </body>
