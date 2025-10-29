@@ -67,7 +67,7 @@
       </div>
     </header>
 
-    <!-- RIBBONS ROW: Perfect Week Club + Zero Pick Club -->
+    <!-- RIBBONS ROW: Perfect Week Club + Zero Pick Club (side-by-side on desktop, stacked on mobile) -->
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       <!-- Perfect Week Club -->
       <div class="ribbon gold-shadow rounded-none">
@@ -78,38 +78,19 @@
         <div id="perfect-ribbon" class="flex items-center gap-2 overflow-x-auto px-4 md:px-6 py-3"></div>
       </div>
 
-      <!-- Zero Pick Club -->
+      <!-- Zero Pick Club (no scrollbar; wraps to new lines) -->
       <div class="ribbon gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Zero Pick Club</h2>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Winless Club</h2>
         </div>
-        <div id="zero-ribbon" class="flex items-center gap-2 overflow-x-auto px-4 md:px-6 py-3"></div>
+        <div id="zero-ribbon" class="flex flex-wrap items-center gap-2 px-4 md:px-6 py-3"></div>
       </div>
     </section>
 
-    <!-- LOWER CARDS: Favorite % and Form -->
+    <!-- LOWER CARDS: Win % in Last 8 (now first) above Favorite Pick % -->
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Favorite Pick % -->
-      <div class="cfp-card gold-shadow rounded-none">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
-          <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Favorite Pick %</h2>
-        </div>
-        <div class="overflow-auto">
-          <table class="table min-w-full text-sm">
-            <thead>
-              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
-                <th class="px-4 py-2 text-left font-semibold">Team</th>
-                <th class="px-4 py-2 text-left font-semibold">Favorite %</th>
-              </tr>
-            </thead>
-            <tbody id="favorite-body"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Form table -->
+      <!-- Win % in Last 8 Picks (moved above Favorite %) -->
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
@@ -125,6 +106,25 @@
               </tr>
             </thead>
             <tbody id="form-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Favorite Pick % (now second) -->
+      <div class="cfp-card gold-shadow rounded-none">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval"></span>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Favorite Pick %</h2>
+        </div>
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead>
+              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                <th class="px-4 py-2 text-left font-semibold">Team</th>
+                <th class="px-4 py-2 text-left font-semibold">Favorite %</th>
+              </tr>
+            </thead>
+            <tbody id="favorite-body"></tbody>
           </table>
         </div>
       </div>
@@ -228,7 +228,6 @@
           perfectTally.set(teamId, (perfectTally.get(teamId) || 0) + 1);
         }
       }
-
       if(perfectTally.size){
         const chips = [...perfectTally.entries()]
           .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||''))
@@ -252,7 +251,6 @@
           zeroTally.set(teamId, (zeroTally.get(teamId) || 0) + 1);
         }
       }
-
       if(zeroTally.size){
         const chips = [...zeroTally.entries()]
           .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||''))
