@@ -45,11 +45,6 @@
         <p id="create-msg" class="text-xs mt-2"></p>
       </div>
     </div>
-
-    <div class="px-6 pb-6">
-      <!-- No leading slash; link within current folder -->
-      <a id="skip-link" href="./index.html" class="link text-sm">Skip for now</a>
-    </div>
   </div>
 
   <script type="module">
@@ -65,10 +60,6 @@
     const nameEl   = document.getElementById('team-name');
     const createBtn= document.getElementById('create-btn');
     const createMsg= document.getElementById('create-msg');
-    const skipLink = document.getElementById('skip-link');
-
-    // Ensure Skip link respects BASE
-    skipLink.href = BASE + 'index.html';
 
     function setStatus(msg, isErr=false){
       statusEl.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-400');
@@ -188,7 +179,6 @@
         setStatus('');
       }catch(e){
         setStatus('You need to sign in first.', true);
-        // NOTE: no leading slash
         setTimeout(()=> location.href = BASE + 'signin.html', 600);
       }
     })();
