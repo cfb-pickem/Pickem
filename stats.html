@@ -255,8 +255,8 @@
         const teamId = Number(key.split('|')[0]);
         if(correct === 0){ zeroTally.set(teamId, (zeroTally.get(teamId)||0) + 1); }
       }
-      const zeroRows = [...zeroTally.entries()]\
-        .map(([team_id, cnt]) => ({ team: teamName.get(team_id) || `Team ${team_id}`, cnt }))\
+      const zeroRows = [...zeroTally.entries()]
+        .map(([team_id, cnt]) => ({ team: teamName.get(team_id) || `Team ${team_id}`, cnt }))
         .sort((a,b)=> b.cnt - a.cnt || a.team.localeCompare(b.team));
       zeroBody.innerHTML = zeroRows.map(r =>
         `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">\n`+
@@ -276,14 +276,15 @@
       for(const p of (picks||[])){
         const g = gameMeta[p.game_id];
         if(!g) continue;
+        // ❗Exclude games where the person did not make a pick
+        if(!p.pick) continue;
         const favTeam = favoriteTeamFor(g);
         if(!favTeam) continue;
-        const pickStr = p.pick;
         const tId = p.team_id;
         if(!favStats.has(tId)) favStats.set(tId, { fav:0, opp:0 });
         const entry = favStats.get(tId);
         entry.opp++;
-        if(pickStr && sameTeam(pickStr, favTeam)) entry.fav++;
+        if(sameTeam(p.pick, favTeam)) entry.fav++;
       }
 
       const favRows = [...favStats.entries()].map(([team_id, {fav, opp}])=>({
@@ -292,9 +293,12 @@
       })).sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
 
       favoriteBody.innerHTML = favRows.map(r =>
-        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">\n`+
-        `  <td class="px-4 py-2">${escapeHtml(r.team)}</td>\n`+
-        `  <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>\n`+
+        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+`+
+        `  <td class=\"px-4 py-2\">${escapeHtml(r.team)}</td>
+`+
+        `  <td class=\"px-4 py-2\">${r.pct.toFixed(1)}%</td>
+`+
         `</tr>`).join('');
 
       // ------- Form: last 8 decided picks -------
