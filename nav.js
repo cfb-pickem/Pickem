@@ -51,15 +51,20 @@ export default async function initNav(){
   const signOutBtn = document.getElementById('sign-out-btn');
   signOutBtn?.addEventListener('click', async () => {
     await supabase.auth.signOut();
-    // simple hard nav so we don’t rely on a live rerender
+    // ✅ FIX 1: Corrected file extension from .HtmL to .html
     window.location.href = './index.html';
   });
 
   // Subscribe exactly once; on auth change, do a simple reload
   if (!didSubscribe) {
     didSubscribe = true;
-    supabase.auth.onAuthStateChange(() => {
-      window.location.reload();
+    
+    // ✅ FIX 2: Only reload on *actual* sign-in or sign-out events.
+    // This stops the reload loop on every page load.
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        window.location.reload();
+      }
     });
   }
 }
