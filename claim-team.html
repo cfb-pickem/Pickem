@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Claim or Create Team — CFB Pick'em</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <style>
+    :root{--cfp-black:#0B0B0B;--cfp-charcoal:#111213;--cfp-gold:#C99210;--cfp-ivory:#F7F4ED;--cfp-gray:#1F2022}
+    body{background:var(--cfp-charcoal);color:#e7e7e7;font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;min-height:100vh}
+    .card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
+    .btn{background:var(--cfp-gold);color:#0b0b0b;font-weight:700}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .link{color:var(--cfp-gold)}
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-2xl card rounded-lg shadow-xl">
+    <div class="p-6 border-b border-white/10">
+      <h1 class="font-['Oswald',_sans-serif] text-3xl font-bold text-[var(--cfp-ivory)]">Claim your team</h1>
+      <p class="text-sm text-gray-300 mt-1">Pick an existing <em>unclaimed</em> team or create a new one.</p>
+      <p id="status" class="text-xs text-gray-400 mt-2">Loading…</p>
+    </div>
+
+    <div class="p-6 grid gap-6 md:grid-cols-2">
+      <!-- Claim existing -->
+      <div>
+        <h2 class="font-['Oswald',_sans-serif] text-xl mb-2">Pick existing team</h2>
+        <label class="block text-sm text-gray-300 mb-2" for="team-select">Unclaimed teams</label>
+        <select id="team-select" class="w-full bg-black/40 border border-white/10 rounded p-2"></select>
+        <button id="claim-btn" class="btn rounded px-4 py-2 mt-3">Claim Team</button>
+        <p id="claim-msg" class="text-xs mt-2"></p>
+      </div>
+
+      <!-- Create new -->
+      <div>
+        <h2 class="font-['Oswald',_sans-serif] text-xl mb-2">Create new team</h2>
+        <label class="block text-sm text-gray-300 mb-2" for="team-name">Team name</label>
+        <input id="team-name" type="text" class="w-full bg-black/40 border border-white/10 rounded p-2" placeholder="e.g., Saturday Sharps" />
+        <button id="create-btn" class="btn rounded px-4 py-2 mt-3">Create & Use</button>
+        <p id="create-msg" class="text-xs mt-2"></p>
+      </div>
+    </div>
+
+    <div class="px-6 pb-6">
+      <a href="/" class="link text-sm">Skip for now</a>
+    </div>
+  </div>
+
+  <script type="module">
+    import { supabase } from './js/supabaseClient.js';
+
+    const statusEl = document.getElementById('status');
+    const selectEl = document.getElementById('team-select');
+    const claimBtn = document.getElementById('claim-btn');
+    const claimMsg = document.getElementById('claim-msg');
+    const nameEl   = document.getElementById('team-name');
+    const createBtn= document.getElementById('create-btn');
+    const createMsg= document.getElementById('create-msg');
+
+    function setStatus(msg, isErr=false){
+      statusEl.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-400');
+      statusEl.textContent = msg;
+    }
+    function setMsg(el, msg, isErr=false){ el.className = 'text-xs ' + (isErr? 'text-red-300':'text-green-300'); el.textContent = msg; }
+
+    async function currentUser(){
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if(error || !user){ throw new Error('Not signed in'); }
+      return user;
+    }
+
+    async function ensureProfile(user){
+      // Create profile row if missing
+      await supabase.from('profiles').upsert({ id: user.id }, { onConflict: 'id' });
+    }
+
+    async function loadUnclaimed(){
+      setStatus('Loading teams…');
+      const { data, error } = await supabase.from('teams').select('team_id, team_name, user_id').is('user_id', null).order('team_name');
+      if(error){ setStatus('Failed to load teams', true); return; }
+      selectEl.innerHTML = '';
+      if(!data || !data.length){
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No unclaimed teams available';
+        selectEl.appendChild(opt);
+        selectEl.disabled = true; claimBtn.disabled = true;
+      } else {
+        for(const t of data){
+          const opt = document.createElement('option');
+          opt.value = t.team_id; opt.textContent = t.team_name || `Team ${t.team_id}`;
+          selectEl.appendChild(opt);
+        }
+      }
+      setStatus('');
+    }
+
+    async function linkProfileToTeam(userId, teamId){
+      // Save on profile for quick joins elsewhere
+      await supabase.from('profiles').upsert({ id: userId, team_id: teamId }, { onConflict: 'id' });
+    }
+
+    async function claimSelected(){
+      claimMsg.textContent = ''; claimBtn.disabled = true;
+      try{
+        const user = await currentUser();
+        await ensureProfile(user);
+        const teamId = Number(selectEl.value);
+        if(!teamId){ setMsg(claimMsg, 'Select a team to claim', true); return; }
+        // Race-safe claim: only succeed if user_id is still NULL
+        const { data, error } = await supabase
+          .from('teams')
+          .update({ user_id: user.id })
+          .eq('team_id', teamId)
+          .is('user_id', null)
+          .select('team_id, team_name')
+          .maybeSingle();
+        if(error) throw error;
+        if(!data){ setMsg(claimMsg, 'That team was just claimed by someone else. Try another.', true); await loadUnclaimed(); return; }
+        await linkProfileToTeam(user.id, data.team_id);
+        setMsg(claimMsg, `Claimed ${data.team_name}. You're all set!`);
+        window.location.href = '/';
+      } catch(e){
+        console.error(e); setMsg(claimMsg, 'Could not claim team', true);
+      } finally { claimBtn.disabled = false; }
+    }
+
+    async function createTeam(){
+      createMsg.textContent = ''; createBtn.disabled = true;
+      try{
+        const user = await currentUser();
+        await ensureProfile(user);
+        const name = (nameEl.value||'').trim();
+        if(!name){ setMsg(createMsg, 'Enter a team name', true); return; }
+        const { data, error } = await supabase
+          .from('teams')
+          .insert({ team_name: name, user_id: user.id })
+          .select('team_id, team_name')
+          .single();
+        if(error) throw error;
+        await linkProfileToTeam(user.id, data.team_id);
+        setMsg(createMsg, `Created ${data.team_name}. You're all set!`);
+        window.location.href = '/';
+      } catch(e){
+        console.error(e); setMsg(createMsg, 'Could not create team', true);
+      } finally { createBtn.disabled = false; }
+    }
+
+    claimBtn.addEventListener('click', claimSelected);
+    createBtn.addEventListener('click', createTeam);
+
+    // boot
+    (async ()=>{
+      try{
+        await currentUser();
+        await loadUnclaimed();
+        setStatus('');
+      }catch(e){
+        setStatus('You need to sign in first.', true);
+        setTimeout(()=> location.href = '/signin.html', 1000);
+      }
+    })();
+  </script>
+  <script type="module">
+    // After sign-in/sign-up, if user has no team yet, send them to claim-team page
+    import { supabase } from './js/supabaseClient.js';
+
+    async function checkAndRedirect(){
+      const { data: { user } } = await supabase.auth.getUser();
+      if(!user) return; // not signed in on this page
+      const { data, error } = await supabase.from('profiles').select('team_id').eq('id', user.id).maybeSingle();
+      if(error){ console.error(error); return; }
+      if(!data || !data.team_id){ window.location.href = '/claim-team.html'; }
+    }
+
+    // try once when this page loads
+    checkAndRedirect();
+  </script>
+</body>
+</html>
