@@ -10,6 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <link rel="modulepreload" href="./js/nav.js">
+
   <style>
     :root{
       --cfp-black:#0B0B0B;
@@ -40,34 +43,16 @@
     .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
   </style>
 </head>
-<body>
+<body data-page="picks">
   <div class="max-w-7xl mx-auto p-4 md:p-6">
-    <!-- Auth-aware NAV -->
-    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
-        <li><a href="./index.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Leaderboard</a></li>
-
-        <li id="nav-picks" class="hidden">
-          <a href="./picks.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Make Picks</a>
-        </li>
-
-        <li><a href="./cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a></li>
-        <li><a href="./stats.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Stats</a></li>
-
-        <li id="nav-signin" class="ml-auto">
-          <a href="./signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
-        </li>
-        <li id="nav-signout" class="hidden">
-          <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
-        </li>
-      </ul>
-    </nav>
+    
+    <div id="site-nav"></div>
 
     <header class="cfp-card rounded-none stripe gold-shadow mb-5">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4 py-4 md:px-6 md:py-5">
         <div>
           <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-          <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Make Your Picks</h1>
+          <h1 class="font['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Make Your Picks</h1>
           <div id="team-chip" class="mt-2 hidden">
             <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
           </div>
@@ -76,15 +61,13 @@
       </div>
     </header>
 
-    <!-- Gate for signed-out users -->
     <div id="auth-gate" class="cfp-card callout gold-shadow p-4 md:p-6 hidden">
-      <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Sign in required</h2>
+      <h2 class="font['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Sign in required</h2>
       <p class="text-sm text-gray-200">
         Please <a href="./signin.html" class="text-[var(--cfp-gold-2)] underline">sign in</a> to make your picks.
       </p>
     </div>
 
-    <!-- Content for signed-in users -->
     <div id="games-wrap" class="hidden">
       <div id="games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
       <div class="mt-6 flex items-center gap-3">
@@ -96,15 +79,13 @@
   </div>
 
   <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    // --- NEW: Import shared modules ---
+    import initNav from './js/nav.js';
+    import { supabase } from './js/supabaseClient.js';
+    
+    // --- REMOVED: Old Supabase client creation ---
 
-    // ---- Supabase ----
-    const supabase = createClient(
-      'https://vopdioszofwdkwnujtiq.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw'
-    );
-
-    // ---- DOM ----
+    // ---- DOM (Page-specific only) ----
     const statusEl   = document.getElementById('status');
     const authGate   = document.getElementById('auth-gate');
     const gamesWrap  = document.getElementById('games-wrap');
@@ -115,11 +96,7 @@
     const teamChip   = document.getElementById('team-chip');
     const teamNameEl = document.getElementById('team-name');
 
-    // Nav auth elements
-    const navPicks   = document.getElementById('nav-picks');
-    const navSignin  = document.getElementById('nav-signin');
-    const navSignout = document.getElementById('nav-signout');
-    const signOutBtn = document.getElementById('sign-out-btn');
+    // --- REMOVED: Nav auth element variables ---
 
     // ---- State ----
     let session = null;
@@ -140,42 +117,32 @@
       } catch { return ts; }
     }
 
+    // --- SIMPLIFIED: This function only controls PAGE content now ---
     async function refreshAuthUI() {
       const { data: { session: s } } = await supabase.auth.getSession();
       session = s || null;
 
       if (session) {
-        navPicks?.classList.remove('hidden');
-        navSignin?.classList.add('hidden');
-        navSignout?.classList.remove('hidden');
-
+        // Show the page content
         authGate.classList.add('hidden');
         gamesWrap.classList.remove('hidden');
       } else {
-        navPicks?.classList.add('hidden');
-        navSignin?.classList.remove('hidden');
-        navSignout?.classList.add('hidden');
-
+        // Show the auth gate
         gamesWrap.classList.add('hidden');
         authGate.classList.remove('hidden');
       }
     }
 
-    signOutBtn?.addEventListener('click', async () => {
-      await supabase.auth.signOut();
-      await refreshAuthUI();
-      setStatus('Signed out.');
-    });
-
-    supabase.auth.onAuthStateChange(async () => {
-      await refreshAuthUI();
-      if (session) init(); // re-init when a user signs in
-    });
+    // --- REMOVED: signOutBtn listener (nav.js handles this) ---
+    
+    // --- REMOVED: onAuthStateChange listener (nav.js handles this by reloading) ---
 
     // ------- INIT -------
-    init();
-    async function init(){
-      await refreshAuthUI();
+    initNav(); // 1. Initialize the shared navigation
+    initPage();  // 2. Initialize the page-specific logic
+    
+    async function initPage(){
+      await refreshAuthUI(); // Checks if user is signed in
       if (!session) { setStatus('Sign in to make picks.'); return; }
 
       setStatus('Loading your team & current week…');
