@@ -340,9 +340,12 @@
       }
 
       weekSelect.value = String(currentWeek);
+
+      // 🔁 Recompute points when week changes
       weekSelect.onchange = async ()=>{
         currentWeek = Number(weekSelect.value);
         setCachedWeek(currentWeek);
+        await computeSeasonWins();       // ensure winsByTeam reflects latest DB state
         await loadWeek(currentWeek);
       };
     }
@@ -628,18 +631,22 @@
       if(liveTimer){ clearInterval(liveTimer); liveTimer = null; }
     }
 
+    // 🔁 Recompute points + update UI during live refreshes
     async function refreshBadgesFromAllGames(){
       if(!gameIds || !gameIds.length) return;
 
+      // include winner so we can detect changes and recolor cells
       const { data: rows, error } = await supabase
         .from('all_games')
-        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network')
+        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner')
         .in('GameId', gameIds);
-      iferror:
+
       if(error){
         console.warn('all_games refresh error:', error.message);
         return;
       }
+
+      let winnerChanged = false;
 
       (rows || []).forEach(r=>{
         const entry = headerStatusEls.get(String(r.GameId));
@@ -647,15 +654,16 @@
 
         const { badgeEl, networkEl } = entry;
 
+        // Update header badge + network
         if(r.Status === 'final'){
-          networkEl && (networkEl.style.display = 'none');
+          if (networkEl) networkEl.style.display = 'none';
           const a = r.AwayPts ?? '';
           const h = r.HomePts ?? '';
           badgeEl.textContent = `Final ${a}–${h}`;
           badgeEl.className = 'badge badge-final inline-fix';
         }else if(r.Status === 'in_progress'){
           if (networkEl) {
-            if (r.Network) { networkLine.textContent = r.Network; networkEl.style.display = ''; }
+            if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
             else { networkEl.style.display = 'none'; }
           }
           const p = r.Period || 1;
@@ -674,13 +682,36 @@
           badgeEl.textContent = t || 'Scheduled';
           badgeEl.className = 'badge badge-sched inline-fix';
         }
+
+        // Track winner changes for recoloring and points
+        const prevWinner = winnerMap[r.GameId] ?? null;
+        const currWinner = r.winner ?? null;
+        if (prevWinner !== currWinner) {
+          winnerMap[r.GameId] = currWinner;
+          winnerChanged = true;
+        }
       });
 
       // Reveal picks at kickoff without page refresh
       if (!showPicks && weekStartTs && Date.now() >= weekStartTs) {
         showPicks = true;
-        renderTable(lastTeams, lastPickMap, winnerMap, showPicks);
         status(`Kickoff! Showing picks for Week ${currentWeek}.`);
+        winnerChanged = true; // force a repaint when picks become visible
+      }
+
+      // If any winners changed OR picks just revealed, recompute points + rerender
+      if (winnerChanged) {
+        await computeSeasonWins();
+
+        // Re-sort teams by latest points, then name
+        lastTeams.sort((a,b)=>{
+          const pa = winsByTeam[a.team_id] || 0;
+          const pb = winsByTeam[b.team_id] || 0;
+          if (pb !== pa) return pb - pa;
+          return a.team_name.localeCompare(b.team_name);
+        });
+
+        renderTable(lastTeams, lastPickMap, winnerMap, showPicks);
       }
     }
   </script>
