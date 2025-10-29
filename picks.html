@@ -65,7 +65,7 @@
       box-shadow: 0 0 0 2px var(--cfp-gold-2);
     }
 
-    /* NEW: Locked state styling */
+    /* Locked state styling */
     .locked .pick-label{
       opacity:.5;
       cursor:not-allowed;
@@ -77,6 +77,25 @@
       color:#aaa;
       font-weight:500;
       box-shadow:none;
+    }
+
+    /* Save button states */
+    .btn-saving {
+      opacity: .9;
+      pointer-events: none;
+      filter: saturate(0.9);
+    }
+    .btn-success {
+      background: #22c55e !important; /* Tailwind green-500 */
+      color: #0b2913 !important;
+    }
+    .spin {
+      animation: spin 1s linear infinite;
+      transform-origin: center;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
     }
   </style>
 </head>
@@ -93,10 +112,10 @@
             <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
           </div>
         </div>
-        <div class="text-xs text-gray-300"><span id="status">Loading…</span></div>
+        <div class="text-xs text-gray-300"><span id="status" aria-live="polite">Loading…</span></div>
       </div>
 
-      <!-- NEW: Lock banner -->
+      <!-- Lock banner -->
       <div id="lock-banner" class="hidden border-t border-white/10 px-4 py-3 md:px-6">
         <div class="text-sm">
           <span class="inline-flex items-center gap-2">
@@ -117,9 +136,12 @@
     <div id="games-wrap" class="hidden">
       <div id="games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
       <div class="mt-6 flex items-center gap-3">
-        <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">Save Picks</button>
+        <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold inline-flex items-center gap-2">
+          <span class="sr-only">Save</span>
+          <span id="saveLabel">Save Picks</span>
+        </button>
         <button id="clear" class="px-4 py-2 border border-white/15">Clear</button>
-        <span id="saveStatus" class="text-xs text-gray-300"></span>
+        <span id="saveStatus" class="text-xs text-gray-300" aria-live="polite"></span>
       </div>
     </div>
   </div>
@@ -139,6 +161,7 @@
     const gamesWrap  = document.getElementById('games-wrap');
     const gamesEl    = document.getElementById('games');
     const saveBtn    = document.getElementById('save');
+    const saveLabel  = document.getElementById('saveLabel');
     const clearBtn   = document.getElementById('clear');
     const saveStatus = document.getElementById('saveStatus');
     const teamChip   = document.getElementById('team-chip');
@@ -153,7 +176,7 @@
     let selectedTeamName = '';
     let existingPicks = new Map(); // game_id -> pick
 
-    // NEW: lock tracking
+    // Lock tracking
     let earliestKickoff = null;
     let isLocked = false;
 
@@ -178,7 +201,6 @@
       if (!key) return;
       const draft = selections(); // [{ game_id, pick }]
       try { localStorage.setItem(key, JSON.stringify(draft)); } catch {}
-      // Optional: mild UX hint
       saveStatus.textContent = 'Draft saved locally';
       setTimeout(()=>{ if (saveStatus.textContent === 'Draft saved locally') saveStatus.textContent=''; }, 1200);
     }
@@ -243,12 +265,12 @@
       await loadExistingPicksForVisibleGames(); // fills & highlights saved picks
       overlayDraft(); // then overlay any local draft on top
 
-      // NEW: compute lock state and apply it immediately
+      // Compute & apply lock state
       computeEarliestKickoff();
       updateLockState();
       applyLockUI();
 
-      // NEW: re-check lock state every minute (covers tabs left open over kickoff)
+      // Re-check lock state every minute
       setInterval(() => {
         updateLockState();
         applyLockUI();
@@ -256,7 +278,7 @@
 
       setStatus(`Loaded week ${currentWeek}.`);
 
-      // Save draft when tab is hidden (belt-and-suspenders)
+      // Save draft when tab is hidden
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') saveDraft();
       });
@@ -282,12 +304,16 @@
         espn_url: g.espn_url || null,
         start: g['Start (CT)']
       })).sort((a,b)=>{
-        const ta = a.start ? new Date(a.start).getTime() : Infinity;
-        const tb = b.start ? new Date(b.start).getTime() : Infinity;
+        const ta = gTime(a);
+        const tb = gTime(b);
         return ta - tb;
       });
 
       renderGameCards(currentGames);
+    }
+
+    function gTime(g){
+      return g.start ? new Date(g.start).getTime() : Infinity;
     }
 
     async function loadExistingPicksForVisibleGames(){
@@ -393,7 +419,7 @@
       return picks;
     }
 
-    // ======== NEW: Lock logic ========
+    // ======== Lock logic ========
     function computeEarliestKickoff(){
       const times = currentGames
         .map(g => g.start ? new Date(g.start).getTime() : Infinity)
@@ -430,13 +456,54 @@
     }
     // =================================
 
+    // ======== Save button feedback helpers ========
+    function renderSaving(){
+      saveBtn.classList.add('btn-saving');
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = `
+        <svg class="w-4 h-4 spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" opacity=".25"/>
+          <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span>Saving…</span>
+      `;
+    }
+    function renderSaved(){
+      saveBtn.classList.remove('btn-saving');
+      saveBtn.classList.add('btn-success');
+      saveBtn.disabled = false; // allow immediate re-save if needed
+      saveBtn.innerHTML = `
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Saved!</span>
+      `;
+      // revert to default after a short delay
+      setTimeout(() => {
+        if (isLocked) return; // if locked meanwhile, leave as-is
+        renderSaveDefault();
+      }, 1400);
+    }
+    function renderSaveDefault(){
+      saveBtn.classList.remove('btn-saving','btn-success');
+      saveBtn.disabled = isLocked;
+      saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
+    }
+    function renderSaveError(){
+      // Show default label and re-enable; status text conveys the error
+      saveBtn.classList.remove('btn-saving','btn-success');
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
+    }
+    // ==============================================
+
     async function savePicks(){
       if (!session) { setStatus('Please sign in to save picks.', true); return; }
       if (!selectedTeamId) { setStatus('No team found for your account.', true); return; }
       if (isLocked) { setStatus('Picks are locked — the first game has started.', true); return; }
 
-      saveBtn.disabled = true;
-      saveStatus.textContent = 'Saving…';
+      renderSaving();
+      saveStatus.textContent = '';
 
       const rows = selections().map(p => ({
         team_id: Number(selectedTeamId),
@@ -447,8 +514,7 @@
 
       if (!rows.length){
         setStatus('Pick at least one game before saving.', true);
-        saveBtn.disabled = false;
-        saveStatus.textContent = '';
+        renderSaveError();
         return;
       }
 
@@ -456,15 +522,15 @@
         .from('picks')
         .upsert(rows, { onConflict: 'team_id,game_id', returning: 'minimal' });
 
-      saveBtn.disabled = false;
-      saveStatus.textContent = '';
       if (error) {
+        renderSaveError();
         setStatus('Error saving: ' + error.message, true);
       } else {
         setStatus('Picks saved!');
         rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
-        clearDraft();      // only clear draft on successful save
+        clearDraft();
         prefillSelections();
+        renderSaved();
       }
     }
 
