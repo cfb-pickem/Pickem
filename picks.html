@@ -363,7 +363,7 @@
         input.addEventListener('change', () => {
           const group = input.name;
           document.querySelectorAll(`input[name="${group}"]`).forEach(r => {
-            r.parentElement.classList.remove('selected');
+            r.parentElement.classList.remove('selected']);
           });
           input.parentElement.classList.add('selected');
           saveDraft(); // save draft on every change
