@@ -140,6 +140,37 @@
 
     const headerStatusEls = new Map(); // game_id -> { badgeEl, networkEl }
 
+    // ---------- Performance helpers ----------
+    const STORAGE_KEYS = {
+      lastWeek: 'cfb_last_week_v1',
+      logos: 'cfb_logos_v1',
+      logosTTL: 'cfb_logos_ttl_v1',
+    };
+    const LOGOS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+    function getCachedWeek() {
+      const v = localStorage.getItem(STORAGE_KEYS.lastWeek);
+      return v ? Number(v) : null;
+    }
+    function setCachedWeek(week) {
+      if (Number.isFinite(week)) localStorage.setItem(STORAGE_KEYS.lastWeek, String(week));
+    }
+    function getCachedLogos() {
+      try {
+        const ttl = Number(localStorage.getItem(STORAGE_KEYS.logosTTL) || 0);
+        if (Date.now() > ttl) return null; // expired
+        const raw = localStorage.getItem(STORAGE_KEYS.logos);
+        return raw ? JSON.parse(raw) : null;
+      } catch { return null; }
+    }
+    function setCachedLogos(mapObj) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.logos, JSON.stringify(mapObj || {}));
+        localStorage.setItem(STORAGE_KEYS.logosTTL, String(Date.now() + LOGOS_TTL_MS));
+      } catch {}
+    }
+
+    // ---------- Helpers ----------
     function stripAccents(s){
       try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); }
       catch { return s; }
@@ -174,33 +205,53 @@
     }
     function periodLabel(p){ return p >= 5 ? 'OT' : `Q${p||1}`; }
 
+    // ---------- App startup with optimistic preload ----------
     async function startup() {
       await initNav(); // render nav once
-      await init();    // then page logic
+
+      // Optimistic: show last seen week immediately if we have it
+      const hintedWeek = getCachedWeek();
+      if (Number.isFinite(hintedWeek)) {
+        weekSelect.innerHTML = `<option value="${hintedWeek}">Week ${hintedWeek}</option>`;
+        currentWeek = hintedWeek;
+        // Fire-and-forget — we'll reconcile after real init finishes
+        loadWeek(currentWeek).catch(() => {});
+      }
+
+      await init(); // real data load & reconcile
     }
     startup();
 
     async function init(){
       status('Loading weeks…');
 
-      // logos
-      const { data: logoRows, error: lErr } = await supabase
+      // Parallel: logos + weeks
+      const logoCached = getCachedLogos();
+      if (logoCached) logoByTeam = logoCached;
+
+      const logosPromise = supabase
         .from('logos')
         .select('Team, LogoURL');
-      logoByTeam = {};
-      if(!lErr){
-        (logoRows || []).forEach(r => {
-          if (r?.Team && r?.LogoURL) logoByTeam[r.Team] = r.LogoURL;
-        });
-      }
 
-      // weeks
-      const { data: weekRows, error: werr } = await supabase
+      const weeksPromise = supabase
         .from('all_games')
         .select('week')
         .eq('picked', true)
         .not('week', 'is', null)
         .order('week', { ascending: true });
+
+      const [{ data: logoRows, error: lErr }, { data: weekRows, error: werr }] =
+        await Promise.all([logosPromise, weeksPromise]);
+
+      // Merge fresh logos into cache (if any) and store
+      if(!lErr) {
+        const merged = { ...(logoCached || {}) };
+        (logoRows || []).forEach(r => {
+          if (r?.Team && r?.LogoURL) merged[r.Team] = r.LogoURL;
+        });
+        logoByTeam = merged;
+        setCachedLogos(logoByTeam);
+      }
 
       if(werr) return status(werr.message, true);
 
@@ -208,12 +259,25 @@
       if(!weeks.length) return status('No weeks found in all_games');
 
       weekSelect.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
-      currentWeek = weeks[weeks.length-1];
-      weekSelect.value = String(currentWeek);
-      weekSelect.onchange = async ()=>{ currentWeek = Number(weekSelect.value); await loadWeek(currentWeek); };
 
-      await computeSeasonWins();
-      await loadWeek(currentWeek);
+      const realCurrent = weeks[weeks.length-1];
+
+      // If we didn't have a hinted week, do full first render now
+      if (!Number.isFinite(currentWeek)) {
+        currentWeek = realCurrent;
+        await computeSeasonWins();
+        await loadWeek(currentWeek);
+      } else {
+        // We already rendered a hinted week; compute points and refresh
+        computeSeasonWins().then(() => loadWeek(currentWeek));
+      }
+
+      weekSelect.value = String(currentWeek);
+      weekSelect.onchange = async ()=>{
+        currentWeek = Number(weekSelect.value);
+        setCachedWeek(currentWeek);
+        await loadWeek(currentWeek);
+      };
     }
 
     async function computeSeasonWins(){
@@ -244,6 +308,7 @@
     }
 
     async function loadWeek(week){
+      setCachedWeek(week);
       status(`Loading week ${week}…`);
       stopLiveTicker();
       headerStatusEls.clear();
@@ -436,6 +501,7 @@
             img.src = url;
             img.alt = pick;
             img.title = pick;
+            img.loading = 'lazy';   // lazy-load logos
             img.className = 'logo';
             td.appendChild(img);
           }else{
@@ -459,6 +525,7 @@
       });
     }
 
+    // ------- LIVE TICKER -------
     async function startLiveTicker(){
       await refreshBadgesFromAllGames();
       liveTimer = setInterval(refreshBadgesFromAllGames, LIVE_INTERVAL_MS);
