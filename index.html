@@ -10,7 +10,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- Use relative paths for static hosting -->
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
@@ -23,7 +22,12 @@
       --cfp-ivory:#F7F4ED;
       --cfp-gray:#1F2022;
       --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+
+      /* Frozen column widths (tune as needed) */
+      --col1w: 220px; /* Team */
+      --col2w: 96px;  /* Points */
     }
+
     .network-line{display:inline-flex;align-items:center;font-size:10px;line-height:1;letter-spacing:.15em;text-transform:uppercase;color:var(--cfp-gold-2);margin:0}
     .badge.inline-fix{display:inline-flex;align-items:center;line-height:1;padding-top:.125rem;padding-bottom:.125rem}
 
@@ -61,6 +65,7 @@
     .pick-empty{color:#9ca3af}
 
     .logo{height:32px;width:32px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
+
     .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
     .ring-gold{box-shadow:var(--ring)}
 
@@ -69,12 +74,56 @@
       text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
     }
 
+    /* Frozen first two columns */
+    th.sticky-col-1, td.sticky-col-1{
+      position: sticky; left: 0; z-index: 25; background: var(--cfp-black);
+      width: var(--col1w); min-width: var(--col1w); max-width: var(--col1w);
+      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
+    }
+    th.sticky-col-2, td.sticky-col-2{
+      position: sticky; left: calc(var(--col1w)); z-index: 24; background: var(--cfp-black);
+      width: var(--col2w); min-width: var(--col2w); max-width: var(--col2w);
+      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
+      text-align: center;
+    }
+    /* Make the top-left corner cells above the header row */
+    thead th.sticky-col-1, thead th.sticky-col-2{ z-index: 50; }
+
+    /* Scroll container shadows (hint there’s more) */
+    .scroll-shadows{ position: relative; }
+    .scroll-shadows::before,
+    .scroll-shadows::after{
+      content:""; position:absolute; top:0; bottom:0; width:24px; pointer-events:none; z-index:40;
+    }
+    .scroll-shadows::before{
+      left:var(--col1w); /* start right after first column */
+      background:linear-gradient(to right, rgba(0,0,0,0.0), rgba(0,0,0,.35));
+      transform:translateX(calc(-1 * 12px)); /* pull slightly over the boundary */
+    }
+    .scroll-shadows::after{
+      right:0; background:linear-gradient(to left, rgba(0,0,0,0.0), rgba(0,0,0,.35));
+    }
+
+    /* Mobile readability tweaks */
+    @media (max-width: 640px){
+      :root { --col1w: 180px; --col2w: 84px; }
+      .logo{height:24px;width:24px}
+      th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
+      thead th { font-size: .8rem; }
+      .network-line { display:none; }          /* declutter headers on mobile */
+      .badge { font-size: .65rem; padding: .1rem .4rem; }
+      .table tbody td { font-size: .85rem; }
+      /* Avoid multi-line headers: keep to one line with ellipsis */
+      thead th div:first-child{
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 140px;
+      }
+    }
+
     /* Ensure nav is clickable above all other elements */
-    nav[data-nav="root"]{position:relative;z-index:50;pointer-events:auto}
+    nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
   </style>
 </head>
 
-<!-- Mark this page so nav.js can highlight it -->
 <body data-page="leaderboard">
   <div class="max-w-7xl mx-auto p-4 md:p-6">
     <div id="site-nav"></div>
@@ -98,7 +147,8 @@
       </div>
     </header>
 
-    <div class="cfp-card rounded-none gold-shadow overflow-auto">
+    <!-- Add scroll-shadows to container -->
+    <div class="cfp-card rounded-none gold-shadow overflow-auto scroll-shadows">
       <table class="table min-w-full text-sm">
         <thead class="table-sticky">
           <tr id="thead-row" class="border-b"></tr>
@@ -214,7 +264,6 @@
       if (Number.isFinite(hintedWeek)) {
         weekSelect.innerHTML = `<option value="${hintedWeek}">Week ${hintedWeek}</option>`;
         currentWeek = hintedWeek;
-        // Fire-and-forget — we'll reconcile after real init finishes
         loadWeek(currentWeek).catch(() => {});
       }
 
@@ -243,7 +292,6 @@
       const [{ data: logoRows, error: lErr }, { data: weekRows, error: werr }] =
         await Promise.all([logosPromise, weeksPromise]);
 
-      // Merge fresh logos into cache (if any) and store
       if(!lErr) {
         const merged = { ...(logoCached || {}) };
         (logoRows || []).forEach(r => {
@@ -262,13 +310,11 @@
 
       const realCurrent = weeks[weeks.length-1];
 
-      // If we didn't have a hinted week, do full first render now
       if (!Number.isFinite(currentWeek)) {
         currentWeek = realCurrent;
         await computeSeasonWins();
         await loadWeek(currentWeek);
       } else {
-        // We already rendered a hinted week; compute points and refresh
         computeSeasonWins().then(() => loadWeek(currentWeek));
       }
 
@@ -384,12 +430,12 @@
       theadRow.innerHTML = '';
 
       const thTeam = document.createElement('th');
-      thTeam.className = 'text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
+      thTeam.className = 'text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-1';
       thTeam.textContent = 'Team';
       theadRow.appendChild(thTeam);
 
       const thPts = document.createElement('th');
-      thPts.className = 'px-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
+      thPts.className = 'px-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-2';
       thPts.textContent = 'Points';
       theadRow.appendChild(thPts);
 
@@ -425,7 +471,7 @@
           const a = row?.AwayPts ?? '';
           const h = row?.HomePts ?? '';
           const score = (a!=='' && h!=='') ? `${a}–${h}` : '';
-          badge.textContent = `${periodLabel(p)} ${clk} ${score}`.trim();
+          badge.textContent = `${p >= 5 ? 'OT' : 'Q'+(p||1)} ${clk} ${score}`.trim();
           badge.className = 'badge badge-live inline-fix';
         } else {
           if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
@@ -466,12 +512,12 @@
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
         const tdTeam = document.createElement('td');
-        tdTeam.className = 'px-4 py-2 font-semibold text-[var(--cfp-ivory)]';
+        tdTeam.className = 'px-4 py-2 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
         tdTeam.textContent = team.team_name;
         tr.appendChild(tdTeam);
 
         const tdPts = document.createElement('td');
-        tdPts.className = 'px-3 py-2 text-center font-semibold text-[var(--cfp-ivory)]';
+        tdPts.className = 'px-3 py-2 text-center font-semibold text-[var(--cfp-ivory)] sticky-col-2';
         tdPts.textContent = (winsByTeam[team.team_id] || 0).toString();
         tr.appendChild(tdPts);
 
@@ -501,7 +547,7 @@
             img.src = url;
             img.alt = pick;
             img.title = pick;
-            img.loading = 'lazy';   // lazy-load logos
+            img.loading = 'lazy';
             img.className = 'logo';
             td.appendChild(img);
           }else{
@@ -568,7 +614,7 @@
           const a = r.AwayPts ?? '';
           const h = r.HomePts ?? '';
           const score = (a!=='' && h!=='') ? `${a}–${h}` : '';
-          badgeEl.textContent = `${periodLabel(p)} ${clk} ${score}`.trim();
+          badgeEl.textContent = `${p >= 5 ? 'OT' : 'Q'+(p||1)} ${clk} ${score}`.trim();
           badgeEl.className = 'badge badge-live inline-fix';
         }else{
           if (networkEl) {
