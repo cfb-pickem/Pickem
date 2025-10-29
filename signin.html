@@ -88,12 +88,12 @@
       statusEl.textContent = '';
 
       const email = form.email.value;
-
+      const base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
       const { error } = await supabase.auth.signInWithOtp({
         email: email,
         options: {
           // URL to redirect to after user clicks magic link
-          emailRedirectTo: window.location.origin + '/index.html',
+          emailRedirectTo: base + 'index.html',
         }
       });
 
