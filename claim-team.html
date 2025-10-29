@@ -47,12 +47,16 @@
     </div>
 
     <div class="px-6 pb-6">
-      <a href="/" class="link text-sm">Skip for now</a>
+      <!-- No leading slash; link within current folder -->
+      <a id="skip-link" href="./index.html" class="link text-sm">Skip for now</a>
     </div>
   </div>
 
   <script type="module">
     import { supabase } from './js/supabaseClient.js';
+
+    // Compute base to THIS folder (works on GitHub Pages and localhost)
+    const BASE = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
 
     const statusEl = document.getElementById('status');
     const selectEl = document.getElementById('team-select');
@@ -61,12 +65,19 @@
     const nameEl   = document.getElementById('team-name');
     const createBtn= document.getElementById('create-btn');
     const createMsg= document.getElementById('create-msg');
+    const skipLink = document.getElementById('skip-link');
+
+    // Ensure Skip link respects BASE
+    skipLink.href = BASE + 'index.html';
 
     function setStatus(msg, isErr=false){
       statusEl.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-400');
       statusEl.textContent = msg;
     }
-    function setMsg(el, msg, isErr=false){ el.className = 'text-xs ' + (isErr? 'text-red-300':'text-green-300'); el.textContent = msg; }
+    function setMsg(el, msg, isErr=false){
+      el.className = 'text-xs ' + (isErr? 'text-red-300':'text-green-300');
+      el.textContent = msg;
+    }
 
     async function currentUser(){
       const { data: { user }, error } = await supabase.auth.getUser();
@@ -75,13 +86,16 @@
     }
 
     async function ensureProfile(user){
-      // Create profile row if missing
       await supabase.from('profiles').upsert({ id: user.id }, { onConflict: 'id' });
     }
 
     async function loadUnclaimed(){
       setStatus('Loading teams…');
-      const { data, error } = await supabase.from('teams').select('team_id, team_name, user_id').is('user_id', null).order('team_name');
+      const { data, error } = await supabase
+        .from('teams')
+        .select('team_id, team_name, user_id')
+        .is('user_id', null)
+        .order('team_name');
       if(error){ setStatus('Failed to load teams', true); return; }
       selectEl.innerHTML = '';
       if(!data || !data.length){
@@ -93,15 +107,16 @@
       } else {
         for(const t of data){
           const opt = document.createElement('option');
-          opt.value = t.team_id; opt.textContent = t.team_name || `Team ${t.team_id}`;
+          opt.value = t.team_id;
+          opt.textContent = t.team_name || `Team ${t.team_id}`;
           selectEl.appendChild(opt);
         }
+        selectEl.disabled = false; claimBtn.disabled = false;
       }
       setStatus('');
     }
 
     async function linkProfileToTeam(userId, teamId){
-      // Save on profile for quick joins elsewhere
       await supabase.from('profiles').upsert({ id: userId, team_id: teamId }, { onConflict: 'id' });
     }
 
@@ -112,7 +127,7 @@
         await ensureProfile(user);
         const teamId = Number(selectEl.value);
         if(!teamId){ setMsg(claimMsg, 'Select a team to claim', true); return; }
-        // Race-safe claim: only succeed if user_id is still NULL
+        // Race-safe claim
         const { data, error } = await supabase
           .from('teams')
           .update({ user_id: user.id })
@@ -121,13 +136,20 @@
           .select('team_id, team_name')
           .maybeSingle();
         if(error) throw error;
-        if(!data){ setMsg(claimMsg, 'That team was just claimed by someone else. Try another.', true); await loadUnclaimed(); return; }
+        if(!data){
+          setMsg(claimMsg, 'That team was just claimed by someone else. Try another.', true);
+          await loadUnclaimed();
+          return;
+        }
         await linkProfileToTeam(user.id, data.team_id);
         setMsg(claimMsg, `Claimed ${data.team_name}. You're all set!`);
-        window.location.href = '/';
+        window.location.href = BASE + 'index.html';
       } catch(e){
-        console.error(e); setMsg(claimMsg, 'Could not claim team', true);
-      } finally { claimBtn.disabled = false; }
+        console.error(e);
+        setMsg(claimMsg, 'Could not claim team', true);
+      } finally {
+        claimBtn.disabled = false;
+      }
     }
 
     async function createTeam(){
@@ -145,41 +167,31 @@
         if(error) throw error;
         await linkProfileToTeam(user.id, data.team_id);
         setMsg(createMsg, `Created ${data.team_name}. You're all set!`);
-        window.location.href = '/';
+        window.location.href = BASE + 'index.html';
       } catch(e){
-        console.error(e); setMsg(createMsg, 'Could not create team', true);
-      } finally { createBtn.disabled = false; }
+        console.error(e);
+        setMsg(createMsg, 'Could not create team', true);
+      } finally {
+        createBtn.disabled = false;
+      }
     }
 
     claimBtn.addEventListener('click', claimSelected);
     createBtn.addEventListener('click', createTeam);
 
-    // boot
+    // Boot: require sign-in; otherwise send back to signin in THIS folder
     (async ()=>{
       try{
-        await currentUser();
+        const user = await currentUser();
+        await ensureProfile(user);
         await loadUnclaimed();
         setStatus('');
       }catch(e){
         setStatus('You need to sign in first.', true);
-        setTimeout(()=> location.href = '/signin.html', 1000);
+        // NOTE: no leading slash
+        setTimeout(()=> location.href = BASE + 'signin.html', 600);
       }
     })();
-  </script>
-  <script type="module">
-    // After sign-in/sign-up, if user has no team yet, send them to claim-team page
-    import { supabase } from './js/supabaseClient.js';
-
-    async function checkAndRedirect(){
-      const { data: { user } } = await supabase.auth.getUser();
-      if(!user) return; // not signed in on this page
-      const { data, error } = await supabase.from('profiles').select('team_id').eq('id', user.id).maybeSingle();
-      if(error){ console.error(error); return; }
-      if(!data || !data.team_id){ window.location.href = '/claim-team.html'; }
-    }
-
-    // try once when this page loads
-    checkAndRedirect();
   </script>
 </body>
 </html>
