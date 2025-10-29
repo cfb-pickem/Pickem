@@ -1,11 +1,11 @@
-// /js/nav.js
+// /js/nav.js  (fixed)
 import { supabase } from './supabaseClient.js';
 
 const LINKS = [
-  { href: './index.html',      key: 'leaderboard', label: "Leaderboard" },
-  { href: './picks.html',      key: 'picks',       label: "Make Picks", authOnly: true, id: 'nav-picks' },
-  { href: './cfb-genius.html', key: 'genius',      label: "CFB Genius" },
-  { href: './stats.html',      key: 'stats',       label: "Stats" }
+  { href: './index.html',      key: 'leaderboard', label: 'Leaderboard' },
+  { href: './picks.html',      key: 'picks',       label: 'Make Picks', authOnly: true, id: 'nav-picks' },
+  { href: './cfb-genius.html', key: 'genius',      label: 'CFB Genius' },
+  { href: './stats.html',      key: 'stats',       label: 'Stats' }
 ];
 
 function clsActive(isActive){
@@ -14,7 +14,10 @@ function clsActive(isActive){
     : 'text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors';
 }
 
-export default async function initNav() {
+// Guard so we subscribe only once
+let didSubscribe = false;
+
+export default async function initNav(){
   const mount = document.getElementById('site-nav');
   if (!mount) return;
 
@@ -22,16 +25,12 @@ export default async function initNav() {
   const { data: { session } } = await supabase.auth.getSession();
   const signedIn = !!session;
 
-  // Build nav HTML
   const items = LINKS
     .filter(l => !l.authOnly || signedIn)
     .map(l => {
       const active = l.key === current;
-      return `
-        <li ${l.id ? `id="${l.id}"` : ''}>
-          <a href="${l.href}" class="block px-3 py-3 ${clsActive(active)}">${l.label}</a>
-        </li>
-      `;
+      const id = l.id ? ` id="${l.id}"` : '';
+      return `<li${id}><a href="${l.href}" class="block px-3 py-3 ${clsActive(active)}">${l.label}</a></li>`;
     }).join('');
 
   mount.innerHTML = `
@@ -48,16 +47,19 @@ export default async function initNav() {
     </nav>
   `;
 
-  // Wire sign out
+  // Wire sign-out once nav is in the DOM
   const signOutBtn = document.getElementById('sign-out-btn');
   signOutBtn?.addEventListener('click', async () => {
     await supabase.auth.signOut();
-    // Refresh to rebuild menu in signed-out state
-    location.href = './index.html';
+    // simple hard nav so we don’t rely on a live rerender
+    window.location.href = './index.html';
   });
 
-  // React to auth changes live (e.g., after sign-in on another page)
-  supabase.auth.onAuthStateChange(() => {
-    initNav();
-  });
+  // Subscribe exactly once; on auth change, do a simple reload
+  if (!didSubscribe) {
+    didSubscribe = true;
+    supabase.auth.onAuthStateChange(() => {
+      window.location.reload();
+    });
+  }
 }
