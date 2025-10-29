@@ -60,7 +60,24 @@
     .pick-loss{background:rgba(255,92,92,.15);color:#ffb3b3}
     .pick-empty{color:#9ca3af}
 
-    .logo{height:32px;width:32px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
+    /* UPDATED: ensure dark logos never blend in */
+    .logo-puck{
+      display:inline-flex;align-items:center;justify-content:center;
+      width:36px;height:36px;margin-left:auto;margin-right:auto;border-radius:9999px;
+      background:
+        radial-gradient(circle at 50% 45%, rgba(247,244,237,.96) 0 62%, rgba(247,244,237,.88) 62% 64%, rgba(233,185,73,.16) 64% 100%);
+      box-shadow:
+        inset 0 0 0 1px rgba(233,185,73,.55),
+        0 1px 2px rgba(0,0,0,.35),
+        0 0 8px rgba(0,0,0,.2);
+    }
+    .logo{
+      height:26px;width:26px;object-fit:contain;
+      /* slight lift for very dark marks against the ivory puck */
+      filter: drop-shadow(0 0 1px rgba(0,0,0,.35));
+      image-rendering:auto;
+    }
+
     .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
     .ring-gold{box-shadow:var(--ring)}
 
@@ -497,13 +514,17 @@
 
           const url = hasPick ? getLogoForPickExact(pick) : null;
           if(url){
+            // UPDATED: wrap the logo in a high-contrast puck
+            const wrap = document.createElement('div');
+            wrap.className = 'logo-puck';
             const img = document.createElement('img');
             img.src = url;
             img.alt = pick;
             img.title = pick;
-            img.loading = 'lazy';   // lazy-load logos
+            img.loading = 'lazy';
             img.className = 'logo';
-            td.appendChild(img);
+            wrap.appendChild(img);
+            td.appendChild(wrap);
           }else{
             td.textContent = hasPick ? pick : '—';
           }
