@@ -10,9 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- If your files live in a /js folder, change to ./js/supabaseClient.js and ./js/nav.js -->
-  <link rel="modulepreload" href="./supabaseClient.js">
-  <link rel="modulepreload" href="./nav.js">
+  <!-- Match the working imports used on your index page -->
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <link rel="modulepreload" href="./js/nav.js">
 
   <style>
     :root{
@@ -52,7 +52,7 @@
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4 py-4 md:px-6 md:py-5">
         <div>
           <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-          <h1 class="font['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Make Your Picks</h1>
+          <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Make Your Picks</h1>
           <div id="team-chip" class="mt-2 hidden">
             <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
           </div>
@@ -62,7 +62,7 @@
     </header>
 
     <div id="auth-gate" class="cfp-card callout gold-shadow p-4 md:p-6 hidden">
-      <h2 class="font['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Sign in required</h2>
+      <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Sign in required</h2>
       <p class="text-sm text-gray-200">
         Please <a href="./signin.html" class="text-[var(--cfp-gold-2)] underline">sign in</a> to make your picks.
       </p>
@@ -79,8 +79,15 @@
   </div>
 
   <script type="module">
-    import initNav from './nav.js';               // change to ./js/nav.js if needed
-    import { supabase } from './supabaseClient.js';
+    import initNav from './js/nav.js';            // keep consistent with index.html
+    import { supabase } from './js/supabaseClient.js';
+
+    // --- tiny CSS.escape polyfill (older Safari/Edge) ---
+    if (typeof CSS === 'undefined' || typeof CSS.escape !== 'function') {
+      window.CSS = window.CSS || {};
+      window.CSS.escape = (s) => String(s).replace(/[^a-zA-Z0-9_\-]/g, (c) =>
+        '\\' + c.codePointAt(0).toString(16) + ' ');
+    }
 
     const statusEl   = document.getElementById('status');
     const authGate   = document.getElementById('auth-gate');
@@ -123,7 +130,7 @@
     }
 
     async function startup() {
-      await initNav();       // nav should register its auth listener once
+      await initNav();       // nav registers its single auth listener
       await initPage();
     }
     startup();
@@ -134,7 +141,7 @@
 
       setStatus('Loading your team & current week…');
 
-      // Latest week with picked games
+      // 1) Determine latest week having picked games
       const { data: weekRows, error: wErr } = await supabase
         .from('all_games')
         .select('week')
@@ -147,10 +154,10 @@
       if (!weeks.length) { setStatus('No weeks found.', true); return; }
       currentWeek = weeks[weeks.length - 1];
 
-      // Get user's team (first alphabetically)
+      // 2) Get user's team (first alphabetically if they have multiple)
       const { data: myTeams, error: tErr } = await supabase
         .from('teams')
-        .select('team_id, team_name')
+        .select('team_id, team_name, user_id')
         .eq('user_id', session.user.id)
         .order('team_name', { ascending: true });
 
@@ -161,12 +168,12 @@
         return;
       }
 
-      selectedTeamId = Number(myTeams[0].team_id);
+      selectedTeamId = Number(myTeams[0].team_id); // keep numeric to match typical schema
       selectedTeamName = myTeams[0].team_name || `Team ${selectedTeamId}`;
       teamNameEl.textContent = selectedTeamName;
       teamChip.classList.remove('hidden');
 
-      // Load games then any existing picks just for these games
+      // 3) Load games for that week, then prefill existing picks for those games
       await loadGamesForWeek(currentWeek);
       await loadExistingPicksForVisibleGames();
 
@@ -213,7 +220,10 @@
         .eq('team_id', selectedTeamId)
         .in('game_id', gameIds);
 
-      if (error) return; // non-fatal
+      if (error) {
+        console.warn('picks fetch error:', error.message);
+        return; // non-fatal
+      }
       (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
       prefillSelections();
     }
@@ -277,12 +287,11 @@
       saveBtn.disabled = true;
       saveStatus.textContent = 'Saving…';
 
-      const week = Number(currentWeek);
       const rows = selections().map(p => ({
         team_id: Number(selectedTeamId),
         game_id: Number(p.game_id),
         pick: p.pick,
-        week // optional metadata, not part of the conflict key
+        week: Number(currentWeek) // optional metadata (not in conflict key)
       }));
 
       if (!rows.length){
@@ -298,8 +307,9 @@
 
       saveBtn.disabled = false;
       saveStatus.textContent = '';
-      if (error) setStatus('Error saving: ' + error.message, true);
-      else {
+      if (error) {
+        setStatus('Error saving: ' + error.message, true);
+      } else {
         setStatus('Picks saved!');
         // refresh local cache so prefill stays accurate
         rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
