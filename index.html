@@ -23,9 +23,8 @@
       --cfp-gray:#1F2022;
       --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
 
-      /* Frozen column widths (tune as needed) */
-      --col1w: 220px; /* Team */
-      --col2w: 96px;  /* Points */
+      /* Frozen first column width */
+      --col1w: 210px;
     }
 
     .network-line{display:inline-flex;align-items:center;font-size:10px;line-height:1;letter-spacing:.15em;text-transform:uppercase;color:var(--cfp-gold-2);margin:0}
@@ -64,56 +63,44 @@
     .pick-loss{background:rgba(255,92,92,.15);color:#ffb3b3}
     .pick-empty{color:#9ca3af}
 
-    .logo{height:32px;width:32px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
+    .logo{height:30px;width:30px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
 
     .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
     .ring-gold{box-shadow:var(--ring)}
 
     .playoff-divider td{
-      padding:.15rem 0;background:transparent;border-top:2px solid var(--cfp-gold);color:var(--cfp-ivory);
+      padding:.1rem 0;background:transparent;border-top:2px solid var(--cfp-gold);color:var(--cfp-ivory);
       text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
     }
 
-    /* Frozen first two columns */
+    /* Freeze only the first column */
     th.sticky-col-1, td.sticky-col-1{
       position: sticky; left: 0; z-index: 25; background: var(--cfp-black);
       width: var(--col1w); min-width: var(--col1w); max-width: var(--col1w);
       box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
     }
-    th.sticky-col-2, td.sticky-col-2{
-      position: sticky; left: calc(var(--col1w)); z-index: 24; background: var(--cfp-black);
-      width: var(--col2w); min-width: var(--col2w); max-width: var(--col2w);
-      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
-      text-align: center;
-    }
-    /* Make the top-left corner cells above the header row */
-    thead th.sticky-col-1, thead th.sticky-col-2{ z-index: 50; }
+    thead th.sticky-col-1{ z-index: 50; }
 
-    /* Scroll container shadows (hint there’s more) */
+    /* Subtle scroll hint shadows */
     .scroll-shadows{ position: relative; }
-    .scroll-shadows::before,
     .scroll-shadows::after{
-      content:""; position:absolute; top:0; bottom:0; width:24px; pointer-events:none; z-index:40;
-    }
-    .scroll-shadows::before{
-      left:var(--col1w); /* start right after first column */
-      background:linear-gradient(to right, rgba(0,0,0,0.0), rgba(0,0,0,.35));
-      transform:translateX(calc(-1 * 12px)); /* pull slightly over the boundary */
-    }
-    .scroll-shadows::after{
-      right:0; background:linear-gradient(to left, rgba(0,0,0,0.0), rgba(0,0,0,.35));
+      content:""; position:absolute; top:0; bottom:0; right:0; width:24px; pointer-events:none; z-index:40;
+      background:linear-gradient(to left, rgba(0,0,0,0.0), rgba(0,0,0,.35));
     }
 
-    /* Mobile readability tweaks */
+    /* Tighter rows overall */
+    th, td { padding-top: .35rem !important; padding-bottom: .35rem !important; }
+    /* Slightly tighter team cell horizontally, too */
+    td.sticky-col-1 { padding-left: .75rem !important; padding-right: .5rem !important; }
+
+    /* Mobile tweaks */
     @media (max-width: 640px){
-      :root { --col1w: 180px; --col2w: 84px; }
+      :root { --col1w: 180px; }
       .logo{height:24px;width:24px}
-      th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
       thead th { font-size: .8rem; }
-      .network-line { display:none; }          /* declutter headers on mobile */
-      .badge { font-size: .65rem; padding: .1rem .4rem; }
+      .network-line { display:none; }
+      .badge { font-size: .65rem; padding: .08rem .35rem; }
       .table tbody td { font-size: .85rem; }
-      /* Avoid multi-line headers: keep to one line with ellipsis */
       thead th div:first-child{
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 140px;
       }
@@ -128,13 +115,13 @@
   <div class="max-w-7xl mx-auto p-4 md:p-6">
     <div id="site-nav"></div>
 
-    <header class="cfp-card rounded-none stripe gold-shadow mb-5">
-      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
+    <header class="cfp-card rounded-none stripe gold-shadow mb-4">
+      <div class="flex items-center justify-between px-4 py-3 md:px-6 md:py-4">
         <div class="flex items-center gap-3 md:gap-4">
           <span class="trophy-oval" aria-hidden="true"></span>
           <div>
             <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Leaderboard</h1>
+            <h1 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)] leading-tight">Leaderboard</h1>
           </div>
         </div>
         <div class="flex items-center gap-3 text-sm">
@@ -147,7 +134,6 @@
       </div>
     </header>
 
-    <!-- Add scroll-shadows to container -->
     <div class="cfp-card rounded-none gold-shadow overflow-auto scroll-shadows">
       <table class="table min-w-full text-sm">
         <thead class="table-sticky">
@@ -157,7 +143,7 @@
       </table>
     </div>
 
-    <div class="mt-4 text-xs text-gray-300 flex flex-wrap items-center gap-3">
+    <div class="mt-3 text-xs text-gray-300 flex flex-wrap items-center gap-3">
       <span class="badge badge-live">Live</span>
       <span class="badge badge-final">Final</span>
       <span class="badge badge-sched">Scheduled</span>
@@ -257,9 +243,8 @@
 
     // ---------- App startup with optimistic preload ----------
     async function startup() {
-      await initNav(); // render nav once
+      await initNav();
 
-      // Optimistic: show last seen week immediately if we have it
       const hintedWeek = getCachedWeek();
       if (Number.isFinite(hintedWeek)) {
         weekSelect.innerHTML = `<option value="${hintedWeek}">Week ${hintedWeek}</option>`;
@@ -267,14 +252,13 @@
         loadWeek(currentWeek).catch(() => {});
       }
 
-      await init(); // real data load & reconcile
+      await init(); // real load
     }
     startup();
 
     async function init(){
       status('Loading weeks…');
 
-      // Parallel: logos + weeks
       const logoCached = getCachedLogos();
       if (logoCached) logoByTeam = logoCached;
 
@@ -430,21 +414,21 @@
       theadRow.innerHTML = '';
 
       const thTeam = document.createElement('th');
-      thTeam.className = 'text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-1';
+      thTeam.className = 'text-left px-3 py-2 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-1';
       thTeam.textContent = 'Team';
       theadRow.appendChild(thTeam);
 
       const thPts = document.createElement('th');
-      thPts.className = 'px-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-2';
+      thPts.className = 'px-2 py-2 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
       thPts.textContent = 'Points';
       theadRow.appendChild(thPts);
 
       gameIds.forEach(id=>{
         const th = document.createElement('th');
-        th.className = 'px-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] whitespace-nowrap align-middle font-[Oswald] tracking-wide';
+        th.className = 'px-2 py-2 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] whitespace-nowrap align-middle font-[Oswald] tracking-wide';
 
         const title = document.createElement('div');
-        title.className = 'mb-1';
+        title.className = 'mb-0.5';
         title.textContent = gameNameMap[id] || `Game ${id}`;
         th.appendChild(title);
 
@@ -504,7 +488,6 @@
           lastCutIndex = i;
         } else break;
       }
-
       const shouldInsertDivider = lastCutIndex >= 0 && lastCutIndex < teams.length - 1;
 
       teams.forEach((team, idx)=>{
@@ -512,18 +495,18 @@
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
         const tdTeam = document.createElement('td');
-        tdTeam.className = 'px-4 py-2 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
+        tdTeam.className = 'px-3 py-1.5 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
         tdTeam.textContent = team.team_name;
         tr.appendChild(tdTeam);
 
         const tdPts = document.createElement('td');
-        tdPts.className = 'px-3 py-2 text-center font-semibold text-[var(--cfp-ivory)] sticky-col-2';
+        tdPts.className = 'px-2 py-1.5 text-center font-semibold text-[var(--cfp-ivory)]';
         tdPts.textContent = (winsByTeam[team.team_id] || 0).toString();
         tr.appendChild(tdPts);
 
         gameIds.forEach(id=>{
           const td = document.createElement('td');
-          td.className = 'px-3 py-2 text-center text-sm align-middle';
+          td.className = 'px-2 py-1.5 text-center text-sm align-middle';
 
           const pick   = pickMap[team.team_id]?.[id];
           const winner = winnerMap[id];
