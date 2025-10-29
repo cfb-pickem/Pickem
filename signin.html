@@ -38,6 +38,9 @@
     .cfp-input{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
     .cfp-input:focus{outline:none;box-shadow:var(--ring)}
     .ring-gold{box-shadow:var(--ring)}
+    .tab-btn{padding:.5rem 1rem;border:1px solid rgba(231,231,231,.12)}
+    .tab-btn.active{background:var(--cfp-gold);color:#0b0b0b;border-color:var(--cfp-gold)}
+    .link{color:var(--cfp-gold-2);text-decoration:underline}
   </style>
 </head>
 
@@ -47,23 +50,59 @@
 
     <div class="max-w-md mx-auto mt-8 md:mt-12">
       <div class="cfp-card gold-shadow rounded-none p-6 md:p-8">
-        <h1 class="font-['Oswald',_sans-serif] text-3xl font-bold text-[var(--cfp-ivory)] leading-tight mb-4 text-center">
+        <h1 class="font-['Oswald',_sans-serif] text-3xl font-bold text-[var(--cfp-ivory)] leading-tight mb-2 text-center">
           Sign In
         </h1>
-        <p class="text-sm text-gray-300 mb-6 text-center">Enter your email to receive a magic link to sign in.</p>
-        
-        <form id="signin-form" class="space-y-4">
+        <p class="text-sm text-gray-300 mb-6 text-center">
+          Use your password (faster) or get a one-time magic link.
+        </p>
+
+        <!-- Tabs -->
+        <div class="flex gap-2 mb-6">
+          <button id="tab-password" class="tab-btn active">Password</button>
+          <button id="tab-magic" class="tab-btn">Magic Link</button>
+        </div>
+
+        <!-- PASSWORD FORM -->
+        <form id="password-form" class="space-y-4">
           <div>
-            <label for="email" class="block text-sm font-medium text-gray-300">Email</label>
-            <input type="email" id="email" name="email" required
+            <label for="email_pw" class="block text-sm font-medium text-gray-300">Email</label>
+            <input type="email" id="email_pw" name="email_pw" required autocomplete="email"
                    class="cfp-input mt-1 block w-full px-3 py-2 rounded-none text-sm"
                    placeholder="you@email.com">
           </div>
-          <button type="submit" id="submit-btn" 
+          <div>
+            <label for="password" class="block text-sm font-medium text-gray-300">Password</label>
+            <input type="password" id="password" name="password" required autocomplete="current-password"
+                   class="cfp-input mt-1 block w-full px-3 py-2 rounded-none text-sm"
+                   placeholder="Your password">
+          </div>
+          <button type="submit" id="pw-submit"
+                  class="w-full px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">
+            Sign In
+          </button>
+          <p class="text-xs text-gray-400 text-center">
+            Don’t have a password? Switch to <a href="#" id="switch-to-magic" class="link">Magic Link</a>.
+          </p>
+        </form>
+
+        <!-- MAGIC LINK FORM -->
+        <form id="magic-form" class="space-y-4 hidden">
+          <div>
+            <label for="email_magic" class="block text-sm font-medium text-gray-300">Email</label>
+            <input type="email" id="email_magic" name="email_magic" required autocomplete="email"
+                   class="cfp-input mt-1 block w-full px-3 py-2 rounded-none text-sm"
+                   placeholder="you@email.com">
+          </div>
+          <button type="submit" id="magic-submit"
                   class="w-full px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">
             Send Magic Link
           </button>
+          <p class="text-xs text-gray-400 text-center">
+            Prefer a password? Switch to <a href="#" id="switch-to-password" class="link">Password</a>.
+          </p>
         </form>
+
         <div id="status" class="mt-4 text-sm text-center"></div>
       </div>
     </div>
@@ -73,47 +112,121 @@
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
 
-    // 1. Initialize the shared navigation
-    initNav();
+    await initNav();
 
-    // 2. Sign-in page logic
-    const form = document.getElementById('signin-form');
-    const submitBtn = document.getElementById('submit-btn');
-    const statusEl = document.getElementById('status');
+    // DOM
+    const tabPassword = document.getElementById('tab-password');
+    const tabMagic    = document.getElementById('tab-magic');
+    const pwForm      = document.getElementById('password-form');
+    const magicForm   = document.getElementById('magic-form');
+    const pwSubmit    = document.getElementById('pw-submit');
+    const magicSubmit = document.getElementById('magic-submit');
+    const statusEl    = document.getElementById('status');
+    const emailPw     = document.getElementById('email_pw');
+    const emailMagic  = document.getElementById('email_magic');
+    const switchToMagic = document.getElementById('switch-to-magic');
+    const switchToPassword = document.getElementById('switch-to-password');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Sending...';
-      statusEl.textContent = '';
+    // Prefill last email if we have one
+    const LAST_EMAIL_KEY = 'cfb_last_email_v1';
+    const last = localStorage.getItem(LAST_EMAIL_KEY);
+    if (last) {
+      emailPw.value = last;
+      emailMagic.value = last;
+    }
 
-      const email = form.email.value;
-      const base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email,
-        options: {
-          // URL to redirect to after user clicks magic link
-          emailRedirectTo: base + 'index.html',
-        }
-      });
+    function setStatus(msg, type = 'info'){
+      const clsBase = 'mt-4 text-sm text-center ';
+      const cls = type === 'error' ? 'text-red-300' :
+                  type === 'success' ? 'text-green-300' : 'text-gray-300';
+      statusEl.className = clsBase + cls;
+      statusEl.textContent = msg || '';
+    }
 
-      if (error) {
-        console.error('Error sending magic link:', error.message);
-        statusEl.textContent = `Error: ${error.message}`;
-        statusEl.className = 'mt-4 text-sm text-center text-red-300';
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Send Magic Link';
-      } else {
-        statusEl.textContent = 'Check your email for a magic link!';
-        statusEl.className = 'mt-4 text-sm text-center text-green-300';
-        form.reset();
-      }
-    });
+    function setActiveTab(which){
+      const usePassword = (which === 'password');
+      tabPassword.classList.toggle('active', usePassword);
+      tabMagic.classList.toggle('active', !usePassword);
+      pwForm.classList.toggle('hidden', !usePassword);
+      magicForm.classList.toggle('hidden', usePassword);
+      setStatus('');
+      (usePassword ? emailPw : emailMagic).focus();
+    }
+
+    tabPassword.addEventListener('click', () => setActiveTab('password'));
+    tabMagic.addEventListener('click', () => setActiveTab('magic'));
+    switchToMagic.addEventListener('click', (e) => { e.preventDefault(); setActiveTab('magic'); });
+    switchToPassword.addEventListener('click', (e) => { e.preventDefault(); setActiveTab('password'); });
+
+    // Default to password tab
+    setActiveTab('password');
 
     // Redirect if already signed in
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
+      if (session) window.location.href = './index.html';
+    });
+
+    // PASSWORD SIGN-IN
+    pwForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setStatus('');
+      pwSubmit.disabled = true;
+      pwSubmit.textContent = 'Signing in…';
+
+      const email = emailPw.value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          // Common codes: invalid_credentials, invalid_grant
+          setStatus(error.message || 'Sign-in failed.', 'error');
+          pwSubmit.disabled = false;
+          pwSubmit.textContent = 'Sign In';
+          return;
+        }
+        // Success
+        localStorage.setItem(LAST_EMAIL_KEY, email);
+        setStatus('Signed in! Redirecting…', 'success');
         window.location.href = './index.html';
+      } catch (err) {
+        setStatus('Unexpected error signing in.', 'error');
+        pwSubmit.disabled = false;
+        pwSubmit.textContent = 'Sign In';
+      }
+    });
+
+    // MAGIC LINK SIGN-IN
+    magicForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setStatus('');
+      magicSubmit.disabled = true;
+      magicSubmit.textContent = 'Sending…';
+
+      const email = emailMagic.value.trim();
+      const base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+
+      try {
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: base + 'index.html',
+          }
+        });
+        if (error) {
+          setStatus(error.message || 'Could not send magic link.', 'error');
+          magicSubmit.disabled = false;
+          magicSubmit.textContent = 'Send Magic Link';
+          return;
+        }
+        localStorage.setItem(LAST_EMAIL_KEY, email);
+        setStatus('Check your email for a magic link!', 'success');
+        magicForm.reset();
+      } catch (err) {
+        setStatus('Unexpected error sending magic link.', 'error');
+      } finally {
+        magicSubmit.disabled = false;
+        magicSubmit.textContent = 'Send Magic Link';
       }
     });
   </script>
