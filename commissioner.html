@@ -68,39 +68,12 @@
 
     <div id="main" class="hidden space-y-6">
 
-      <!-- Games/Lines for the selected week -->
-      <section class="cfp-card gold-shadow rounded-none overflow-auto">
-        <div class="px-4 md:px-6 py-3 flex items-center gap-3">
-          <h3 class="font-['Oswald'] text-xl text-[var(--cfp-ivory)]">Weekly Games</h3>
-          <span class="chip" id="games-meta"></span>
-          <span class="text-xs text-[var(--cfp-gold-2)] hidden" id="dirty-indicator">You have unsaved changes.</span>
-        </div>
-        <table class="table min-w-full text-sm" id="games-table">
-          <thead class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
-            <tr>
-              <th class="px-3 py-2 text-left font-semibold">Picked</th>
-              <th class="px-3 py-2 text-left font-semibold">Away</th>
-              <th class="px-3 py-2 text-left font-semibold">Home</th>
-              <th class="px-3 py-2 text-left font-semibold">Line</th>
-              <th class="px-3 py-2 text-left font-semibold">Kick (CT)</th>
-              <th class="px-3 py-2 text-left font-semibold">Picks In</th>
-              <th class="px-3 py-2 text-left font-semibold">ESPN</th>
-            </tr>
-          </thead>
-          <tbody id="tbody"></tbody>
-        </table>
-        <div class="px-4 md:px-6 py-3 flex items-center gap-3">
-          <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">Save Changes</button>
-          <button id="revert" class="px-4 py-2 border border-white/15">Revert Unsaved</button>
-        </div>
-      </section>
-
-      <!-- Edit Team Picks -->
+      <!-- Edit Team Picks (moved ABOVE games table) -->
       <section class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div class="space-y-2">
             <h3 class="font-['Oswald'] text-xl text-[var(--cfp-ivory)]">Edit Team Picks</h3>
-            <p class="text-xs text-gray-300">Select a team and week, then set their picks for each game.</p>
+            <p class="text-xs text-gray-300">Select a team and week, then set their picks for each <span class="italic">picked</span> game.</p>
           </div>
           <div class="flex flex-wrap items-end gap-3">
             <div>
@@ -135,6 +108,33 @@
           <span id="tp-status" class="text-xs text-gray-300"></span>
         </div>
       </section>
+
+      <!-- Weekly Games/Lines -->
+      <section class="cfp-card gold-shadow rounded-none overflow-auto">
+        <div class="px-4 md:px-6 py-3 flex items-center gap-3">
+          <h3 class="font-['Oswald'] text-xl text-[var(--cfp-ivory)]">Weekly Games</h3>
+          <span class="chip" id="games-meta"></span>
+          <span class="text-xs text-[var(--cfp-gold-2)] hidden" id="dirty-indicator">You have unsaved changes.</span>
+        </div>
+        <table class="table min-w-full text-sm" id="games-table">
+          <thead class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+            <tr>
+              <th class="px-3 py-2 text-left font-semibold">Picked</th>
+              <th class="px-3 py-2 text-left font-semibold">Away</th>
+              <th class="px-3 py-2 text-left font-semibold">Home</th>
+              <th class="px-3 py-2 text-left font-semibold">Line</th>
+              <th class="px-3 py-2 text-left font-semibold">Kick (CT)</th>
+              <th class="px-3 py-2 text-left font-semibold">Picks In</th>
+              <th class="px-3 py-2 text-left font-semibold">ESPN</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="px-4 md:px-6 py-3 flex items-center gap-3">
+          <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">Save Changes</button>
+          <button id="revert" class="px-4 py-2 border border-white/15">Revert Unsaved</button>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -150,7 +150,7 @@
     const main         = document.getElementById('main');
     const authGate     = document.getElementById('auth-gate');
     const saveBtn      = document.getElementById('save');
-    const revertBtn    = document.getElementById('revert');
+    the revertBtn    = document.getElementById('revert');
     const dirtyNote    = document.getElementById('dirty-indicator');
 
     // --- DOM refs (team picks editor) ---
@@ -164,16 +164,19 @@
     // --- State ---
     let session = null;
     let currentWeek = null;
-    let rows = [];        // weekly games
-    let baseline = [];    // for diffing
+    let rows = [];                 // weekly games
     let picksCountByGame = new Map();
     let totalTeams = 0;
 
-    // team-picks editor state
-    let tpGames = [];           // games for edit-week
-    let tpExisting = new Map(); // game_id -> pick
-    let tpDirty = false;
+    // order-agnostic baseline for revert/diff
+    let baselineRows = [];
+    let baselineById = new Map();  // GameId -> {picked, line}
 
+    // team-picks editor state
+    let tpGames = [];           // picked games for edit-week
+    let tpExisting = new Map(); // game_id -> pick
+
+    // --- Helpers ---
     function setStatus(msg, isErr=false){
       statusEl.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg || '';
@@ -183,8 +186,29 @@
       try { return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
       catch { return ts; }
     }
+    function sortRowsByPickedThenTime(arr){
+      return arr.sort((a,b)=>{
+        if (a.picked !== b.picked) return a.picked ? -1 : 1;
+        const ta = a.start ? new Date(a.start).getTime() : Infinity;
+        const tb = b.start ? new Date(b.start).getTime() : Infinity;
+        return ta - tb;
+      });
+    }
+    function rebuildBaseline(){
+      baselineRows = JSON.parse(JSON.stringify(rows));
+      baselineById = new Map(baselineRows.map(r => [r.GameId, { picked: r.picked, line: r.line }]));
+    }
+    function isDirty(){
+      for (const g of rows){
+        const b = baselineById.get(g.GameId);
+        if (!b) return true;
+        if (g.picked !== b.picked) return true;
+        if ((g.line ?? null) !== (b.line ?? null)) return true;
+      }
+      return false;
+    }
     function markDirtyUI(){
-      const dirty = JSON.stringify(rows) !== JSON.stringify(baseline);
+      const dirty = isDirty();
       dirtyNote.classList.toggle('hidden', !dirty);
       saveBtn.disabled = !dirty;
       revertBtn.disabled = !dirty;
@@ -195,7 +219,6 @@
       const { data: { session: s } } = await supabase.auth.getSession();
       session = s || null;
 
-      // If not signed in, kick to home
       if (!session) {
         window.location.href = './index.html';
         return false;
@@ -211,7 +234,6 @@
       const ok = !error && teamRow?.commissioner === true;
 
       if (!ok) {
-        // Not authorized — hide main UI and redirect away
         main.classList.add('hidden');
         authGate.classList.remove('hidden');
         setStatus('');
@@ -219,7 +241,6 @@
         return false;
       }
 
-      // Authorized
       authGate.classList.add('hidden');
       main.classList.remove('hidden');
       setStatus('');
@@ -233,7 +254,7 @@
     }
     init();
 
-    // ---------- Weekly games/lines ----------
+    // ---------- Boot ----------
     async function boot(){
       setStatus('Loading weeks & teams…');
 
@@ -244,7 +265,6 @@
       if (wErr){ setStatus(wErr.message, true); return; }
       if (tErr){ setStatus(tErr.message, true); return; }
 
-      // Build week selects
       const weeks = [...new Set((weekRows||[]).map(r => Number(r.week)))].sort((a,b)=>a-b);
       if (!weeks.length){ setStatus('No weeks found.', true); return; }
       totalTeams = (teamRows || []).length;
@@ -252,6 +272,7 @@
       weekSelect.innerHTML  = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
       editWeekSel.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
 
+      // default to latest week
       currentWeek = weeks[weeks.length-1];
       weekSelect.value = String(currentWeek);
       editWeekSel.value = String(currentWeek);
@@ -261,15 +282,18 @@
         .map(t => `<option value="${t.team_id}">${t.team_name ?? ('Team ' + t.team_id)}</option>`)
         .join('');
 
-      weekSelect.onchange = async () => { currentWeek = Number(weekSelect.value); await loadWeek(currentWeek); };
+      // Wire up selectors
+      weekSelect.onchange   = async () => { currentWeek = Number(weekSelect.value); await loadWeek(currentWeek); };
+      editWeekSel.onchange  = loadTeamPicks;  // immediately switches week in team editor
       loadBtn.addEventListener('click', loadTeamPicks);
       tpSaveBtn.addEventListener('click', saveTeamPicks);
 
       await loadWeek(currentWeek);
-      await loadTeamPicks(); // load editor with current week by default
+      await loadTeamPicks();
       setStatus('');
     }
 
+    // ---------- Weekly games/lines ----------
     async function loadWeek(week){
       setStatus('Loading games…');
       tbody.innerHTML = '';
@@ -283,13 +307,12 @@
         GameId: r.GameId, Away: r.Away, Home: r.Home,
         line: (r.line == null ? null : Number(r.line)),
         picked: !!r.picked, start: r['Start (CT)'], espn_url: r.espn_url || null
-      })).sort((a,b)=>{
-        const ta = a.start ? new Date(a.start).getTime() : Infinity;
-        const tb = b.start ? new Date(b.start).getTime() : Infinity;
-        return ta - tb;
-      });
-      baseline = JSON.parse(JSON.stringify(rows));
+      }));
 
+      // Picked first, then by kickoff
+      sortRowsByPickedThenTime(rows);
+
+      // Picks count
       const { data: picks, error: pErr } = await supabase
         .from('picks')
         .select('game_id, team_id')
@@ -301,6 +324,9 @@
         const key = String(r.game_id);
         picksCountByGame.set(key, (picksCountByGame.get(key) || 0) + 1);
       });
+
+      // Baseline AFTER sorting (order-agnostic map)
+      rebuildBaseline();
 
       renderGamesTable();
       gamesMeta.textContent = `Week ${week} • ${rows.length} games`;
@@ -318,7 +344,13 @@
         tdPick.className = 'px-3 py-2 align-middle';
         const cb = document.createElement('input');
         cb.type = 'checkbox'; cb.checked = g.picked;
-        cb.addEventListener('change', () => { g.picked = cb.checked; tr.classList.add('dirty'); markDirtyUI(); });
+        cb.addEventListener('change', () => {
+          g.picked = cb.checked;
+          // re-sort to pin/unpin
+          sortRowsByPickedThenTime(rows);
+          renderGamesTable();
+          markDirtyUI();
+        });
         tdPick.appendChild(cb); tr.appendChild(tdPick);
 
         // Away / Home
@@ -358,16 +390,17 @@
 
     function diffRows(){
       const diffs = [];
-      rows.forEach((g, i) => {
-        const b = baseline[i]; if (!b) return;
+      for (const g of rows){
+        const b = baselineById.get(g.GameId) || {};
         const changed = (g.picked !== b.picked) || ((g.line ?? null) !== (b.line ?? null));
         if (changed){ diffs.push({ GameId: g.GameId, picked: g.picked, line: g.line }); }
-      });
+      }
       return diffs;
     }
 
     revertBtn.addEventListener('click', () => {
-      rows = JSON.parse(JSON.stringify(baseline));
+      rows = JSON.parse(JSON.stringify(baselineRows));
+      sortRowsByPickedThenTime(rows);
       renderGamesTable(); markDirtyUI();
     });
 
@@ -381,27 +414,28 @@
         );
         const res = await Promise.all(tasks);
         const err = res.find(r => r.error)?.error; if (err) throw err;
-        baseline = JSON.parse(JSON.stringify(rows));
+        rebuildBaseline();
         document.querySelectorAll('#tbody tr').forEach(tr => tr.classList.remove('dirty'));
         markDirtyUI(); setStatus('Saved changes.');
       }catch(e){ setStatus('Save failed: ' + (e?.message || 'Unknown error'), true); }
       finally{ saveBtn.disabled = false; saveBtn.textContent = 'Save Changes'; }
     });
 
-    // ---------- Team Picks Editor ----------
+    // ---------- Team Picks Editor (picked games only) ----------
     async function loadTeamPicks(){
       tpStatus.textContent = 'Loading…';
       tpBody.innerHTML = '';
-      tpExisting.clear(); tpDirty = false;
+      tpExisting.clear();
 
       const teamId = Number(teamSelect.value);
       const week = Number(editWeekSel.value);
 
-      // Get week games
+      // Only get PICKED games for the selected week
       const { data: gRows, error: gErr } = await supabase
         .from('all_games')
         .select('GameId, Away, Home, line, "Start (CT)"')
-        .eq('week', week);
+        .eq('week', week)
+        .eq('picked', true);
       if (gErr){ tpStatus.textContent = gErr.message; return; }
 
       tpGames = (gRows||[]).map(r => ({
@@ -414,7 +448,7 @@
         return ta - tb;
       });
 
-      // Get existing picks for this team/week
+      // Existing picks for this team/week among those picked games
       const ids = tpGames.map(g => g.game_id);
       if (ids.length){
         const { data: pRows, error: pErr } = await supabase
@@ -429,11 +463,19 @@
       }
 
       renderTeamPicks();
-      tpStatus.textContent = `Team ${teamId} • Week ${week} • ${tpGames.length} games`;
+      tpStatus.textContent = `Team ${teamId} • Week ${week} • ${tpGames.length} picked games`;
     }
 
     function renderTeamPicks(){
       tpBody.innerHTML = '';
+      if (!tpGames.length){
+        tpBody.innerHTML = `
+          <tr class="border-t border-[rgba(231,231,231,.08)]">
+            <td colspan="5" class="px-3 py-4 text-sm text-gray-300">No games have been marked as <strong>Picked</strong> for this week.</td>
+          </tr>`;
+        return;
+      }
+
       tpGames.forEach(g => {
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)]';
@@ -446,13 +488,13 @@
         // Pick controls
         const tdPick = document.createElement('td'); tdPick.className='px-3 py-2';
         const current = tpExisting.get(String(g.game_id)) || null;
-
         const group = `pick-${g.game_id}`;
+
         const mkRadio = (val, label) => {
           const id = `${group}-${val||'none'}`;
           const wrap = document.createElement('label'); wrap.className='inline-flex items-center gap-2 mr-3';
           const rb = document.createElement('input'); rb.type='radio'; rb.name=group; rb.value=val??''; rb.checked = (val??null) === current;
-          rb.addEventListener('change', () => { tpExisting.set(String(g.game_id), val??null); tpDirty = true; });
+          rb.addEventListener('change', () => { tpExisting.set(String(g.game_id), val??null); });
           const span = document.createElement('span'); span.textContent = label;
           wrap.appendChild(rb); wrap.appendChild(span);
           return wrap;
@@ -501,7 +543,6 @@
           if (error) throw error;
         }
 
-        tpDirty = false;
         tpStatus.textContent = 'Saved team picks.';
       } catch(e){
         tpStatus.textContent = 'Save failed: ' + (e?.message || 'Unknown error');
