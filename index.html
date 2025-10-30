@@ -133,6 +133,31 @@
       </table>
     </div>
 
+    <!-- Weekly Submissions (NEW) -->
+    <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow mt-5 px-4 md:px-6 py-4">
+      <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
+        Weekly Submissions
+      </h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Made Picks -->
+        <div>
+          <div class="text-xs text-gray-300 mb-2">
+            <span class="badge badge-live inline-fix">Made Picks</span>
+          </div>
+          <div id="ws-made" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- Not Yet -->
+        <div>
+          <div class="text-xs text-gray-300 mb-2">
+            <span class="badge badge-sched inline-fix">Not Yet</span>
+          </div>
+          <div id="ws-not" class="flex flex-wrap gap-2"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="mt-4 text-xs text-gray-300 flex flex-wrap items-center gap-3">
       <span class="badge badge-live">Live</span>
       <span class="badge badge-final">Final</span>
@@ -151,6 +176,9 @@
     const statusEl   = document.getElementById('status');
     const theadRow   = document.getElementById('thead-row');
     const tbody      = document.getElementById('tbody');
+    // Weekly Submissions DOM (NEW)
+    const wsMade     = document.getElementById('ws-made');
+    const wsNot      = document.getElementById('ws-not');
 
     // ---- State ----
     let weeks = [];
@@ -442,6 +470,7 @@
       const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap, showPicks);
+      renderWeeklySubmissions(teamsSorted, pickMap); // NEW
 
       startLiveTicker();
       if (!showPicks && weekStartTs) {
@@ -622,6 +651,44 @@
       });
     }
 
+    // ------- Weekly Submissions (NEW) -------
+    function escapeHtml(s){
+      return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;');
+    }
+
+    /**
+     * Renders the "Weekly Submissions" card.
+     * COMPLETE submission rule:
+     *   Team is in "Made Picks" only if they have a non-empty pick for EVERY game in gameIds.
+     *   Otherwise they are in "Not Yet".
+     */
+    function renderWeeklySubmissions(teams, pickMap){
+      const made = [];
+      const notYet = [];
+
+      teams.forEach(t=>{
+        const picks = pickMap[t.team_id] || {};
+        const hasCompleteSubmission = gameIds.length === 0 ? false : gameIds.every(id=>{
+          const p = picks[id];
+          return p && String(p).trim() !== '';
+        });
+        (hasCompleteSubmission ? made : notYet).push(t.team_name);
+      });
+
+      wsMade.innerHTML = made.map(name =>
+        `<span class="badge badge-sched inline-fix rounded-full">${escapeHtml(name)}</span>`
+      ).join('') || `<span class="text-gray-400">—</span>`;
+
+      wsNot.innerHTML = notYet.map(name =>
+        `<span class="badge badge-sched inline-fix rounded-full">${escapeHtml(name)}</span>`
+      ).join('') || `<span class="text-gray-400">—</span>`;
+    }
+
     // ------- LIVE TICKER -------
     async function startLiveTicker(){
       await refreshBadgesFromAllGames();
@@ -712,6 +779,7 @@
         });
 
         renderTable(lastTeams, lastPickMap, winnerMap, showPicks);
+        renderWeeklySubmissions(lastTeams, lastPickMap); // NEW: keep submissions up to date
       }
     }
   </script>
