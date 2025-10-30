@@ -65,6 +65,7 @@
       </div>
     </header>
 
+    <!-- Submission overview -->
     <section class="cfp-card p-4 md:p-5 mb-5">
       <h2 class="font-['Oswald'] text-2xl mb-3">Week Submission Status</h2>
       <div class="grid md:grid-cols-2 gap-4">
@@ -79,6 +80,7 @@
       </div>
     </section>
 
+    <!-- Editable picks table -->
     <section class="cfp-card overflow-auto">
       <table class="table min-w-full text-sm">
         <thead class="bg-[var(--cfp-black)]">
@@ -99,6 +101,7 @@
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
 
+    // DOM
     const weekSel  = document.getElementById('week-select');
     const teamSel  = document.getElementById('team-select');
     const statusEl = document.getElementById('status');
@@ -107,11 +110,11 @@
     const madeList = document.getElementById('made-list');
     const notList  = document.getElementById('not-list');
 
+    // State
     let commissionerTeamRow = null;
-    let currentUser = null;
     let teams = [];
-    let gamesThisWeek = [];
-    let picksMap = {};
+    let gamesThisWeek = []; // picked games for selected week
+    let picksMap = {};      // gameId -> pick text (for the selected team & week)
 
     function status(msg,isErr=false){
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
@@ -119,13 +122,14 @@
     }
 
     async function gatekeep(){
+      // Ensure nav renders (will also kick off auth listener)
       await initNav();
+
       const { data: { user }, error } = await supabase.auth.getUser();
       if(error){ status(error.message, true); return false; }
       if(!user){ status('Please sign in to continue.', true); return false; }
-      currentUser = user;
 
-      // must be a commissioner
+      // Check commissioner flag for this user
       const { data: rows, error: tErr } = await supabase
         .from('teams')
         .select('team_id, team_name, user_id, commissioner')
@@ -135,9 +139,12 @@
       if(tErr){ status(tErr.message, true); return false; }
       if(!rows || rows.length === 0){
         status('Access denied — commissioner only.', true);
+        document.querySelector('main')?.remove();
+        // Soft lock the page
         weekSel.disabled = teamSel.disabled = saveBtn.disabled = true;
         return false;
       }
+
       commissionerTeamRow = rows[0];
       return true;
     }
@@ -145,43 +152,31 @@
     async function bootstrap(){
       status('Loading options…');
 
-      // 1) All distinct weeks from all_games (no picked filter)
+      // Weeks (from all_games where picked = true)
       const { data: weekRows, error: wErr } = await supabase
         .from('all_games')
         .select('week')
+        .eq('picked', true)
         .not('week', 'is', null)
         .order('week', { ascending: true });
 
       if(wErr) return status(wErr.message, true);
-      const allWeeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
-      weekSel.innerHTML = allWeeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+      const weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
+      weekSel.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
 
-      // 2) Determine the ACTIVE week = latest week that has any picked games
-      const { data: pickedWeeksRows, error: pwErr } = await supabase
-        .from('all_games')
-        .select('week')
-        .eq('picked', true)
-        .not('week', 'is', null);
-
-      if(pwErr) return status(pwErr.message, true);
-      const activeWeek = Math.max(...new Set((pickedWeeksRows||[]).map(r=>r.week)));
-
-      // 3) Load teams and choose ACTIVE team = the one owned by current user, else commissioner row, else first
+      // Teams (all)
       const { data: teamRows, error: tErr } = await supabase
         .from('teams')
-        .select('team_id, team_name, user_id')
+        .select('team_id, team_name')
         .order('team_name', { ascending: true });
 
       if(tErr) return status(tErr.message, true);
       teams = teamRows || [];
       teamSel.innerHTML = teams.map(t=>`<option value="${t.team_id}">${t.team_name}</option>`).join('');
 
-      // Find user's team
-      const myTeamRow = teams.find(t => t.user_id === currentUser.id);
-      const defaultTeamId = myTeamRow?.team_id ?? commissionerTeamRow?.team_id ?? teams[0]?.team_id;
-
-      if(Number.isFinite(activeWeek)) weekSel.value = String(activeWeek);
-      if(Number.isFinite(defaultTeamId)) teamSel.value = String(defaultTeamId);
+      // Defaults
+      if(weeks.length) weekSel.value = String(weeks[weeks.length-1]);
+      if(teams.length) teamSel.value = String(teams[0].team_id);
 
       await refreshAll();
       weekSel.onchange = refreshAll;
@@ -198,7 +193,7 @@
       }
       status(`Loading week ${week}…`);
 
-      // picked games for selected week
+      // Pull all picked games for the week
       const { data: gameRows, error: gErr } = await supabase
         .from('all_games')
         .select('GameId, Away, Home, "Start (CT)", Status, line, week, picked')
@@ -209,7 +204,7 @@
       if(gErr) return status(gErr.message, true);
       gamesThisWeek = gameRows || [];
 
-      // team’s picks for that week
+      // Team’s current picks for that week
       const { data: pickRows, error: pErr } = await supabase
         .from('picks')
         .select('game_id, pick')
@@ -221,8 +216,12 @@
       picksMap = {};
       (pickRows||[]).forEach(r => { picksMap[r.game_id] = r.pick || ''; });
 
+      // Render editor
       renderEditor();
+
+      // Build submission overview for all teams
       await renderSubmissionLists(week);
+
       status(`Week ${week} ready.`);
     }
 
@@ -235,7 +234,6 @@
     }
 
     function renderEditor(){
-      const tbody = document.getElementById('edit-body');
       tbody.innerHTML = '';
       if(!gamesThisWeek.length){
         tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
@@ -246,11 +244,13 @@
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
+        // Game label
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
         tdGame.textContent = `${g.Away} @ ${g.Home}`;
         tr.appendChild(tdGame);
 
+        // Pick radios
         const tdPick = document.createElement('td');
         tdPick.className = 'px-3 py-2 text-center';
         tdPick.innerHTML = `
@@ -271,6 +271,7 @@
         `;
         tr.appendChild(tdPick);
 
+        // Start, line, status
         const tdStart = document.createElement('td');
         tdStart.className = 'px-3 py-2 text-center';
         tdStart.textContent = niceTime(g['Start (CT)']);
@@ -289,9 +290,11 @@
 
         tbody.appendChild(tr);
 
+        // preselect if we have a pick
         const chosen = picksMap[g.GameId] ?? '';
         const radios = tdPick.querySelectorAll(`input[name="pick-${g.GameId}"]`);
         radios.forEach(r => { r.checked = (r.value === (chosen || '')); });
+        // update local state on change
         radios.forEach(r => r.addEventListener('change', e => {
           picksMap[g.GameId] = e.target.value || '';
         }));
@@ -304,6 +307,7 @@
 
       const gameCount = gamesThisWeek.length;
 
+      // All picks for this week across teams
       const { data: picksAll, error } = await supabase
         .from('picks')
         .select('team_id, game_id, pick')
@@ -315,6 +319,7 @@
         return;
       }
 
+      // Build: team_id -> count of non-empty picks among picked games this week
       const pickedGameIds = new Set(gamesThisWeek.map(g => g.GameId));
       const tally = Object.create(null);
       (picksAll||[]).forEach(r => {
@@ -347,6 +352,7 @@
       saveBtn.disabled = true;
       status('Saving picks…');
 
+      // Build upserts for each game (including cleared picks as null/empty -> set to null)
       const payload = gamesThisWeek.map(g => {
         const pick = (picksMap[g.GameId] || '').trim();
         return {
@@ -357,6 +363,7 @@
         };
       });
 
+      // Upsert on (team_id, week, game_id)
       const { error } = await supabase
         .from('picks')
         .upsert(payload, { onConflict: 'team_id,week,game_id' });
@@ -367,10 +374,12 @@
         status(`Save failed: ${error.message}`, true);
       }else{
         status('Picks saved.');
+        // Refresh submission lists (in case this completes a card)
         await renderSubmissionLists(week);
       }
     }
 
+    // ---- run ----
     (async () => {
       const ok = await gatekeep();
       if(!ok) return;
