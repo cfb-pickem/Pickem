@@ -95,7 +95,7 @@
         </div>
       </section>
 
-      <!-- NEW: Edit Team Picks -->
+      <!-- Edit Team Picks -->
       <section class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div class="space-y-2">
@@ -190,22 +190,40 @@
       revertBtn.disabled = !dirty;
     }
 
+    // --- Commissioner gate: user must be on a team row with commissioner=true ---
     async function requireCommissioner(){
       const { data: { session: s } } = await supabase.auth.getSession();
       session = s || null;
-      if (!session) return false;
 
-      const email = (session.user.email || '').toLowerCase();
+      // If not signed in, kick to home
+      if (!session) {
+        window.location.href = './index.html';
+        return false;
+      }
+
+      const userId = session.user.id;
       const { data: teamRow, error } = await supabase
         .from('teams')
         .select('commissioner')
-        .eq('email', email)
+        .eq('user_id', userId)
         .single();
 
       const ok = !error && teamRow?.commissioner === true;
-      if (!ok){ main.classList.add('hidden'); authGate.classList.remove('hidden'); setStatus(''); }
-      else { authGate.classList.add('hidden'); main.classList.remove('hidden'); }
-      return ok;
+
+      if (!ok) {
+        // Not authorized — hide main UI and redirect away
+        main.classList.add('hidden');
+        authGate.classList.remove('hidden');
+        setStatus('');
+        window.location.href = './index.html';
+        return false;
+      }
+
+      // Authorized
+      authGate.classList.add('hidden');
+      main.classList.remove('hidden');
+      setStatus('');
+      return true;
     }
 
     async function init(){
@@ -453,12 +471,10 @@
       const week = Number(editWeekSel.value);
       if (!tpGames.length){ tpStatus.textContent = 'No games to save.'; return; }
 
-      // Build upsert rows for selected picks; also handle clears by sending null (will keep row if exists; you can optionally delete)
       const rows = [];
       tpExisting.forEach((pick, key) => {
         const gameId = Number(key);
         if (pick === null || pick === undefined || pick === '') {
-          // Optional: delete existing pick if cleared
           rows.push({ _delete: true, team_id: teamId, game_id: gameId, week });
         } else {
           rows.push({ team_id: teamId, game_id: gameId, pick, week });
@@ -469,7 +485,6 @@
 
       tpSaveBtn.disabled = true; tpSaveBtn.textContent = 'Saving…';
       try{
-        // Split deletes from upserts for clarity
         const delKeys = rows.filter(r => r._delete).map(r => r.game_id);
         if (delKeys.length){
           await supabase.from('picks')
