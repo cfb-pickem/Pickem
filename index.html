@@ -505,6 +505,7 @@
         const row = (gameRows||[]).find(g=>g.GameId===id);
 
         // Title: link to espn_url if present
+        // Title: link to espn_url if present
         const hasUrl = !!(row?.espn_url && /^https?:\/\//i.test(row.espn_url));
         const title = document.createElement(hasUrl ? 'a' : 'div');
         title.className = 'mb-1';
