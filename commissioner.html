@@ -33,7 +33,18 @@
     .badge-slim{font-size:.68rem;padding:.1rem .4rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr:hover{background:rgba(233,185,73,.06)}
-    .pill{display:inline-block;border:1px solid rgba(231,231,231,.14);padding:.2rem .5rem;margin:.15rem;border-radius:999px;background:#141414}
+    .pill{display:inline-block;border:1px solid rgba(231,231,231,.14);padding:.25rem .6rem;margin:.15rem;border-radius:999px;background:#141414}
+
+    /* Mobile-first row style for editor */
+    .game-cell{display:flex;flex-direction:column;gap:.15rem}
+    .game-title{font-weight:600;color:var(--cfp-ivory)}
+    .pick-group{display:flex;flex-wrap:wrap;gap:.75rem}
+    .pick-group label{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .55rem;border:1px solid rgba(231,231,231,.14);background:#121212}
+    .pick-group input{width:18px;height:18px}
+    @media (min-width: 768px){
+      .game-row{display:table-row}
+      .only-mobile{display:none}
+    }
   </style>
 </head>
 
@@ -80,16 +91,13 @@
       </div>
     </section>
 
-    <!-- Editable picks table -->
+    <!-- Editable picks, mobile-friendly (Game + Pick only) -->
     <section class="cfp-card overflow-auto">
       <table class="table min-w-full text-sm">
         <thead class="bg-[var(--cfp-black)]">
           <tr class="border-b">
             <th class="text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Pick</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Line</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Status</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-[340px]">Pick</th>
           </tr>
         </thead>
         <tbody id="edit-body"></tbody>
@@ -101,7 +109,6 @@
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
 
-    // DOM
     const weekSel  = document.getElementById('week-select');
     const teamSel  = document.getElementById('team-select');
     const statusEl = document.getElementById('status');
@@ -110,26 +117,25 @@
     const madeList = document.getElementById('made-list');
     const notList  = document.getElementById('not-list');
 
-    // State
     let commissionerTeamRow = null;
+    let currentUser = null;
     let teams = [];
-    let gamesThisWeek = []; // picked games for selected week
-    let picksMap = {};      // gameId -> pick text (for the selected team & week)
+    let gamesThisWeek = [];
+    let picksMap = {};
 
     function status(msg,isErr=false){
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
     }
 
+    // ---- Access gate: must be commissioner on some team ----
     async function gatekeep(){
-      // Ensure nav renders (will also kick off auth listener)
       await initNav();
-
       const { data: { user }, error } = await supabase.auth.getUser();
       if(error){ status(error.message, true); return false; }
       if(!user){ status('Please sign in to continue.', true); return false; }
+      currentUser = user;
 
-      // Check commissioner flag for this user
       const { data: rows, error: tErr } = await supabase
         .from('teams')
         .select('team_id, team_name, user_id, commissioner')
@@ -139,44 +145,60 @@
       if(tErr){ status(tErr.message, true); return false; }
       if(!rows || rows.length === 0){
         status('Access denied — commissioner only.', true);
-        document.querySelector('main')?.remove();
-        // Soft lock the page
         weekSel.disabled = teamSel.disabled = saveBtn.disabled = true;
         return false;
       }
-
       commissionerTeamRow = rows[0];
       return true;
     }
 
+    // ---- Bootstrap filters (weeks & teams) ----
     async function bootstrap(){
       status('Loading options…');
 
-      // Weeks (from all_games where picked = true)
+      // All distinct weeks (from all_games)
       const { data: weekRows, error: wErr } = await supabase
         .from('all_games')
-        .select('week')
-        .eq('picked', true)
+        .select('week, "Start (CT)"')
         .not('week', 'is', null)
         .order('week', { ascending: true });
 
       if(wErr) return status(wErr.message, true);
-      const weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
-      weekSel.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+
+      const allWeeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
+      weekSel.innerHTML = allWeeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+
+      // Compute ACTIVE week: latest week where any game's kickoff is in the past
+      const now = Date.now();
+      const weeksPast = new Set();
+      (weekRows||[]).forEach(r=>{
+        const t = r['Start (CT)'] ? new Date(r['Start (CT)']).getTime() : NaN;
+        if(Number.isFinite(t) && t <= now){ weeksPast.add(r.week); }
+      });
+      let activeWeek = null;
+      if(weeksPast.size){
+        activeWeek = Math.max(...weeksPast);
+      }else if(allWeeks.length){
+        // Before season starts: pick the earliest week
+        activeWeek = allWeeks[0];
+      }
 
       // Teams (all)
       const { data: teamRows, error: tErr } = await supabase
         .from('teams')
-        .select('team_id, team_name')
+        .select('team_id, team_name, user_id')
         .order('team_name', { ascending: true });
 
       if(tErr) return status(tErr.message, true);
       teams = teamRows || [];
       teamSel.innerHTML = teams.map(t=>`<option value="${t.team_id}">${t.team_name}</option>`).join('');
 
-      // Defaults
-      if(weeks.length) weekSel.value = String(weeks[weeks.length-1]);
-      if(teams.length) teamSel.value = String(teams[0].team_id);
+      // Default team: user's team, else commissioner team, else first
+      const myTeamRow = teams.find(t => t.user_id === currentUser.id);
+      const defaultTeamId = myTeamRow?.team_id ?? commissionerTeamRow?.team_id ?? teams[0]?.team_id;
+
+      if(Number.isFinite(activeWeek)) weekSel.value = String(activeWeek);
+      if(Number.isFinite(defaultTeamId)) teamSel.value = String(defaultTeamId);
 
       await refreshAll();
       weekSel.onchange = refreshAll;
@@ -184,6 +206,7 @@
       saveBtn.onclick = saveAll;
     }
 
+    // ---- Load current (week, team) view ----
     async function refreshAll(){
       const week = Number(weekSel.value);
       const teamId = Number(teamSel.value);
@@ -193,10 +216,10 @@
       }
       status(`Loading week ${week}…`);
 
-      // Pull all picked games for the week
+      // Only "picked" games are editable
       const { data: gameRows, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", Status, line, week, picked')
+        .select('GameId, Away, Home')
         .eq('week', week)
         .eq('picked', true)
         .order('GameId', { ascending: true });
@@ -204,7 +227,6 @@
       if(gErr) return status(gErr.message, true);
       gamesThisWeek = gameRows || [];
 
-      // Team’s current picks for that week
       const { data: pickRows, error: pErr } = await supabase
         .from('picks')
         .select('game_id, pick')
@@ -216,54 +238,45 @@
       picksMap = {};
       (pickRows||[]).forEach(r => { picksMap[r.game_id] = r.pick || ''; });
 
-      // Render editor
       renderEditor();
-
-      // Build submission overview for all teams
       await renderSubmissionLists(week);
-
       status(`Week ${week} ready.`);
     }
 
-    function niceTime(ts){
-      if(!ts) return '';
-      try{
-        const d = new Date(ts);
-        return d.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' });
-      }catch{ return ''; }
-    }
-
+    // ---- Render the compact editor (Game + Pick only) ----
     function renderEditor(){
       tbody.innerHTML = '';
       if(!gamesThisWeek.length){
-        tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
         return;
       }
 
       for(const g of gamesThisWeek){
         const tr = document.createElement('tr');
-        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)] game-row';
 
-        // Game label
         const tdGame = document.createElement('td');
-        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
-        tdGame.textContent = `${g.Away} @ ${g.Home}`;
+        tdGame.className = 'px-4 py-3';
+        tdGame.innerHTML = `
+          <div class="game-cell">
+            <div class="game-title">${g.Away} <span class="text-gray-400">@</span> ${g.Home}</div>
+          </div>
+        `;
         tr.appendChild(tdGame);
 
-        // Pick radios
         const tdPick = document.createElement('td');
-        tdPick.className = 'px-3 py-2 text-center';
+        tdPick.className = 'px-3 py-3 text-center';
         tdPick.innerHTML = `
-          <div class="inline-flex items-center gap-4">
-            <label class="inline-flex items-center gap-2">
+          <div class="pick-group justify-center">
+            <label>
               <input type="radio" name="pick-${g.GameId}" value="${g.Away}" class="accent-[var(--cfp-gold)]">
               <span>${g.Away}</span>
             </label>
-            <label class="inline-flex items-center gap-2">
+            <label>
               <input type="radio" name="pick-${g.GameId}" value="${g.Home}" class="accent-[var(--cfp-gold)]">
               <span>${g.Home}</span>
             </label>
-            <label class="inline-flex items-center gap-2 text-gray-400">
+            <label class="text-gray-400">
               <input type="radio" name="pick-${g.GameId}" value="" class="accent-[var(--cfp-gold)]">
               <span>Clear</span>
             </label>
@@ -271,43 +284,24 @@
         `;
         tr.appendChild(tdPick);
 
-        // Start, line, status
-        const tdStart = document.createElement('td');
-        tdStart.className = 'px-3 py-2 text-center';
-        tdStart.textContent = niceTime(g['Start (CT)']);
-        tr.appendChild(tdStart);
-
-        const tdLine = document.createElement('td');
-        tdLine.className = 'px-3 py-2 text-center';
-        const ln = (typeof g.line === 'number') ? g.line : (g.line!=null ? Number(g.line) : null);
-        tdLine.textContent = (ln!=null && !isNaN(ln)) ? (ln>0?`+${ln}`:`${ln}`) : '';
-        tr.appendChild(tdLine);
-
-        const tdStatus = document.createElement('td');
-        tdStatus.className = 'px-3 py-2 text-center';
-        tdStatus.innerHTML = `<span class="badge badge-slim">${g.Status || 'scheduled'}</span>`;
-        tr.appendChild(tdStatus);
-
         tbody.appendChild(tr);
 
-        // preselect if we have a pick
         const chosen = picksMap[g.GameId] ?? '';
         const radios = tdPick.querySelectorAll(`input[name="pick-${g.GameId}"]`);
         radios.forEach(r => { r.checked = (r.value === (chosen || '')); });
-        // update local state on change
         radios.forEach(r => r.addEventListener('change', e => {
           picksMap[g.GameId] = e.target.value || '';
         }));
       }
     }
 
+    // ---- Submission overview (made vs not) ----
     async function renderSubmissionLists(week){
       madeList.textContent = 'Loading…';
       notList.textContent = 'Loading…';
 
       const gameCount = gamesThisWeek.length;
 
-      // All picks for this week across teams
       const { data: picksAll, error } = await supabase
         .from('picks')
         .select('team_id, game_id, pick')
@@ -319,7 +313,6 @@
         return;
       }
 
-      // Build: team_id -> count of non-empty picks among picked games this week
       const pickedGameIds = new Set(gamesThisWeek.map(g => g.GameId));
       const tally = Object.create(null);
       (picksAll||[]).forEach(r => {
@@ -344,6 +337,7 @@
       notList.innerHTML    = notYet.length ? notYet.map(n=>`<span class="pill">${n}</span>`).join('') : '<span class="text-gray-400">—</span>';
     }
 
+    // ---- Persist picks ----
     async function saveAll(){
       const week = Number(weekSel.value);
       const teamId = Number(teamSel.value);
@@ -352,7 +346,6 @@
       saveBtn.disabled = true;
       status('Saving picks…');
 
-      // Build upserts for each game (including cleared picks as null/empty -> set to null)
       const payload = gamesThisWeek.map(g => {
         const pick = (picksMap[g.GameId] || '').trim();
         return {
@@ -363,7 +356,6 @@
         };
       });
 
-      // Upsert on (team_id, week, game_id)
       const { error } = await supabase
         .from('picks')
         .upsert(payload, { onConflict: 'team_id,week,game_id' });
@@ -374,12 +366,11 @@
         status(`Save failed: ${error.message}`, true);
       }else{
         status('Picks saved.');
-        // Refresh submission lists (in case this completes a card)
         await renderSubmissionLists(week);
       }
     }
 
-    // ---- run ----
+    // ---- Run ----
     (async () => {
       const ok = await gatekeep();
       if(!ok) return;
