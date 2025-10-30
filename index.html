@@ -505,7 +505,6 @@
         const row = (gameRows||[]).find(g=>g.GameId===id);
 
         // Title: link to espn_url if present
-        // Title: link to espn_url if present
         const hasUrl = !!(row?.espn_url && /^https?:\/\//i.test(row.espn_url));
         const title = document.createElement(hasUrl ? 'a' : 'div');
         title.className = 'mb-1';
@@ -517,15 +516,6 @@
           title.className = 'mb-1 text-[var(--cfp-ivory)] hover:underline underline-offset-2';
         }
         th.appendChild(title);
-
-        if (hasUrl) {
-          const ext = document.createElement('span');
-          ext.setAttribute('aria-hidden', 'true');
-          ext.title = 'Open on ESPN';
-          ext.textContent = '↗';
-          ext.className = 'ml-1 text-xs text-gray-300';
-          th.appendChild(ext);
-        }
 
         const networkLine = document.createElement('div');
         networkLine.className = 'network-line';
