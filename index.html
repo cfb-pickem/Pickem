@@ -88,7 +88,6 @@
       .logo{height:24px;width:24px}
       th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
       thead th { font-size: .8rem; }
-      /* keep network visible; just make it a bit smaller on phones */
       .network-line{ font-size:9px; letter-spacing:.12em; }
       .badge { font-size: .65rem; padding: .1rem .4rem; }
       .table tbody td { font-size: .85rem; }
@@ -98,6 +97,17 @@
     }
 
     nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
+
+    /* NEW: weekly submissions section labels */
+    .ws-label{
+      font-size:.72rem;
+      letter-spacing:.16em;
+      text-transform:uppercase;
+      color:#d1d5db;
+      border-bottom:1px solid rgba(231,231,231,.08);
+      padding-bottom:.25rem;
+      margin-bottom:.5rem;
+    }
   </style>
 </head>
 
@@ -133,8 +143,16 @@
       </table>
     </div>
 
-    <!-- Weekly Submissions (NEW) -->
-    <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow mt-5 px-4 md:px-6 py-4">
+    <!-- Legend moved ABOVE Weekly Submissions -->
+    <div class="mt-4 text-xs text-gray-300 flex flex-wrap items-center gap-3">
+      <span class="badge badge-live">Live</span>
+      <span class="badge badge-final">Final</span>
+      <span class="badge badge-sched">Scheduled</span>
+      <span class="ml-2">Win cells tint green; loss cells tint red.</span>
+    </div>
+
+    <!-- Weekly Submissions -->
+    <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow mt-4 px-4 md:px-6 py-4">
       <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
         Weekly Submissions
       </h2>
@@ -142,27 +160,16 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Made Picks -->
         <div>
-          <div class="text-xs text-gray-300 mb-2">
-            <span class="badge badge-live inline-fix">Made Picks</span>
-          </div>
+          <div class="ws-label">Made Picks</div>
           <div id="ws-made" class="flex flex-wrap gap-2"></div>
         </div>
 
         <!-- Not Yet -->
         <div>
-          <div class="text-xs text-gray-300 mb-2">
-            <span class="badge badge-sched inline-fix">Not Yet</span>
-          </div>
+          <div class="ws-label">Not Yet</div>
           <div id="ws-not" class="flex flex-wrap gap-2"></div>
         </div>
       </div>
-    </div>
-
-    <div class="mt-4 text-xs text-gray-300 flex flex-wrap items-center gap-3">
-      <span class="badge badge-live">Live</span>
-      <span class="badge badge-final">Final</span>
-      <span class="badge badge-sched">Scheduled</span>
-      <span class="ml-2">Win cells tint green; loss cells tint red.</span>
     </div>
   </div>
 
@@ -176,7 +183,7 @@
     const statusEl   = document.getElementById('status');
     const theadRow   = document.getElementById('thead-row');
     const tbody      = document.getElementById('tbody');
-    // Weekly Submissions DOM (NEW)
+    // Weekly Submissions DOM
     const wsMade     = document.getElementById('ws-made');
     const wsNot      = document.getElementById('ws-not');
 
@@ -373,7 +380,7 @@
       weekSelect.onchange = async ()=>{
         currentWeek = Number(weekSelect.value);
         setCachedWeek(currentWeek);
-        await computeSeasonWins();       // ensure winsByTeam reflects latest DB state
+        await computeSeasonWins();
         await loadWeek(currentWeek);
       };
     }
@@ -470,7 +477,7 @@
       const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap, showPicks);
-      renderWeeklySubmissions(teamsSorted, pickMap); // NEW
+      renderWeeklySubmissions(teamsSorted, pickMap);
 
       startLiveTicker();
       if (!showPicks && weekStartTs) {
@@ -651,7 +658,7 @@
       });
     }
 
-    // ------- Weekly Submissions (NEW) -------
+    // ------- Weekly Submissions -------
     function escapeHtml(s){
       return String(s)
         .replace(/&/g,'&amp;')
@@ -661,12 +668,7 @@
         .replace(/'/g,'&#39;');
     }
 
-    /**
-     * Renders the "Weekly Submissions" card.
-     * COMPLETE submission rule:
-     *   Team is in "Made Picks" only if they have a non-empty pick for EVERY game in gameIds.
-     *   Otherwise they are in "Not Yet".
-     */
+    // COMPLETE submission rule: must have a non-empty pick for EVERY game in gameIds
     function renderWeeklySubmissions(teams, pickMap){
       const made = [];
       const notYet = [];
@@ -702,7 +704,6 @@
     async function refreshBadgesFromAllGames(){
       if(!gameIds || !gameIds.length) return;
 
-      // include winner so we can detect changes and recolor cells
       const { data: rows, error } = await supabase
         .from('all_games')
         .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner')
@@ -721,7 +722,6 @@
 
         const { badgeEl, networkEl } = entry;
 
-        // Update header badge + network
         if(r.Status === 'final'){
           if (networkEl) networkEl.style.display = 'none';
           const a = r.AwayPts ?? '';
@@ -750,7 +750,6 @@
           badgeEl.className = 'badge badge-sched inline-fix';
         }
 
-        // Track winner changes for recoloring and points
         const prevWinner = winnerMap[r.GameId] ?? null;
         const currWinner = r.winner ?? null;
         if (prevWinner !== currWinner) {
@@ -759,18 +758,15 @@
         }
       });
 
-      // Reveal picks at kickoff without page refresh
       if (!showPicks && weekStartTs && Date.now() >= weekStartTs) {
         showPicks = true;
         status(`Kickoff! Showing picks for Week ${currentWeek}.`);
-        winnerChanged = true; // force a repaint when picks become visible
+        winnerChanged = true;
       }
 
-      // If any winners changed OR picks just revealed, recompute points + rerender
       if (winnerChanged) {
         await computeSeasonWins();
 
-        // Re-sort teams by latest points, then name
         lastTeams.sort((a,b)=>{
           const pa = winsByTeam[a.team_id] || 0;
           const pb = winsByTeam[b.team_id] || 0;
@@ -779,7 +775,7 @@
         });
 
         renderTable(lastTeams, lastPickMap, winnerMap, showPicks);
-        renderWeeklySubmissions(lastTeams, lastPickMap); // NEW: keep submissions up to date
+        renderWeeklySubmissions(lastTeams, lastPickMap);
       }
     }
   </script>
