@@ -50,75 +50,82 @@
   <script type="module">
     import { supabase } from './js/supabaseClient.js';
 
-    // Compute base to THIS folder (works on GitHub Pages and localhost)
+    // Base path to this folder
     const BASE = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
 
-    const statusEl = document.getElementById('status');
-    const selectEl = document.getElementById('team-select');
-    const claimBtn = document.getElementById('claim-btn');
-    const claimMsg = document.getElementById('claim-msg');
-    const nameEl   = document.getElementById('team-name');
-    const createBtn= document.getElementById('create-btn');
-    const createMsg= document.getElementById('create-msg');
+    const statusEl  = document.getElementById('status');
+    const selectEl  = document.getElementById('team-select');
+    const claimBtn  = document.getElementById('claim-btn');
+    const claimMsg  = document.getElementById('claim-msg');
+    const nameEl    = document.getElementById('team-name');
+    const createBtn = document.getElementById('create-btn');
+    const createMsg = document.getElementById('create-msg');
 
     function setStatus(msg, isErr=false){
       statusEl.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-400');
       statusEl.textContent = msg;
     }
     function setMsg(el, msg, isErr=false){
-      el.className = 'text-xs ' + (isErr? 'text-red-300':'text-green-300');
+      el.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-green-300');
       el.textContent = msg;
     }
 
-    async function currentUser(){
+    async function requireUser(){
       const { data: { user }, error } = await supabase.auth.getUser();
-      if(error || !user){ throw new Error('Not signed in'); }
+      if (error || !user) throw new Error('Not signed in');
       return user;
     }
 
-    async function ensureProfile(user){
-      await supabase.from('profiles').upsert({ id: user.id }, { onConflict: 'id' });
+    async function userAlreadyHasTeam(userId){
+      const { data, error } = await supabase
+        .from('teams')
+        .select('team_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return !!data;
     }
 
     async function loadUnclaimed(){
       setStatus('Loading teams…');
       const { data, error } = await supabase
         .from('teams')
-        .select('team_id, team_name, user_id')
+        .select('team_id, team_name')
         .is('user_id', null)
         .order('team_name');
-      if(error){ setStatus('Failed to load teams', true); return; }
+      if (error){ setStatus('Failed to load teams', true); return; }
+
       selectEl.innerHTML = '';
-      if(!data || !data.length){
+      if (!data || !data.length){
         const opt = document.createElement('option');
         opt.value = '';
         opt.textContent = 'No unclaimed teams available';
         selectEl.appendChild(opt);
-        selectEl.disabled = true; claimBtn.disabled = true;
+        selectEl.disabled = true;
+        claimBtn.disabled = true;
       } else {
-        for(const t of data){
+        for (const t of data){
           const opt = document.createElement('option');
           opt.value = t.team_id;
           opt.textContent = t.team_name || `Team ${t.team_id}`;
           selectEl.appendChild(opt);
         }
-        selectEl.disabled = false; claimBtn.disabled = false;
+        selectEl.disabled = false;
+        claimBtn.disabled = false;
       }
       setStatus('');
     }
 
-    async function linkProfileToTeam(userId, teamId){
-      await supabase.from('profiles').upsert({ id: userId, team_id: teamId }, { onConflict: 'id' });
-    }
-
     async function claimSelected(){
-      claimMsg.textContent = ''; claimBtn.disabled = true;
+      claimMsg.textContent = '';
+      claimBtn.disabled = true;
       try{
-        const user = await currentUser();
-        await ensureProfile(user);
+        const user = await requireUser();
         const teamId = Number(selectEl.value);
-        if(!teamId){ setMsg(claimMsg, 'Select a team to claim', true); return; }
-        // Race-safe claim
+        if (!teamId){ setMsg(claimMsg, 'Select a team to claim', true); return; }
+
+        // Race-safe: only set user_id if it's currently NULL
         const { data, error } = await supabase
           .from('teams')
           .update({ user_id: user.id })
@@ -126,13 +133,14 @@
           .is('user_id', null)
           .select('team_id, team_name')
           .maybeSingle();
-        if(error) throw error;
-        if(!data){
+
+        if (error) throw error;
+        if (!data){
           setMsg(claimMsg, 'That team was just claimed by someone else. Try another.', true);
           await loadUnclaimed();
           return;
         }
-        await linkProfileToTeam(user.id, data.team_id);
+
         setMsg(claimMsg, `Claimed ${data.team_name}. You're all set!`);
         window.location.href = BASE + 'index.html';
       } catch(e){
@@ -144,19 +152,21 @@
     }
 
     async function createTeam(){
-      createMsg.textContent = ''; createBtn.disabled = true;
+      createMsg.textContent = '';
+      createBtn.disabled = true;
       try{
-        const user = await currentUser();
-        await ensureProfile(user);
-        const name = (nameEl.value||'').trim();
-        if(!name){ setMsg(createMsg, 'Enter a team name', true); return; }
+        const user = await requireUser();
+        const name = (nameEl.value || '').trim();
+        if (!name){ setMsg(createMsg, 'Enter a team name', true); return; }
+
         const { data, error } = await supabase
           .from('teams')
           .insert({ team_name: name, user_id: user.id })
           .select('team_id, team_name')
           .single();
-        if(error) throw error;
-        await linkProfileToTeam(user.id, data.team_id);
+
+        if (error) throw error;
+
         setMsg(createMsg, `Created ${data.team_name}. You're all set!`);
         window.location.href = BASE + 'index.html';
       } catch(e){
@@ -170,16 +180,20 @@
     claimBtn.addEventListener('click', claimSelected);
     createBtn.addEventListener('click', createTeam);
 
-    // Boot: require sign-in; otherwise send back to signin in THIS folder
-    (async ()=>{
+    // Boot: require sign-in, redirect to index if they already own a team, otherwise load unclaimed list
+    (async () => {
       try{
-        const user = await currentUser();
-        await ensureProfile(user);
+        const user = await requireUser();
+        const hasTeam = await userAlreadyHasTeam(user.id);
+        if (hasTeam){
+          window.location.href = BASE + 'index.html';
+          return;
+        }
         await loadUnclaimed();
         setStatus('');
-      }catch(e){
+      } catch {
         setStatus('You need to sign in first.', true);
-        setTimeout(()=> location.href = BASE + 'signin.html', 600);
+        setTimeout(() => location.href = BASE + 'signin.html', 600);
       }
     })();
   </script>
