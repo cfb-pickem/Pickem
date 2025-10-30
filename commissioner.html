@@ -33,18 +33,7 @@
     .badge-slim{font-size:.68rem;padding:.1rem .4rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr:hover{background:rgba(233,185,73,.06)}
-    .pill{display:inline-block;border:1px solid rgba(231,231,231,.14);padding:.25rem .6rem;margin:.15rem;border-radius:999px;background:#141414}
-
-    /* Mobile-first row style for editor */
-    .game-cell{display:flex;flex-direction:column;gap:.15rem}
-    .game-title{font-weight:600;color:var(--cfp-ivory)}
-    .pick-group{display:flex;flex-wrap:wrap;gap:.75rem}
-    .pick-group label{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .55rem;border:1px solid rgba(231,231,231,.14);background:#121212}
-    .pick-group input{width:18px;height:18px}
-    @media (min-width: 768px){
-      .game-row{display:table-row}
-      .only-mobile{display:none}
-    }
+    .pill{display:inline-block;border:1px solid rgba(231,231,231,.14);padding:.2rem .5rem;margin:.15rem;border-radius:999px;background:#141414}
   </style>
 </head>
 
@@ -76,7 +65,6 @@
       </div>
     </header>
 
-    <!-- Submission overview -->
     <section class="cfp-card p-4 md:p-5 mb-5">
       <h2 class="font-['Oswald'] text-2xl mb-3">Week Submission Status</h2>
       <div class="grid md:grid-cols-2 gap-4">
@@ -91,13 +79,15 @@
       </div>
     </section>
 
-    <!-- Editable picks, mobile-friendly (Game + Pick only) -->
     <section class="cfp-card overflow-auto">
       <table class="table min-w-full text-sm">
         <thead class="bg-[var(--cfp-black)]">
           <tr class="border-b">
             <th class="text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-[340px]">Pick</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Pick</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Line</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Status</th>
           </tr>
         </thead>
         <tbody id="edit-body"></tbody>
@@ -128,7 +118,6 @@
       statusEl.textContent = msg;
     }
 
-    // ---- Access gate: must be commissioner on some team ----
     async function gatekeep(){
       await initNav();
       const { data: { user }, error } = await supabase.auth.getUser();
@@ -136,6 +125,7 @@
       if(!user){ status('Please sign in to continue.', true); return false; }
       currentUser = user;
 
+      // must be a commissioner
       const { data: rows, error: tErr } = await supabase
         .from('teams')
         .select('team_id, team_name, user_id, commissioner')
@@ -152,38 +142,31 @@
       return true;
     }
 
-    // ---- Bootstrap filters (weeks & teams) ----
     async function bootstrap(){
       status('Loading options…');
 
-      // All distinct weeks (from all_games)
+      // 1) All distinct weeks from all_games (no picked filter)
       const { data: weekRows, error: wErr } = await supabase
         .from('all_games')
-        .select('week, "Start (CT)"')
+        .select('week')
         .not('week', 'is', null)
         .order('week', { ascending: true });
 
       if(wErr) return status(wErr.message, true);
-
       const allWeeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
       weekSel.innerHTML = allWeeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
 
-      // Compute ACTIVE week: latest week where any game's kickoff is in the past
-      const now = Date.now();
-      const weeksPast = new Set();
-      (weekRows||[]).forEach(r=>{
-        const t = r['Start (CT)'] ? new Date(r['Start (CT)']).getTime() : NaN;
-        if(Number.isFinite(t) && t <= now){ weeksPast.add(r.week); }
-      });
-      let activeWeek = null;
-      if(weeksPast.size){
-        activeWeek = Math.max(...weeksPast);
-      }else if(allWeeks.length){
-        // Before season starts: pick the earliest week
-        activeWeek = allWeeks[0];
-      }
+      // 2) Determine the ACTIVE week = latest week that has any picked games
+      const { data: pickedWeeksRows, error: pwErr } = await supabase
+        .from('all_games')
+        .select('week')
+        .eq('picked', true)
+        .not('week', 'is', null);
 
-      // Teams (all)
+      if(pwErr) return status(pwErr.message, true);
+      const activeWeek = Math.max(...new Set((pickedWeeksRows||[]).map(r=>r.week)));
+
+      // 3) Load teams and choose ACTIVE team = the one owned by current user, else commissioner row, else first
       const { data: teamRows, error: tErr } = await supabase
         .from('teams')
         .select('team_id, team_name, user_id')
@@ -193,7 +176,7 @@
       teams = teamRows || [];
       teamSel.innerHTML = teams.map(t=>`<option value="${t.team_id}">${t.team_name}</option>`).join('');
 
-      // Default team: user's team, else commissioner team, else first
+      // Find user's team
       const myTeamRow = teams.find(t => t.user_id === currentUser.id);
       const defaultTeamId = myTeamRow?.team_id ?? commissionerTeamRow?.team_id ?? teams[0]?.team_id;
 
@@ -206,7 +189,6 @@
       saveBtn.onclick = saveAll;
     }
 
-    // ---- Load current (week, team) view ----
     async function refreshAll(){
       const week = Number(weekSel.value);
       const teamId = Number(teamSel.value);
@@ -216,10 +198,10 @@
       }
       status(`Loading week ${week}…`);
 
-      // Only "picked" games are editable
+      // picked games for selected week
       const { data: gameRows, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home')
+        .select('GameId, Away, Home, "Start (CT)", Status, line, week, picked')
         .eq('week', week)
         .eq('picked', true)
         .order('GameId', { ascending: true });
@@ -227,6 +209,7 @@
       if(gErr) return status(gErr.message, true);
       gamesThisWeek = gameRows || [];
 
+      // team’s picks for that week
       const { data: pickRows, error: pErr } = await supabase
         .from('picks')
         .select('game_id, pick')
@@ -243,46 +226,66 @@
       status(`Week ${week} ready.`);
     }
 
-    // ---- Render the compact editor (Game + Pick only) ----
+    function niceTime(ts){
+      if(!ts) return '';
+      try{
+        const d = new Date(ts);
+        return d.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' });
+      }catch{ return ''; }
+    }
+
     function renderEditor(){
+      const tbody = document.getElementById('edit-body');
       tbody.innerHTML = '';
       if(!gamesThisWeek.length){
-        tbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
         return;
       }
 
       for(const g of gamesThisWeek){
         const tr = document.createElement('tr');
-        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)] game-row';
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
         const tdGame = document.createElement('td');
-        tdGame.className = 'px-4 py-3';
-        tdGame.innerHTML = `
-          <div class="game-cell">
-            <div class="game-title">${g.Away} <span class="text-gray-400">@</span> ${g.Home}</div>
-          </div>
-        `;
+        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
+        tdGame.textContent = `${g.Away} @ ${g.Home}`;
         tr.appendChild(tdGame);
 
         const tdPick = document.createElement('td');
-        tdPick.className = 'px-3 py-3 text-center';
+        tdPick.className = 'px-3 py-2 text-center';
         tdPick.innerHTML = `
-          <div class="pick-group justify-center">
-            <label>
+          <div class="inline-flex items-center gap-4">
+            <label class="inline-flex items-center gap-2">
               <input type="radio" name="pick-${g.GameId}" value="${g.Away}" class="accent-[var(--cfp-gold)]">
               <span>${g.Away}</span>
             </label>
-            <label>
+            <label class="inline-flex items-center gap-2">
               <input type="radio" name="pick-${g.GameId}" value="${g.Home}" class="accent-[var(--cfp-gold)]">
               <span>${g.Home}</span>
             </label>
-            <label class="text-gray-400">
+            <label class="inline-flex items-center gap-2 text-gray-400">
               <input type="radio" name="pick-${g.GameId}" value="" class="accent-[var(--cfp-gold)]">
               <span>Clear</span>
             </label>
           </div>
         `;
         tr.appendChild(tdPick);
+
+        const tdStart = document.createElement('td');
+        tdStart.className = 'px-3 py-2 text-center';
+        tdStart.textContent = niceTime(g['Start (CT)']);
+        tr.appendChild(tdStart);
+
+        const tdLine = document.createElement('td');
+        tdLine.className = 'px-3 py-2 text-center';
+        const ln = (typeof g.line === 'number') ? g.line : (g.line!=null ? Number(g.line) : null);
+        tdLine.textContent = (ln!=null && !isNaN(ln)) ? (ln>0?`+${ln}`:`${ln}`) : '';
+        tr.appendChild(tdLine);
+
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'px-3 py-2 text-center';
+        tdStatus.innerHTML = `<span class="badge badge-slim">${g.Status || 'scheduled'}</span>`;
+        tr.appendChild(tdStatus);
 
         tbody.appendChild(tr);
 
@@ -295,7 +298,6 @@
       }
     }
 
-    // ---- Submission overview (made vs not) ----
     async function renderSubmissionLists(week){
       madeList.textContent = 'Loading…';
       notList.textContent = 'Loading…';
@@ -337,7 +339,6 @@
       notList.innerHTML    = notYet.length ? notYet.map(n=>`<span class="pill">${n}</span>`).join('') : '<span class="text-gray-400">—</span>';
     }
 
-    // ---- Persist picks ----
     async function saveAll(){
       const week = Number(weekSel.value);
       const teamId = Number(teamSel.value);
@@ -370,7 +371,6 @@
       }
     }
 
-    // ---- Run ----
     (async () => {
       const ok = await gatekeep();
       if(!ok) return;
