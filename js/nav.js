@@ -22,10 +22,45 @@ export default async function initNav(){
   if (!mount) return;
 
   const current = document.body?.dataset?.page || '';
+
+  // ---- Session & basic auth state ----
   const { data: { session } } = await supabase.auth.getSession();
   const signedIn = !!session;
 
-  const items = LINKS
+  // ---- Commissioner check (from teams table) ----
+  // Assumes your "teams" table has columns: email (text) and commissioner (boolean)
+  let isCommissioner = false;
+  if (signedIn && session?.user?.email) {
+    try {
+      const email = session.user.email.toLowerCase();
+      const { data: teamRow, error } = await supabase
+        .from('teams')
+        .select('commissioner')
+        .eq('email', email)
+        .single();
+
+      if (!error && teamRow?.commissioner === true) {
+        isCommissioner = true;
+      }
+    } catch (e) {
+      // fail closed (don't show commissioner link)
+      console.warn('Commissioner check failed:', e);
+    }
+  }
+
+  // ---- Build nav items (append Commissioner conditionally) ----
+  const dynamicLinks = [...LINKS];
+  if (isCommissioner) {
+    dynamicLinks.push({
+      href: './commissioner.html',
+      key: 'commissioner',
+      label: 'Commissioner',
+      authOnly: true,
+      id: 'nav-commissioner'
+    });
+  }
+
+  const items = dynamicLinks
     .filter(l => !l.authOnly || signedIn)
     .map(l => {
       const active = l.key === current;
@@ -33,6 +68,7 @@ export default async function initNav(){
       return `<li${idAttr}><a href="${l.href}" class="block px-3 py-3 ${clsActive(active)}">${l.label}</a></li>`;
     }).join('');
 
+  // ---- Render ----
   mount.innerHTML = `
     <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
       <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
@@ -48,7 +84,7 @@ export default async function initNav(){
     </nav>
   `;
 
-  // Wire sign-out
+  // ---- Wire sign-out ----
   const signOutBtn = document.getElementById('sign-out-btn');
   signOutBtn?.addEventListener('click', async () => {
     await supabase.auth.signOut();
@@ -67,7 +103,7 @@ export default async function initNav(){
   // If they sign out while on an auth-only page, kick them to home
   function redirectIfOnAuthOnlyPage(isSignedIn){
     if (isSignedIn) return;
-    const onAuthOnlyPage = LINKS.some(l => l.authOnly && l.key === (document.body?.dataset?.page || ''));
+    const onAuthOnlyPage = dynamicLinks.some(l => l.authOnly && l.key === (document.body?.dataset?.page || ''));
     if (onAuthOnlyPage) window.location.href = './index.html';
   }
 
@@ -75,15 +111,17 @@ export default async function initNav(){
   if (!didSubscribe) {
     didSubscribe = true;
 
-    supabase.auth.onAuthStateChange((event, newSession) => {
+    supabase.auth.onAuthStateChange((event) => {
       // Only react to true state changes; ignore token refresh / initial session events
       if (event === 'SIGNED_IN') {
-        setAuthButtons(true);
+        // A fresh sign-in likely changes commissioner visibility; simplest is to reload nav.
+        // (Sign-in typically navigates from signin.html anyway.)
+        window.location.reload();
       } else if (event === 'SIGNED_OUT') {
         setAuthButtons(false);
         redirectIfOnAuthOnlyPage(false);
       }
-      // Events like TOKEN_REFRESHED / INITIAL_SESSION are intentionally ignored
+      // TOKEN_REFRESHED / INITIAL_SESSION are intentionally ignored
     });
   }
 }
