@@ -162,7 +162,8 @@
     switchToPassword.addEventListener('click', (e) => { e.preventDefault(); setActiveTab('password'); });
     setActiveTab('password');
 
-    // ---------- Check ONLY the teams table ----------
+    // ---------- EXACT LOGIC YOU WANT ----------
+    // Check ONLY the `teams` table for a row where user_id = auth.uid()
     async function userHasTeam(userId){
       const { data, error } = await supabase
         .from('teams')
@@ -170,8 +171,13 @@
         .eq('user_id', userId)
         .limit(1)
         .maybeSingle();
-      if (error) throw error;
-      return !!data; // has a row => has a team
+
+      if (error) {
+        console.error('teams select failed:', error);
+        // Fail CLOSED toward claim flow on any uncertainty
+        return false;
+      }
+      return !!data; // has a row => user already claimed/has a team
     }
 
     let didRedirect = false;
@@ -184,12 +190,12 @@
         didRedirect = true;
         window.location.href = dest;
       }catch(e){
-        console.error(e);
-        // If we can't determine, default to index
+        console.error('redirectPostAuth error → defaulting to claim page:', e);
         didRedirect = true;
-        window.location.href = BASE + 'index.html';
+        window.location.href = BASE + 'claim-team.html';
       }
     }
+    // -----------------------------------------
 
     // If already signed in (or returning from magic link), route immediately
     supabase.auth.getSession().then(async ({ data: { session } }) => {
