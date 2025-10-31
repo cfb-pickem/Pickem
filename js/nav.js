@@ -2,13 +2,11 @@
 import { supabase } from './supabaseClient.js';
 
 const LINKS = [
-  { href: './index.html',          key: 'leaderboard',   label: 'Leaderboard' },
-  { href: './picks.html',          key: 'picks',         label: 'Make Picks', authOnly: true, id: 'nav-picks' },
-  { href: './cfb-genius.html',     key: 'genius',        label: 'CFB Genius' },
-  { href: './stats.html',          key: 'stats',         label: 'Stats' },
-  // NEW commissioner-only page for managing all_games
-  { href: './select-games.html',   key: 'select-games',  label: 'Select Games', authOnly: true, id: 'nav-select-games' },
-  { href: './commissioner.html',   key: 'commissioner',  label: 'Commissioner', authOnly: true, id: 'nav-commissioner' }
+  { href: './index.html',      key: 'leaderboard', label: 'Leaderboard' },
+  { href: './picks.html',      key: 'picks',       label: 'Make Picks', authOnly: true, id: 'nav-picks' },
+  { href: './cfb-genius.html', key: 'genius',      label: 'CFB Genius' },
+  { href: './stats.html',      key: 'stats',       label: 'Stats' },
+  { href: './commissioner.html', key: 'commissioner', label: 'Commissioner', authOnly: true, id: 'nav-commissioner' } // new
 ];
 
 function clsActive(isActive){
@@ -47,8 +45,8 @@ export default async function initNav(){
   // Build nav
   const items = LINKS
     .filter(l => {
-      // Hide commissioner-only links unless user is commissioner
-      if ((l.key === 'commissioner' || l.key === 'select-games') && !isCommissioner) return false;
+      // Hide commissioner link unless user is commissioner
+      if (l.key === 'commissioner' && !isCommissioner) return false;
       return !l.authOnly || signedIn;
     })
     .map(l => {
@@ -71,10 +69,9 @@ export default async function initNav(){
     </nav>
   `;
 
-  // Redirect if user is not commissioner but tries to access commissioner-only pages
-  if ((current === 'commissioner' || current === 'select-games') && !isCommissioner) {
+  // Redirect if user is not commissioner but tries to access commissioner.html
+  if (current === 'commissioner' && !isCommissioner) {
     window.location.href = './index.html';
-    return;
   }
 
   // Wire sign-out
@@ -100,7 +97,7 @@ export default async function initNav(){
   if (!didSubscribe) {
     didSubscribe = true;
 
-    supabase.auth.onAuthStateChange((event) => {
+    supabase.auth.onAuthStateChange((event, newSession) => {
       if (event === 'SIGNED_IN') {
         setAuthButtons(true);
       } else if (event === 'SIGNED_OUT') {

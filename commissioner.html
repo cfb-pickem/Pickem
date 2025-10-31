@@ -34,6 +34,8 @@
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr:hover{background:rgba(233,185,73,.06)}
     .pill{display:inline-block;border:1px solid rgba(231,231,231,.14);padding:.2rem .5rem;margin:.15rem;border-radius:999px;background:#141414}
+    input[type="number"]{background:var(--cfp-black);border:1px solid rgba(231,231,231,.12);padding:.375rem .5rem}
+    input[type="number"]:focus{outline:none;box-shadow:var(--ring)}
   </style>
 </head>
 
@@ -65,8 +67,11 @@
       </div>
     </header>
 
-    <!-- Editable picks table -->
-    <section class="cfp-card overflow-auto">
+    <!-- A) Editable picks table (unchanged behavior) -->
+    <section class="cfp-card overflow-auto mb-6">
+      <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300">
+        <strong class="text-[var(--cfp-ivory)]">Team Picks</strong> — choose picks for the selected team and week.
+      </div>
       <table class="table min-w-full text-sm">
         <thead class="bg-[var(--cfp-black)]">
           <tr class="border-b">
@@ -77,6 +82,26 @@
           </tr>
         </thead>
         <tbody id="edit-body"></tbody>
+      </table>
+    </section>
+
+    <!-- B) Manage games inline (line + picked, per-row save) -->
+    <section class="cfp-card overflow-auto">
+      <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300">
+        <strong class="text-[var(--cfp-ivory)]">Manage Games</strong> — set line and mark “picked” for the same week.
+      </div>
+      <table class="table min-w-full text-sm">
+        <thead class="bg-[var(--cfp-black)]">
+          <tr class="border-b">
+            <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">Week</th>
+            <th class="text-right  px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-32">Status</th>
+          </tr>
+        </thead>
+        <tbody id="games-body"></tbody>
       </table>
     </section>
   </div>
@@ -92,12 +117,17 @@
     const tbody    = document.getElementById('edit-body');
     const saveBtn  = document.getElementById('save-btn');
 
+    const gamesTbody = document.getElementById('games-body');
+
     // State
-    let commissionerTeamRow = null;
     let teams = [];
-    let gamesThisWeek = []; // picked games for selected week
-    let picksMap = {};      // gameId -> current pick (for the selected team & week)
-    let originalPicksMap = {}; // snapshot of picks as loaded to detect changes
+    let gamesThisWeek = [];         // picked games for selected week (for picks table)
+    let picksMap = {};              // gameId -> current pick
+    let originalPicksMap = {};      // snapshot of picks (for diffing)
+
+    // Manage Games state
+    let gamesRows = [];             // all games for week (for manage table)
+    let gamesOriginal = {};         // GameId -> { line, picked, week }
 
     function status(msg,isErr=false){
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
@@ -122,32 +152,32 @@
       if(tErr){ status(tErr.message, true); return false; }
       if(!rows || rows.length === 0){
         status('Access denied — commissioner only.', true);
-        document.querySelector('main')?.remove();
-        // Soft lock the page
         weekSel.disabled = teamSel.disabled = saveBtn.disabled = true;
         return false;
       }
+      return true;
+    }
 
-      commissionerTeamRow = rows[0];
+    // Load weeks via your exact SQL (RPC)
+    async function loadWeeks(){
+      status('Loading weeks…');
+      const { data: weekRows, error: wErr } = await supabase.rpc('get_distinct_weeks');
+      if (wErr) { status(wErr.message, true); return false; }
+
+      const weeks = (weekRows || []).map(r => r.week);
+      if(!weeks.length){ status('No weeks found in all_games.', true); return false; }
+
+      weekSel.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+      weekSel.value = String(weeks[weeks.length-1]); // default latest
       return true;
     }
 
     async function bootstrap(){
-      status('Loading options…');
+      // Weeks
+      const okWeeks = await loadWeeks();
+      if(!okWeeks) return;
 
-      // Weeks (from all_games where picked = true)
-      const { data: weekRows, error: wErr } = await supabase
-        .from('all_games')
-        .select('week')
-        .eq('picked', true)
-        .not('week', 'is', null)
-        .order('week', { ascending: true });
-
-      if(wErr) return status(wErr.message, true);
-      const weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
-      weekSel.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
-
-      // Teams (all)
+      // Teams
       const { data: teamRows, error: tErr } = await supabase
         .from('teams')
         .select('team_id, team_name')
@@ -156,15 +186,14 @@
       if(tErr) return status(tErr.message, true);
       teams = teamRows || [];
       teamSel.innerHTML = teams.map(t=>`<option value="${t.team_id}">${t.team_name}</option>`).join('');
-
-      // Defaults
-      if(weeks.length) weekSel.value = String(weeks[weeks.length-1]);
       if(teams.length) teamSel.value = String(teams[0].team_id);
 
-      await refreshAll();
-      weekSel.onchange = refreshAll;
-      teamSel.onchange = refreshAll;
-      saveBtn.onclick = saveAll;
+      await refreshAll();    // loads picks table
+      await loadGamesTable(); // loads manage-games table
+
+      weekSel.onchange = async () => { await refreshAll(); await loadGamesTable(); };
+      teamSel.onchange = refreshAll; // team affects only picks table
+      saveBtn.onclick = saveAll;     // picks table save
     }
 
     async function refreshAll(){
@@ -176,7 +205,7 @@
       }
       status(`Loading week ${week}…`);
 
-      // Pull all picked games for the week
+      // Pull only PICKED games for the week for the Team Picks section
       const { data: gameRows, error: gErr } = await supabase
         .from('all_games')
         .select('GameId, Away, Home, "Start (CT)", line, week, picked')
@@ -198,13 +227,9 @@
 
       picksMap = {};
       (pickRows||[]).forEach(r => { picksMap[r.game_id] = r.pick || ''; });
-
-      // snapshot originals so we can detect changes on save
       originalPicksMap = { ...picksMap };
 
-      // Render editor
-      renderEditor();
-
+      renderPicksEditor();
       status(`Week ${week} ready.`);
     }
 
@@ -216,7 +241,8 @@
       }catch{ return ''; }
     }
 
-    function renderEditor(){
+    // --------- A) Picks Editor (unchanged) ----------
+    function renderPicksEditor(){
       tbody.innerHTML = '';
       if(!gamesThisWeek.length){
         tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
@@ -233,7 +259,7 @@
         tdGame.textContent = `${g.Away} @ ${g.Home}`;
         tr.appendChild(tdGame);
 
-        // Pick radios (no Clear)
+        // Pick radios
         const tdPick = document.createElement('td');
         tdPick.className = 'px-3 py-2 text-center';
         tdPick.innerHTML = `
@@ -256,7 +282,7 @@
         tdStart.textContent = niceTime(g['Start (CT)']);
         tr.appendChild(tdStart);
 
-        // Line
+        // Line (read-only here)
         const tdLine = document.createElement('td');
         tdLine.className = 'px-3 py-2 text-center';
         const ln = (typeof g.line === 'number') ? g.line : (g.line!=null ? Number(g.line) : null);
@@ -265,16 +291,11 @@
 
         tbody.appendChild(tr);
 
-        // Preselect to existing pick (if any)
+        // Preselect existing pick
         const chosen = picksMap[g.GameId] ?? '';
         const radios = tdPick.querySelectorAll(`input[name="pick-${g.GameId}"]`);
-        if (chosen) {
-          radios.forEach(r => { r.checked = (r.value === chosen); });
-        }
-        // Update local state on change
-        radios.forEach(r => r.addEventListener('change', e => {
-          picksMap[g.GameId] = e.target.value || '';
-        }));
+        if (chosen) radios.forEach(r => { r.checked = (r.value === chosen); });
+        radios.forEach(r => r.addEventListener('change', e => { picksMap[g.GameId] = e.target.value || ''; }));
       }
     }
 
@@ -286,24 +307,14 @@
       saveBtn.disabled = true;
       status('Saving picks…');
 
-      // Build payload ONLY for games whose pick changed, and ONLY if current pick is non-empty
       const payload = [];
       for (const g of gamesThisWeek) {
-        const orig = (originalPicksMap[g.GameId] || '').trim() || null; // null if none
-        const curr = (picksMap[g.GameId] || '').trim() || null;         // null if none
-
-        // If unchanged, skip (no upsert)
+        const orig = (originalPicksMap[g.GameId] || '').trim() || null;
+        const curr = (picksMap[g.GameId] || '').trim() || null;
         if (orig === curr) continue;
-
-        // If curr is null (no selection), skip to avoid insert/update
         if (curr === null) continue;
 
-        payload.push({
-          team_id: teamId,
-          week,
-          game_id: g.GameId,
-          pick: curr
-        });
+        payload.push({ team_id: teamId, week, game_id: g.GameId, pick: curr });
       }
 
       if (payload.length === 0) {
@@ -312,7 +323,6 @@
         return;
       }
 
-      // Upsert only changed rows
       const { error } = await supabase
         .from('picks')
         .upsert(payload, { onConflict: 'team_id,week,game_id' });
@@ -323,10 +333,126 @@
         status(`Save failed: ${error.message}`, true);
       }else{
         status('Picks saved.');
-        // Update originals snapshot for changed rows
-        for (const row of payload) {
-          originalPicksMap[row.game_id] = row.pick;
-        }
+        for (const row of payload) { originalPicksMap[row.game_id] = row.pick; }
+      }
+    }
+
+    // --------- B) Manage Games (inline) ----------
+    async function loadGamesTable(){
+      const week = Number(weekSel.value);
+      if(!Number.isFinite(week)){ return; }
+
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, "Start (CT)", line, picked, week')
+        .eq('week', week)
+        .order('GameId', { ascending: true });
+
+      if(error){ status(error.message, true); return; }
+
+      gamesRows = data || [];
+      gamesOriginal = {};
+      for(const r of gamesRows){
+        gamesOriginal[r.GameId] = { line: r.line, picked: !!r.picked, week: r.week };
+      }
+      renderGamesTable();
+    }
+
+    function setRowStatus(gameId, text, isErr=false){
+      const el = document.querySelector(`[data-row-status="${gameId}"]`);
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-400');
+      if (!isErr && text === 'Saved.') setTimeout(() => { if(el.textContent==='Saved.') el.textContent=''; }, 1200);
+    }
+
+    async function updateRow(gameId, patch){
+      const snap = gamesOriginal[gameId] || {};
+      const effective = {};
+      let changed = false;
+
+      for (const [k, v] of Object.entries(patch)) {
+        const normV = (v === undefined) ? null : v;
+        const normS = (snap[k] === undefined) ? null : snap[k];
+        if (normV !== normS) { effective[k] = v; changed = true; }
+      }
+      if (!changed) return { ok:true, skipped:true };
+
+      setRowStatus(gameId, 'Saving…');
+
+      const { error } = await supabase
+        .from('all_games')
+        .update(effective)
+        .eq('GameId', gameId);   // update by GameId only
+
+      if (error) {
+        setRowStatus(gameId, `Error: ${error.message}`, true);
+        return { ok:false, error };
+      }
+
+      gamesOriginal[gameId] = { ...gamesOriginal[gameId], ...effective };
+      setRowStatus(gameId, 'Saved.');
+      return { ok:true };
+    }
+
+    function renderGamesTable(){
+      gamesTbody.innerHTML = '';
+      if(!gamesRows.length){
+        gamesTbody.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
+        return;
+      }
+
+      for(const g of gamesRows){
+        const tr = document.createElement('tr');
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+
+        // Game
+        const tdGame = document.createElement('td');
+        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
+        tdGame.textContent = `${g.Away} @ ${g.Home}`;
+        tr.appendChild(tdGame);
+
+        // Start
+        const tdStart = document.createElement('td');
+        tdStart.className = 'px-3 py-2 text-center';
+        tdStart.textContent = niceTime(g['Start (CT)']);
+        tr.appendChild(tdStart);
+
+        // Line (editable -> per-row UPDATE on change)
+        const tdLine = document.createElement('td');
+        tdLine.className = 'px-3 py-2 text-center';
+        tdLine.innerHTML = `<input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />`;
+        const lineInput = tdLine.querySelector('input');
+        lineInput.addEventListener('change', async (e) => {
+          const v = e.target.value;
+          const newVal = (v === '' ? null : Number(v));
+          await updateRow(g.GameId, { line: newVal });
+        });
+        tr.appendChild(tdLine);
+
+        // Picked (checkbox -> per-row UPDATE on change)
+        const tdPicked = document.createElement('td');
+        tdPicked.className = 'px-3 py-2 text-center';
+        tdPicked.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.picked ? 'checked' : ''}/>`;
+        const cb = tdPicked.querySelector('input');
+        cb.addEventListener('change', async (e) => {
+          await updateRow(g.GameId, { picked: !!e.target.checked });
+        });
+        tr.appendChild(tdPicked);
+
+        // Week (read-only)
+        const tdWeek = document.createElement('td');
+        tdWeek.className = 'px-3 py-2 text-center text-gray-300';
+        tdWeek.textContent = g.week ?? '';
+        tr.appendChild(tdWeek);
+
+        // Per-row status cell
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'px-3 py-2 text-right';
+        tdStatus.innerHTML = `<span data-row-status="${g.GameId}" class="text-xs text-gray-400"></span>`;
+        tr.appendChild(tdStatus);
+
+        gamesTbody.appendChild(tr);
       }
     }
 
