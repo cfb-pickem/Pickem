@@ -31,8 +31,6 @@
     .cfp-select:focus{outline:none;box-shadow:var(--ring)}
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr:hover{background:rgba(233,185,73,.06)}
-    input[type="number"]{background:var(--cfp-black);border:1px solid rgba(231,231,231,.12);padding:.375rem .5rem}
-    input[type="number"]:focus{outline:none;box-shadow:var(--ring)}
     a.link{color:var(--cfp-gold-2)}
     a.link:hover{text-decoration:underline}
   </style>
@@ -76,10 +74,6 @@
         <thead class="bg-[var(--cfp-black)]">
           <tr class="border-b">
             <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Start (CT)</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-36">Date</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Pick</th>
           </tr>
         </thead>
@@ -141,14 +135,14 @@
       statusEl.textContent = msg;
     }
 
-    // Minimal parser for "YYYY-MM-DD HH:MM:SS" (accepts most date-ish strings)
+    // Parse strings like "2025-08-30 14:30:00" as local time
     function parseCT(val){
       if(val == null) return null;
       if(val instanceof Date) return isNaN(val.getTime()) ? null : val;
       if(typeof val === 'number'){ const d = new Date(val); return isNaN(d.getTime()) ? null : d; }
       const s = String(val).trim();
-      if (/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/.test(s)) {
-        const d = new Date(s.replace(' ', 'T'));
+      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+        const d = new Date(s.replace(' ', 'T'));   // treat as local time
         return isNaN(d.getTime()) ? null : d;
       }
       const d = new Date(s);
@@ -162,7 +156,6 @@
         return d ? d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) : '';
       }catch{ return ''; }
     }
-
     function niceDate(ts){
       if(!ts) return '';
       try{
@@ -197,7 +190,7 @@
       saveBtn.disabled = true;
       picksTbody.innerHTML = `
         <tr>
-          <td colspan="6" class="px-4 py-4 text-gray-300">
+          <td colspan="2" class="px-4 py-4 text-gray-300">
             ${note}
           </td>
         </tr>`;
@@ -282,7 +275,7 @@
         firstPickedKickAt = await getFirstPickedKickoff(week);
         const now = new Date();
 
-        // Case A: before kickoff (and there IS at least one picked game) -> hide picks
+        // A) before kickoff (and there IS at least one picked game) -> hide picks
         if (firstPickedKickAt && now < firstPickedKickAt) {
           lockPicks(
             `Team picks will unlock at ${firstPickedKickAt.toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}.`
@@ -298,7 +291,7 @@
           return; // do not render the picks editor now
         }
 
-        // Case B: no picked games OR we're at/after kickoff -> show editor
+        // B) no picked games OR we're at/after kickoff -> show editor
         unlockPicksUI();
         await refreshPicksOnly();
 
@@ -318,14 +311,13 @@
 
       const { data: gameRows, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, week, picked, espn_url, "Network"')
+        .select('GameId, Away, Home, "Start (CT)", week, picked, espn_url')
         .eq('week', week)
         .eq('picked', true)
         .order('GameId', { ascending: true });
 
       if(gErr){ status(gErr.message, true); return; }
 
-      // Only picked games show in this editor; sort by GameId (link priority is unnecessary here)
       gamesThisWeek = (gameRows || []).slice().sort((a,b)=> (a.GameId||0) - (b.GameId||0));
 
       const { data: pickRows, error: pErr } = await supabase
@@ -345,7 +337,7 @@
     function renderPicksEditor(){
       picksTbody.innerHTML = '';
       if(!gamesThisWeek.length){
-        picksTbody.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
+        picksTbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
         return;
       }
 
@@ -358,31 +350,6 @@
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
         tdGame.innerHTML = teamNamesWithLink(g);
         tr.appendChild(tdGame);
-
-        // Start (CT)
-        const tdStart = document.createElement('td');
-        tdStart.className = 'px-3 py-2 text-center';
-        tdStart.textContent = niceTime(g['Start (CT)']);
-        tr.appendChild(tdStart);
-
-        // Date
-        const tdDate = document.createElement('td');
-        tdDate.className = 'px-3 py-2 text-center';
-        tdDate.textContent = niceDate(g['Start (CT)']);
-        tr.appendChild(tdDate);
-
-        // Network
-        const tdNet = document.createElement('td');
-        tdNet.className = 'px-3 py-2 text-center';
-        tdNet.textContent = g['Network'] ?? '';
-        tr.appendChild(tdNet);
-
-        // Line (read-only here)
-        const tdLine = document.createElement('td');
-        tdLine.className = 'px-3 py-2 text-center';
-        const ln = (typeof g.line === 'number') ? g.line : (g.line!=null ? Number(g.line) : null);
-        tdLine.textContent = (ln!=null && !isNaN(ln)) ? (ln>0?`+${ln}`:`${ln}`) : '';
-        tr.appendChild(tdLine);
 
         // Pick radios
         const tdPick = document.createElement('td');
@@ -544,7 +511,7 @@
         tdDate.textContent = niceDate(g['Start (CT)']);
         tr.appendChild(tdDate);
 
-        // Network (capital N)
+        // Network
         const tdNet = document.createElement('td');
         tdNet.className = 'px-3 py-2 text-center';
         tdNet.textContent = g['Network'] ?? '';
@@ -599,7 +566,6 @@
       };
 
       teamSel.onchange = async () => {
-        // Only reload picks UI when unlocked
         if(picksLockNote.classList.contains('hidden')){
           await refreshPicksOnly();
         }
