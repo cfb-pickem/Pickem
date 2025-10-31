@@ -22,6 +22,13 @@
       --cfp-ivory:#F7F4ED;
       --cfp-gray:#1F2022;
       --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+
+      /* === Halloween vars (non-destructive) === */
+      --hall-orange:#ff7a18;
+      --hall-purple:#6a4cff;
+      --hall-green:#6ce66c;
+      --hall-black: #0b0b0b;
+      --hall-glow: 0 0 0 1px rgba(255,122,24,.35), 0 0 28px rgba(255,122,24,.12) inset;
     }
 
     .network-line{display:inline-flex;align-items:center;font-size:10px;line-height:1;letter-spacing:.15em;text-transform:uppercase;color:var(--cfp-gold-2);margin:0}
@@ -98,6 +105,86 @@
       color:#d1d5db; border-bottom:1px solid rgba(231,231,231,.08);
       padding-bottom:.25rem; margin-bottom:.5rem;
     }
+
+    /* =========================
+       HALLOWEEN THEME (opt-in)
+       ========================= */
+    .halloween .gold-shadow{ box-shadow: var(--hall-glow); }
+
+    /* subtle purple/orange fog overlay */
+    .halloween .hall-overlay{
+      pointer-events:none; position:fixed; inset:0; z-index:0;
+      background:
+        radial-gradient(900px 400px at 20% -10%, rgba(106,76,255,.22), transparent 60%),
+        radial-gradient(900px 400px at 80% 110%, rgba(255,122,24,.18), transparent 60%);
+      mix-blend-mode: screen;
+    }
+
+    /* repeating tiny pumpkins */
+    .halloween .hall-pumpkins{
+      pointer-events:none; position:fixed; inset:0; z-index:0; opacity:.06;
+      background:
+        radial-gradient(6px 6px at 6px 6px, #ffa45c 40%, transparent 41%) 0 0/36px 36px,
+        radial-gradient(6px 6px at 18px 6px, #ffa45c 40%, transparent 41%) 0 0/36px 36px;
+      filter: blur(.2px);
+    }
+
+    /* top banner */
+    .hall-banner{
+      position:relative; z-index:55;
+      background: linear-gradient(90deg, rgba(255,122,24,.18), rgba(106,76,255,.15));
+      border:1px solid rgba(255,255,255,.08);
+      border-left:0; border-right:0;
+    }
+    .hall-banner .corn{
+      background: repeating-linear-gradient(90deg,
+        #ffb703 0 10px, #fff3c4 10px 20px, #ef6c00 20px 30px);
+      -webkit-mask: linear-gradient(#000 0 0) top/100% 2px no-repeat, linear-gradient(#000 0 0) bottom/100% 2px no-repeat;
+      mask: linear-gradient(#000 0 0) top/100% 2px no-repeat, linear-gradient(#000 0 0) bottom/100% 2px no-repeat;
+      height: 4px; opacity:.5;
+    }
+
+    /* floating bats */
+    .bat{
+      position: fixed; width: 28px; height: 14px; z-index: 5; opacity:.6; pointer-events:none;
+      background:
+        radial-gradient(8px 8px at 8px 7px, #222 99%, transparent 100%),
+        radial-gradient(8px 8px at 20px 7px, #222 99%, transparent 100%);
+      transform-origin: center;
+      animation: flit 14s linear infinite;
+      filter: drop-shadow(0 0 6px rgba(0,0,0,.5));
+    }
+    .bat:after{
+      content:""; position:absolute; left:13px; top:5px; width:2px; height:5px; background:#222; border-radius:2px;
+    }
+    @keyframes flit{
+      0%{ transform: translateX(-10vw) translateY(0) scale(1) rotate(0deg); }
+      50%{ transform: translateX(50vw) translateY(-4vh) scale(1.05) rotate(2deg); }
+      100%{ transform: translateX(110vw) translateY(0) scale(1) rotate(0deg); }
+    }
+    @media (prefers-reduced-motion: reduce){
+      .bat{ display:none }
+    }
+
+    /* corner spider web (SVG background) */
+    .spider-web{
+      position: fixed; right:0; top:0; width:220px; height:220px; z-index:4; opacity:.16; pointer-events:none;
+      background:
+        radial-gradient(closest-side, transparent 50%, rgba(255,255,255,.06) 52%, transparent 54%) right top / 18px 18px repeat,
+        conic-gradient(from 0deg, rgba(255,255,255,.08) 0 6deg, transparent 6deg 30deg) right top/ 100% 100% no-repeat;
+      mask: radial-gradient(circle at 100% 0, #000 0 60%, transparent 60%);
+    }
+
+    /* Halloween button */
+    .hall-toggle{
+      border:1px solid rgba(231,231,231,.16);
+      background:linear-gradient(180deg,var(--hall-black),#1b1b1b);
+      padding:.4rem .6rem; font-size:.8rem; letter-spacing:.08em; text-transform:uppercase;
+    }
+    .hall-toggle:hover{ box-shadow: 0 0 0 1px rgba(255,122,24,.35), 0 0 18px rgba(255,122,24,.12) inset; }
+    .hall-chip{
+      font-size:.72rem; background:rgba(255,122,24,.2); color:#ffd8bf; padding:.1rem .4rem; border:1px solid rgba(255,122,24,.35);
+    }
   </style>
 </head>
 
@@ -105,13 +192,35 @@
   <div class="max-w-7xl mx-auto p-4 md:p-6">
     <div id="site-nav"></div>
 
+    <!-- === Halloween banner (non-intrusive) === -->
+    <div id="hall-banner" class="hall-banner rounded-none hidden">
+      <div class="corn w-full"></div>
+      <div class="flex items-center justify-between px-4 py-2 md:px-6">
+        <div class="flex items-center gap-3">
+          <span aria-hidden="true">🎃</span>
+          <p class="text-xs md:text-sm tracking-[.22em] uppercase text-gray-200">
+            Happy Halloween — may your picks be more treat than trick
+          </p>
+          <span aria-hidden="true">🦇</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="hall-state" class="hall-chip rounded-full hidden">Halloween Mode</span>
+          <button id="hall-toggle" class="hall-toggle rounded-none">Toggle 🎃</button>
+        </div>
+      </div>
+      <div class="corn w-full"></div>
+    </div>
+
     <header class="cfp-card rounded-none stripe gold-shadow mb-5">
       <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
         <div class="flex items-center gap-3 md:gap-4">
           <span class="trophy-oval" aria-hidden="true"></span>
           <div>
             <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Leaderboard</h1>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">
+              Leaderboard
+              <span id="hall-title-emoji" class="ml-2 align-[2px] hidden" aria-hidden="true">🎃</span>
+            </h1>
           </div>
         </div>
         <div class="flex items-center gap-3 text-sm">
@@ -159,6 +268,14 @@
       </div>
     </div>
   </div>
+
+  <!-- Halloween visual layers (kept behind content) -->
+  <div id="hall-overlay" class="hall-overlay hidden" aria-hidden="true"></div>
+  <div id="hall-pumpkins" class="hall-pumpkins hidden" aria-hidden="true"></div>
+  <div id="hall-web" class="spider-web hidden" aria-hidden="true"></div>
+  <div id="hall-bat1" class="bat hidden" style="top:18vh; left:-8vw; animation-delay:0s;"></div>
+  <div id="hall-bat2" class="bat hidden" style="top:36vh; left:-12vw; animation-delay:4s;"></div>
+  <div id="hall-bat3" class="bat hidden" style="top:58vh; left:-16vw; animation-delay:8s;"></div>
 
   <!-- Page script -->
   <script type="module">
@@ -214,6 +331,8 @@
       logosTTL: 'cfb_logos_ttl_v1',
       abbrev: 'cfb_abbrev_v1',
       abbrevTTL: 'cfb_abbrev_ttl_v1',
+      // halloween:
+      hallPref: 'cfb_halloween_pref_v1'
     };
     const LOGOS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -764,6 +883,85 @@
         renderWeeklySubmissions(lastTeams, lastPickMap);
       }
     }
+  </script>
+
+  <!-- === Tiny Halloween controller (separate so it's easy to remove later) === -->
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const els = {
+      banner: $('hall-banner'),
+      overlay: $('hall-overlay'),
+      pumpkins: $('hall-pumpkins'),
+      web: $('hall-web'),
+      bat1: $('hall-bat1'),
+      bat2: $('hall-bat2'),
+      bat3: $('hall-bat3'),
+      titleEmoji: $('hall-title-emoji'),
+      toggleBtn: $('hall-toggle'),
+      chip: $('hall-state'),
+    };
+
+    const PREF_KEY = 'cfb_halloween_pref_v1';
+
+    function setHidden(el, hidden){
+      if (!el) return;
+      el.classList.toggle('hidden', hidden);
+    }
+    function applyHalloween(on){
+      document.body.classList.toggle('halloween', on);
+      setHidden(els.overlay, !on);
+      setHidden(els.pumpkins, !on);
+      setHidden(els.web, !on);
+      setHidden(els.bat1, !on);
+      setHidden(els.bat2, !on);
+      setHidden(els.bat3, !on);
+      setHidden(els.titleEmoji, !on);
+      setHidden(els.chip, !on);
+      localStorage.setItem(PREF_KEY, on ? 'on' : 'off');
+    }
+
+    // Show the banner always today, otherwise respect prior use
+    function isHalloweenToday(){
+      const now = new Date();
+      // Force CT display: local user is in America/Chicago
+      const month = now.getMonth(); // 0-11
+      const date = now.getDate();   // 1-31
+      return (month === 9 && date === 31); // October = 9
+    }
+
+    // init
+    const userPref = localStorage.getItem(PREF_KEY);
+    const todayIsHalloween = isHalloweenToday();
+
+    // Banner visible only around Halloween to avoid clutter; change to always-on if you want:
+    els.banner.classList.remove('hidden');
+
+    let startOn = false;
+    if (userPref === 'on') startOn = true;
+    else if (userPref === 'off') startOn = false;
+    else startOn = todayIsHalloween; // default auto-on Oct 31
+
+    applyHalloween(startOn);
+
+    els.toggleBtn?.addEventListener('click', ()=>{
+      const isOn = document.body.classList.contains('halloween');
+      applyHalloween(!isOn);
+      els.toggleBtn.textContent = !isOn ? 'Toggle 🎃 (On)' : 'Toggle 🎃';
+    });
+
+    // Fun: if someone types "treat", flash a quick green glow on header
+    const buffer = [];
+    window.addEventListener('keydown', (e)=>{
+      buffer.push(e.key.toLowerCase());
+      if (buffer.length > 5) buffer.shift();
+      if (buffer.join('').includes('treat')){
+        const header = document.querySelector('header.cfp-card');
+        if (!header) return;
+        const old = header.style.boxShadow;
+        header.style.boxShadow = '0 0 0 1px rgba(108,230,108,.45), 0 0 28px rgba(108,230,108,.18) inset';
+        setTimeout(()=> header.style.boxShadow = old, 1200);
+      }
+    });
   </script>
 </body>
 </html>
