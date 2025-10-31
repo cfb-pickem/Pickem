@@ -91,7 +91,7 @@
     <!-- B) Manage Games (always visible) -->
     <section class="cfp-card overflow-auto">
       <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300">
-        <strong class="text-[var(--cfp-ivory)]">Manage Games</strong> — set line and mark “picked” for the same week.
+        <strong class="text-[var(--cfp-ivory)]">Manage Games</strong> - set line and mark "picked" for the same week.
       </div>
       <table class="table min-w-full text-sm">
         <thead class="bg-[var(--cfp-black)]">
@@ -137,7 +137,7 @@
 
     // Gate
     let firstPickedKickAt = null;
-    let unlockTimer = null;
+    let unlockTimer = null; // setTimeout handle
 
     // ---------- helpers ----------
     function status(msg,isErr=false){
@@ -149,7 +149,7 @@
       if(!ts) return '';
       try{
         const d = new Date(ts);
-        return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+        return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
       }catch{ return ''; }
     }
 
@@ -157,7 +157,7 @@
       if(!ts) return '';
       try{
         const d = new Date(ts);
-        return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+        return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
       }catch{ return ''; }
     }
 
@@ -195,7 +195,7 @@
 
       if(tErr){ status(tErr.message, true); return false; }
       if(!rows || rows.length === 0){
-        status('Access denied — commissioner only.', true);
+        status('Access denied - commissioner only.', true);
         weekSel.disabled = teamSel.disabled = saveBtn.disabled = true;
         return false;
       }
@@ -232,39 +232,46 @@
         .select('"Start (CT)"')
         .eq('week', week)
         .eq('picked', true)
+        .not('Start (CT)', 'is', null)
         .order('Start (CT)', { ascending: true })
         .limit(1);
 
       if(error) throw error;
       const ts = data && data[0] ? data[0]['Start (CT)'] : null;
-      return ts ? new Date(ts) : null;
+      const d = ts ? new Date(ts) : null;
+      if(!d || isNaN(d.getTime())) return null;
+      return d;
+    }
+
+    function clearUnlockTimer(){
+      if(unlockTimer){
+        clearTimeout(unlockTimer);
+        unlockTimer = null;
+      }
     }
 
     async function updateKickoffGateAndMaybeLoadPicks(){
       const week = Number(weekSel.value);
       lockPicks('Checking kickoff…');
+      clearUnlockTimer();
       if(!Number.isFinite(week)) return;
 
       try{
         firstPickedKickAt = await getFirstPickedKickoff(week);
 
         if(!firstPickedKickAt){
-          lockPicks('No picked games yet for this week. Toggle “Picked” in Manage Games to enable picks at kickoff.');
+          lockPicks('No picked games yet for this week. Toggle "Picked" in Manage Games to enable picks at kickoff.');
           return;
         }
 
         const now = new Date();
-        if(now < firstPickedKickAt){
-          lockPicks(`Picks unlock at the first picked kickoff: ${firstPickedKickAt.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' })}`);
-          if(unlockTimer) clearInterval(unlockTimer);
-          unlockTimer = setInterval(async () => {
-            if(new Date() >= firstPickedKickAt){
-              clearInterval(unlockTimer);
-              unlockTimer = null;
-              unlockPicksUI();
-              await refreshPicksOnly();
-            }
-          }, 30000);
+        const msUntil = firstPickedKickAt.getTime() - now.getTime();
+        if(msUntil > 0){
+          lockPicks(`Picks unlock at first picked kickoff: ${firstPickedKickAt.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' })}`);
+          unlockTimer = setTimeout(async () => {
+            unlockPicksUI();
+            await refreshPicksOnly();
+          }, msUntil);
         }else{
           unlockPicksUI();
           await refreshPicksOnly();
@@ -290,7 +297,13 @@
 
       if(gErr){ status(gErr.message, true); return; }
 
-      gamesThisWeek = gameRows || [];
+      // Sort: games with a link go to the top, then by GameId
+      gamesThisWeek = (gameRows || []).slice().sort((a,b)=>{
+        const al = a.espn_url ? 1 : 0;
+        const bl = b.espn_url ? 1 : 0;
+        if(bl - al !== 0) return bl - al; // linked first
+        return (a.GameId||0) - (b.GameId||0);
+      });
 
       const { data: pickRows, error: pErr } = await supabase
         .from('picks')
@@ -306,6 +319,17 @@
       renderPicksEditor();
     }
 
+    function teamNamesWithLink(g){
+      // If there's a link, make both team names clickable to the same URL
+      if(g.espn_url){
+        const url = String(g.espn_url);
+        const a = `<a class="link" href="${url}" target="_blank" rel="noopener">${g.Away}</a>`;
+        const h = `<a class="link" href="${url}" target="_blank" rel="noopener">${g.Home}</a>`;
+        return `${a} @ ${h}`;
+      }
+      return `${g.Away} @ ${g.Home}`;
+    }
+
     function renderPicksEditor(){
       picksTbody.innerHTML = '';
       if(!gamesThisWeek.length){
@@ -317,10 +341,10 @@
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // Game
+        // Game (team names become links when espn_url is present)
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
-        tdGame.textContent = `${g.Away} @ ${g.Home}`;
+        tdGame.innerHTML = teamNamesWithLink(g);
         tr.appendChild(tdGame);
 
         // Start (CT)
@@ -341,7 +365,7 @@
         tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
 
-        // ESPN URL
+        // ESPN URL (kept as an explicit column link too)
         const tdEspn = document.createElement('td');
         tdEspn.className = 'px-3 py-2 text-center';
         if (g.espn_url) {
@@ -391,7 +415,7 @@
     }
 
     async function saveAll(){
-      // Don’t save if locked
+      // Don't save if locked
       if(!picksLockNote.classList.contains('hidden')) return;
 
       const week = Number(weekSel.value);
@@ -443,7 +467,14 @@
 
       if(error){ status(error.message, true); return; }
 
-      gamesRows = data || [];
+      // Sort with link-first
+      gamesRows = (data || []).slice().sort((a,b)=>{
+        const al = a.espn_url ? 1 : 0;
+        const bl = b.espn_url ? 1 : 0;
+        if(bl - al !== 0) return bl - al; // linked first
+        return (a.GameId||0) - (b.GameId||0);
+      });
+
       gamesOriginal = {};
       for(const r of gamesRows){
         gamesOriginal[r.GameId] = {
@@ -500,10 +531,10 @@
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // Game
+        // Game (team names become links when espn_url is present)
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
-        tdGame.textContent = `${g.Away} @ ${g.Home}`;
+        tdGame.innerHTML = teamNamesWithLink(g);
         tr.appendChild(tdGame);
 
         // Start (CT)
@@ -584,6 +615,7 @@
       // Handlers
       weekSel.onchange = async () => {
         lockPicks('Updating for selected week…');  // hide immediately on week change
+        clearUnlockTimer();
         await updateKickoffGateAndMaybeLoadPicks();
         await loadGamesTable();
       };
