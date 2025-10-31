@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>CFB Pick'em — Select Games</title>
+  <title>CFB Pick'em — Commissioner</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,6 +33,8 @@
     .table tbody tr:hover{background:rgba(233,185,73,.06)}
     input[type="number"]{background:var(--cfp-black);border:1px solid rgba(231,231,231,.12);padding:.375rem .5rem}
     input[type="number"]:focus{outline:none;box-shadow:var(--ring)}
+    a.link{color:var(--cfp-gold-2)}
+    a.link:hover{text-decoration:underline}
   </style>
 </head>
 
@@ -68,6 +70,7 @@
           <tr class="border-b">
             <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">Week</th>
@@ -145,9 +148,16 @@
     function niceTime(ts){
       if(!ts) return '';
       try{
-        const d = new Date(ts);
+        // Convert "YYYY-MM-DD HH:MM:SS" -> Date
+        const d = new Date(String(ts).replace(' ', 'T'));
         return d.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' });
       }catch{ return ''; }
+    }
+
+    function parseCT(ts){
+      if(!ts) return null;
+      const d = new Date(String(ts).replace(' ', 'T'));
+      return isNaN(d.getTime()) ? null : d;
     }
 
     async function loadWeek(){
@@ -157,13 +167,31 @@
 
       const { data, error } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, picked, week')
+        .select('GameId, Away, Home, "Start (CT)", line, picked, week, "Network", espn_url')
         .eq('week', week)
         .order('GameId', { ascending: true });
 
       if(error) return status(error.message,true);
 
       rows = data || [];
+
+      // ---- SORTING ----
+      // 1) Picked first (true before false)
+      // 2) Then rows with Network present (non-null/non-empty)
+      // 3) Then by Start (CT) ascending (earliest first)
+      rows.sort((a,b) => {
+        if (Boolean(a.picked) !== Boolean(b.picked)) return a.picked ? -1 : 1;
+
+        const aHasNet = a['Network'] != null && String(a['Network']).trim() !== '';
+        const bHasNet = b['Network'] != null && String(b['Network']).trim() !== '';
+        if (aHasNet !== bHasNet) return aHasNet ? -1 : 1;
+
+        const at = parseCT(a['Start (CT)']); const bt = parseCT(b['Start (CT)']);
+        const atms = at ? at.getTime() : Number.POSITIVE_INFINITY;
+        const btms = bt ? bt.getTime() : Number.POSITIVE_INFINITY;
+        return atms - btms;
+      });
+
       original = {};
       edited   = {};
       for(const r of rows){
@@ -177,7 +205,7 @@
     function renderTable(){
       tbody.innerHTML = '';
       if(!rows.length){
-        tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
         return;
       }
 
@@ -185,17 +213,27 @@
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // Game
+        // Game (link to espn_url if present)
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
-        tdGame.textContent = `${g.Away} @ ${g.Home}`;
+        if (g.espn_url) {
+          tdGame.innerHTML = `<a class="link" href="${g.espn_url}" target="_blank" rel="noopener">${g.Away} @ ${g.Home}</a>`;
+        } else {
+          tdGame.textContent = `${g.Away} @ ${g.Home}`;
+        }
         tr.appendChild(tdGame);
 
-        // Start
+        // Start (CT)
         const tdStart = document.createElement('td');
         tdStart.className = 'px-3 py-2 text-center';
         tdStart.textContent = niceTime(g['Start (CT)']);
         tr.appendChild(tdStart);
+
+        // Network (new column)
+        const tdNet = document.createElement('td');
+        tdNet.className = 'px-3 py-2 text-center';
+        tdNet.textContent = g['Network'] ?? '';
+        tr.appendChild(tdNet);
 
         // Line (editable)
         const tdLine = document.createElement('td');
