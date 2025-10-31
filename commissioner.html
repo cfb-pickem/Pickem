@@ -114,8 +114,7 @@
 
     const picksLockNote = document.getElementById('picks-lock-note');
     const picksTbody    = document.getElementById('edit-body');
-
-    const gamesTbody = document.getElementById('games-body');
+    const gamesTbody    = document.getElementById('games-body');
 
     // State
     let teams = [];
@@ -126,7 +125,7 @@
     let gamesOriginal = {};         // GameId -> { line, picked, week, espn_url, Network }
 
     // Gate scheduling
-    let firstPickedKickAt = null;
+    let firstPickedKickAt = null;   // Date (Central-aware)
     let unlockTimer = null;
 
     // ---------- helpers ----------
@@ -134,34 +133,37 @@
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
     }
+    function clearUnlockTimer(){
+      if(unlockTimer){ clearTimeout(unlockTimer); unlockTimer = null; }
+    }
 
-    // Parse strings like "2025-08-30 14:30:00" as local time
-    function parseCT(val){
-      if(val == null) return null;
-      if(val instanceof Date) return isNaN(val.getTime()) ? null : val;
-      if(typeof val === 'number'){ const d = new Date(val); return isNaN(d.getTime()) ? null : d; }
-      const s = String(val).trim();
-      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
-        const d = new Date(s.replace(' ', 'T'));   // treat as local time
-        return isNaN(d.getTime()) ? null : d;
+    // ===== Central Time parsing (CST/CDT) =====
+    // Minimal DST rules for Chicago: starts 2nd Sunday in March; ends 1st Sunday in November.
+    function isChicagoDST(y, m, d) {
+      function nthSunday(year, month1based, n){
+        const first = new Date(Date.UTC(year, month1based-1, 1, 7, 0, 0));
+        const day = first.getUTCDay(); // 0=Sun
+        const offset = (7 - day) % 7;
+        return new Date(Date.UTC(year, month1based-1, 1 + offset + 7*(n-1)));
       }
-      const d = new Date(s);
-      return isNaN(d.getTime()) ? null : d;
+      const start = nthSunday(y, 3, 2);
+      const end   = nthSunday(y, 11, 1);
+      const cur   = new Date(Date.UTC(y, m-1, d, 7, 0, 0));
+      return cur >= start && cur < end;
     }
 
-    function niceTime(ts){
-      if(!ts) return '';
-      try{
-        const d = parseCT(ts);
-        return d ? d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) : '';
-      }catch{ return ''; }
-    }
-    function niceDate(ts){
-      if(!ts) return '';
-      try{
-        const d = parseCT(ts);
-        return d ? d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
-      }catch{ return ''; }
+    // Accepts "YYYY-MM-DD HH:MM:SS" (Central) and returns a Date with the proper offset
+    function parseCTCentral(s){
+      if (!s) return null;
+      const m = String(s).trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+      if (!m) return null;
+      const [_, Y, Mo, D, H, Mi, S] = m;
+      const y = +Y, mo = +Mo, d = +D;
+      const dst = isChicagoDST(y, mo, d);
+      const offset = dst ? '-05:00' : '-06:00';
+      const iso = `${Y}-${Mo}-${D}T${H}:${Mi}:${S}${offset}`;
+      const dt = new Date(iso);
+      return isNaN(dt.getTime()) ? null : dt;
     }
 
     function teamNamesWithLink(g){
@@ -174,35 +176,22 @@
       return `${g.Away} @ ${g.Home}`;
     }
 
-    function clearUnlockTimer(){
-      if(unlockTimer){
-        clearTimeout(unlockTimer);
-        unlockTimer = null;
-      }
-    }
-
     function lockPicks(note = 'Team picks are hidden until the first picked game kicks off.'){
-      if (picksLockNote) {
-        picksLockNote.textContent = note;
-        picksLockNote.classList.remove('hidden');
-      }
+      if (picksLockNote) { picksLockNote.textContent = note; picksLockNote.classList.remove('hidden'); }
       teamSel.disabled = true;
       saveBtn.disabled = true;
       picksTbody.innerHTML = `
         <tr>
-          <td colspan="2" class="px-4 py-4 text-gray-300">
-            ${note}
-          </td>
+          <td colspan="2" class="px-4 py-4 text-gray-300">${note}</td>
         </tr>`;
     }
-
     function unlockPicksUI(){
       if (picksLockNote) picksLockNote.classList.add('hidden');
       teamSel.disabled = false;
       saveBtn.disabled = false;
     }
 
-    // ---------- auth / gating ----------
+    // ---------- auth ----------
     async function gatekeep(){
       await initNav();
       const { data: { user }, error } = await supabase.auth.getUser();
@@ -224,6 +213,7 @@
       return true;
     }
 
+    // ---------- initial data ----------
     async function loadWeeks(){
       const { data: weekRows, error } = await supabase.rpc('get_distinct_weeks');
       if(error){ status(error.message, true); return false; }
@@ -246,7 +236,7 @@
       return true;
     }
 
-    // ---------- kickoff gate logic (week-scoped, picked-only) ----------
+    // ---------- kickoff gate (Central) ----------
     async function getFirstPickedKickoff(week){
       const { data, error } = await supabase
         .from('all_games')
@@ -254,56 +244,54 @@
         .eq('week', week)
         .eq('picked', true)
         .not('Start (CT)', 'is', null);
-
       if(error) throw error;
 
       const times = (data || [])
-        .map(r => r && r['Start (CT)'] ? parseCT(r['Start (CT)']) : null)
+        .map(r => r && r['Start (CT)'] ? parseCTCentral(r['Start (CT)']) : null)
         .filter(d => d && !isNaN(d.getTime()))
         .map(d => d.getTime());
-
       if (!times.length) return null;
       return new Date(Math.min(...times));
     }
 
     async function updateKickoffGateAndMaybeLoadPicks(){
-      const week = Number(weekSel.value);
       clearUnlockTimer();
+      const week = Number(weekSel.value);
       if(!Number.isFinite(week)) return;
 
       try{
         firstPickedKickAt = await getFirstPickedKickoff(week);
         const now = new Date();
 
-        // A) before kickoff (and there IS at least one picked game) -> hide picks
+        // If there's at least one picked game and now is before the first picked kickoff -> lock
         if (firstPickedKickAt && now < firstPickedKickAt) {
           lockPicks(
-            `Team picks will unlock at ${firstPickedKickAt.toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}.`
+            `Team picks unlock at ${firstPickedKickAt.toLocaleString('en-US', {
+              weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'
+            })} CT.`
           );
-          // schedule automatic unlock at kickoff
           const msUntil = firstPickedKickAt.getTime() - now.getTime();
           if (msUntil > 0) {
             unlockTimer = setTimeout(async () => {
-              await refreshPicksOnly();   // render picks right at/after kickoff
               unlockPicksUI();
+              await refreshPicksOnly();
             }, msUntil);
           }
-          return; // do not render the picks editor now
+          return;
         }
 
-        // B) no picked games OR we're at/after kickoff -> show editor
+        // No picked games or at/after kickoff -> show editor
         unlockPicksUI();
         await refreshPicksOnly();
-
       }catch(e){
         console.error(e);
-        // On error, fail open: allow editing (so commissioners aren't stuck)
+        // Fail-open if there's an error
         unlockPicksUI();
         await refreshPicksOnly();
       }
     }
 
-    // ---------- picks table (shows only picked=true games) ----------
+    // ---------- team picks (picked games only) ----------
     async function refreshPicksOnly(){
       const week = Number(weekSel.value);
       const teamId = Number(teamSel.value);
@@ -315,7 +303,6 @@
         .eq('week', week)
         .eq('picked', true)
         .order('GameId', { ascending: true });
-
       if(gErr){ status(gErr.message, true); return; }
 
       gamesThisWeek = (gameRows || []).slice().sort((a,b)=> (a.GameId||0) - (b.GameId||0));
@@ -325,12 +312,12 @@
         .select('game_id, pick')
         .eq('team_id', teamId)
         .eq('week', week);
-
       if(pErr){ status(pErr.message, true); return; }
 
       picksMap = {};
       (pickRows||[]).forEach(r => { picksMap[r.game_id] = r.pick || ''; });
       originalPicksMap = { ...picksMap };
+
       renderPicksEditor();
     }
 
@@ -378,7 +365,7 @@
     }
 
     async function saveAll(){
-      // If locked, don't allow saving
+      // prevent saving while locked
       if(!picksLockNote.classList.contains('hidden')) return;
 
       const week = Number(weekSel.value);
@@ -417,7 +404,7 @@
       }
     }
 
-    // ---------- manage games table ----------
+    // ---------- manage games ----------
     async function loadGamesTable(){
       const week = Number(weekSel.value);
       if(!Number.isFinite(week)) return;
@@ -427,10 +414,9 @@
         .select('GameId, Away, Home, "Start (CT)", line, picked, week, espn_url, "Network"')
         .eq('week', week)
         .order('GameId', { ascending: true });
-
       if(error){ status(error.message, true); return; }
 
-      // Sort picked games first, then by GameId
+      // picked games first, then by GameId
       gamesRows = (data || []).slice().sort((a,b)=>{
         if (a.picked === b.picked) return (a.GameId||0) - (b.GameId||0);
         return a.picked ? -1 : 1;
@@ -450,7 +436,6 @@
     }
 
     async function updateRow(gameId, patch){
-      // compute effective diff vs snapshot
       const snap = gamesOriginal[gameId] || {};
       const effective = {};
       let changed = false;
@@ -465,16 +450,12 @@
       const { error } = await supabase
         .from('all_games')
         .update(effective)
-        .eq('GameId', gameId); // update by GameId only
-
-      if (error) {
-        status(`Save failed: ${error.message}`, true);
-        return { ok:false, error };
-      }
+        .eq('GameId', gameId);
+      if (error) { status(`Save failed: ${error.message}`, true); return { ok:false, error }; }
 
       gamesOriginal[gameId] = { ...gamesOriginal[gameId], ...effective };
 
-      // If "picked" changed, re-evaluate the kickoff gate & refresh tables
+      // If "picked" changed, re-evaluate gate & refresh UI
       if (Object.prototype.hasOwnProperty.call(effective, 'picked')) {
         await updateKickoffGateAndMaybeLoadPicks();
         await loadGamesTable();
@@ -493,7 +474,7 @@
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // Game (team names become links when espn_url is present)
+        // Game (link when espn_url present)
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
         tdGame.innerHTML = teamNamesWithLink(g);
@@ -502,13 +483,15 @@
         // Start (CT)
         const tdStart = document.createElement('td');
         tdStart.className = 'px-3 py-2 text-center';
-        tdStart.textContent = niceTime(g['Start (CT)']);
+        const d1 = parseCTCentral(g['Start (CT)']);
+        tdStart.textContent = d1 ? d1.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) : '';
         tr.appendChild(tdStart);
 
         // Date
         const tdDate = document.createElement('td');
         tdDate.className = 'px-3 py-2 text-center';
-        tdDate.textContent = niceDate(g['Start (CT)']);
+        const d2 = parseCTCentral(g['Start (CT)']);
+        tdDate.textContent = d2 ? d2.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
         tr.appendChild(tdDate);
 
         // Network
@@ -541,7 +524,7 @@
       }
     }
 
-    // ---------- bootstrap & events ----------
+    // ---------- bootstrap ----------
     (async () => {
       const ok = await gatekeep();
       if(!ok) return;
@@ -566,6 +549,7 @@
       };
 
       teamSel.onchange = async () => {
+        // Only reload picks UI when unlocked
         if(picksLockNote.classList.contains('hidden')){
           await refreshPicksOnly();
         }
