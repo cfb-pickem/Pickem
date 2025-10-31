@@ -64,7 +64,7 @@
       </div>
     </header>
 
-    <!-- A) Team Picks (hidden BEFORE first picked kickoff) -->
+    <!-- A) Team Picks (hidden until 11:00 AM CT on Saturday of that week) -->
     <section id="picks-section" class="cfp-card overflow-auto mb-6">
       <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex items-center justify-between">
         <strong class="text-[var(--cfp-ivory)]">Team Picks</strong>
@@ -123,9 +123,6 @@
     let originalPicksMap = {};
     let gamesRows = [];             // all games for Manage Games
     let gamesOriginal = {};         // GameId -> { line, picked, week, espn_url, Network }
-
-    // Gate scheduling
-    let firstPickedKickAt = null;   // Date (Central-aware)
     let unlockTimer = null;
 
     // ---------- helpers ----------
@@ -137,8 +134,14 @@
       if(unlockTimer){ clearTimeout(unlockTimer); unlockTimer = null; }
     }
 
-    // ===== Central Time parsing (CST/CDT) =====
-    // Minimal DST rules for Chicago: starts 2nd Sunday in March; ends 1st Sunday in November.
+    // ===== Central Time utilities =====
+    // Sakamoto weekday: 0=Sunday .. 6=Saturday
+    function weekday(y,m,d){
+      const t=[0,3,2,5,0,3,5,1,4,6,2,4];
+      if(m<3){ y-=1; }
+      return (y + Math.floor(y/4) - Math.floor(y/100) + Math.floor(y/400) + t[m-1] + d) % 7;
+    }
+    // Basic Chicago DST rule: 2nd Sun in Mar .. 1st Sun in Nov
     function isChicagoDST(y, m, d) {
       function nthSunday(year, month1based, n){
         const first = new Date(Date.UTC(year, month1based-1, 1, 7, 0, 0));
@@ -151,19 +154,51 @@
       const cur   = new Date(Date.UTC(y, m-1, d, 7, 0, 0));
       return cur >= start && cur < end;
     }
-
-    // Accepts "YYYY-MM-DD HH:MM:SS" (Central) and returns a Date with the proper offset
+    // Build a Date at Central local time by attaching the proper offset
+    function dateAtCentral(y, m, d, hh, mm, ss){
+      const dst = isChicagoDST(y,m,d);
+      const off = dst ? '-05:00' : '-06:00';
+      return new Date(`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}${off}`);
+    }
+    // Parse "YYYY-MM-DD HH:MM:SS" (Central) to Date (with correct offset)
     function parseCTCentral(s){
       if (!s) return null;
       const m = String(s).trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
       if (!m) return null;
-      const [_, Y, Mo, D, H, Mi, S] = m;
-      const y = +Y, mo = +Mo, d = +D;
-      const dst = isChicagoDST(y, mo, d);
-      const offset = dst ? '-05:00' : '-06:00';
-      const iso = `${Y}-${Mo}-${D}T${H}:${Mi}:${S}${offset}`;
-      const dt = new Date(iso);
-      return isNaN(dt.getTime()) ? null : dt;
+      const y=+m[1], mo=+m[2], d=+m[3], h=+m[4], mi=+m[5], se=+m[6];
+      return dateAtCentral(y,mo,d,h,mi,se);
+    }
+    // Find 11:00 AM Central on Saturday of "the selected week"
+    // We infer the Saturday by looking at the week's earliest game date and jumping to that week's Saturday.
+    async function saturday11amCTForWeek(week){
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('"Start (CT)"')
+        .eq('week', week)
+        .not('Start (CT)', 'is', null);
+      if(error) throw error;
+
+      const ymds = (data||[])
+        .map(r => String(r['Start (CT)']).slice(0,10)) // "YYYY-MM-DD"
+        .filter(Boolean);
+      if(ymds.length === 0) return null;
+
+      // Use the earliest date as the week's anchor
+      ymds.sort(); // lex sort works on YYYY-MM-DD
+      const [Y,Mo,D] = ymds[0].split('-').map(n=>+n);
+
+      // Compute that week's Saturday (0=Sun..6=Sat)
+      const dow = weekday(Y,Mo,D);
+      const addDays = (dtY,dtM,dtD,delta) => {
+        const base = new Date(Date.UTC(dtY, dtM-1, dtD, 0,0,0));
+        const moved = new Date(base.getTime() + delta*86400000);
+        return { y: moved.getUTCFullYear(), m: moved.getUTCMonth()+1, d: moved.getUTCDate() };
+      };
+      const deltaToSat = (6 - dow + 7) % 7;
+      const sat = addDays(Y,Mo,D, deltaToSat);
+
+      // 11:00:00 Central on that Saturday
+      return dateAtCentral(sat.y, sat.m, sat.d, 11, 0, 0);
     }
 
     function teamNamesWithLink(g){
@@ -176,7 +211,7 @@
       return `${g.Away} @ ${g.Home}`;
     }
 
-    function lockPicks(note = 'Team picks are hidden until the first picked game kicks off.'){
+    function lockPicks(note = 'Team picks are hidden until 11:00 AM CT on Saturday.'){
       if (picksLockNote) { picksLockNote.textContent = note; picksLockNote.classList.remove('hidden'); }
       teamSel.disabled = true;
       saveBtn.disabled = true;
@@ -236,53 +271,42 @@
       return true;
     }
 
-    // ---------- kickoff gate (Central) ----------
-    async function getFirstPickedKickoff(week){
-      const { data, error } = await supabase
-        .from('all_games')
-        .select('"Start (CT)"')
-        .eq('week', week)
-        .eq('picked', true)
-        .not('Start (CT)', 'is', null);
-      if(error) throw error;
-
-      const times = (data || [])
-        .map(r => r && r['Start (CT)'] ? parseCTCentral(r['Start (CT)']) : null)
-        .filter(d => d && !isNaN(d.getTime()))
-        .map(d => d.getTime());
-      if (!times.length) return null;
-      return new Date(Math.min(...times));
-    }
-
-    async function updateKickoffGateAndMaybeLoadPicks(){
+    // ---------- visibility gate: hide until Saturday 11:00 AM CT ----------
+    async function updateSaturdayGateAndMaybeLoadPicks(){
       clearUnlockTimer();
       const week = Number(weekSel.value);
       if(!Number.isFinite(week)) return;
 
       try{
-        firstPickedKickAt = await getFirstPickedKickoff(week);
-        const now = new Date();
+        const sat11 = await saturday11amCTForWeek(week);
+        if (!sat11){
+          // If we can't infer a Saturday, fail-open so you can still use the page
+          unlockPicksUI();
+          await refreshPicksOnly();
+          return;
+        }
 
-        // If there's at least one picked game and now is before the first picked kickoff -> lock
-        if (firstPickedKickAt && now < firstPickedKickAt) {
+        const now = new Date();
+        if (now < sat11){
           lockPicks(
-            `Team picks unlock at ${firstPickedKickAt.toLocaleString('en-US', {
+            `Team picks unlock at ${sat11.toLocaleString('en-US', {
               weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'
             })} CT.`
           );
-          const msUntil = firstPickedKickAt.getTime() - now.getTime();
-          if (msUntil > 0) {
+          const msUntil = sat11.getTime() - now.getTime();
+          if (msUntil > 0){
             unlockTimer = setTimeout(async () => {
               unlockPicksUI();
               await refreshPicksOnly();
             }, msUntil);
           }
-          return;
+          return; // keep hidden for now
         }
 
-        // No picked games or at/after kickoff -> show editor
+        // At/after 11am CT Saturday
         unlockPicksUI();
         await refreshPicksOnly();
+
       }catch(e){
         console.error(e);
         // Fail-open if there's an error
@@ -291,7 +315,7 @@
       }
     }
 
-    // ---------- team picks (picked games only) ----------
+    // ---------- team picks (you can keep this showing only picked games if desired) ----------
     async function refreshPicksOnly(){
       const week = Number(weekSel.value);
       const teamId = Number(teamSel.value);
@@ -301,7 +325,7 @@
         .from('all_games')
         .select('GameId, Away, Home, "Start (CT)", week, picked, espn_url')
         .eq('week', week)
-        .eq('picked', true)
+        .eq('picked', true) // keep only picked games in the editor; remove this line if you want all.
         .order('GameId', { ascending: true });
       if(gErr){ status(gErr.message, true); return; }
 
@@ -435,6 +459,15 @@
       renderGamesTable();
     }
 
+    function niceTimeCT(s){
+      const d = parseCTCentral(s);
+      return d ? d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) : '';
+    }
+    function niceDateCT(s){
+      const d = parseCTCentral(s);
+      return d ? d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
+    }
+
     async function updateRow(gameId, patch){
       const snap = gamesOriginal[gameId] || {};
       const effective = {};
@@ -455,9 +488,9 @@
 
       gamesOriginal[gameId] = { ...gamesOriginal[gameId], ...effective };
 
-      // If "picked" changed, re-evaluate gate & refresh UI
+      // If "picked" changed, re-evaluate Saturday lock & refresh UI
       if (Object.prototype.hasOwnProperty.call(effective, 'picked')) {
-        await updateKickoffGateAndMaybeLoadPicks();
+        await updateSaturdayGateAndMaybeLoadPicks();
         await loadGamesTable();
       }
       return { ok:true };
@@ -476,22 +509,20 @@
 
         // Game (link when espn_url present)
         const tdGame = document.createElement('td');
-        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
+        tdGame.className = 'px-4 py-2 font-medium text:[var(--cfp-ivory)]';
         tdGame.innerHTML = teamNamesWithLink(g);
         tr.appendChild(tdGame);
 
         // Start (CT)
         const tdStart = document.createElement('td');
         tdStart.className = 'px-3 py-2 text-center';
-        const d1 = parseCTCentral(g['Start (CT)']);
-        tdStart.textContent = d1 ? d1.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) : '';
+        tdStart.textContent = niceTimeCT(g['Start (CT)']);
         tr.appendChild(tdStart);
 
         // Date
         const tdDate = document.createElement('td');
         tdDate.className = 'px-3 py-2 text-center';
-        const d2 = parseCTCentral(g['Start (CT)']);
-        tdDate.textContent = d2 ? d2.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
+        tdDate.textContent = niceDateCT(g['Start (CT)']);
         tr.appendChild(tdDate);
 
         // Network
@@ -536,20 +567,19 @@
       const okTeams = await loadTeams();
       if(!okTeams) return;
 
-      // Gate + picks + games
-      await updateKickoffGateAndMaybeLoadPicks();
+      // Saturday 11am CT gate + picks + games
+      await updateSaturdayGateAndMaybeLoadPicks();
       await loadGamesTable();
 
       // Handlers
       weekSel.onchange = async () => {
         status('Loading…');
-        await updateKickoffGateAndMaybeLoadPicks();
+        await updateSaturdayGateAndMaybeLoadPicks();
         await loadGamesTable();
         status('Ready.');
       };
 
       teamSel.onchange = async () => {
-        // Only reload picks UI when unlocked
         if(picksLockNote.classList.contains('hidden')){
           await refreshPicksOnly();
         }
