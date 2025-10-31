@@ -227,20 +227,24 @@
 
     // ---------- kickoff gate logic (week-scoped, picked-only) ----------
     async function getFirstPickedKickoff(week){
+      // Pull from all_games and compute the earliest valid kickoff (CT) for picked games in this week
       const { data, error } = await supabase
         .from('all_games')
         .select('"Start (CT)"')
         .eq('week', week)
         .eq('picked', true)
-        .not('Start (CT)', 'is', null)
-        .order('Start (CT)', { ascending: true })
-        .limit(1);
+        .not('Start (CT)', 'is', null);
 
-      if(error) throw error;
-      const ts = data && data[0] ? data[0]['Start (CT)'] : null;
-      const d = ts ? new Date(ts) : null;
-      if(!d || isNaN(d.getTime())) return null;
-      return d;
+      if (error) throw error;
+      const times = (data || [])
+        .map(r => r && r['Start (CT)'] ? new Date(r['Start (CT)']) : null)
+        .filter(d => d && !isNaN(d.getTime()));
+
+      if (!times.length) return null;
+      // Earliest kickoff among picked games
+      let earliest = times[0];
+      for (const d of times){ if (d < earliest) earliest = d; }
+      return earliest;
     }
 
     function clearUnlockTimer(){
