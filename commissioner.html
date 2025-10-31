@@ -133,7 +133,7 @@
     let picksMap = {};              // game_id -> pick (for the selected team & week)
     let originalPicksMap = {};
     let gamesRows = [];             // all games for Manage Games
-    let gamesOriginal = {};         // GameId -> { line, picked, week, espn_url, network }
+    let gamesOriginal = {};         // GameId -> { line, picked, week, espn_url, Network }
 
     // Gate
     let firstPickedKickAt = null;
@@ -283,7 +283,7 @@
 
       const { data: gameRows, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, week, picked, espn_url, network')
+        .select('GameId, Away, Home, "Start (CT)", line, week, picked, espn_url, "Network"')
         .eq('week', week)
         .eq('picked', true)
         .order('GameId', { ascending: true });
@@ -335,10 +335,10 @@
         tdDate.textContent = niceDate(g['Start (CT)']);
         tr.appendChild(tdDate);
 
-        // Network
+        // Network (capital N)
         const tdNet = document.createElement('td');
         tdNet.className = 'px-3 py-2 text-center';
-        tdNet.textContent = g.network ?? '';
+        tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
 
         // ESPN URL
@@ -437,7 +437,7 @@
 
       const { data, error } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, picked, week, espn_url, network')
+        .select('GameId, Away, Home, "Start (CT)", line, picked, week, espn_url, "Network"')
         .eq('week', week)
         .order('GameId', { ascending: true });
 
@@ -446,7 +446,13 @@
       gamesRows = data || [];
       gamesOriginal = {};
       for(const r of gamesRows){
-        gamesOriginal[r.GameId] = { line: r.line, picked: !!r.picked, week: r.week, espn_url: r.espn_url ?? null, network: r.network ?? null };
+        gamesOriginal[r.GameId] = {
+          line: r.line,
+          picked: !!r.picked,
+          week: r.week,
+          espn_url: r.espn_url ?? null,
+          Network: r['Network'] ?? null
+        };
       }
       renderGamesTable();
     }
@@ -512,10 +518,10 @@
         tdDate.textContent = niceDate(g['Start (CT)']);
         tr.appendChild(tdDate);
 
-        // Network (text)
+        // Network (capital N)
         const tdNet = document.createElement('td');
         tdNet.className = 'px-3 py-2 text-center';
-        tdNet.textContent = g.network ?? '';
+        tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
 
         // ESPN (link if available)
