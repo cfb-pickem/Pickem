@@ -31,9 +31,10 @@
     .cfp-select:focus{outline:none;box-shadow:var(--ring)}
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr:hover{background:rgba(233,185,73,.06)}
-    .pill{display:inline-block;border:1px solid rgba(231,231,231,.14);padding:.2rem .5rem;margin:.15rem;border-radius:999px;background:#141414}
     input[type="number"]{background:var(--cfp-black);border:1px solid rgba(231,231,231,.12);padding:.375rem .5rem}
     input[type="number"]:focus{outline:none;box-shadow:var(--ring)}
+    a.link{color:var(--cfp-gold-2)}
+    a.link:hover{text-decoration:underline}
   </style>
 </head>
 
@@ -65,7 +66,7 @@
       </div>
     </header>
 
-    <!-- A) Team Picks - hidden until first PICKED game kicks off -->
+    <!-- A) Team Picks (hidden until first PICKED game kicks for selected week) -->
     <section id="picks-section" class="cfp-card overflow-auto mb-6">
       <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex items-center justify-between">
         <strong class="text-[var(--cfp-ivory)]">Team Picks</strong>
@@ -74,17 +75,20 @@
       <table class="table min-w-full text-sm">
         <thead class="bg-[var(--cfp-black)]">
           <tr class="border-b">
-            <th class="text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
+            <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Start (CT)</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-36">Date</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">ESPN</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Pick</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Line</th>
           </tr>
         </thead>
         <tbody id="edit-body"></tbody>
       </table>
     </section>
 
-    <!-- B) Manage games (always visible) -->
+    <!-- B) Manage Games (always visible) -->
     <section class="cfp-card overflow-auto">
       <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300">
         <strong class="text-[var(--cfp-ivory)]">Manage Games</strong> — set line and mark “picked” for the same week.
@@ -93,11 +97,12 @@
         <thead class="bg-[var(--cfp-black)]">
           <tr class="border-b">
             <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Start (CT)</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-36">Date</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">ESPN</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">Week</th>
-            <th class="text-right  px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-32">Status</th>
           </tr>
         </thead>
         <tbody id="games-body"></tbody>
@@ -124,16 +129,17 @@
 
     // State
     let teams = [];
-    let gamesThisWeek = [];         // picked=true games for picks table
-    let picksMap = {};              // game_id -> pick
+    let gamesThisWeek = [];         // picked=true games for Team Picks
+    let picksMap = {};              // game_id -> pick (for the selected team & week)
     let originalPicksMap = {};
-    let gamesRows = [];             // all games for manage table
-    let gamesOriginal = {};         // GameId -> { line, picked, week }
+    let gamesRows = [];             // all games for Manage Games
+    let gamesOriginal = {};         // GameId -> { line, picked, week, espn_url, network }
 
-    // Kickoff gate (first PICKED game only)
-    let firstPickedKickAt = null;   // Date or null
+    // Gate
+    let firstPickedKickAt = null;
     let unlockTimer = null;
 
+    // ---------- helpers ----------
     function status(msg,isErr=false){
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
@@ -143,10 +149,38 @@
       if(!ts) return '';
       try{
         const d = new Date(ts);
-        return d.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' });
+        return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
       }catch{ return ''; }
     }
 
+    function niceDate(ts){
+      if(!ts) return '';
+      try{
+        const d = new Date(ts);
+        return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+      }catch{ return ''; }
+    }
+
+    function lockPicks(note = 'Team picks unlock at the first picked kickoff.'){
+      picksLockNote.textContent = note;
+      picksLockNote.classList.remove('hidden');
+      teamSel.disabled = true;
+      saveBtn.disabled = true;
+      picksTbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="px-4 py-4 text-gray-300">
+            Picks are hidden until the first <em>picked</em> game of this week kicks off.
+          </td>
+        </tr>`;
+    }
+
+    function unlockPicksUI(){
+      picksLockNote.classList.add('hidden');
+      teamSel.disabled = false;
+      saveBtn.disabled = false;
+    }
+
+    // ---------- auth / gating ----------
     async function gatekeep(){
       await initNav();
       const { data: { user }, error } = await supabase.auth.getUser();
@@ -168,14 +202,14 @@
       return true;
     }
 
-    // Weeks via your DISTINCT SQL RPC
+    // ---------- data loads ----------
     async function loadWeeks(){
       const { data: weekRows, error } = await supabase.rpc('get_distinct_weeks');
       if(error){ status(error.message, true); return false; }
       const weeks = (weekRows || []).map(r => r.week);
       if(!weeks.length){ status('No weeks found in all_games.', true); return false; }
       weekSel.innerHTML = weeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
-      weekSel.value = String(weeks[weeks.length-1]);
+      weekSel.value = String(weeks[weeks.length-1]); // latest
       return true;
     }
 
@@ -191,16 +225,8 @@
       return true;
     }
 
-    // ----- Gate logic: use earliest START among picked=true games -----
-    async function updateKickoffGate(){
-      const week = Number(weekSel.value);
-      if(!Number.isFinite(week)){
-        lockPicks('Select a week.');
-        firstPickedKickAt = null;
-        return;
-      }
-
-      // Get the earliest start among PICKED games
+    // ---------- kickoff gate logic (week-scoped, picked-only) ----------
+    async function getFirstPickedKickoff(week){
       const { data, error } = await supabase
         .from('all_games')
         .select('"Start (CT)"')
@@ -209,94 +235,47 @@
         .order('Start (CT)', { ascending: true })
         .limit(1);
 
-      if(error){
-        lockPicks('Could not determine kickoff.', true);
-        firstPickedKickAt = null;
-        return;
-      }
-
+      if(error) throw error;
       const ts = data && data[0] ? data[0]['Start (CT)'] : null;
-
-      // If there are NO picked games yet, keep picks hidden with a helpful note
-      if(!ts){
-        lockPicks('No picked games yet for this week. Toggle “Picked” in Manage Games to enable picks at kickoff.');
-        firstPickedKickAt = null;
-        return;
-      }
-
-      firstPickedKickAt = new Date(ts);
-      const now = new Date();
-
-      if(now < firstPickedKickAt){
-        lockPicks(`Team picks unlock at kickoff of the first picked game: ${niceTime(firstPickedKickAt)}`);
-        scheduleUnlockCheck();
-      }else{
-        unlockPicks(); // past kickoff, show picks
-      }
+      return ts ? new Date(ts) : null;
     }
 
-    function lockPicks(note, isErr=false){
-      picksLockNote.textContent = note || 'Team picks unlock at kickoff.';
-      picksLockNote.classList.remove('hidden');
-      teamSel.disabled = true;
-      saveBtn.disabled = true;
-      picksTbody.innerHTML = `<tr><td colspan="4" class="px-4 py-4 text-gray-300">Picks are hidden until the first picked game kicks off.</td></tr>`;
-    }
+    async function updateKickoffGateAndMaybeLoadPicks(){
+      const week = Number(weekSel.value);
+      lockPicks('Checking kickoff…');
+      if(!Number.isFinite(week)) return;
 
-    function unlockPicks(){
-      picksLockNote.classList.add('hidden');
-      teamSel.disabled = false;
-      saveBtn.disabled = false;
-    }
+      try{
+        firstPickedKickAt = await getFirstPickedKickoff(week);
 
-    function scheduleUnlockCheck(){
-      if(unlockTimer) clearInterval(unlockTimer);
-      unlockTimer = setInterval(async () => {
-        if(!firstPickedKickAt) return;
+        if(!firstPickedKickAt){
+          lockPicks('No picked games yet for this week. Toggle “Picked” in Manage Games to enable picks at kickoff.');
+          return;
+        }
+
         const now = new Date();
-        if(now >= firstPickedKickAt){
-          clearInterval(unlockTimer);
-          unlockTimer = null;
-          unlockPicks();
-          await refreshPicksOnly(); // load immediately on unlock
+        if(now < firstPickedKickAt){
+          lockPicks(`Picks unlock at the first picked kickoff: ${firstPickedKickAt.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' })}`);
+          if(unlockTimer) clearInterval(unlockTimer);
+          unlockTimer = setInterval(async () => {
+            if(new Date() >= firstPickedKickAt){
+              clearInterval(unlockTimer);
+              unlockTimer = null;
+              unlockPicksUI();
+              await refreshPicksOnly();
+            }
+          }, 30000);
+        }else{
+          unlockPicksUI();
+          await refreshPicksOnly();
         }
-      }, 30000); // check every 30s
-    }
-
-    async function bootstrap(){
-      status('Loading options…');
-      const okWeeks = await loadWeeks();
-      if(!okWeeks) return;
-      const okTeams = await loadTeams();
-      if(!okTeams) return;
-
-      await updateKickoffGate();   // decide picks visibility (based on picked=true)
-      await loadGamesTable();      // manage games is always visible
-
-      // If unlocked already (past kickoff), load picks now
-      if(picksLockNote.classList.contains('hidden')){
-        await refreshPicksOnly();
+      }catch(e){
+        console.error(e);
+        lockPicks('Could not determine kickoff.');
       }
-
-      // Handlers
-      weekSel.onchange = async () => {
-        await updateKickoffGate();
-        await loadGamesTable();
-        if(picksLockNote.classList.contains('hidden')){
-          await refreshPicksOnly();
-        }
-      };
-      teamSel.onchange = async () => {
-        if(picksLockNote.classList.contains('hidden')){
-          await refreshPicksOnly();
-        }
-      };
-      saveBtn.onclick = saveAll;
-
-      status('Ready.');
     }
 
-    // ---------- Team Picks (only when unlocked) ----------
+    // ---------- picks table (only shows when unlocked) ----------
     async function refreshPicksOnly(){
       const week = Number(weekSel.value);
       const teamId = Number(teamSel.value);
@@ -304,9 +283,9 @@
 
       const { data: gameRows, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, week, picked')
+        .select('GameId, Away, Home, "Start (CT)", line, week, picked, espn_url, network')
         .eq('week', week)
-        .eq('picked', true) // only picked games show up here
+        .eq('picked', true)
         .order('GameId', { ascending: true });
 
       if(gErr){ status(gErr.message, true); return; }
@@ -330,18 +309,62 @@
     function renderPicksEditor(){
       picksTbody.innerHTML = '';
       if(!gamesThisWeek.length){
-        picksTbody.innerHTML = `<tr><td colspan="4" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
+        picksTbody.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
         return;
       }
+
       for(const g of gamesThisWeek){
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
+        // Game
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
         tdGame.textContent = `${g.Away} @ ${g.Home}`;
         tr.appendChild(tdGame);
 
+        // Start (CT)
+        const tdStart = document.createElement('td');
+        tdStart.className = 'px-3 py-2 text-center';
+        tdStart.textContent = niceTime(g['Start (CT)']);
+        tr.appendChild(tdStart);
+
+        // Date
+        const tdDate = document.createElement('td');
+        tdDate.className = 'px-3 py-2 text-center';
+        tdDate.textContent = niceDate(g['Start (CT)']);
+        tr.appendChild(tdDate);
+
+        // Network
+        const tdNet = document.createElement('td');
+        tdNet.className = 'px-3 py-2 text-center';
+        tdNet.textContent = g.network ?? '';
+        tr.appendChild(tdNet);
+
+        // ESPN URL
+        const tdEspn = document.createElement('td');
+        tdEspn.className = 'px-3 py-2 text-center';
+        if (g.espn_url) {
+          const a = document.createElement('a');
+          a.href = g.espn_url;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.className = 'link';
+          a.textContent = 'ESPN';
+          tdEspn.appendChild(a);
+        } else {
+          tdEspn.textContent = '';
+        }
+        tr.appendChild(tdEspn);
+
+        // Line (read-only in Picks table)
+        const tdLine = document.createElement('td');
+        tdLine.className = 'px-3 py-2 text-center';
+        const ln = (typeof g.line === 'number') ? g.line : (g.line!=null ? Number(g.line) : null);
+        tdLine.textContent = (ln!=null && !isNaN(ln)) ? (ln>0?`+${ln}`:`${ln}`) : '';
+        tr.appendChild(tdLine);
+
+        // Pick radios
         const tdPick = document.createElement('td');
         tdPick.className = 'px-3 py-2 text-center';
         tdPick.innerHTML = `
@@ -358,17 +381,6 @@
         `;
         tr.appendChild(tdPick);
 
-        const tdStart = document.createElement('td');
-        tdStart.className = 'px-3 py-2 text-center';
-        tdStart.textContent = niceTime(g['Start (CT)']);
-        tr.appendChild(tdStart);
-
-        const tdLine = document.createElement('td');
-        tdLine.className = 'px-3 py-2 text-center';
-        const ln = (typeof g.line === 'number') ? g.line : (g.line!=null ? Number(g.line) : null);
-        tdLine.textContent = (ln!=null && !isNaN(ln)) ? (ln>0?`+${ln}`:`${ln}`) : '';
-        tr.appendChild(tdLine);
-
         picksTbody.appendChild(tr);
 
         const chosen = picksMap[g.GameId] ?? '';
@@ -379,7 +391,7 @@
     }
 
     async function saveAll(){
-      // No save if locked
+      // Don’t save if locked
       if(!picksLockNote.classList.contains('hidden')) return;
 
       const week = Number(weekSel.value);
@@ -418,14 +430,14 @@
       }
     }
 
-    // ---------- Manage Games (always visible) ----------
+    // ---------- manage games table ----------
     async function loadGamesTable(){
       const week = Number(weekSel.value);
       if(!Number.isFinite(week)) return;
 
       const { data, error } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, picked, week')
+        .select('GameId, Away, Home, "Start (CT)", line, picked, week, espn_url, network')
         .eq('week', week)
         .order('GameId', { ascending: true });
 
@@ -434,21 +446,13 @@
       gamesRows = data || [];
       gamesOriginal = {};
       for(const r of gamesRows){
-        gamesOriginal[r.GameId] = { line: r.line, picked: !!r.picked, week: r.week };
+        gamesOriginal[r.GameId] = { line: r.line, picked: !!r.picked, week: r.week, espn_url: r.espn_url ?? null, network: r.network ?? null };
       }
       renderGamesTable();
     }
 
-    function setRowStatus(gameId, text, isErr=false){
-      const el = document.querySelector(`[data-row-status="${gameId}"]`);
-      if (!el) return;
-      el.textContent = text;
-      el.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-400');
-      if (!isErr && text === 'Saved.') setTimeout(() => { if(el.textContent==='Saved.') el.textContent=''; }, 1200);
-    }
-
     async function updateRow(gameId, patch){
-      // Compute effective changes vs snapshot
+      // compute effective diff vs snapshot
       const snap = gamesOriginal[gameId] || {};
       const effective = {};
       let changed = false;
@@ -460,38 +464,29 @@
       }
       if (!changed) return { ok:true, skipped:true };
 
-      setRowStatus(gameId, 'Saving…');
-
       const { error } = await supabase
         .from('all_games')
         .update(effective)
         .eq('GameId', gameId); // update by GameId only
 
       if (error) {
-        setRowStatus(gameId, `Error: ${error.message}`, true);
+        status(`Save failed: ${error.message}`, true);
         return { ok:false, error };
       }
 
-      // Merge into snapshot
       gamesOriginal[gameId] = { ...gamesOriginal[gameId], ...effective };
-      setRowStatus(gameId, 'Saved.');
 
-      // If "picked" changed, re-evaluate the gate immediately
+      // If "picked" changed, re-evaluate gate for current week
       if (Object.prototype.hasOwnProperty.call(effective, 'picked')) {
-        await updateKickoffGate();
-        // If now unlocked, ensure picks table is shown/updated
-        if (picksLockNote.classList.contains('hidden')) {
-          await refreshPicksOnly();
-        }
+        await updateKickoffGateAndMaybeLoadPicks();
       }
-
       return { ok:true };
     }
 
     function renderGamesTable(){
       gamesTbody.innerHTML = '';
       if(!gamesRows.length){
-        gamesTbody.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
+        gamesTbody.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
         return;
       }
 
@@ -505,13 +500,41 @@
         tdGame.textContent = `${g.Away} @ ${g.Home}`;
         tr.appendChild(tdGame);
 
-        // Start
+        // Start (CT)
         const tdStart = document.createElement('td');
         tdStart.className = 'px-3 py-2 text-center';
         tdStart.textContent = niceTime(g['Start (CT)']);
         tr.appendChild(tdStart);
 
-        // Line (editable -> per-row UPDATE on change)
+        // Date
+        const tdDate = document.createElement('td');
+        tdDate.className = 'px-3 py-2 text-center';
+        tdDate.textContent = niceDate(g['Start (CT)']);
+        tr.appendChild(tdDate);
+
+        // Network (text)
+        const tdNet = document.createElement('td');
+        tdNet.className = 'px-3 py-2 text-center';
+        tdNet.textContent = g.network ?? '';
+        tr.appendChild(tdNet);
+
+        // ESPN (link if available)
+        const tdEspn = document.createElement('td');
+        tdEspn.className = 'px-3 py-2 text-center';
+        if (g.espn_url) {
+          const a = document.createElement('a');
+          a.href = g.espn_url;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.className = 'link';
+          a.textContent = 'ESPN';
+          tdEspn.appendChild(a);
+        } else {
+          tdEspn.textContent = '';
+        }
+        tr.appendChild(tdEspn);
+
+        // Line (editable)
         const tdLine = document.createElement('td');
         tdLine.className = 'px-3 py-2 text-center';
         tdLine.innerHTML = `<input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />`;
@@ -522,7 +545,7 @@
         });
         tr.appendChild(tdLine);
 
-        // Picked (checkbox -> per-row UPDATE on change)
+        // Picked (checkbox)
         const tdPicked = document.createElement('td');
         tdPicked.className = 'px-3 py-2 text-center';
         tdPicked.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.picked ? 'checked' : ''}/>`;
@@ -531,51 +554,40 @@
         });
         tr.appendChild(tdPicked);
 
-        // Week (read-only)
-        const tdWeek = document.createElement('td');
-        tdWeek.className = 'px-3 py-2 text-center text-gray-300';
-        tdWeek.textContent = g.week ?? '';
-        tr.appendChild(tdWeek);
-
-        // Per-row status cell
-        const tdStatus = document.createElement('td');
-        tdStatus.className = 'px-3 py-2 text-right';
-        tdStatus.innerHTML = `<span data-row-status="${g.GameId}" class="text-xs text-gray-400"></span>`;
-        tr.appendChild(tdStatus);
-
         gamesTbody.appendChild(tr);
       }
     }
 
-    // ---- run ----
+    // ---------- bootstrap & events ----------
     (async () => {
       const ok = await gatekeep();
       if(!ok) return;
+
       status('Loading…');
       const okWeeks = await loadWeeks();
       if(!okWeeks) return;
+
       const okTeams = await loadTeams();
       if(!okTeams) return;
 
-      await updateKickoffGate();   // uses picked=true games only
+      // Week-gated: compute lock/unlock strictly for selected week, picked-only
+      await updateKickoffGateAndMaybeLoadPicks();
+      // Manage Games always visible
       await loadGamesTable();
 
-      if(picksLockNote.classList.contains('hidden')){
-        await refreshPicksOnly();
-      }
-
+      // Handlers
       weekSel.onchange = async () => {
-        await updateKickoffGate();
+        lockPicks('Updating for selected week…');  // hide immediately on week change
+        await updateKickoffGateAndMaybeLoadPicks();
         await loadGamesTable();
-        if(picksLockNote.classList.contains('hidden')){
-          await refreshPicksOnly();
-        }
       };
+
       teamSel.onchange = async () => {
         if(picksLockNote.classList.contains('hidden')){
           await refreshPicksOnly();
         }
       };
+
       saveBtn.onclick = saveAll;
 
       status('Ready.');
