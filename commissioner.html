@@ -66,7 +66,7 @@
       </div>
     </header>
 
-    <!-- A) Team Picks (hidden until first PICKED game kicks for selected week) -->
+    <!-- A) Team Picks (hidden BEFORE first picked kickoff) -->
     <section id="picks-section" class="cfp-card overflow-auto mb-6">
       <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex items-center justify-between">
         <strong class="text-[var(--cfp-ivory)]">Team Picks</strong>
@@ -79,7 +79,6 @@
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Start (CT)</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-36">Date</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">ESPN</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Pick</th>
           </tr>
@@ -91,7 +90,7 @@
     <!-- B) Manage Games (always visible) -->
     <section class="cfp-card overflow-auto">
       <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300">
-        <strong class="text-[var(--cfp-ivory)]">Manage Games</strong> - set line and mark "picked" for the same week.
+        <strong class="text-[var(--cfp-ivory)]">Manage Games</strong> — set line and mark "picked" for the same week.
       </div>
       <table class="table min-w-full text-sm">
         <thead class="bg-[var(--cfp-black)]">
@@ -100,7 +99,6 @@
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Start (CT)</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-36">Date</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">ESPN</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
           </tr>
@@ -120,11 +118,9 @@
     const statusEl  = document.getElementById('status');
     const saveBtn   = document.getElementById('save-btn');
 
-    // Picks DOM
     const picksLockNote = document.getElementById('picks-lock-note');
     const picksTbody    = document.getElementById('edit-body');
 
-    // Manage games DOM
     const gamesTbody = document.getElementById('games-body');
 
     // State
@@ -135,9 +131,9 @@
     let gamesRows = [];             // all games for Manage Games
     let gamesOriginal = {};         // GameId -> { line, picked, week, espn_url, Network }
 
-    // Gate
+    // Gate scheduling
     let firstPickedKickAt = null;
-    let unlockTimer = null; // setTimeout handle
+    let unlockTimer = null;
 
     // ---------- helpers ----------
     function status(msg,isErr=false){
@@ -145,37 +141,70 @@
       statusEl.textContent = msg;
     }
 
+    // Minimal parser for "YYYY-MM-DD HH:MM:SS" (accepts most date-ish strings)
+    function parseCT(val){
+      if(val == null) return null;
+      if(val instanceof Date) return isNaN(val.getTime()) ? null : val;
+      if(typeof val === 'number'){ const d = new Date(val); return isNaN(d.getTime()) ? null : d; }
+      const s = String(val).trim();
+      if (/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/.test(s)) {
+        const d = new Date(s.replace(' ', 'T'));
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
     function niceTime(ts){
       if(!ts) return '';
       try{
-        const d = new Date(ts);
-        return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+        const d = parseCT(ts);
+        return d ? d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) : '';
       }catch{ return ''; }
     }
 
     function niceDate(ts){
       if(!ts) return '';
       try{
-        const d = new Date(ts);
-        return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+        const d = parseCT(ts);
+        return d ? d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }) : '';
       }catch{ return ''; }
     }
 
-    function lockPicks(note = 'Team picks unlock at the first picked kickoff.'){
-      picksLockNote.textContent = note;
-      picksLockNote.classList.remove('hidden');
+    function teamNamesWithLink(g){
+      if(g.espn_url){
+        const url = String(g.espn_url);
+        const a = `<a class="link" href="${url}" target="_blank" rel="noopener">${g.Away}</a>`;
+        const h = `<a class="link" href="${url}" target="_blank" rel="noopener">${g.Home}</a>`;
+        return `${a} @ ${h}`;
+      }
+      return `${g.Away} @ ${g.Home}`;
+    }
+
+    function clearUnlockTimer(){
+      if(unlockTimer){
+        clearTimeout(unlockTimer);
+        unlockTimer = null;
+      }
+    }
+
+    function lockPicks(note = 'Team picks are hidden until the first picked game kicks off.'){
+      if (picksLockNote) {
+        picksLockNote.textContent = note;
+        picksLockNote.classList.remove('hidden');
+      }
       teamSel.disabled = true;
       saveBtn.disabled = true;
       picksTbody.innerHTML = `
         <tr>
-          <td colspan="7" class="px-4 py-4 text-gray-300">
-            Picks are hidden until the first <em>picked</em> game of this week kicks off.
+          <td colspan="6" class="px-4 py-4 text-gray-300">
+            ${note}
           </td>
         </tr>`;
     }
 
     function unlockPicksUI(){
-      picksLockNote.classList.add('hidden');
+      if (picksLockNote) picksLockNote.classList.add('hidden');
       teamSel.disabled = false;
       saveBtn.disabled = false;
     }
@@ -195,14 +224,13 @@
 
       if(tErr){ status(tErr.message, true); return false; }
       if(!rows || rows.length === 0){
-        status('Access denied - commissioner only.', true);
+        status('Access denied — commissioner only.', true);
         weekSel.disabled = teamSel.disabled = saveBtn.disabled = true;
         return false;
       }
       return true;
     }
 
-    // ---------- data loads ----------
     async function loadWeeks(){
       const { data: weekRows, error } = await supabase.rpc('get_distinct_weeks');
       if(error){ status(error.message, true); return false; }
@@ -227,7 +255,6 @@
 
     // ---------- kickoff gate logic (week-scoped, picked-only) ----------
     async function getFirstPickedKickoff(week){
-      // Pull from all_games and compute the earliest valid kickoff (CT) for picked games in this week
       const { data, error } = await supabase
         .from('all_games')
         .select('"Start (CT)"')
@@ -235,58 +262,55 @@
         .eq('picked', true)
         .not('Start (CT)', 'is', null);
 
-      if (error) throw error;
+      if(error) throw error;
+
       const times = (data || [])
-        .map(r => r && r['Start (CT)'] ? new Date(r['Start (CT)']) : null)
-        .filter(d => d && !isNaN(d.getTime()));
+        .map(r => r && r['Start (CT)'] ? parseCT(r['Start (CT)']) : null)
+        .filter(d => d && !isNaN(d.getTime()))
+        .map(d => d.getTime());
 
       if (!times.length) return null;
-      // Earliest kickoff among picked games
-      let earliest = times[0];
-      for (const d of times){ if (d < earliest) earliest = d; }
-      return earliest;
-    }
-
-    function clearUnlockTimer(){
-      if(unlockTimer){
-        clearTimeout(unlockTimer);
-        unlockTimer = null;
-      }
+      return new Date(Math.min(...times));
     }
 
     async function updateKickoffGateAndMaybeLoadPicks(){
       const week = Number(weekSel.value);
-      lockPicks('Checking kickoff…');
       clearUnlockTimer();
       if(!Number.isFinite(week)) return;
 
       try{
         firstPickedKickAt = await getFirstPickedKickoff(week);
-
-        if(!firstPickedKickAt){
-          lockPicks('No picked games yet for this week. Toggle "Picked" in Manage Games to enable picks at kickoff.');
-          return;
-        }
-
         const now = new Date();
-        const msUntil = firstPickedKickAt.getTime() - now.getTime();
-        if(msUntil > 0){
-          lockPicks(`Picks unlock at first picked kickoff: ${firstPickedKickAt.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' })}`);
-          unlockTimer = setTimeout(async () => {
-            unlockPicksUI();
-            await refreshPicksOnly();
-          }, msUntil);
-        }else{
-          unlockPicksUI();
-          await refreshPicksOnly();
+
+        // Case A: before kickoff (and there IS at least one picked game) -> hide picks
+        if (firstPickedKickAt && now < firstPickedKickAt) {
+          lockPicks(
+            `Team picks will unlock at ${firstPickedKickAt.toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}.`
+          );
+          // schedule automatic unlock at kickoff
+          const msUntil = firstPickedKickAt.getTime() - now.getTime();
+          if (msUntil > 0) {
+            unlockTimer = setTimeout(async () => {
+              await refreshPicksOnly();   // render picks right at/after kickoff
+              unlockPicksUI();
+            }, msUntil);
+          }
+          return; // do not render the picks editor now
         }
+
+        // Case B: no picked games OR we're at/after kickoff -> show editor
+        unlockPicksUI();
+        await refreshPicksOnly();
+
       }catch(e){
         console.error(e);
-        lockPicks('Could not determine kickoff.');
+        // On error, fail open: allow editing (so commissioners aren't stuck)
+        unlockPicksUI();
+        await refreshPicksOnly();
       }
     }
 
-    // ---------- picks table (only shows when unlocked) ----------
+    // ---------- picks table (shows only picked=true games) ----------
     async function refreshPicksOnly(){
       const week = Number(weekSel.value);
       const teamId = Number(teamSel.value);
@@ -301,13 +325,8 @@
 
       if(gErr){ status(gErr.message, true); return; }
 
-      // Sort: games with a link go to the top, then by GameId
-      gamesThisWeek = (gameRows || []).slice().sort((a,b)=>{
-        const al = a.espn_url ? 1 : 0;
-        const bl = b.espn_url ? 1 : 0;
-        if(bl - al !== 0) return bl - al; // linked first
-        return (a.GameId||0) - (b.GameId||0);
-      });
+      // Only picked games show in this editor; sort by GameId (link priority is unnecessary here)
+      gamesThisWeek = (gameRows || []).slice().sort((a,b)=> (a.GameId||0) - (b.GameId||0));
 
       const { data: pickRows, error: pErr } = await supabase
         .from('picks')
@@ -323,21 +342,10 @@
       renderPicksEditor();
     }
 
-    function teamNamesWithLink(g){
-      // If there's a link, make both team names clickable to the same URL
-      if(g.espn_url){
-        const url = String(g.espn_url);
-        const a = `<a class="link" href="${url}" target="_blank" rel="noopener">${g.Away}</a>`;
-        const h = `<a class="link" href="${url}" target="_blank" rel="noopener">${g.Home}</a>`;
-        return `${a} @ ${h}`;
-      }
-      return `${g.Away} @ ${g.Home}`;
-    }
-
     function renderPicksEditor(){
       picksTbody.innerHTML = '';
       if(!gamesThisWeek.length){
-        picksTbody.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
+        picksTbody.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
         return;
       }
 
@@ -345,7 +353,7 @@
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // Game (team names become links when espn_url is present)
+        // Game (names link to espn_url when present)
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
         tdGame.innerHTML = teamNamesWithLink(g);
@@ -363,29 +371,13 @@
         tdDate.textContent = niceDate(g['Start (CT)']);
         tr.appendChild(tdDate);
 
-        // Network (capital N)
+        // Network
         const tdNet = document.createElement('td');
         tdNet.className = 'px-3 py-2 text-center';
         tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
 
-        // ESPN URL (kept as an explicit column link too)
-        const tdEspn = document.createElement('td');
-        tdEspn.className = 'px-3 py-2 text-center';
-        if (g.espn_url) {
-          const a = document.createElement('a');
-          a.href = g.espn_url;
-          a.target = '_blank';
-          a.rel = 'noopener';
-          a.className = 'link';
-          a.textContent = 'ESPN';
-          tdEspn.appendChild(a);
-        } else {
-          tdEspn.textContent = '';
-        }
-        tr.appendChild(tdEspn);
-
-        // Line (read-only in Picks table)
+        // Line (read-only here)
         const tdLine = document.createElement('td');
         tdLine.className = 'px-3 py-2 text-center';
         const ln = (typeof g.line === 'number') ? g.line : (g.line!=null ? Number(g.line) : null);
@@ -419,7 +411,7 @@
     }
 
     async function saveAll(){
-      // Don't save if locked
+      // If locked, don't allow saving
       if(!picksLockNote.classList.contains('hidden')) return;
 
       const week = Number(weekSel.value);
@@ -471,12 +463,10 @@
 
       if(error){ status(error.message, true); return; }
 
-      // Sort with link-first
+      // Sort picked games first, then by GameId
       gamesRows = (data || []).slice().sort((a,b)=>{
-        const al = a.espn_url ? 1 : 0;
-        const bl = b.espn_url ? 1 : 0;
-        if(bl - al !== 0) return bl - al; // linked first
-        return (a.GameId||0) - (b.GameId||0);
+        if (a.picked === b.picked) return (a.GameId||0) - (b.GameId||0);
+        return a.picked ? -1 : 1;
       });
 
       gamesOriginal = {};
@@ -517,9 +507,10 @@
 
       gamesOriginal[gameId] = { ...gamesOriginal[gameId], ...effective };
 
-      // If "picked" changed, re-evaluate gate for current week
+      // If "picked" changed, re-evaluate the kickoff gate & refresh tables
       if (Object.prototype.hasOwnProperty.call(effective, 'picked')) {
         await updateKickoffGateAndMaybeLoadPicks();
+        await loadGamesTable();
       }
       return { ok:true };
     }
@@ -527,7 +518,7 @@
     function renderGamesTable(){
       gamesTbody.innerHTML = '';
       if(!gamesRows.length){
-        gamesTbody.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
+        gamesTbody.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
         return;
       }
 
@@ -558,22 +549,6 @@
         tdNet.className = 'px-3 py-2 text-center';
         tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
-
-        // ESPN (link if available)
-        const tdEspn = document.createElement('td');
-        tdEspn.className = 'px-3 py-2 text-center';
-        if (g.espn_url) {
-          const a = document.createElement('a');
-          a.href = g.espn_url;
-          a.target = '_blank';
-          a.rel = 'noopener';
-          a.className = 'link';
-          a.textContent = 'ESPN';
-          tdEspn.appendChild(a);
-        } else {
-          tdEspn.textContent = '';
-        }
-        tr.appendChild(tdEspn);
 
         // Line (editable)
         const tdLine = document.createElement('td');
@@ -611,20 +586,20 @@
       const okTeams = await loadTeams();
       if(!okTeams) return;
 
-      // Week-gated: compute lock/unlock strictly for selected week, picked-only
+      // Gate + picks + games
       await updateKickoffGateAndMaybeLoadPicks();
-      // Manage Games always visible
       await loadGamesTable();
 
       // Handlers
       weekSel.onchange = async () => {
-        lockPicks('Updating for selected week…');  // hide immediately on week change
-        clearUnlockTimer();
+        status('Loading…');
         await updateKickoffGateAndMaybeLoadPicks();
         await loadGamesTable();
+        status('Ready.');
       };
 
       teamSel.onchange = async () => {
+        // Only reload picks UI when unlocked
         if(picksLockNote.classList.contains('hidden')){
           await refreshPicksOnly();
         }
