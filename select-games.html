@@ -117,30 +117,25 @@
 
     function lock(){ weekSel.disabled = saveBtn.disabled = true; }
 
-    async function bootstrap(){
+    // --- Load DISTINCT weeks via your exact SQL (RPC) ---
+    async function loadWeeks(){
       status('Loading weeks…');
 
-      // DISTINCT weeks from all_games (do not limit to started games)
-      const { data: weekRows, error: wErr } = await supabase
-        .from('all_games')
-        .select('week', { distinct: true })
-        .not('week', 'is', null)
-        .order('week', { ascending: true });
+      const { data: weekRows, error: wErr } = await supabase.rpc('get_distinct_weeks');
+      if (wErr) { status(wErr.message, true); return false; }
 
-      if(wErr) return status(wErr.message, true);
-
-      const weeks = (weekRows || [])
-        .map(r => r.week)
-        .filter(w => w != null)
-        .sort((a,b)=>a-b);
-
-      if (weeks.length === 0) {
-        status('No weeks found in all_games.', true);
-        return;
-      }
+      const weeks = (weekRows || []).map(r => r.week);
+      if (weeks.length === 0) { status('No weeks found in all_games.', true); return false; }
 
       weekSel.innerHTML = weeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
-      weekSel.value = String(weeks[weeks.length-1]); // default to latest week
+      // default to the last (latest) option returned
+      weekSel.value = String(weeks[weeks.length - 1]);
+      return true;
+    }
+
+    async function bootstrap(){
+      const ok = await loadWeeks();
+      if (!ok) return;
 
       await loadWeek();
       weekSel.onchange = loadWeek;
@@ -278,6 +273,7 @@
       }
     }
 
+    // ---- run ----
     (async () => {
       const ok = await gatekeep();
       if(!ok) return;
