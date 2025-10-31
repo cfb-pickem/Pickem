@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CFB Pick'em — Games (Commissioner)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <link rel="modulepreload" href="./js/nav.js">
+
+  <style>
+    :root{
+      --cfp-black:#0B0B0B; --cfp-charcoal:#111213; --cfp-gold:#C99210; --cfp-gold-2:#E3B23C;
+      --cfp-ivory:#F7F4ED; --cfp-gray:#1F2022; --ring:0 0 0 2px var(--cfp-gold) inset,0 0 0 2px var(--cfp-gold);
+    }
+    body{
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        var(--cfp-charcoal);
+      color:#e7e7e7; font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif; min-height:100vh;
+    }
+    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
+    .ring-gold{box-shadow:var(--ring)}
+    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
+    .cfp-select:focus{outline:none;box-shadow:var(--ring)}
+    .table th,.table td{border-color:rgba(231,231,231,.08)}
+    .table tbody tr:hover{background:rgba(233,185,73,.06)}
+    input[type="number"]{background:var(--cfp-black);border:1px solid rgba(231,231,231,.12);padding:.375rem .5rem}
+    input[type="number"]:focus{outline:none;box-shadow:var(--ring)}
+    .pill{display:inline-block;border:1px solid rgba(231,231,231,.14);padding:.2rem .5rem;margin:.15rem;border-radius:999px;background:#141414}
+  </style>
+</head>
+
+<body data-page="games">
+  <div class="max-w-6xl mx-auto p-4 md:p-6">
+    <div id="site-nav"></div>
+
+    <header class="cfp-card rounded-none ring-gold mb-5">
+      <div class="px-4 py-4 md:px-6 md:py-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
+          <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Games</h1>
+          <p class="text-xs text-gray-300 mt-1">Edit lines and designate “picked” games.</p>
+        </div>
+
+        <div class="flex flex-wrap gap-3 items-center">
+          <label class="text-gray-300">Week</label>
+          <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
+
+          <button id="save-btn" class="bg-[var(--cfp-gold)] text-black font-semibold px-4 py-2 text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+            Save Changes
+          </button>
+        </div>
+      </div>
+      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
+        <span id="status">Authorizing…</span>
+      </div>
+    </header>
+
+    <section class="cfp-card overflow-auto">
+      <table class="table min-w-full text-sm">
+        <thead class="bg-[var(--cfp-black)]">
+          <tr class="border-b">
+            <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Week</th>
+          </tr>
+        </thead>
+        <tbody id="games-body"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script type="module">
+    import initNav from './js/nav.js';
+    import { supabase } from './js/supabaseClient.js';
+
+    const weekSel  = document.getElementById('week-select');
+    const statusEl = document.getElementById('status');
+    const tbody    = document.getElementById('games-body');
+    const saveBtn  = document.getElementById('save-btn');
+
+    let rows = [];             // current table rows for selected week
+    let original = {};         // GameId -> { line, picked, week }
+    let edited   = {};         // GameId -> { line, picked, week }
+
+    function status(msg,isErr=false){
+      statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
+      statusEl.textContent = msg;
+    }
+
+    async function gatekeep(){
+      await initNav();
+
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if(error){ status(error.message,true); return false; }
+      if(!user){ status('Please sign in to continue.', true); lock(); return false; }
+
+      const { data, error: tErr } = await supabase
+        .from('teams')
+        .select('commissioner')
+        .eq('user_id', user.id)
+        .eq('commissioner', true);
+
+      if(tErr){ status(tErr.message, true); lock(); return false; }
+      if(!data || data.length === 0){ status('Access denied — commissioner only.', true); lock(); return false; }
+
+      return true;
+    }
+
+    function lock(){
+      weekSel.disabled = saveBtn.disabled = true;
+    }
+
+    async function bootstrap(){
+      status('Loading weeks…');
+
+      // Distinct weeks from all_games (any, not just picked)
+      const { data: weekRows, error: wErr } = await supabase
+        .from('all_games')
+        .select('week')
+        .not('week', 'is', null)
+        .order('week', { ascending: true });
+
+      if(wErr) return status(wErr.message, true);
+      const weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
+      weekSel.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+      if(weeks.length) weekSel.value = String(weeks[weeks.length-1]);
+
+      await loadWeek();
+      weekSel.onchange = loadWeek;
+      saveBtn.onclick = saveChanges;
+    }
+
+    function niceTime(ts){
+      if(!ts) return '';
+      try{
+        const d = new Date(ts);
+        return d.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' });
+      }catch{ return ''; }
+    }
+
+    async function loadWeek(){
+      const week = Number(weekSel.value);
+      if(!Number.isFinite(week)){ status('Select a week.'); return; }
+      status(`Loading week ${week} games…`);
+
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, "Start (CT)", line, picked, week')
+        .eq('week', week)
+        .order('GameId', { ascending: true });
+
+      if(error) return status(error.message,true);
+
+      rows = data || [];
+      original = {};
+      edited   = {};
+      for(const r of rows){
+        original[r.GameId] = { line: r.line, picked: !!r.picked, week: r.week };
+        edited[r.GameId]   = { line: r.line, picked: !!r.picked, week: r.week };
+      }
+      renderTable();
+      status(`Week ${week} loaded.`);
+    }
+
+    function renderTable(){
+      tbody.innerHTML = '';
+      if(!rows.length){
+        tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
+        return;
+      }
+
+      for(const g of rows){
+        const tr = document.createElement('tr');
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+
+        // Game
+        const tdGame = document.createElement('td');
+        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
+        tdGame.textContent = `${g.Away} @ ${g.Home}`;
+        tr.appendChild(tdGame);
+
+        // Start
+        const tdStart = document.createElement('td');
+        tdStart.className = 'px-3 py-2 text-center';
+        tdStart.textContent = niceTime(g['Start (CT)']);
+        tr.appendChild(tdStart);
+
+        // Line (editable number; blank clears)
+        const tdLine = document.createElement('td');
+        tdLine.className = 'px-3 py-2 text-center';
+        tdLine.innerHTML = `
+          <input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />
+        `;
+        const lineInput = tdLine.querySelector('input');
+        lineInput.addEventListener('input', e => {
+          const v = e.target.value;
+          edited[g.GameId].line = (v === '' ? null : Number(v));
+        });
+        tr.appendChild(tdLine);
+
+        // Picked (checkbox)
+        const tdPicked = document.createElement('td');
+        tdPicked.className = 'px-3 py-2 text-center';
+        tdPicked.innerHTML = `
+          <input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.picked ? 'checked' : ''}/>
+        `;
+        const cb = tdPicked.querySelector('input');
+        cb.addEventListener('change', e => {
+          edited[g.GameId].picked = !!e.target.checked;
+        });
+        tr.appendChild(tdPicked);
+
+        // Week (read only, but editable dropdown if you ever want to move a game)
+        const tdWeek = document.createElement('td');
+        tdWeek.className = 'px-3 py-2 text-center text-gray-300';
+        tdWeek.textContent = g.week ?? '';
+        tr.appendChild(tdWeek);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    function diffPayload(){
+      const changes = [];
+      for(const id of Object.keys(edited)){
+        const curr = edited[id];
+        const orig = original[id] || {};
+        const changed =
+          (curr.line ?? null)   !== (orig.line ?? null) ||
+          Boolean(curr.picked)  !== Boolean(orig.picked) ||
+          (curr.week ?? null)   !== (orig.week ?? null);
+
+        if(changed){
+          changes.push({
+            GameId: Number(id),
+            line: curr.line,            // number or null
+            picked: Boolean(curr.picked),
+            week: curr.week
+          });
+        }
+      }
+      return changes;
+    }
+
+    async function saveChanges(){
+      const payload = diffPayload();
+      if(payload.length === 0){ status('No changes to save.'); return; }
+
+      saveBtn.disabled = true;
+      status('Saving…');
+
+      // Use upsert to update existing rows by primary key (GameId)
+      const { error } = await supabase
+        .from('all_games')
+        .upsert(payload, { onConflict: 'GameId' });
+
+      saveBtn.disabled = false;
+
+      if(error){ status(`Save failed: ${error.message}`, true); }
+      else{
+        // Refresh originals so repeat saves only send new changes
+        for(const row of payload){
+          original[row.GameId] = { line: row.line, picked: row.picked, week: row.week };
+        }
+        status('Saved.');
+      }
+    }
+
+    (async () => {
+      const ok = await gatekeep();
+      if(!ok) return;
+      await bootstrap();
+    })();
+  </script>
+</body>
+</html>
