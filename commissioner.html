@@ -135,7 +135,9 @@
     function status(msg,isErr=false){
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
+      console.debug('[status]', msg);
     }
+    function lockAll(){ weekSel.disabled = saveBtn.disabled = savePicksBtn.disabled = teamSel.disabled = true; }
 
     // --- auth / commissioner gate ---
     async function gatekeep(){
@@ -156,14 +158,13 @@
 
       return true;
     }
-    function lockAll(){ weekSel.disabled = saveBtn.disabled = savePicksBtn.disabled = teamSel.disabled = true; }
 
     // --- weeks / teams ---
     async function loadWeeks(){
       status('Loading weeks…');
       const { data: weekRows, error: wErr } = await supabase.rpc('get_distinct_weeks');
       if (wErr) { status(wErr.message, true); return false; }
-      const weeks = (weekRows || []).map(r => r.week);
+      const weeks = (weekRows || []).map(r => r.week).sort((a,b)=>a-b);
       if (!weeks.length){ status('No weeks found in all_games.', true); return false; }
       weekSel.innerHTML = weeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
       weekSel.value = String(weeks[weeks.length - 1]); // latest
@@ -234,8 +235,8 @@
       original = {};
       edited   = {};
       for(const r of rows){
-        original[r.GameId] = { line: r.line, picked: !!r.picked, week: r.week };
-        edited[r.GameId]   = { line: r.line, picked: !!r.picked, week: r.week };
+        original[r.GameId] = { line: r.line ?? null, picked: !!r.picked, week: r.week ?? null };
+        edited[r.GameId]   = { line: r.line ?? null, picked: !!r.picked, week: r.week ?? null };
       }
 
       renderGamesTable();
@@ -274,7 +275,6 @@
 
       existingTeamPicks = {};
       (data || []).forEach(r => { existingTeamPicks[r.game_id] = r.pick || ''; });
-      // Note: we DO NOT render these; they’re only used during save to avoid unnecessary writes.
     }
 
     // --- render picks panel (no prefill) ---
@@ -308,7 +308,6 @@
           </div>`;
         tr.appendChild(tdPick);
 
-        // IMPORTANT: Do not pre-check based on DB. Only capture new choices.
         const radios = tdPick.querySelectorAll(`input[name="pick-${g.GameId}"]`);
         radios.forEach(r => r.addEventListener('change', e => {
           tempTeamPicks[g.GameId] = e.target.value || '';
@@ -324,13 +323,12 @@
       const week   = Number(weekSel.value);
       if(!Number.isFinite(teamId) || !Number.isFinite(week)) return;
 
-      // Collect current selections from the UI (tempTeamPicks already holds them as user clicks)
       const payload = [];
       for (const g of pickableGames){
         const chosen = (tempTeamPicks[g.GameId] || '').trim();
-        if (!chosen) continue; // user didn’t choose; skip
+        if (!chosen) continue;
         const existing = (existingTeamPicks[g.GameId] || '').trim();
-        if (existing === chosen) continue; // no change, skip
+        if (existing === chosen) continue;
         payload.push({ team_id: teamId, week, game_id: g.GameId, pick: chosen });
       }
 
@@ -351,7 +349,6 @@
       if(error){
         status(`Save team picks failed: ${error.message}`, true);
       }else{
-        // Update our silent cache to reflect saved diffs
         for (const row of payload){ existingTeamPicks[row.game_id] = row.pick; }
         status('Team picks saved.');
       }
@@ -392,8 +389,9 @@
         tdLine.innerHTML = `<input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />`;
         const lineInput = tdLine.querySelector('input');
         lineInput.addEventListener('input', e => {
-          const v = e.target.value;
-          edited[g.GameId].line = (v === '' ? null : Number(v));
+          const raw = String(e.target.value).trim();
+          const num = raw === '' ? null : Number(raw);
+          edited[g.GameId].line = (raw === '' || Number.isNaN(num)) ? null : num;
         });
         tr.appendChild(tdLine);
 
@@ -431,9 +429,9 @@
         if(changed){
           changes.push({
             GameId: Number(id),
-            line: curr.line,
+            line:   (curr.line ?? null),
             picked: Boolean(curr.picked),
-            week: curr.week
+            week:   (curr.week ?? null)
           });
         }
       }
@@ -444,25 +442,48 @@
       const payload = diffPayload();
       if(payload.length === 0){ status('No changes to save.'); return; }
 
+      // harden payload: ensure only fields we truly want to change are present
+      const upsertRows = payload.map(r => ({
+        GameId: Number(r.GameId),
+        line:   r.line,
+        picked: r.picked,
+        week:   r.week
+      }));
+
       saveBtn.disabled = true;
       status('Saving…');
 
-      const { error } = await supabase
+      // Try upsert first (fast path if GameId is PK/UNIQUE)
+      const upsertRes = await supabase
         .from('all_games')
-        .upsert(payload, { onConflict: 'GameId' });
+        .upsert(upsertRows, { onConflict: 'GameId', returning: 'minimal' });
+
+      let error = upsertRes.error;
+
+      // If upsert failed (e.g., missing unique index/RLS nuance), fall back to per-row updates.
+      if (error) {
+        console.warn('Upsert failed; falling back to per-row updates:', error);
+        error = null;
+        for (const row of upsertRows){
+          // Update just this row by primary key column "GameId"
+          const { error: uErr } = await supabase
+            .from('all_games')
+            .update({ line: row.line, picked: row.picked, week: row.week })
+            .eq('GameId', row.GameId);
+          if (uErr){ error = uErr; break; }
+        }
+      }
 
       saveBtn.disabled = false;
 
       if(error){
         status(`Save failed: ${error.message}`, true);
-      }else{
-        for(const row of payload){
-          original[row.GameId] = { line: row.line, picked: row.picked, week: row.week };
-        }
-        // Re-load to re-apply sort (in case picked changed)
-        await loadWeek();
-        status('Saved.');
+        return;
       }
+
+      // refresh local snapshots and UI
+      await loadWeek();
+      status('Saved.');
     }
 
     // --- wire up ---
@@ -478,12 +499,9 @@
 
       await loadWeek();
 
-      weekSel.onchange = async () => {
-        await loadWeek();
-      };
+      weekSel.onchange = async () => { await loadWeek(); };
 
       teamSel.onchange = async () => {
-        // refresh silent existing picks and keep UI blank
         await loadExistingTeamPicks();
         tempTeamPicks = {};
         renderPicksPanel();
