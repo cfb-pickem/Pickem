@@ -232,17 +232,22 @@
 
       setStatus('Loading your team & current week…');
 
-      // Latest week with picked games
-      const { data: weekRows, error: wErr } = await supabase
+      // Latest week with games marked as picked
+      const { data: weekRow, error: wErr } = await supabase
         .from('all_games')
         .select('week')
         .eq('picked', true)
-        .not('week','is',null);
-      if (wErr) { setStatus(wErr.message, true); return; }
+        .not('week', 'is', null)
+        .order('week', { ascending: false }) // greatest first
+        .limit(1)
+        .maybeSingle();                       // returns null if none
 
-      const weeks = [...new Set((weekRows||[]).map(r=>Number(r.week)))].sort((a,b)=>a-b);
-      if (!weeks.length) { setStatus('No weeks found.', true); return; }
-      currentWeek = weeks[weeks.length - 1];
+      if (wErr) { setStatus(wErr.message, true); return; }
+      if (!weekRow?.week && weekRow?.week !== 0) {
+        setStatus('No picked weeks found.', true); 
+        return;
+      }
+currentWeek = Number(weekRow.week);
 
       // User's team (first alphabetically)
       const { data: myTeams, error: tErr } = await supabase
