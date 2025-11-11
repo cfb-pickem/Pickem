@@ -52,6 +52,9 @@
         </div>
 
         <div class="flex flex-wrap gap-3 items-center">
+          <label class="text-gray-300">Season</label>
+          <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
+
           <label class="text-gray-300">Week</label>
           <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
 
@@ -111,6 +114,7 @@
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
 
+    const seasonSel = document.getElementById('season-select');
     const weekSel   = document.getElementById('week-select');
     const statusEl  = document.getElementById('status');
     const saveBtn   = document.getElementById('save-btn');
@@ -124,12 +128,12 @@
     const gamesTbody    = document.getElementById('games-body');
 
     // state
-    let rows = [];                 // current games for selected week (for Manage Games)
+    let rows = [];                 // current games for selected season+week (Manage Games)
     // Track ONLY the fields we intend to edit: line, picked
     let original = {};             // GameId -> { line, picked }
     let edited   = {};             // GameId -> { line, picked }
 
-    let pickableGames = [];        // picked=true games for current week (what teams pick)
+    let pickableGames = [];        // picked=true games for current season+week (what teams pick)
     let tempTeamPicks = {};        // UI selections: game_id -> pick (Away/Home)
     let existingTeamPicks = {};    // silently fetched from DB for diffing (not displayed)
 
@@ -158,17 +162,39 @@
 
       return true;
     }
-    function lockAll(){ weekSel.disabled = saveBtn.disabled = savePicksBtn.disabled = teamSel.disabled = true; }
+    function lockAll(){ seasonSel.disabled = weekSel.disabled = saveBtn.disabled = savePicksBtn.disabled = teamSel.disabled = true; }
 
-    // --- weeks / teams ---
-    async function loadWeeks(){
-      status('Loading weeks…');
-      const { data: weekRows, error: wErr } = await supabase.rpc('get_distinct_weeks');
-      if (wErr) { status(wErr.message, true); return false; }
-      const weeks = (weekRows || []).map(r => r.week);
-      if (!weeks.length){ status('No weeks found in all_games.', true); return false; }
+    // --- seasons / weeks / teams ---
+    async function loadSeasons(){
+      status('Loading seasons…');
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('cfb_season')
+        .not('cfb_season', 'is', null);
+      if(error){ status(error.message, true); return false; }
+      const seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(Number.isFinite))].sort((a,b)=>a-b);
+      if(!seasons.length){ status('No seasons found in all_games.', true); return false; }
+      seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+      seasonSel.value = String(seasons[seasons.length - 1]); // latest
+      return true;
+    }
+
+    async function loadWeeksForSeason(){
+      const season = Number(seasonSel.value);
+      if(!Number.isFinite(season)){ status('Select a season.', true); return false; }
+
+      status(`Loading weeks for season ${season}…`);
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('week, cfb_season')
+        .eq('cfb_season', season);
+      if(error){ status(error.message, true); return false; }
+
+      const weeks = [...new Set((data||[]).map(r => r.week).filter(w => Number.isFinite(Number(w))))].sort((a,b)=>a-b);
+      if(!weeks.length){ status('No weeks found for this season.', true); return false; }
+
       weekSel.innerHTML = weeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
-      weekSel.value = String(weeks[weeks.length - 1]); // latest
+      weekSel.value = String(weeks[weeks.length - 1]); // latest week in that season
       return true;
     }
 
@@ -203,15 +229,17 @@
       return text;
     }
 
-    // --- load games for Manage Games, then sort as requested ---
+    // --- load games for Manage Games (season + week), then sort as requested ---
     async function loadWeek(){
+      const season = Number(seasonSel.value);
       const week = Number(weekSel.value);
-      if(!Number.isFinite(week)){ status('Select a week.'); return; }
-      status(`Loading week ${week} games…`);
+      if(!Number.isFinite(season) || !Number.isFinite(week)){ status('Select a season and week.'); return; }
+      status(`Loading season ${season} — week ${week} games…`);
 
       const { data, error } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, picked, week, "Network", espn_url')
+        .select('GameId, Away, Home, "Start (CT)", line, picked, week, "Network", espn_url, cfb_season')
+        .eq('cfb_season', season)
         .eq('week', week)
         .order('GameId', { ascending: true });
 
@@ -244,21 +272,23 @@
       await loadPickableGames();      // for team picks panel
       await loadExistingTeamPicks();  // silent fetch for diffing only
       renderPicksPanel();             // no prefill
-      status(`Week ${week} loaded.`);
+      status(`Season ${season} — Week ${week} loaded.`);
     }
 
-    // --- pickable games = only those flagged picked=true for the week ---
+    // --- pickable games = only those flagged picked=true for the season+week ---
     async function loadPickableGames(){
+      const season = Number(seasonSel.value);
       const week = Number(weekSel.value);
       const { data, error } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", espn_url')
+        .select('GameId, Away, Home, "Start (CT)", espn_url, cfb_season')
+        .eq('cfb_season', season)
         .eq('week', week)
         .eq('picked', true)
         .order('GameId', { ascending: true });
       if(error){ status(error.message, true); return; }
       pickableGames = data || [];
-      tempTeamPicks = {}; // clear UI selections on week change
+      tempTeamPicks = {}; // clear UI selections on week/season change
     }
 
     // --- silently pull existing picks for selected team+week (for diffing only) ---
@@ -471,13 +501,22 @@
       const ok = await gatekeep();
       if(!ok) return;
 
-      const okWeeks = await loadWeeks();
+      const okSeasons = await loadSeasons();
+      if(!okSeasons) return;
+
+      const okWeeks = await loadWeeksForSeason();
       if(!okWeeks) return;
 
       const okTeams = await loadTeams();
       if(!okTeams) return;
 
       await loadWeek();
+
+      seasonSel.onchange = async () => {
+        // On season change, refresh week list (scoped), then load first/last week
+        const ok = await loadWeeksForSeason();
+        if(ok) await loadWeek();
+      };
 
       weekSel.onchange = async () => {
         await loadWeek();
