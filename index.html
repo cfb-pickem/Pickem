@@ -115,6 +115,9 @@
           </div>
         </div>
         <div class="flex items-center gap-3 text-sm">
+          <label class="hidden md:block text-gray-300">Season</label>
+          <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
+
           <label class="hidden md:block text-gray-300">Week</label>
           <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
         </div>
@@ -166,16 +169,21 @@
     import { supabase } from './js/supabaseClient.js';
 
     // ---- DOM ----
-    const weekSelect = document.getElementById('week-select');
-    const statusEl   = document.getElementById('status');
-    const theadRow   = document.getElementById('thead-row');
-    const tbody      = document.getElementById('tbody');
-    const wsMade     = document.getElementById('ws-made');
-    const wsNot      = document.getElementById('ws-not');
+    const seasonSelect = document.getElementById('season-select');
+    const weekSelect   = document.getElementById('week-select');
+    const statusEl     = document.getElementById('status');
+    const theadRow     = document.getElementById('thead-row');
+    const tbody        = document.getElementById('tbody');
+    const wsMade       = document.getElementById('ws-made');
+    const wsNot        = document.getElementById('ws-not');
 
     // ---- State ----
+    let seasons = [];
+    let currentSeason = null;
+
     let weeks = [];
     let currentWeek = null;
+
     let gameIds = [];
     let winnerMap = {};
     let lineMap   = {};
@@ -209,7 +217,8 @@
 
     // ---------- Performance helpers ----------
     const STORAGE_KEYS = {
-      lastWeek: 'cfb_last_week_v1',
+      lastSeason: 'cfb_last_season_v1',
+      lastWeek:   'cfb_last_week_v1',
       logos: 'cfb_logos_v1',
       logosTTL: 'cfb_logos_ttl_v1',
       abbrev: 'cfb_abbrev_v1',
@@ -217,12 +226,12 @@
     };
     const LOGOS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-    function getCachedWeek() {
-      const v = localStorage.getItem(STORAGE_KEYS.lastWeek);
+    function getCached(key) {
+      const v = localStorage.getItem(key);
       return v ? Number(v) : null;
     }
-    function setCachedWeek(week) {
-      if (Number.isFinite(week)) localStorage.setItem(STORAGE_KEYS.lastWeek, String(week));
+    function setCached(key, val) {
+      if (Number.isFinite(val)) localStorage.setItem(key, String(val));
     }
     function getCachedMap(key, ttlKey){
       try{
@@ -292,38 +301,87 @@
     async function startup() {
       await initNav();
 
-      const hintedWeek = getCachedWeek();
-      if (Number.isFinite(hintedWeek)) {
-        weekSelect.innerHTML = `<option value="${hintedWeek}">Week ${hintedWeek}</option>`;
-        currentWeek = hintedWeek;
-        loadWeek(currentWeek).catch(() => {});
+      await loadSeasons();
+      const hintedSeason = getCached(STORAGE_KEYS.lastSeason);
+      if (Number.isFinite(hintedSeason) && seasons.includes(hintedSeason)) {
+        currentSeason = hintedSeason;
+      } else {
+        currentSeason = seasons[seasons.length-1]; // latest
       }
+      seasonSelect.value = String(currentSeason);
+
+      await loadWeeksForSeason(currentSeason);
+
+      const hintedWeek = getCached(STORAGE_KEYS.lastWeek);
+      if (Number.isFinite(hintedWeek) && weeks.includes(hintedWeek)) {
+        currentWeek = hintedWeek;
+      } else {
+        currentWeek = weeks[weeks.length-1];
+      }
+      weekSelect.value = String(currentWeek);
 
       await init();
+      await computeSeasonWins();
+      await loadWeek(currentWeek);
+
+      seasonSelect.onchange = async () => {
+        currentSeason = Number(seasonSelect.value);
+        setCached(STORAGE_KEYS.lastSeason, currentSeason);
+        await loadWeeksForSeason(currentSeason);
+        currentWeek = weeks[weeks.length-1];
+        weekSelect.value = String(currentWeek);
+        await computeSeasonWins();
+        await loadWeek(currentWeek);
+      };
+
+      weekSelect.onchange = async ()=> {
+        currentWeek = Number(weekSelect.value);
+        setCached(STORAGE_KEYS.lastWeek, currentWeek);
+        await computeSeasonWins();
+        await loadWeek(currentWeek);
+      };
     }
     startup();
 
+    // ---------- Loaders ----------
+    async function loadSeasons(){
+      status('Loading seasons…');
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('cfb_season')
+        .not('cfb_season', 'is', null);
+      if(error){ status(error.message, true); throw error; }
+      seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(Number.isFinite))].sort((a,b)=>a-b);
+      if(!seasons.length) { status('No seasons found.'); throw new Error('no seasons'); }
+      seasonSelect.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    async function loadWeeksForSeason(season){
+      status(`Loading weeks for ${season}…`);
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('week')
+        .eq('cfb_season', season)
+        .eq('picked', true)
+        .not('week', 'is', null)
+        .order('week', { ascending: true });
+      if(error){ status(error.message, true); throw error; }
+      weeks = [...new Set((data||[]).map(r=>r.week))].sort((a,b)=>a-b);
+      if(!weeks.length){ status('No weeks for this season.', true); }
+      weekSelect.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+    }
+
     async function init(){
-      status('Loading weeks…');
+      status('Loading assets…');
 
       const logoCached = getCachedMap(STORAGE_KEYS.logos, STORAGE_KEYS.logosTTL);
       const abbrCached = getCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL);
       if (logoCached) logoByTeam = logoCached;
       if (abbrCached) abbrByTeam = abbrCached;
 
-      const logosPromise = supabase
+      const { data: logoRows, error: lErr } = await supabase
         .from('logos')
         .select('Team, LogoURL, Abbrev');
-
-      const weeksPromise = supabase
-        .from('all_games')
-        .select('week')
-        .eq('picked', true)
-        .not('week', 'is', null)
-        .order('week', { ascending: true });
-
-      const [{ data: logoRows, error: lErr }, { data: weekRows, error: werr }] =
-        await Promise.all([logosPromise, weeksPromise]);
 
       if(!lErr) {
         const mergedLogos = { ...(logoCached || {}) };
@@ -339,49 +397,33 @@
         setCachedMap(STORAGE_KEYS.logos,  STORAGE_KEYS.logosTTL,  logoByTeam);
         setCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL, abbrByTeam);
       }
-
-      if(werr) return status(werr.message, true);
-
-      weeks = [...new Set((weekRows||[]).map(r=>r.week))].sort((a,b)=>a-b);
-      if(!weeks.length) return status('No weeks found in all_games');
-
-      weekSelect.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
-
-      const realCurrent = weeks[weeks.length-1];
-
-      if (!Number.isFinite(currentWeek)) {
-        currentWeek = realCurrent;
-        await computeSeasonWins();
-        await loadWeek(currentWeek);
-      } else {
-        computeSeasonWins().then(() => loadWeek(currentWeek));
-      }
-
-      weekSelect.value = String(currentWeek);
-
-      weekSelect.onchange = async ()=>{
-        currentWeek = Number(weekSelect.value);
-        setCachedWeek(currentWeek);
-        await computeSeasonWins();
-        await loadWeek(currentWeek);
-      };
     }
 
+    // ---------- Points (season-only) ----------
     async function computeSeasonWins(){
       status('Computing points…');
 
+      // Decided games for this season
       const { data: decidedGames, error: dgErr } = await supabase
         .from('all_games')
         .select('GameId, winner')
+        .eq('cfb_season', currentSeason)
         .not('winner', 'is', null);
       if(dgErr){ status(dgErr.message, true); return; }
 
+      const gameIdsSeason = (decidedGames || []).map(g => g.GameId);
       const winnerByGame = Object.create(null);
       (decidedGames||[]).forEach(g=>{ winnerByGame[g.GameId] = g.winner; });
 
+      if (!gameIdsSeason.length){
+        winsByTeam = Object.create(null);
+        return;
+      }
+
       const { data: allPicks, error: pErr } = await supabase
         .from('picks')
-        .select('team_id, game_id, pick');
+        .select('team_id, game_id, pick')
+        .in('game_id', gameIdsSeason);
       if(pErr){ status(pErr.message, true); return; }
 
       winsByTeam = Object.create(null);
@@ -394,15 +436,16 @@
       });
     }
 
+    // ---------- Load a week (season-scoped) ----------
     async function loadWeek(week){
-      setCachedWeek(week);
-      status(`Loading week ${week}…`);
+      status(`Loading S${currentSeason} • W${week}…`);
       stopLiveTicker();
       headerStatusEls.clear();
 
       const { data: gamesRaw, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url') // include espn_url
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season')
+        .eq('cfb_season', currentSeason)
         .eq('picked', true)
         .eq('week', week);
       if(gErr) return status(gErr.message, true);
@@ -463,9 +506,9 @@
 
       startLiveTicker();
       if (!showPicks && weekStartTs) {
-        status(`Picks hidden until kickoff at ${formatTimeLocal(weekStartTs)} CT. Showing week ${week}.`);
+        status(`Picks hidden until kickoff at ${formatTimeLocal(weekStartTs)} CT • Season ${currentSeason} • Week ${week}`);
       } else {
-        status(`Showing week ${week}.`);
+        status(`Season ${currentSeason} • Week ${week}`);
       }
     }
 
@@ -746,7 +789,7 @@
 
       if (!showPicks && weekStartTs && Date.now() >= weekStartTs) {
         showPicks = true;
-        status(`Kickoff! Showing picks for Week ${currentWeek}.`);
+        status(`Kickoff! Showing picks for Season ${currentSeason} • Week ${currentWeek}.`);
         winnerChanged = true;
       }
 
