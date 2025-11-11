@@ -46,6 +46,8 @@
 
     .ribbon{background:linear-gradient(180deg,#2b2c2e,#1b1c1d);border:1px solid rgba(231,231,231,.10)}
     .chip{background:var(--cfp-gold); color:#0b0b0b; font-weight:700; letter-spacing:.01em}
+    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
+    .cfp-select:focus{outline:none;box-shadow:var(--ring)}
   </style>
 </head>
 
@@ -62,7 +64,15 @@
             <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Season Stats</h1>
           </div>
         </div>
-        <div class="text-xs text-gray-300" id="status">Loading…</div>
+
+        <!-- Season filter -->
+        <div class="flex items-center gap-3 text-sm">
+          <label class="text-gray-300">Season</label>
+          <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[120px]"></select>
+        </div>
+      </div>
+      <div class="px-4 md:px-6 pb-3 text-xs text-gray-300">
+        <span id="status">Loading…</span>
       </div>
     </header>
 
@@ -135,6 +145,7 @@
     import { supabase } from './js/supabaseClient.js';
 
     const statusEl      = document.getElementById('status');
+    const seasonSel     = document.getElementById('season-select');
     const perfectRibbon = document.getElementById('perfect-ribbon');
     const zeroRibbon    = document.getElementById('zero-ribbon');
     const favoriteBody  = document.getElementById('favorite-body');
@@ -160,48 +171,91 @@
       statusEl.textContent = msg;
     }
     function escapeHtml(str){ return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s])); }
+    // Parse "Start (CT)" which is stored as a timestamp in CT; we read it as local Date.
+    function parseCT(ts){
+      if(!ts) return null;
+      const d = new Date(String(ts).replace(' ', 'T'));
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    async function loadSeasons(){
+      setStatus('Loading seasons…');
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('cfb_season')
+        .not('cfb_season', 'is', null);
+      if(error){ setStatus('Error loading seasons', true); return false; }
+      const seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(n => Number.isFinite(n)))]
+        .sort((a,b)=>a-b);
+      if(!seasons.length){ setStatus('No seasons found', true); return false; }
+      seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+      seasonSel.value = String(seasons[seasons.length-1]); // latest
+      return true;
+    }
 
     async function main(){
       setStatus('Loading data…');
 
-      // Pull all picked games. We need winner/line for stats.
+      const season = Number(seasonSel.value);
+      if(!Number.isFinite(season)){ setStatus('Select a season', true); return; }
+
+      // Pull only picked games for the chosen season
       const { data: allGames, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, week, winner, picked, Away, Home, line')
-        .eq('picked', true);
+        .select('GameId, week, winner, picked, Away, Home, line, "Start (CT)", cfb_season')
+        .eq('picked', true)
+        .eq('cfb_season', season);
 
       if(gErr){ console.error(gErr); return setStatus('Error loading games', true); }
 
-      // --- Build per-game metadata + detect which weeks are fully concluded ---
+      // --- Build per-game metadata + week aggregates ---
       const gameMeta = Object.create(null);
       const gameIds  = [];
-      const pickedByWeek = new Map(); // week -> { totalPicked, withWinner }
+      const pickedByWeek = new Map(); // week -> { totalPicked, withWinner, earliestStart }
 
       for(const g of (allGames||[])){
         if(!g || g.GameId == null) continue;
 
+        const start = parseCT(g['Start (CT)']);
+        const w = g.week ?? null;
+
         gameMeta[g.GameId] = {
-          week: g.week ?? null,
+          week: w,
           winner: g.winner ?? null,
           away: g.Away || null,
           home: g.Home || null,
-          line: (g.line==null? null : Number(g.line))
+          line: (g.line==null? null : Number(g.line)),
+          start: start
         };
         gameIds.push(g.GameId);
 
-        const w = g.week ?? null;
-        if(!pickedByWeek.has(w)) pickedByWeek.set(w, { totalPicked:0, withWinner:0 });
+        if(!pickedByWeek.has(w)) pickedByWeek.set(w, { totalPicked:0, withWinner:0, earliestStart:null });
         const agg = pickedByWeek.get(w);
         agg.totalPicked += 1;
         if(g.winner != null) agg.withWinner += 1;
+        if(start){
+          if(!agg.earliestStart || start < agg.earliestStart) agg.earliestStart = start;
+        }
       }
 
-      if(!gameIds.length){ return setStatus('No picked games found', true); }
+      if(!gameIds.length){
+        perfectRibbon.innerHTML = '<span class="text-sm text-gray-300">No picked games found for this season.</span>';
+        zeroRibbon.innerHTML    = '<span class="text-sm text-gray-300">No picked games found for this season.</span>';
+        favoriteBody.innerHTML  = '';
+        formBody.innerHTML      = '';
+        return setStatus('Loaded');
+      }
 
-      // A week is "complete" when ALL picked games for that week have a winner
+      // Week sets
+      const now = new Date();
       const completeWeeks = new Set(
         [...pickedByWeek.entries()]
           .filter(([_, v]) => v.totalPicked > 0 && v.totalPicked === v.withWinner)
+          .map(([w]) => w)
+      );
+      const startedWeeks = new Set(
+        [...pickedByWeek.entries()]
+          .filter(([_, v]) => v.earliestStart && v.earliestStart <= now)
           .map(([w]) => w)
       );
 
@@ -214,7 +268,7 @@
 
       const teamName = new Map((teams||[]).map(t => [t.team_id, t.team_name]));
 
-      // ------- Build per-week and decided maps -------
+      // ------- Build per-week and decided maps for THIS season -------
       const byTeamWeek = new Map();   // "teamId|week" -> rows[]
       const byTeamDecided = new Map(); // teamId -> decided rows[]
 
@@ -233,13 +287,12 @@
         }
       }
 
-      // ------- Perfect Week tally (only for fully completed weeks) -------
+      // ------- Perfect Week tally (completed weeks only) -------
       const perfectTally = new Map(); // team_id -> count
       for(const [key, rows] of byTeamWeek.entries()){
         const week = rows.length ? rows[0].week : null;
-        if(!completeWeeks.has(week)) continue; // skip unfinished weeks
+        if(!completeWeeks.has(week)) continue; // only finished weeks
 
-        // All games in the week have winners by definition
         let correct = 0;
         for(const r of rows){ if(sameTeam(r.pick, r.winner)) correct++; }
         if(rows.length > 0 && correct === rows.length){
@@ -256,14 +309,14 @@
           }).join('');
         perfectRibbon.innerHTML = chips;
       } else {
-        perfectRibbon.innerHTML = '<span class="text-sm text-gray-300">No perfect weeks yet (waiting on completed weeks).</span>';
+        perfectRibbon.innerHTML = '<span class="text-sm text-gray-300">No perfect weeks yet (completed weeks only).</span>';
       }
 
-      // ------- Winless Week tally (only for fully completed weeks) -------
+      // ------- Winless Week tally (completed weeks only) -------
       const zeroTally = new Map(); // team_id -> count
       for(const [key, rows] of byTeamWeek.entries()){
         const week = rows.length ? rows[0].week : null;
-        if(!completeWeeks.has(week)) continue; // skip unfinished weeks
+        if(!completeWeeks.has(week)) continue;
 
         let correct = 0; for(const r of rows){ if(sameTeam(r.pick, r.winner)) correct++; }
         if(rows.length > 0 && correct === 0){
@@ -280,10 +333,10 @@
           }).join('');
         zeroRibbon.innerHTML = chips;
       } else {
-        zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet (or weeks still in progress).</span>';
+        zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet (completed weeks only).</span>';
       }
 
-      // ------- Favorite Pick % (unchanged logic) -------
+      // ------- Favorite Pick % (exclude weeks that haven't started) -------
       const favStats = new Map(); // team_id -> { fav: n, opp: d }
       function favoriteTeamFor(game){
         const line = game.line;
@@ -294,8 +347,13 @@
       for(const p of (picks||[])){
         const g = gameMeta[p.game_id];
         if(!g || !p.pick) continue;
+
+        // only count this pick if the week has started
+        if(!startedWeeks.has(g.week)) continue;
+
         const favTeam = favoriteTeamFor(g);
         if(!favTeam) continue;
+
         const tId = p.team_id;
         if(!favStats.has(tId)) favStats.set(tId, { fav:0, opp:0 });
         const entry = favStats.get(tId);
@@ -312,7 +370,7 @@
           <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
         </tr>`).join('');
 
-      // ------- Form: last 8 decided picks (unchanged logic) -------
+      // ------- Form: last 8 decided picks (season-only) -------
       const formRows = [];
       for(const [team_id, arr] of byTeamDecided.entries()){
         const decidedSorted = [...arr].sort((a,b)=> (a.week - b.week) || (a.game_id - b.game_id));
@@ -330,10 +388,18 @@
           <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
         </tr>`).join('');
 
-      setStatus('Loaded');
+      setStatus(`Loaded • Season ${season}`);
     }
 
-    async function startup(){ await initNav(); await main(); }
+    async function startup(){
+      await initNav();
+      const ok = await loadSeasons();
+      if(!ok) return;
+
+      await main();
+      seasonSel.onchange = main;
+    }
+
     startup();
   </script>
 </body>
