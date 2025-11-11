@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
+  <!-- Keep your existing modules -->
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
@@ -64,7 +65,7 @@
       </div>
     </header>
 
-    <!-- A) Make Picks (no prefill; silently diff vs existing on save) -->
+    <!-- A) Make Picks -->
     <section class="cfp-card overflow-auto mb-6">
       <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex flex-wrap items-center gap-3">
         <strong class="text-[var(--cfp-ivory)] mr-2">Make Picks</strong>
@@ -124,8 +125,9 @@
 
     // state
     let rows = [];                 // current games for selected week (for Manage Games)
-    let original = {};             // GameId -> { line, picked, week }
-    let edited   = {};             // GameId -> { line, picked, week }
+    // Track ONLY the fields we intend to edit: line, picked
+    let original = {};             // GameId -> { line, picked }
+    let edited   = {};             // GameId -> { line, picked }
 
     let pickableGames = [];        // picked=true games for current week (what teams pick)
     let tempTeamPicks = {};        // UI selections: game_id -> pick (Away/Home)
@@ -135,9 +137,7 @@
     function status(msg,isErr=false){
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
-      console.debug('[status]', msg);
     }
-    function lockAll(){ weekSel.disabled = saveBtn.disabled = savePicksBtn.disabled = teamSel.disabled = true; }
 
     // --- auth / commissioner gate ---
     async function gatekeep(){
@@ -158,13 +158,14 @@
 
       return true;
     }
+    function lockAll(){ weekSel.disabled = saveBtn.disabled = savePicksBtn.disabled = teamSel.disabled = true; }
 
     // --- weeks / teams ---
     async function loadWeeks(){
       status('Loading weeks…');
       const { data: weekRows, error: wErr } = await supabase.rpc('get_distinct_weeks');
       if (wErr) { status(wErr.message, true); return false; }
-      const weeks = (weekRows || []).map(r => r.week).sort((a,b)=>a-b);
+      const weeks = (weekRows || []).map(r => r.week);
       if (!weeks.length){ status('No weeks found in all_games.', true); return false; }
       weekSel.innerHTML = weeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
       weekSel.value = String(weeks[weeks.length - 1]); // latest
@@ -231,12 +232,12 @@
         return atms - btms;
       });
 
-      // snapshot for diffing edits
+      // snapshot for diffing edits (ONLY the fields we will update)
       original = {};
       edited   = {};
       for(const r of rows){
-        original[r.GameId] = { line: r.line ?? null, picked: !!r.picked, week: r.week ?? null };
-        edited[r.GameId]   = { line: r.line ?? null, picked: !!r.picked, week: r.week ?? null };
+        original[r.GameId] = { line: r.line ?? null, picked: !!r.picked };
+        edited[r.GameId]   = { line: r.line ?? null, picked: !!r.picked };
       }
 
       renderGamesTable();
@@ -275,6 +276,7 @@
 
       existingTeamPicks = {};
       (data || []).forEach(r => { existingTeamPicks[r.game_id] = r.pick || ''; });
+      // Not rendering these; used only for diffing on save.
     }
 
     // --- render picks panel (no prefill) ---
@@ -326,9 +328,9 @@
       const payload = [];
       for (const g of pickableGames){
         const chosen = (tempTeamPicks[g.GameId] || '').trim();
-        if (!chosen) continue;
+        if (!chosen) continue; // no new choice
         const existing = (existingTeamPicks[g.GameId] || '').trim();
-        if (existing === chosen) continue;
+        if (existing === chosen) continue; // no change
         payload.push({ team_id: teamId, week, game_id: g.GameId, pick: chosen });
       }
 
@@ -389,9 +391,8 @@
         tdLine.innerHTML = `<input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />`;
         const lineInput = tdLine.querySelector('input');
         lineInput.addEventListener('input', e => {
-          const raw = String(e.target.value).trim();
-          const num = raw === '' ? null : Number(raw);
-          edited[g.GameId].line = (raw === '' || Number.isNaN(num)) ? null : num;
+          const v = e.target.value;
+          edited[g.GameId].line = (v === '' ? null : Number(v));
         });
         tr.appendChild(tdLine);
 
@@ -405,7 +406,7 @@
         });
         tr.appendChild(tdPicked);
 
-        // Week
+        // Week (display-only; never edited/saved)
         const tdWeek = document.createElement('td');
         tdWeek.className = 'px-3 py-2 text-center text-gray-300';
         tdWeek.textContent = g.week ?? '';
@@ -421,17 +422,15 @@
       for(const id of Object.keys(edited)){
         const curr = edited[id];
         const orig = original[id] || {};
-        const changed =
-          (curr.line ?? null)   !== (orig.line ?? null) ||
-          Boolean(curr.picked)  !== Boolean(orig.picked) ||
-          (curr.week ?? null)   !== (orig.week ?? null);
+        const lineChanged  = (curr.line ?? null)  !== (orig.line ?? null);
+        const pickChanged  = Boolean(curr.picked) !== Boolean(orig.picked);
 
-        if(changed){
+        if(lineChanged || pickChanged){
+          // IMPORTANT: exclude 'week' from the payload so it is NEVER overwritten
           changes.push({
             GameId: Number(id),
-            line:   (curr.line ?? null),
-            picked: Boolean(curr.picked),
-            week:   (curr.week ?? null)
+            line: curr.line,
+            picked: Boolean(curr.picked)
           });
         }
       }
@@ -442,48 +441,29 @@
       const payload = diffPayload();
       if(payload.length === 0){ status('No changes to save.'); return; }
 
-      // harden payload: ensure only fields we truly want to change are present
-      const upsertRows = payload.map(r => ({
-        GameId: Number(r.GameId),
-        line:   r.line,
-        picked: r.picked,
-        week:   r.week
-      }));
-
       saveBtn.disabled = true;
       status('Saving…');
 
-      // Try upsert first (fast path if GameId is PK/UNIQUE)
-      const upsertRes = await supabase
+      // Upsert ONLY the columns we intend to modify.
+      const { error } = await supabase
         .from('all_games')
-        .upsert(upsertRows, { onConflict: 'GameId', returning: 'minimal' });
-
-      let error = upsertRes.error;
-
-      // If upsert failed (e.g., missing unique index/RLS nuance), fall back to per-row updates.
-      if (error) {
-        console.warn('Upsert failed; falling back to per-row updates:', error);
-        error = null;
-        for (const row of upsertRows){
-          // Update just this row by primary key column "GameId"
-          const { error: uErr } = await supabase
-            .from('all_games')
-            .update({ line: row.line, picked: row.picked, week: row.week })
-            .eq('GameId', row.GameId);
-          if (uErr){ error = uErr; break; }
-        }
-      }
+        .upsert(payload, { onConflict: 'GameId' });
 
       saveBtn.disabled = false;
 
       if(error){
         status(`Save failed: ${error.message}`, true);
-        return;
+      }else{
+        // Update local originals for changed fields only
+        for(const row of payload){
+          if (!original[row.GameId]) original[row.GameId] = {};
+          original[row.GameId].line = row.line;
+          original[row.GameId].picked = row.picked;
+        }
+        // Re-load to re-apply sort (in case picked changed)
+        await loadWeek();
+        status('Saved.');
       }
-
-      // refresh local snapshots and UI
-      await loadWeek();
-      status('Saved.');
     }
 
     // --- wire up ---
@@ -499,7 +479,9 @@
 
       await loadWeek();
 
-      weekSel.onchange = async () => { await loadWeek(); };
+      weekSel.onchange = async () => {
+        await loadWeek();
+      };
 
       teamSel.onchange = async () => {
         await loadExistingTeamPicks();
