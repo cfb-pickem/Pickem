@@ -186,8 +186,9 @@
       status(`Loading weeks for season ${season}…`);
       const { data, error } = await supabase
         .from('all_games')
-        .select ('week, cfb_season', { distinct: true })
-        .eq('cfb_season', season);
+        .select ('week, cfb_season')
+        .eq('cfb_season', season)
+        .range(0, 3999); // big enough to cover all rows;
       if(error){ status(error.message, true); return false; }
 
       const weeks = [...new Set((data||[]).map(r => r.week).filter(w => Number.isFinite(Number(w))))].sort((a,b)=>a-b);
