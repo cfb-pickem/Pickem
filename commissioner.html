@@ -186,7 +186,7 @@
       status(`Loading weeks for season ${season}…`);
       const { data, error } = await supabase
         .from('all_games')
-        .select('week, cfb_season')
+        .select ('week, cfb_season', { distinct: true })
         .eq('cfb_season', season);
       if(error){ status(error.message, true); return false; }
 
