@@ -167,64 +167,34 @@
     // --- seasons / weeks / teams ---
     async function loadSeasons(){
       status('Loading seasons…');
-
       const { data, error } = await supabase
         .from('all_games')
-        .select('cfb_season', { distinct: true })
-        .not('cfb_season', 'is', null)
-        .order('cfb_season', { ascending: true });
-
-      if (error) { status(error.message, true); return false; }
-
-      const seasons = (data || [])
-        .map(r => Number(r.cfb_season))
-        .filter(Number.isFinite);
-
-      if (!seasons.length) {
-        status('No seasons found in all_games.', true);
-        return false;
-      }
-
-      seasonSel.innerHTML = seasons
-        .map(s => `<option value="${s}">${s}</option>`)
-        .join('');
-
+        .select('cfb_season')
+        .not('cfb_season', 'is', null);
+      if(error){ status(error.message, true); return false; }
+      const seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(Number.isFinite))].sort((a,b)=>a-b);
+      if(!seasons.length){ status('No seasons found in all_games.', true); return false; }
+      seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
       seasonSel.value = String(seasons[seasons.length - 1]); // latest
       return true;
     }
 
     async function loadWeeksForSeason(){
       const season = Number(seasonSel.value);
-      if (!Number.isFinite(season)) {
-        status('Select a season.', true);
-        return false;
-      }
+      if(!Number.isFinite(season)){ status('Select a season.', true); return false; }
 
       status(`Loading weeks for season ${season}…`);
-
       const { data, error } = await supabase
         .from('all_games')
-        .select('week', { distinct: true })   // ⬅️ only unique week values
-        .eq('cfb_season', season)
-        .order('week', { ascending: true });
+        .select('week, cfb_season')
+        .eq('cfb_season', season);
+      if(error){ status(error.message, true); return false; }
 
-      if (error) { status(error.message, true); return false; }
+      const weeks = [...new Set((data||[]).map(r => r.week).filter(w => Number.isFinite(Number(w))))].sort((a,b)=>a-b);
+      if(!weeks.length){ status('No weeks found for this season.', true); return false; }
 
-      const weeks = (data || [])
-        .map(r => Number(r.week))
-        .filter(Number.isFinite)
-        .sort((a, b) => a - b);
-
-      if (!weeks.length) {
-        status('No weeks found for this season.', true);
-        return false;
-      }
-
-      weekSel.innerHTML = weeks
-        .map(w => `<option value="${w}">Week ${w}</option>`)
-        .join('');
-
-      weekSel.value = String(weeks[weeks.length - 1]); // latest week
+      weekSel.innerHTML = weeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
+      weekSel.value = String(weeks[weeks.length - 1]); // latest week in that season
       return true;
     }
 
