@@ -85,9 +85,13 @@
       .network-line{ font-size:9px; letter-spacing:.12em; }
       .badge { font-size: .65rem; padding: .1rem .4rem; }
       .table tbody td { font-size: .85rem; }
-      thead th div:first-child{
-        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 140px;
-      }
+        thead th > :first-child{
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 130px;   /* tweak as you like */
+          display: inline-block;
+        }
     }
 
     nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
