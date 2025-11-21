@@ -6,7 +6,7 @@ const LINKS = [
   { href: './picks.html',      key: 'picks',       label: 'Make Picks', authOnly: true, id: 'nav-picks' },
   { href: './cfb-genius.html', key: 'genius',      label: 'CFB Genius' },
   { href: './stats.html',      key: 'stats',       label: 'Stats' },
-  { href: './commissioner.html', key: 'commissioner', label: 'Commissioner', authOnly: true, id: 'nav-commissioner' }
+  { href: './commissioner.html', key: 'commissioner', label: 'Commissioner', authOnly: true, id: 'nav-commissioner' } // new
 ];
 
 function clsActive(isActive){
@@ -26,125 +26,83 @@ export default async function initNav(){
   const signedIn = !!session;
   const user = session?.user;
 
-  // Determine commissioner
+  // Check commissioner status
   let isCommissioner = false;
   if (signedIn && user) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('teams')
       .select('commissioner')
       .eq('user_id', user.id)
       .single();
 
-    isCommissioner = !!data?.commissioner;
+    if (error) {
+      console.error('Error fetching commissioner status:', error.message);
+    } else {
+      isCommissioner = !!data?.commissioner;
+    }
   }
 
-  // Desktop nav items
-  const visibleLinks = LINKS.filter(l => {
-    if (l.key === 'commissioner' && !isCommissioner) return false;
-    return !l.authOnly || signedIn;
-  });
-
-  const items = visibleLinks
+  // Build nav
+  const items = LINKS
+    .filter(l => {
+      // Hide commissioner link unless user is commissioner
+      if (l.key === 'commissioner' && !isCommissioner) return false;
+      return !l.authOnly || signedIn;
+    })
     .map(l => {
       const active = l.key === current;
       const idAttr = l.id ? ` id="${l.id}"` : '';
       return `<li${idAttr}><a href="${l.href}" class="block px-3 py-3 ${clsActive(active)}">${l.label}</a></li>`;
-    })
-    .join('');
+    }).join('');
 
-  // Mobile dropdown
-  let mobileOptions = visibleLinks
-    .map(l => {
-      const active = l.key === current;
-      return `<option value="${l.href}" ${active ? 'selected' : ''}>${l.label}</option>`;
-    })
-    .join('');
-
-  if (!signedIn) {
-    mobileOptions += `<option value="./signin.html">Sign in</option>`;
-  } else {
-    mobileOptions += `<option value="__signout">Sign out</option>`;
-  }
-
-  // Render nav
   mount.innerHTML = `
-    <nav class="mb-5 text-xs sm:text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-
-      <!-- Desktop Navigation -->
-      <div class="hidden sm:block">
-        <ul class="flex flex-wrap sm:flex-nowrap items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
-
-          ${items}
-
-          <li class="ml-auto ${signedIn ? 'hidden' : ''}" id="nav-signin">
-            <a href="./signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">
-              Sign in
-            </a>
-          </li>
-
-          <li class="ml-auto ${signedIn ? '' : 'hidden'}" id="nav-signout">
-            <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">
-              Sign out
-            </button>
-          </li>
-
-        </ul>
-      </div>
-
-      <!-- Mobile Dropdown -->
-      <div class="sm:hidden border-b border-[rgba(231,231,231,.08)] py-2">
-        <select id="mobile-nav"
-                class="w-full bg-transparent text-[0.72rem] tracking-[0.18em] uppercase px-2 py-2 border border-[rgba(231,231,231,.25)]">
-          ${mobileOptions}
-        </select>
-      </div>
-
+    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
+      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
+        ${items}
+        <li class="ml-auto ${signedIn ? 'hidden' : ''}" id="nav-signin">
+          <a href="./signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
+        </li>
+        <li class="ml-auto ${signedIn ? '' : 'hidden'}" id="nav-signout">
+          <button id="sign-out-btn" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>
+        </li>
+      </ul>
     </nav>
   `;
 
-  // Protect Commissioner page
+  // Redirect if user is not commissioner but tries to access commissioner.html
   if (current === 'commissioner' && !isCommissioner) {
     window.location.href = './index.html';
   }
 
-  // Desktop sign-out
-  document.getElementById('sign-out-btn')
-    ?.addEventListener('click', async () => {
-      await supabase.auth.signOut();
-      window.location.href = './index.html';
-    });
-
-  // Mobile nav
-  const mobileNav = document.getElementById('mobile-nav');
-  mobileNav?.addEventListener('change', async e => {
-    const value = e.target.value;
-
-    if (value === '__signout') {
-      await supabase.auth.signOut();
-      window.location.href = './index.html';
-      return;
-    }
-
-    if (value) window.location.href = value;
+  // Wire sign-out
+  const signOutBtn = document.getElementById('sign-out-btn');
+  signOutBtn?.addEventListener('click', async () => {
+    await supabase.auth.signOut();
+    window.location.href = './index.html';
   });
 
-  // Auth change listener
+  function setAuthButtons(isSignedIn){
+    const signInLi = document.getElementById('nav-signin');
+    const signOutLi = document.getElementById('nav-signout');
+    if (signInLi)  signInLi.classList.toggle('hidden',  isSignedIn);
+    if (signOutLi) signOutLi.classList.toggle('hidden', !isSignedIn);
+  }
+
+  function redirectIfOnAuthOnlyPage(isSignedIn){
+    if (isSignedIn) return;
+    const onAuthOnlyPage = LINKS.some(l => l.authOnly && l.key === current);
+    if (onAuthOnlyPage) window.location.href = './index.html';
+  }
+
   if (!didSubscribe) {
     didSubscribe = true;
 
-    supabase.auth.onAuthStateChange((event) => {
+    supabase.auth.onAuthStateChange((event, newSession) => {
       if (event === 'SIGNED_IN') {
-        document.getElementById('nav-signin')?.classList.add('hidden');
-        document.getElementById('nav-signout')?.classList.remove('hidden');
-      }
-
-      if (event === 'SIGNED_OUT') {
-        document.getElementById('nav-signout')?.classList.add('hidden');
-        document.getElementById('nav-signin')?.classList.remove('hidden');
-
-        if (visibleLinks.some(l => l.authOnly && l.key === current)) {
-          window.location.href = './index.html';
-        }
+        setAuthButtons(true);
+      } else if (event === 'SIGNED_OUT') {
+        setAuthButtons(false);
+        redirectIfOnAuthOnlyPage(false);
       }
     });
   }
