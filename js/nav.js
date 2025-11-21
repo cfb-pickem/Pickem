@@ -57,7 +57,7 @@ export default async function initNav(){
 
   mount.innerHTML = `
     <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
+      <ul class="flex flex-wrap items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
         ${items}
         <li class="ml-auto ${signedIn ? 'hidden' : ''}" id="nav-signin">
           <a href="./signin.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
