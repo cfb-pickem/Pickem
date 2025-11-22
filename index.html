@@ -85,13 +85,13 @@
       .network-line{ font-size:9px; letter-spacing:.12em; }
       .badge { font-size: .65rem; padding: .1rem .4rem; }
       .table tbody td { font-size: .85rem; }
-        thead th > :first-child{
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: 130px;   /* tweak as you like */
-          display: inline-block;
-        }
+      thead th > :first-child{
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 130px;
+        display: inline-block;
+      }
     }
 
     nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
@@ -101,6 +101,21 @@
       font-size:.72rem; letter-spacing:.16em; text-transform:uppercase;
       color:#d1d5db; border-bottom:1px solid rgba(231,231,231,.08);
       padding-bottom:.25rem; margin-bottom:.5rem;
+    }
+
+    /* 🔹 Highlight logged-in user's team row */
+    tr[data-me="true"]{
+      background:
+        linear-gradient(90deg, rgba(233,185,73,.18), transparent 65%);
+    }
+    tr[data-me="true"] .sticky-col-1{
+      font-weight:700;
+      text-shadow:0 0 8px rgba(0,0,0,.6);
+      box-shadow:1px 0 0 rgba(233,185,73,.4) inset;
+    }
+    tr[data-me="true"]:hover{
+      background:
+        linear-gradient(90deg, rgba(233,185,73,.24), transparent 65%);
     }
   </style>
 </head>
@@ -198,6 +213,9 @@
     let lastTeams = [];
     let lastPickMap = {};
     let lastGames = [];
+
+    // 🔹 Currently logged-in user's team (for highlight)
+    let currentTeamId = null;
 
     // Reveal control
     let weekStartTs = null;
@@ -301,9 +319,34 @@
       return map;
     }
 
+    // ---------- Load current user's team (for highlight) ----------
+    async function loadCurrentUserTeam(){
+      try{
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return; // not signed in, no highlight
+
+        const { data: myTeams, error: tErr } = await supabase
+          .from('teams')
+          .select('team_id, team_name')
+          .eq('user_id', session.user.id)
+          .order('team_name', { ascending: true });
+
+        if (tErr) {
+          console.warn('loadCurrentUserTeam error:', tErr.message);
+          return;
+        }
+        if (myTeams && myTeams.length){
+          currentTeamId = myTeams[0].team_id; // first team alphabetically
+        }
+      }catch(e){
+        console.warn('loadCurrentUserTeam exception:', e);
+      }
+    }
+
     // ---------- App startup ----------
     async function startup() {
       await initNav();
+      await loadCurrentUserTeam(); // 🔹 get user team before we render
 
       await loadSeasons();
       const hintedSeason = getCached(STORAGE_KEYS.lastSeason);
@@ -624,6 +667,11 @@
       teams.forEach((team, idx)=>{
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+
+        // 🔹 Mark logged-in user's team row
+        if (currentTeamId != null && team.team_id === currentTeamId) {
+          tr.dataset.me = 'true';
+        }
 
         const tdTeam = document.createElement('td');
         tdTeam.className = 'pl-4 pr-2 py-2 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
