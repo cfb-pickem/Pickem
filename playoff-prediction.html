@@ -123,7 +123,7 @@
       <span class="badge badge-elim">Eliminated</span>
       <span class="badge badge-hunt">In the hunt</span>
       <span class="ml-2">
-        “Max Season Pts” counts all picked games through the latest active week, then assumes 4 games per remaining week (weeks 2–15). Ties don’t count as clinched.
+        “Max Season Pts” uses all picked games through the latest active week, then assumes 4 games per remaining week (weeks 2–15). Ties don’t count as clinched.
       </span>
     </div>
 
@@ -360,75 +360,82 @@
       winsByTeam = {};
       maxSeasonPointsByTeam = {};
 
-      // All picked games for this season (any week with picked=true)
+      // All picked games for this season (any week with picked = true)
       const { data: gameRows, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, week, winner, picked')
+        .select('GameId, week, winner')
         .eq('cfb_season', currentSeason)
         .eq('picked', true)
         .not('week','is', null);
 
-      if(gErr){ status(gErr.message,true); return; }
-
-      const gameIds = (gameRows || []).map(g => g.GameId);
-      const weekByGame = {};
-      const winnerByGame = {};
-      const weeksWithPicked = new Set();
-
-      (gameRows || []).forEach(g => {
-        weekByGame[g.GameId] = g.week;
-        if (g.winner) winnerByGame[g.GameId] = g.winner;
-        if (g.week != null) weeksWithPicked.add(g.week);
-      });
-
-      // Picks for these games
-      let picks = [];
-      if (gameIds.length){
-        const { data: pickRows, error: pErr } = await supabase
-          .from('picks')
-          .select('team_id, game_id, pick')
-          .in('game_id', gameIds);
-
-        if(pErr){ status(pErr.message,true); return; }
-        picks = pickRows || [];
+      if (gErr){
+        status(gErr.message, true);
+        return;
       }
 
-      const potentialFromExistingUndecided = {};
+      const games = gameRows || [];
 
-      // Current wins (decided games), plus potential from undecided games that already exist
-      picks.forEach(p => {
-        const gId = p.game_id;
-        const winner = winnerByGame[gId];
-        if (winner){
+      // Count games by week, and collect decided games
+      const gamesByWeek = {};
+      const winnerByGame = {};
+      const decidedIds = [];
+
+      games.forEach(g => {
+        const w = g.week;
+        if (w != null){
+          gamesByWeek[w] = (gamesByWeek[w] || 0) + 1;
+        }
+        if (g.winner){
+          winnerByGame[g.GameId] = g.winner;
+          decidedIds.push(g.GameId);
+        }
+      });
+
+      // Total games in a full season:
+      // Week 1: 0 games
+      // Weeks 2–15:
+      //   - If we already have picked games -> use that count
+      //   - If not yet picked -> assume 4 games
+      let totalGamesSeason = 0;
+      for (let w = 2; w <= TOTAL_WEEKS; w++){
+        const existing = gamesByWeek[w] || 0;
+        if (existing > 0){
+          totalGamesSeason += existing;
+        } else {
+          totalGamesSeason += GAMES_PER_NON_W1_WEEK;
+        }
+      }
+
+      const totalDecidedGames = decidedIds.length;
+      let remainingGamesSeason = totalGamesSeason - totalDecidedGames;
+      if (remainingGamesSeason < 0) remainingGamesSeason = 0;
+
+      // Compute current wins from decided games
+      if (decidedIds.length){
+        const { data: picksDecided, error: pErr } = await supabase
+          .from('picks')
+          .select('team_id, game_id, pick')
+          .in('game_id', decidedIds);
+
+        if (pErr){
+          status(pErr.message, true);
+          return;
+        }
+
+        (picksDecided || []).forEach(p => {
+          const winner = winnerByGame[p.game_id];
+          if (!winner) return;
           if (sameTeam(p.pick, winner)){
             winsByTeam[p.team_id] = (winsByTeam[p.team_id] || 0) + 1;
           }
-        } else {
-          // undecided but picked; this is a potential future win
-          potentialFromExistingUndecided[p.team_id] = (potentialFromExistingUndecided[p.team_id] || 0) + 1;
-        }
-      });
-
-      // Make sure every team has entries
-      teams.forEach(t => {
-        if(!(t.team_id in winsByTeam)) winsByTeam[t.team_id] = 0;
-        if(!(t.team_id in potentialFromExistingUndecided)) potentialFromExistingUndecided[t.team_id] = 0;
-      });
-
-      // Weeks with *no* picked games yet (2–15) → assume 4 potential wins there
-      let assumedWeeksCount = 0;
-      for (let w = 2; w <= TOTAL_WEEKS; w++){
-        if (!weeksWithPicked.has(w)){
-          assumedWeeksCount++;
-        }
+        });
       }
-      const assumedFuturePotentialPerTeam = assumedWeeksCount * GAMES_PER_NON_W1_WEEK;
 
+      // Ensure every team has entries and compute max season points
       teams.forEach(t => {
         const id = t.team_id;
-        const curWins = winsByTeam[id] || 0;
-        const potExisting = potentialFromExistingUndecided[id] || 0;
-        maxSeasonPointsByTeam[id] = curWins + potExisting + assumedFuturePotentialPerTeam;
+        if (!(id in winsByTeam)) winsByTeam[id] = 0;
+        maxSeasonPointsByTeam[id] = winsByTeam[id] + remainingGamesSeason;
       });
     }
 
@@ -442,7 +449,7 @@
         return;
       }
 
-      // Games for this week
+      // Games for this week (only picked games)
       const { data: games, error: gErr } = await supabase
         .from('all_games')
         .select('GameId, winner')
