@@ -123,7 +123,7 @@
       <span class="badge badge-elim">Eliminated</span>
       <span class="badge badge-hunt">In the hunt</span>
       <span class="ml-2">
-        “Max Season Pts” uses all picked games through the latest active week, then assumes 4 games per remaining week (weeks 2–15). Ties don’t count as clinched.
+        Max Season Pts = 66 − (# decided picked games) + (current correct picks). Ties don’t count as clinched.
       </span>
     </div>
 
@@ -174,8 +174,7 @@
     const tbody        = document.getElementById('playoff-body');
 
     // ---- Constants ----
-    const TOTAL_WEEKS = 15;
-    const GAMES_PER_NON_W1_WEEK = 4;
+    const TOTAL_GAMES_SEASON = 66;
 
     // ---- State ----
     let seasons = [];
@@ -355,60 +354,32 @@
       });
     }
 
-    // ---------- Season points + Max season points ----------
+    // ---------- Season points + Max season points (66 games total) ----------
     async function computeSeasonPointsAndMax(){
       winsByTeam = {};
       maxSeasonPointsByTeam = {};
 
-      // All picked games for this season (any week with picked = true)
-      const { data: gameRows, error: gErr } = await supabase
+      // All picked games for this season that already have a winner
+      const { data: decidedGames, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, week, winner')
+        .select('GameId, winner')
         .eq('cfb_season', currentSeason)
         .eq('picked', true)
-        .not('week','is', null);
+        .not('winner', 'is', null);
 
       if (gErr){
         status(gErr.message, true);
         return;
       }
 
-      const games = gameRows || [];
+      const decidedRows = decidedGames || [];
+      const decidedIds = [...new Set(decidedRows.map(g => g.GameId))];
+      const totalDecided = decidedIds.length;
 
-      // Count games by week, and collect decided games
-      const gamesByWeek = {};
       const winnerByGame = {};
-      const decidedIds = [];
-
-      games.forEach(g => {
-        const w = g.week;
-        if (w != null){
-          gamesByWeek[w] = (gamesByWeek[w] || 0) + 1;
-        }
-        if (g.winner){
-          winnerByGame[g.GameId] = g.winner;
-          decidedIds.push(g.GameId);
-        }
+      decidedRows.forEach(g => {
+        winnerByGame[g.GameId] = g.winner;
       });
-
-      // Total games in a full season:
-      // Week 1: 0 games
-      // Weeks 2–15:
-      //   - If we already have picked games -> use that count
-      //   - If not yet picked -> assume 4 games
-      let totalGamesSeason = 0;
-      for (let w = 2; w <= TOTAL_WEEKS; w++){
-        const existing = gamesByWeek[w] || 0;
-        if (existing > 0){
-          totalGamesSeason += existing;
-        } else {
-          totalGamesSeason += GAMES_PER_NON_W1_WEEK;
-        }
-      }
-
-      const totalDecidedGames = decidedIds.length;
-      let remainingGamesSeason = totalGamesSeason - totalDecidedGames;
-      if (remainingGamesSeason < 0) remainingGamesSeason = 0;
 
       // Compute current wins from decided games
       if (decidedIds.length){
@@ -431,11 +402,13 @@
         });
       }
 
+      const remainingGames = Math.max(0, TOTAL_GAMES_SEASON - totalDecided);
+
       // Ensure every team has entries and compute max season points
       teams.forEach(t => {
         const id = t.team_id;
         if (!(id in winsByTeam)) winsByTeam[id] = 0;
-        maxSeasonPointsByTeam[id] = winsByTeam[id] + remainingGamesSeason;
+        maxSeasonPointsByTeam[id] = winsByTeam[id] + remainingGames;
       });
     }
 
