@@ -146,13 +146,10 @@
               Points
             </th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-              Max Season Pts
+              Best After This Week
             </th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
               Status
-            </th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-              Best After This Week
             </th>
           </tr>
         </thead>
@@ -181,7 +178,7 @@
 
     let teams = [];
     let winsByTeam = {};             // points from decided games
-    let maxSeasonPointsByTeam = {};  // best-case total for full season
+    let maxSeasonPointsByTeam = {};  // best-case total for full season (still used for clinch/elim logic)
     let bestRankAfterWeek = {};      // best rank after currentWeek
     let winPctByTeam = {};           // win % for each team
 
@@ -625,7 +622,7 @@
         }
       });
 
-      const COLSPAN = 7;
+      const COLSPAN = 6;
 
       function appendGroupHeader(label){
         const tr = document.createElement('tr');
@@ -640,7 +637,6 @@
       function appendTeamRow(t){
         const id = t.team_id;
         const pts = winsByTeam[id] || 0;
-        const maxSeason = maxSeasonPointsByTeam[id] || pts;
         const { clinched, eliminated } = flags[id] || { clinched:false, eliminated:false };
         const bestWeekRank = bestRankAfterWeek[id];
         const pct = winPctByTeam[id];
@@ -686,24 +682,6 @@
         tdPts.textContent = pts.toString();
         tr.appendChild(tdPts);
 
-        // Max Season Pts
-        const tdMax = document.createElement('td');
-        tdMax.className = 'px-3 py-2 text-center';
-        tdMax.textContent = maxSeason.toString();
-        tr.appendChild(tdMax);
-
-        // Status
-        const tdStatus = document.createElement('td');
-        tdStatus.className = 'px-3 py-2 text-center';
-        if (clinched){
-          tdStatus.innerHTML = '<span class="badge badge-clinch">Clinched</span>';
-        } else if (eliminated){
-          tdStatus.innerHTML = '<span class="badge badge-elim">Eliminated</span>';
-        } else {
-          tdStatus.innerHTML = '<span class="badge badge-hunt">In the hunt</span>';
-        }
-        tr.appendChild(tdStatus);
-
         // Best After This Week
         const tdBestWeek = document.createElement('td');
         tdBestWeek.className = 'px-3 py-2 text-center text-sm';
@@ -713,6 +691,18 @@
           tdBestWeek.textContent = ordinal(bestWeekRank);
         }
         tr.appendChild(tdBestWeek);
+
+        // Status (blank unless clinched/eliminated)
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'px-3 py-2 text-center';
+        if (clinched){
+          tdStatus.innerHTML = '<span class="badge badge-clinch">Clinched</span>';
+        } else if (eliminated){
+          tdStatus.innerHTML = '<span class="badge badge-elim">Eliminated</span>';
+        } else {
+          tdStatus.textContent = '';
+        }
+        tr.appendChild(tdStatus);
 
         tbody.appendChild(tr);
       }
