@@ -61,20 +61,15 @@
     }
     thead th.sticky-col-1{ z-index: 50; }
 
-    /* Row playoff coloring */
-    tr.row-in{
-      background: rgba(34,197,94,.15);
-    }
-    tr.row-bubble{
-      background: rgba(251,191,36,.16);
-    }
-    tr.row-out{
-      background: rgba(17,24,39,.45);
-    }
-    tr.row-in:hover,
-    tr.row-bubble:hover,
-    tr.row-out:hover{
-      background: rgba(233,185,73,.10);
+    /* Group headers */
+    .group-header-cell{
+      font-size:.7rem;
+      text-transform:uppercase;
+      letter-spacing:.18em;
+      color:#d1d5db;
+      background:rgba(0,0,0,.7);
+      padding:.4rem .75rem;
+      border-top:1px solid rgba(231,231,231,.24);
     }
 
     @media (max-width: 640px){
@@ -82,11 +77,12 @@
       thead th { font-size: .8rem; }
       .badge { font-size: .65rem; padding: .1rem .4rem; }
       .table tbody td { font-size: .85rem; }
+      .group-header-cell{ font-size:.65rem; }
     }
 
     nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
 
-    /* Highlight logged-in user's team row without overriding row color */
+    /* Highlight logged-in user's team row without changing fill color */
     tr[data-me="true"] .sticky-col-1{
       font-weight:700;
       text-shadow:0 0 8px rgba(0,0,0,.6);
@@ -158,9 +154,6 @@
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
               Best After This Week
             </th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-              Max Possible Seed (Season)
-            </th>
           </tr>
         </thead>
         <tbody id="playoff-body"></tbody>
@@ -190,7 +183,6 @@
     let winsByTeam = {};             // points from decided games
     let maxSeasonPointsByTeam = {};  // best-case total for full season
     let bestRankAfterWeek = {};      // best rank after currentWeek
-    let seasonBestSeedByTeam = {};   // best possible seed at end of season
     let winPctByTeam = {};           // win % for each team
 
     let totalDecidedGames = 0;       // # of picked games with a winner
@@ -364,7 +356,7 @@
 
       if(error){ status(error.message,true); throw error; }
 
-      teams = data || [];
+      teams = (data || []);
     }
 
     // ---------- Season points + Max season points (66 games total) ----------
@@ -555,8 +547,8 @@
       });
     }
 
-    // ---------- Clinched / Eliminated / Best season seed ----------
-    function computePlayoffFlagsAndBestSeeds(){
+    // ---------- Clinched / Eliminated flags ----------
+    function computePlayoffFlags(){
       const minPts = {};
       const maxPts = {};
 
@@ -569,7 +561,6 @@
       });
 
       const flags = {};
-      const bestSeed = {};
 
       teams.forEach(t => {
         const id = t.team_id;
@@ -593,18 +584,16 @@
         const clinched = myMin > fourthBest; // strictly greater — ties not enough
 
         flags[id] = { clinched, eliminated };
-        bestSeed[id] = surelyAhead + 1; // minimum possible seed (1 = best)
       });
 
-      return { flags, bestSeed };
+      return flags;
     }
 
     // ---------- Render ----------
     function renderTable(){
       tbody.innerHTML = '';
 
-      const { flags, bestSeed } = computePlayoffFlagsAndBestSeeds();
-      seasonBestSeedByTeam = bestSeed;
+      const flags = computePlayoffFlags();
 
       // Sort by current points, then name
       const sorted = [...teams].sort((a,b)=>{
@@ -617,49 +606,61 @@
       const seedById = {};
       sorted.forEach((t,idx) => { seedById[t.team_id] = idx+1; });
 
-      // Determine fourth-place points for tie coloring
-      let fourthPoints = null;
-      if (sorted.length >= 4){
-        const fourthTeam = sorted[3];
-        fourthPoints = winsByTeam[fourthTeam.team_id] || 0;
+      // Split into groups
+      const playoffTeams = [];
+      const inHuntTeams = [];
+      const eliminatedTeams = [];
+
+      sorted.forEach(t => {
+        const id = t.team_id;
+        const seed = seedById[id];
+        const { eliminated } = flags[id] || { eliminated:false };
+
+        if (eliminated){
+          eliminatedTeams.push(t);
+        } else if (seed <= 4){
+          playoffTeams.push(t);
+        } else {
+          inHuntTeams.push(t);
+        }
+      });
+
+      const COLSPAN = 7;
+
+      function appendGroupHeader(label){
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = COLSPAN;
+        td.className = 'group-header-cell';
+        td.textContent = label;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
       }
 
-      sorted.forEach((t, idx) => {
+      function appendTeamRow(t){
         const id = t.team_id;
         const pts = winsByTeam[id] || 0;
         const maxSeason = maxSeasonPointsByTeam[id] || pts;
         const { clinched, eliminated } = flags[id] || { clinched:false, eliminated:false };
         const bestWeekRank = bestRankAfterWeek[id];
-        const bestSeasonSeed = seasonBestSeedByTeam[id];
         const pct = winPctByTeam[id];
-
-        // Row playoff class
-        let rowClass = 'row-out';
-        if (sorted.length <= 4){
-          // If fewer than 4 teams, everyone shown as "in"
-          rowClass = 'row-in';
-        } else {
-          if (idx <= 3){
-            rowClass = 'row-in';
-          } else if (fourthPoints != null && pts === fourthPoints){
-            rowClass = 'row-bubble';
-          } else {
-            rowClass = 'row-out';
-          }
-        }
+        const seed = seedById[id];
 
         const tr = document.createElement('tr');
-        tr.className = `border-t border-[rgba(231,231,231,.08)] ${rowClass}`;
+        tr.className = 'border-t border-[rgba(231,231,231,.08)]';
 
         if (currentTeamId != null && id === currentTeamId){
           tr.dataset.me = 'true';
         }
 
-        // Live seed
+        // Live seed: only for top 4, else blank
         const tdSeed = document.createElement('td');
         tdSeed.className = 'sticky-col-1 pl-4 pr-2 py-2 font-semibold text-[var(--cfp-ivory)]';
-        const liveSeed = seedById[id];
-        tdSeed.textContent = liveSeed <= 4 ? `#${liveSeed}` : String(liveSeed);
+        if (seed <= 4){
+          tdSeed.textContent = `#${seed}`;
+        } else {
+          tdSeed.textContent = '—';
+        }
         tr.appendChild(tdSeed);
 
         // Team
@@ -713,18 +714,24 @@
         }
         tr.appendChild(tdBestWeek);
 
-        // Max Possible Seed (Season)
-        const tdBestSeason = document.createElement('td');
-        tdBestSeason.className = 'px-3 py-2 text-center text-sm';
-        if (bestSeasonSeed == null){
-          tdBestSeason.textContent = '—';
-        } else {
-          tdBestSeason.textContent = ordinal(bestSeasonSeed);
-        }
-        tr.appendChild(tdBestSeason);
-
         tbody.appendChild(tr);
-      });
+      }
+
+      // Render groups in order
+      if (playoffTeams.length){
+        appendGroupHeader('Playoff if the season ended today');
+        playoffTeams.forEach(appendTeamRow);
+      }
+
+      if (inHuntTeams.length){
+        appendGroupHeader('In the hunt');
+        inHuntTeams.forEach(appendTeamRow);
+      }
+
+      if (eliminatedTeams.length){
+        appendGroupHeader('Eliminated');
+        eliminatedTeams.forEach(appendTeamRow);
+      }
     }
   </script>
 </body>
