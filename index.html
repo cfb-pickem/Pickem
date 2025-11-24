@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>CFB Pick'em — Leaderboard</title>
+  <title>CFB Pick'em — Thanksgiving Leaderboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,72 +15,225 @@
 
   <style>
     :root{
-      --cfp-black:#0B0B0B;
-      --cfp-charcoal:#111213;
-      --cfp-gold:#C99210;
-      --cfp-gold-2:#E3B23C;
-      --cfp-ivory:#F7F4ED;
-      --cfp-gray:#1F2022;
+      /* Harvest / Thanksgiving palette */
+      --cfp-black:#1a120b;        /* roasted coffee brown */
+      --cfp-charcoal:#120c07;     /* deep roasted turkey skin */
+      --cfp-gold:#f2a71b;         /* pumpkin pie filling */
+      --cfp-gold-2:#f7c35c;       /* cornbread / cornbread crust */
+      --cfp-ivory:#fff7e6;        /* mashed potatoes / parchment */
+      --cfp-gray:#3a2517;         /* gravy brown */
       --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
-
-      /* Rivalry Week accents */
-      --rivalry-red:#B91C1C;
-      --rivalry-blue:#1D4ED8;
-      --rivalry-dark-red:#7F1D1D;
-      --rivalry-dark-blue:#1E3A8A;
     }
-
-    .network-line{display:inline-flex;align-items:center;font-size:10px;line-height:1;letter-spacing:.15em;text-transform:uppercase;color:var(--cfp-gold-2);margin:0}
-    .badge.inline-fix{display:inline-flex;align-items:center;line-height:1;padding-top:.125rem;padding-bottom:.125rem}
 
     body{
       background:
-        radial-gradient(1100px 550px at 0% 0%, rgba(185,28,28,.28), transparent 60%),
-        radial-gradient(1100px 550px at 100% 0%, rgba(37,99,235,.28), transparent 60%),
-        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
-        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        radial-gradient(1200px 600px at 50% -10%, rgba(242,167,27,.25), transparent 60%),
+        radial-gradient(900px 600px at 0% 0%, rgba(178,93,29,.22), transparent 60%),
+        radial-gradient(900px 600px at 100% 0%, rgba(139,69,19,.25), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.05) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
         var(--cfp-charcoal);
       background-size:100% 100%,100% 100%,100% 100%,24px 24px,auto;
-      color:#e7e7e7;
+      color:#f9f5ee;
       font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
       min-height:100vh;
+      position:relative;
+      overflow-x:hidden;
     }
 
+    /* Subtle falling leaves for over-the-top vibe */
+    .leaf{
+      position:fixed;
+      top:-40px;
+      font-size:20px;
+      opacity:.35;
+      filter:drop-shadow(0 0 6px rgba(0,0,0,.5));
+      pointer-events:none;
+      animation:fall 16s linear infinite;
+    }
+    .leaf:nth-child(2){left:10%;animation-duration:19s;font-size:22px;animation-delay:2s;}
+    .leaf:nth-child(3){left:25%;animation-duration:15s;font-size:18px;animation-delay:5s;}
+    .leaf:nth-child(4){left:55%;animation-duration:21s;font-size:24px;animation-delay:1s;}
+    .leaf:nth-child(5){left:72%;animation-duration:18s;font-size:20px;animation-delay:7s;}
+    .leaf:nth-child(6){left:88%;animation-duration:20s;font-size:19px;animation-delay:3s;}
+
+    @keyframes fall{
+      0%{transform:translateY(0) rotate(0deg);}
+      50%{transform:translateY(60vh) rotate(140deg);}
+      100%{transform:translateY(110vh) rotate(320deg);}
+    }
+
+    .network-line{
+      display:inline-flex;
+      align-items:center;
+      font-size:10px;
+      line-height:1;
+      letter-spacing:.15em;
+      text-transform:uppercase;
+      color:#fec89a;
+      margin:0;
+    }
+    .badge.inline-fix{display:inline-flex;align-items:center;line-height:1;padding-top:.125rem;padding-bottom:.125rem}
+
     .table-sticky th{position:sticky;top:0;background-color:var(--cfp-black);z-index:10}
-    .gold-shadow{box-shadow:0 0 0 1px rgba(233,185,73,.35),0 0 24px rgba(233,185,73,.08) inset}
+    .gold-shadow{box-shadow:
+      0 0 0 1px rgba(247,195,92,.4),
+      0 0 24px rgba(247,195,92,.22) inset,
+      0 18px 40px rgba(0,0,0,.55);
+    }
 
-    .trophy-oval{width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative}
-    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
+    /* From trophy to turkey platter */
+    .trophy-oval{
+      width:40px;
+      height:40px;
+      border-radius:999px;
+      position:relative;
+      background:radial-gradient(circle at 30% 30%, #ffe8b3, #f2a71b 45%, #8b4513 80%);
+      box-shadow:
+        0 0 0 2px rgba(255,248,220,.7),
+        0 0 18px rgba(0,0,0,.6);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;
+    }
+    .trophy-oval::before{
+      content:"🦃";
+      font-size:1.5rem;
+      transform:translateY(1px);
+    }
 
-    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
-    .cfp-select:focus{outline:none;box-shadow:var(--ring)}
-    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
+    .cfp-select{
+      background:linear-gradient(135deg,#3b2515,#231207);
+      color:#fdf3dc;
+      border:1px solid rgba(255,248,220,.35);
+      box-shadow:0 0 0 1px rgba(0,0,0,.65);
+    }
+    .cfp-select:focus{
+      outline:none;
+      box-shadow:var(--ring),0 0 0 1px rgba(0,0,0,.9);
+    }
+    .cfp-card{
+      background:
+        linear-gradient(180deg,rgba(255,247,230,.03),transparent 40%),
+        radial-gradient(circle at 0 0,rgba(255,255,255,.08),transparent 55%),
+        radial-gradient(circle at 100% 0,rgba(255,255,255,.05),transparent 45%),
+        linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));
+      border:1px solid rgba(255,247,230,.14);
+      position:relative;
+    }
 
-    .badge{font-size:.72rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.125rem .5rem;border-radius:0}
-    .badge-final{background:#6b7280;color:#fff}
-    .badge-live{background:var(--cfp-gold);color:#0b0b0b}
-    .badge-sched{background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
+    /* Thanksgiving ribbon border */
+    .harvest-border{
+      border-image-slice:1;
+      border-style:solid;
+      border-width:3px 0 0 0;
+      border-image-source:repeating-linear-gradient(
+        90deg,
+        #f2a71b 0 16px,
+        #c55a11 16px 32px,
+        #8b4513 32px 48px,
+        #f9dec9 48px 64px
+      );
+    }
 
-    .table th,.table td{border-color:rgba(231,231,231,.08)}
-    .table tbody tr:hover{background:rgba(233,185,73,.06)}
+    .badge{
+      font-size:.72rem;
+      line-height:1rem;
+      display:inline-flex;
+      align-items:center;
+      gap:.375rem;
+      padding:.125rem .55rem;
+      border-radius:999px;
+      border:1px solid rgba(0,0,0,.5);
+      box-shadow:0 1px 4px rgba(0,0,0,.4);
+    }
+    .badge-final{
+      background:linear-gradient(135deg,#7b341e,#c05621);
+      color:#fff7e6;
+    }
+    .badge-live{
+      background:radial-gradient(circle at 20% 20%,#ffe6a7,#f2a71b);
+      color:#3b2515;
+    }
+    .badge-sched{
+      background:linear-gradient(135deg,#2b211b,#4a3420);
+      color:#f5e6c8;
+      border:1px solid rgba(245,230,200,.2);
+    }
 
-    .pick-win{background:rgba(88,214,141,.15);color:#8ef2b9}
-    .pick-loss{background:rgba(255,92,92,.15);color:#ffb3b3}
-    .pick-empty{color:#9ca3af}
+    .table th,.table td{border-color:rgba(255,247,230,.11)}
+    .table tbody tr:hover{
+      background:linear-gradient(90deg,rgba(242,167,27,.2),rgba(114,54,23,.35));
+    }
 
-    .logo{height:32px;width:32px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
+    .pick-win{
+      background:linear-gradient(135deg,rgba(128,179,71,.35),rgba(88,129,50,.45));
+      color:#e3f6c7;
+      box-shadow:0 0 12px rgba(89,139,43,.45) inset;
+    }
+    .pick-loss{
+      background:linear-gradient(135deg,rgba(185,63,63,.35),rgba(142,38,38,.45));
+      color:#ffd5d5;
+      box-shadow:0 0 12px rgba(110,22,22,.55) inset;
+    }
+    .pick-empty{
+      color:#cbd5f0;
+      opacity:.8;
+    }
 
-    .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
+    .logo{
+      height:32px;
+      width:32px;
+      object-fit:contain;
+      margin-left:auto;
+      margin-right:auto;
+      filter:
+        drop-shadow(0 0 3px rgba(0,0,0,.7))
+        sepia(.18)
+        saturate(1.2);
+    }
+
+    .stripe{
+      background:
+        repeating-linear-gradient(45deg,
+          rgba(242,167,27,.08) 0 10px,
+          rgba(92,46,16,.24) 10px 20px
+        );
+    }
     .ring-gold{box-shadow:var(--ring)}
 
     .playoff-divider td{
-      padding:.15rem 0;background:transparent;border-top:2px solid var(--cfp-gold);color:var(--cfp-ivory);
-      text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
+      padding:.25rem 0;
+      background:linear-gradient(90deg,rgba(242,167,27,.2),rgba(255,247,230,.05));
+      border-top:2px dashed rgba(247,195,92,.9);
+      color:var(--cfp-ivory);
+      text-align:center;
+      letter-spacing:.16em;
+      font-size:.75rem;
+      text-transform:uppercase;
+      position:relative;
+    }
+    .playoff-divider td::before{
+      content:"🥧";
+      position:absolute;
+      left:8px;
+      top:50%;
+      transform:translateY(-50%);
+    }
+    .playoff-divider td::after{
+      content:"🥧";
+      position:absolute;
+      right:8px;
+      top:50%;
+      transform:translateY(-50%);
     }
 
     th.sticky-col-1, td.sticky-col-1{
-      position: sticky; left: 0; z-index: 25; background: var(--cfp-black);
-      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
+      position: sticky;
+      left: 0;
+      z-index: 25;
+      background: linear-gradient(90deg,var(--cfp-black),#351d0f);
+      box-shadow: 2px 0 0 rgba(231,231,231,.08) inset;
     }
     thead th.sticky-col-1{ z-index: 50; }
 
@@ -91,8 +244,8 @@
       th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
       thead th { font-size: .8rem; }
       .network-line{ font-size:9px; letter-spacing:.12em; }
-      .badge { font-size: .65rem; padding: .1rem .4rem; }
-      .table tbody td { font-size: .85rem; }
+      .badge { font-size: .65rem; padding: .08rem .45rem; }
+      .table tbody td { font-size: .84rem; }
       thead th > :first-child{
         white-space: nowrap;
         overflow: hidden;
@@ -106,248 +259,144 @@
 
     /* Weekly submissions labels */
     .ws-label{
-      font-size:.72rem; letter-spacing:.16em; text-transform:uppercase;
-      color:#d1d5db; border-bottom:1px solid rgba(231,231,231,.08);
-      padding-bottom:.25rem; margin-bottom:.5rem;
+      font-size:.72rem;
+      letter-spacing:.18em;
+      text-transform:uppercase;
+      color:#ffe8c2;
+      border-bottom:1px solid rgba(231,231,231,.12);
+      padding-bottom:.25rem;
+      margin-bottom:.5rem;
+      display:flex;
+      align-items:center;
+      gap:.5rem;
+    }
+    .ws-label span.icon{
+      font-size:1rem;
     }
 
-    /* 🔹 Highlight logged-in user's team row */
+    /* Highlight logged-in user's team row */
     tr[data-me="true"]{
       background:
-        linear-gradient(90deg, rgba(185,28,28,.35), transparent 55%),
-        rgba(255,255,255,0.05);
+        linear-gradient(90deg,rgba(247,195,92,.45),rgba(242,167,27,.12));
     }
     tr[data-me="true"] .sticky-col-1{
       font-weight:700;
-      text-shadow:0 0 8px rgba(0,0,0,.6);
-      box-shadow:1px 0 0 rgba(233,185,73,.4) inset;
+      text-shadow:0 0 8px rgba(0,0,0,.9);
+      box-shadow:2px 0 0 rgba(247,195,92,.9) inset;
+      position:relative;
+    }
+    tr[data-me="true"] .sticky-col-1::before{
+      content:"🍗";
+      margin-right:.4rem;
     }
     tr[data-me="true"]:hover{
       background:
-        linear-gradient(90deg, rgba(37,99,235,.35), transparent 65%);
+        linear-gradient(90deg, rgba(247,195,92,.65), rgba(179,94,34,.45));
     }
 
-    /* 🔥 Rivalry Week banner */
-    .rivalry-banner{
-      background:
-        linear-gradient(120deg, rgba(185,28,28,.55), rgba(37,99,235,.55));
-      border:1px solid rgba(249,250,251,.16);
-      box-shadow:
-        0 0 0 1px rgba(0,0,0,.6),
-        0 18px 40px rgba(0,0,0,.75);
+    /* Thanksgiving header extras */
+    .thanksgiving-header{
       position:relative;
       overflow:hidden;
     }
-    .rivalry-banner::before,
-    .rivalry-banner::after{
+    .thanksgiving-header::before{
       content:"";
       position:absolute;
-      inset:-40%;
+      inset:0;
       background:
-        repeating-linear-gradient(135deg,
-          rgba(15,23,42,.0) 0 14px,
-          rgba(15,23,42,.45) 14px 24px);
-      opacity:.45;
-      pointer-events:none;
-      mix-blend-mode:soft-light;
-    }
-    .rivalry-banner::after{
-      transform:rotate(180deg);
+        radial-gradient(circle at 0 0,rgba(255,255,255,.15),transparent 60%),
+        radial-gradient(circle at 100% 0,rgba(255,255,255,.12),transparent 60%);
       opacity:.35;
+      pointer-events:none;
     }
-
-    .rivalry-pill{
-      display:inline-flex;
-      align-items:center;
-      gap:.4rem;
-      padding:.25rem .7rem;
-      border-radius:999px;
-      background:radial-gradient(circle at 0% 50%, #fecaca 0, transparent 55%),
-                 radial-gradient(circle at 100% 50%, #bfdbfe 0, transparent 55%),
-                 linear-gradient(120deg,var(--rivalry-dark-red),var(--rivalry-dark-blue));
-      font-size:.72rem;
-      letter-spacing:.16em;
-      text-transform:uppercase;
-      color:#f9fafb;
-      border:1px solid rgba(249,250,251,.35);
-      box-shadow:0 0 12px rgba(0,0,0,.6);
-    }
-
-    .rivalry-pill span:last-child{
-      font-weight:600;
-    }
-
-    .rivalry-tagline{
-      font-size:.85rem;
-      color:#e5e7eb;
-    }
-
-    .rivalry-sub{
-      font-size:.75rem;
-      text-transform:uppercase;
-      letter-spacing:.18em;
-      color:#e5e7eb;
-      opacity:.9;
-    }
-
-    .rivalry-divider-dot{
-      width:4px;
-      height:4px;
-      border-radius:999px;
-      background:#f9fafb;
-      opacity:.75;
-    }
-
-    .rivalry-badge-small{
-      font-size:.7rem;
-      padding:.2rem .6rem;
-      border-radius:999px;
-      border:1px solid rgba(249,250,251,.45);
-      background:rgba(15,23,42,.75);
+    .header-pill{
       display:inline-flex;
       align-items:center;
       gap:.35rem;
-      white-space:nowrap;
-    }
-
-    .rivalry-pulse{
-      animation:rivalry-pulse 1.9s ease-in-out infinite;
-    }
-
-    @keyframes rivalry-pulse{
-      0%{ box-shadow:0 0 0 0 rgba(248,250,252,.6); transform:translateY(0); }
-      50%{ box-shadow:0 0 0 8px rgba(248,250,252,.0); transform:translateY(-1px); }
-      100%{ box-shadow:0 0 0 0 rgba(248,250,252,.0); transform:translateY(0); }
-    }
-
-    /* Give the main header a rivalry edge */
-    .rivalry-header{
-      border-inline:0;
-      border-block-start:1px solid rgba(248,250,252,.35);
-      border-block-end:1px solid rgba(15,23,42,.95);
-      box-shadow:
-        0 12px 32px rgba(0,0,0,.8),
-        0 -1px 0 rgba(248,250,252,.08) inset;
-      position:relative;
-    }
-    .rivalry-header::before{
-      content:"";
-      position:absolute;
-      inset:-1px;
-      border-radius:0;
-      pointer-events:none;
-      background:
-        linear-gradient(90deg,
-          rgba(185,28,28,.8),
-          rgba(201,146,16,.0),
-          rgba(37,99,235,.8));
-      opacity:.65;
-      mix-blend-mode:soft-light;
-    }
-
-    /* Tiny rivalry flair on table header */
-    .rivalry-column-accent{
-      position:relative;
-    }
-    .rivalry-column-accent::after{
-      content:"";
-      position:absolute;
-      inset-inline:18%;
-      bottom:.35rem;
-      height:2px;
+      padding:.18rem .6rem;
       border-radius:999px;
-      background:linear-gradient(90deg,var(--rivalry-red),var(--rivalry-blue));
-      opacity:.55;
+      background:linear-gradient(135deg,rgba(59,37,21,.9),rgba(36,20,11,.95));
+      border:1px solid rgba(255,247,230,.35);
+      box-shadow:0 0 14px rgba(0,0,0,.7);
+      font-size:.7rem;
+      letter-spacing:.18em;
+      text-transform:uppercase;
+      color:#ffe7bb;
+    }
+    .header-pill span.emoji{
+      font-size:1rem;
     }
 
-    /* Rivalry-flavored weekly submissions chips */
-    .rivalry-chip-made{
+    /* Legend chips */
+    .legend-chip{
+      display:inline-flex;
+      align-items:center;
+      gap:.35rem;
+      padding:.15rem .55rem;
       border-radius:999px;
-      background:linear-gradient(120deg,rgba(22,163,74,.28),rgba(34,197,94,.06));
-      border:1px solid rgba(34,197,94,.45);
-    }
-    .rivalry-chip-not{
-      border-radius:999px;
-      background:linear-gradient(120deg,rgba(185,28,28,.32),rgba(248,113,113,.08));
-      border:1px solid rgba(248,113,113,.6);
-    }
-
-    /* Re-use weekly submission label but tweak for rivalry */
-    #weekly-submissions.rivalry-card{
-      border-color:rgba(248,250,252,.18);
-      box-shadow:
-        0 0 0 1px rgba(15,23,42,.8),
-        0 18px 45px rgba(0,0,0,.9);
+      background:radial-gradient(circle at 0 0,#50301b,#24140b);
+      border:1px solid rgba(255,247,230,.2);
+      box-shadow:0 1px 3px rgba(0,0,0,.6);
     }
   </style>
 </head>
 
 <body data-page="leaderboard">
+  <!-- Floating leaves -->
+  <div aria-hidden="true">
+    <div class="leaf">🍂</div>
+    <div class="leaf">🍁</div>
+    <div class="leaf">🍃</div>
+    <div class="leaf">🍂</div>
+    <div class="leaf">🍁</div>
+    <div class="leaf">🍃</div>
+  </div>
+
   <div class="max-w-7xl mx-auto p-4 md:p-6">
     <div id="site-nav"></div>
 
-    <!-- 🏈 Rivalry Week Banner -->
-    <section class="rivalry-banner rounded-none mb-5 px-4 md:px-6 py-3 md:py-4">
-      <div class="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center gap-2 md:gap-3">
-            <div class="rivalry-pill rivalry-pulse">
-              <span>🏈</span>
-              <span>Rivalry Week</span>
-            </div>
-            <span class="hidden sm:inline-flex rivalry-badge-small">
-              🧊 Friends all year <span class="rivalry-divider-dot"></span> 🔥 Enemies this week
-            </span>
-          </div>
-          <p class="rivalry-tagline">
-            Bragging rights, broken hearts, and house-divided living rooms. Every pick feels a little louder this week.
-          </p>
-        </div>
-        <div class="flex flex-col items-start md:items-end gap-1 text-right">
-          <p class="rivalry-sub">
-            LOCK IN YOUR PICKS BEFORE KICKOFF
-          </p>
-          <p class="text-xs md:text-[0.78rem] text-gray-100/90">
-            Wins hit the same, but losses hurt twice as much.
-          </p>
-        </div>
-      </div>
-    </section>
-
-    <header class="cfp-card rounded-none stripe gold-shadow rivalry-header mb-5">
-      <div class="relative flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
+    <header class="cfp-card rounded-none stripe gold-shadow harvest-border thanksgiving-header mb-5">
+      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5 gap-3 md:gap-6">
         <div class="flex items-center gap-3 md:gap-4">
           <span class="trophy-oval" aria-hidden="true"></span>
           <div>
-            <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">
-              College Football Pick'em
+            <div class="header-pill mb-1">
+              <span class="emoji">🦃</span>
+              <span>College Football Pick'em</span>
+              <span class="emoji hidden sm:inline">🏈</span>
+            </div>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">
+              Thanksgiving Leaderboard Feast
+            </h1>
+            <p class="text-xs text-amber-100/80 mt-1">
+              Where winning picks are the main course and upsets are the spicy stuffing.
             </p>
-            <div class="flex items-baseline gap-2 flex-wrap">
-              <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">
-                Leaderboard
-              </h1>
-              <span class="inline-flex items-center gap-1 text-[11px] uppercase tracking-[.18em] text-gray-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-[var(--rivalry-red)]"></span>
-                Rivalry Week Edition
-              </span>
+          </div>
+        </div>
+        <div class="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-3 text-sm">
+          <div class="flex flex-col gap-1">
+            <label class="hidden md:block text-amber-100/90">Season</label>
+            <div class="flex items-center gap-1 md:gap-2">
+              <span class="hidden md:inline text-xs text-amber-200/80">🍁</span>
+              <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1 md:ml-2">
+            <label class="hidden md:block text-amber-100/90">Week</label>
+            <div class="flex items-center gap-1 md:gap-2">
+              <span class="hidden md:inline text-xs text-amber-200/80">🥧</span>
+              <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
             </div>
           </div>
         </div>
-        <div class="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-3 text-sm relative z-10">
-          <label class="hidden md:block text-gray-300">Season</label>
-          <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
-
-          <label class="hidden md:block text-gray-300">Week</label>
-          <div class="flex items-center gap-2">
-            <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
-            <span class="hidden sm:inline-flex items-center gap-1 text-[11px] uppercase tracking-[.18em] text-gray-200">
-              🏆 <span>Rivalries</span>
-            </span>
-          </div>
-        </div>
       </div>
-      <div class="border-t border-[rgba(231,231,231,.12)] px-4 md:px-6 py-2 text-xs text-gray-300">
+      <div class="border-t border-[rgba(231,231,231,.18)] px-4 md:px-6 py-2 text-[11px] md:text-xs text-amber-50/90 flex items-center justify-between gap-3">
         <span id="status">Loading…</span>
+        <span class="hidden sm:inline-flex items-center gap-1 text-[10px] tracking-[.16em] uppercase text-amber-100/70">
+          <span>Gravy Metric:</span>
+          <span class="font-semibold text-amber-300">1 point per correct pick</span>
+        </span>
       </div>
     </header>
 
@@ -361,45 +410,59 @@
     </div>
 
     <!-- Legend above Weekly Submissions -->
-    <div class="mt-4 text-xs text-gray-300 flex flex-wrap items-center gap-3">
-      <span class="badge badge-live">Live</span>
-      <span class="badge badge-final">Final</span>
-      <span class="badge badge-sched">Scheduled</span>
-      <span class="ml-2">Win cells tint green; loss cells tint red.</span>
+    <div class="mt-4 text-xs text-amber-100/90 flex flex-wrap items-center gap-3">
+      <div class="legend-chip">
+        <span class="badge badge-live">Live</span>
+        <span>Games cooking in the oven</span>
+      </div>
+      <div class="legend-chip">
+        <span class="badge badge-final">Final</span>
+        <span>Served &amp; carved</span>
+      </div>
+      <div class="legend-chip">
+        <span class="badge badge-sched">Scheduled</span>
+        <span>Still marinating</span>
+      </div>
+      <span class="ml-1 md:ml-3 text-[11px] text-amber-50/70">
+        ✅ Win cells get a hearty sage-green glaze; ❌ loss cells get cranberry-red.
+      </span>
     </div>
 
     <!-- Weekly Submissions -->
-    <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow rivalry-card mt-4 px-4 md:px-6 py-4">
-      <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-        <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)]">
-          Weekly Submissions
-        </h2>
-        <span class="text-[0.7rem] uppercase tracking-[.16em] text-gray-300 flex items-center gap-2">
-          <span class="w-1.5 h-1.5 rounded-full bg-[var(--rivalry-blue)]"></span>
-          Full cards in green, empty cards in red.
-        </span>
-      </div>
+    <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow mt-4 px-4 md:px-6 py-4">
+      <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3 flex items-center gap-2">
+        Weekly Submissions Buffet
+        <span class="text-lg">🍽️</span>
+      </h2>
+
+      <p class="text-xs text-amber-100/80 mb-4">
+        Think of your picks as dishes at the Thanksgiving table: the more complete your plate, the better your shot at the
+        <span class="font-semibold text-amber-300">Golden Turkey Trophy</span>.
+      </p>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <div class="ws-label">Made Picks</div>
+          <div class="ws-label">
+            <span class="icon">🦃</span>
+            <span>Stuffed With Picks (Complete Plates)</span>
+          </div>
           <div id="ws-made" class="flex flex-wrap gap-2"></div>
         </div>
         <div>
-          <div class="ws-label">Not Yet</div>
+          <div class="ws-label">
+            <span class="icon">🥔</span>
+            <span>Leftovers (Missing a Few Sides)</span>
+          </div>
           <div id="ws-not" class="flex flex-wrap gap-2"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Page script -->
+  <!-- Page script (unchanged functionality) -->
   <script type="module">
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
-
-    // ---- Rivalry Week flag (flip to false when it's over) ----
-    const IS_RIVALRY_WEEK = true;
 
     // ---- DOM ----
     const seasonSelect = document.getElementById('season-select');
@@ -507,13 +570,8 @@
     }
 
     function status(msg,isErr=false){
-      statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
-      // For rivalry week, prefix the status line
-      if (IS_RIVALRY_WEEK && !isErr) {
-        statusEl.textContent = `🏈 Rivalry Week • ${msg}`;
-      } else {
-        statusEl.textContent = msg;
-      }
+      statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-amber-100/90');
+      statusEl.textContent = msg;
     }
     function formatTimeLocal(ts){
       if(!ts) return '';
@@ -618,7 +676,7 @@
         .not('cfb_season', 'is', null);
       if(error){ status(error.message, true); throw error; }
       seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(Number.isFinite))].sort((a,b)=>a-b);
-      if(!seasons.length) { status('No seasons found.', true); throw new Error('no seasons'); }
+      if(!seasons.length) { status('No seasons found.'); throw new Error('no seasons'); }
       seasonSelect.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
     }
 
@@ -638,7 +696,7 @@
     }
 
     async function init(){
-      status('Loading assets…');
+      status('Loading logos & trimmings…');
 
       const logoCached = getCachedMap(STORAGE_KEYS.logos, STORAGE_KEYS.logosTTL);
       const abbrCached = getCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL);
@@ -667,7 +725,7 @@
 
     // ---------- Points (season-only) ----------
     async function computeSeasonWins(){
-      status('Computing points…');
+      status('Basting the season standings…');
 
       // Decided games for this season
       const { data: decidedGames, error: dgErr } = await supabase
@@ -797,14 +855,14 @@
 
       // TEAM
       const thTeam = document.createElement('th');
-      thTeam.className = 'text-left pl-4 pr-2 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-1 rivalry-column-accent';
-      thTeam.textContent = 'Team';
+      thTeam.className = 'text-left pl-4 pr-2 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-1';
+      thTeam.textContent = 'Table Guest';
       theadRow.appendChild(thTeam);
 
       // POINTS
       const thPts = document.createElement('th');
       thPts.className = 'pl-2 pr-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
-      thPts.textContent = 'Points';
+      thPts.textContent = 'Turkey Points';
       theadRow.appendChild(thPts);
 
       gameIds.forEach(id=>{
@@ -885,7 +943,7 @@
 
       teams.forEach((team, idx)=>{
         const tr = document.createElement('tr');
-        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.08)]';
 
         // 🔹 Mark logged-in user's team row
         if (currentTeamId != null && team.team_id === currentTeamId) {
@@ -952,7 +1010,7 @@
           divTr.className = 'playoff-divider';
           const divTd = document.createElement('td');
           divTd.colSpan = 2 + gameIds.length;
-          divTd.textContent = 'Projected Playoff';
+          divTd.textContent = 'Projected Playoff Table (Kids’ Table Below)';
           divTr.appendChild(divTd);
           tbody.appendChild(divTr);
         }
@@ -984,12 +1042,12 @@
       });
 
       wsMade.innerHTML = made.map(name =>
-        `<span class="badge badge-sched inline-fix rivalry-chip-made">${escapeHtml(name)}</span>`
-      ).join('') || `<span class="text-gray-400">—</span>`;
+        `<span class="badge badge-sched inline-fix rounded-full bg-[linear-gradient(135deg,#824026,#c56a30)] text-[var(--cfp-ivory)] border border-amber-200/40">🦃 ${escapeHtml(name)}</span>`
+      ).join('') || `<span class="text-amber-100/70">No plates piled high just yet.</span>`;
 
       wsNot.innerHTML = notYet.map(name =>
-        `<span class="badge badge-sched inline-fix rivalry-chip-not">${escapeHtml(name)}</span>`
-      ).join('') || `<span class="text-gray-400">—</span>`;
+        `<span class="badge badge-sched inline-fix rounded-full bg-[linear-gradient(135deg,#3a2517,#1f130b)] text-amber-100/90 border border-amber-50/30">🥄 ${escapeHtml(name)}</span>`
+      ).join('') || `<span class="text-amber-100/70">Everyone’s plate is full. Beautiful.</span>`;
     }
 
     // ------- LIVE TICKER -------
@@ -1060,7 +1118,7 @@
 
       if (!showPicks && weekStartTs && Date.now() >= weekStartTs) {
         showPicks = true;
-        status(`Kickoff! Showing picks for Season ${currentSeason} • Week ${currentWeek}.`);
+        status(`Kickoff! The feast is served for Season ${currentSeason} • Week ${currentWeek}.`);
         winnerChanged = true;
       }
 
