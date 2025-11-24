@@ -179,53 +179,60 @@
       <span class="ml-2">Win cells tint green; loss cells tint red.</span>
     </div>
 
-    <!-- Weekly Submissions -->
-    <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow mt-4 px-4 md:px-6 py-4">
-      <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
-        Weekly Submissions
-      </h2>
+    <!-- Weekly Submissions + Playoff Picture side-by-side -->
+    <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Weekly Submissions -->
+      <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow px-4 md:px-6 py-4">
+        <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
+          Weekly Submissions
+        </h2>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <div class="ws-label">Made Picks</div>
-          <div id="ws-made" class="flex flex-wrap gap-2"></div>
-        </div>
-        <div>
-          <div class="ws-label">Not Yet</div>
-          <div id="ws-not" class="flex flex-wrap gap-2"></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <div class="ws-label">Made Picks</div>
+            <div id="ws-made" class="flex flex-wrap gap-2"></div>
+          </div>
+          <div>
+            <div class="ws-label">Not Yet</div>
+            <div id="ws-not" class="flex flex-wrap gap-2"></div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Playoff Picture -->
-    <div id="playoff-section" class="mt-6">
-      <!-- Legend -->
-      <div class="mb-3 text-xs text-gray-300 flex flex-wrap items-center gap-3">
-        <span class="badge badge-clinch">Clinched playoff</span>
-        <span class="badge badge-elim">Eliminated</span>
-      </div>
+      <!-- Playoff Picture -->
+      <div id="playoff-section" class="cfp-card rounded-none gold-shadow px-4 md:px-6 py-4">
+        <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
+          Playoff Picture
+        </h2>
 
-      <!-- Main table -->
-      <div class="cfp-card rounded-none gold-shadow overflow-auto">
-        <table class="table min-w-full text-sm">
-          <thead class="table-sticky">
-            <tr class="border-b border-[rgba(231,231,231,.12)]">
-              <th class="sticky-col-1 text-left pl-4 pr-2 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-                Live Seed
-              </th>
-              <th class="text-left px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-                Team
-              </th>
-              <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-                Best After This Week
-              </th>
-              <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-                Status
-              </th>
-            </tr>
-          </thead>
-          <tbody id="playoff-body"></tbody>
-        </table>
+        <!-- Legend -->
+        <div class="mb-3 text-xs text-gray-300 flex flex-wrap items-center gap-3">
+          <span class="badge badge-clinch">Clinched playoff</span>
+          <span class="badge badge-elim">Eliminated</span>
+        </div>
+
+        <!-- Main table -->
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead class="table-sticky">
+              <tr class="border-b border-[rgba(231,231,231,.12)]">
+                <th class="sticky-col-1 text-left pl-4 pr-2 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
+                  Live Seed
+                </th>
+                <th class="text-left px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
+                  Team
+                </th>
+                <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
+                  Best After This Week
+                </th>
+                <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody id="playoff-body"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
