@@ -55,16 +55,27 @@
 
     .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
 
-    .playoff-divider td{
-      padding:.15rem 0;background:transparent;border-top:2px solid var(--cfp-gold);color:var(--cfp-ivory);
-      text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
-    }
-
     th.sticky-col-1, td.sticky-col-1{
       position: sticky; left: 0; z-index: 25; background: var(--cfp-black);
       box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
     }
     thead th.sticky-col-1{ z-index: 50; }
+
+    /* Row playoff coloring */
+    tr.row-in{
+      background: rgba(34,197,94,.15);
+    }
+    tr.row-bubble{
+      background: rgba(251,191,36,.16);
+    }
+    tr.row-out{
+      background: rgba(17,24,39,.45);
+    }
+    tr.row-in:hover,
+    tr.row-bubble:hover,
+    tr.row-out:hover{
+      background: rgba(233,185,73,.10);
+    }
 
     @media (max-width: 640px){
       th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
@@ -75,18 +86,15 @@
 
     nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
 
-    /* Highlight logged-in user's team row */
-    tr[data-me="true"]{
-      background-color: rgba(255,255,255,0.05);
-    }
+    /* Highlight logged-in user's team row without overriding row color */
     tr[data-me="true"] .sticky-col-1{
       font-weight:700;
       text-shadow:0 0 8px rgba(0,0,0,.6);
-      box-shadow:1px 0 0 rgba(233,185,73,.4) inset;
+      box-shadow:1px 0 0 rgba(233,185,73,.5) inset;
     }
-    tr[data-me="true"]:hover{
-      background:
-        linear-gradient(90deg, rgba(233,185,73,.24), transparent 65%);
+    tr[data-me="true"]{
+      outline: 1px solid rgba(233,185,73,.7);
+      outline-offset: -1px;
     }
   </style>
 </head>
@@ -122,9 +130,6 @@
       <span class="badge badge-clinch">Clinched playoff</span>
       <span class="badge badge-elim">Eliminated</span>
       <span class="badge badge-hunt">In the hunt</span>
-      <span class="ml-2">
-        Max Season Pts = 66 − (# decided picked games) + (current correct picks). Win % = correct picks / decided picked games. Ties don’t count as clinched.
-      </span>
     </div>
 
     <!-- Main table -->
@@ -139,7 +144,10 @@
               Team
             </th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-              Points (Win %)
+              Win %
+            </th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
+              Points
             </th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
               Max Season Pts
@@ -464,13 +472,12 @@
       });
 
       const now = Date.now();
-      // If we have a valid earliest start and it's still in the future, no Best After This Week yet
       if (earliestStart != null && now < earliestStart){
         teams.forEach(t => { bestRankAfterWeek[t.team_id] = null; });
         return;
       }
 
-      // Once games have kicked, compute based only on REMAINING undecided games this week
+      // Once games have kicked, compute based only on remaining undecided games this week
       const undecidedIds = weekGames
         .filter(g => !g.winner)
         .map(g => g.GameId);
@@ -538,7 +545,7 @@
           }
 
           const bestDiff = (ptsI - ptsJ) + delta;
-          // ties are NOT enough to be "ahead" → consistent with your example
+          // ties are NOT enough to be "ahead"
           if (bestDiff <= 0){
             cantBeatCount++;
           }
@@ -610,16 +617,39 @@
       const seedById = {};
       sorted.forEach((t,idx) => { seedById[t.team_id] = idx+1; });
 
-      sorted.forEach(t => {
+      // Determine fourth-place points for tie coloring
+      let fourthPoints = null;
+      if (sorted.length >= 4){
+        const fourthTeam = sorted[3];
+        fourthPoints = winsByTeam[fourthTeam.team_id] || 0;
+      }
+
+      sorted.forEach((t, idx) => {
         const id = t.team_id;
         const pts = winsByTeam[id] || 0;
         const maxSeason = maxSeasonPointsByTeam[id] || pts;
         const { clinched, eliminated } = flags[id] || { clinched:false, eliminated:false };
         const bestWeekRank = bestRankAfterWeek[id];
         const bestSeasonSeed = seasonBestSeedByTeam[id];
+        const pct = winPctByTeam[id];
+
+        // Row playoff class
+        let rowClass = 'row-out';
+        if (sorted.length <= 4){
+          // If fewer than 4 teams, everyone shown as "in"
+          rowClass = 'row-in';
+        } else {
+          if (idx <= 3){
+            rowClass = 'row-in';
+          } else if (fourthPoints != null && pts === fourthPoints){
+            rowClass = 'row-bubble';
+          } else {
+            rowClass = 'row-out';
+          }
+        }
 
         const tr = document.createElement('tr');
-        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+        tr.className = `border-t border-[rgba(231,231,231,.08)] ${rowClass}`;
 
         if (currentTeamId != null && id === currentTeamId){
           tr.dataset.me = 'true';
@@ -638,15 +668,21 @@
         tdTeam.textContent = t.team_name;
         tr.appendChild(tdTeam);
 
-        // Points (Win %)
+        // Win %
+        const tdWin = document.createElement('td');
+        tdWin.className = 'px-3 py-2 text-center';
+        if (pct == null){
+          tdWin.textContent = '—';
+        } else {
+          const raw = pct.toFixed(3); // e.g. "0.459"
+          tdWin.textContent = raw.replace(/^0(?=\.)/, ''); // ".459"
+        }
+        tr.appendChild(tdWin);
+
+        // Points
         const tdPts = document.createElement('td');
         tdPts.className = 'px-3 py-2 text-center font-semibold';
-        const pct = winPctByTeam[id];
-        let pctText = '—';
-        if (pct != null){
-          pctText = (pct * 100).toFixed(1) + '%';
-        }
-        tdPts.textContent = `${pts} (${pctText})`;
+        tdPts.textContent = pts.toString();
         tr.appendChild(tdPts);
 
         // Max Season Pts
@@ -689,23 +725,6 @@
 
         tbody.appendChild(tr);
       });
-
-      // Cut line after #4
-      if (sorted.length > 4){
-        const divider = document.createElement('tr');
-        divider.className = 'playoff-divider';
-        const td = document.createElement('td');
-        td.colSpan = 7;
-        td.textContent = 'Projected Playoff Cut Line';
-        divider.appendChild(td);
-
-        const children = Array.from(tbody.children);
-        if (children.length >= 4){
-          tbody.insertBefore(divider, children[4].nextSibling);
-        } else {
-          tbody.appendChild(divider);
-        }
-      }
     }
   </script>
 </body>
