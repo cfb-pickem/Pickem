@@ -25,12 +25,13 @@
     }
 
     body{
+      /* CFP-themed: top gold glow + dark stadium bowl, no blue */
       background:
-        radial-gradient(1400px 700px at 50% -10%, rgba(201,146,16,.30), transparent 60%),
-        radial-gradient(900px 600px at 10% 90%, rgba(80,200,255,.22), transparent 60%),
+        radial-gradient(1400px 700px at 50% -10%, rgba(201,146,16,.35), transparent 60%),
+        radial-gradient(1100px 700px at 50% 120%, rgba(0,0,0,.95), transparent 70%),
         linear-gradient(135deg, rgba(255,255,255,.04) 0 25%, transparent 25% 50%, rgba(255,255,255,.04) 50% 75%, transparent 75% 100%),
         var(--cfp-charcoal);
-      background-size:100% 100%,80% 80%,24px 24px,auto;
+      background-size:100% 100%,100% 100%,24px 24px,auto;
       color:#e7e7e7;
       font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
       min-height:100vh;
@@ -38,7 +39,7 @@
       overflow-x:hidden;
     }
 
-    /* subtle confetti */
+    /* subtle confetti (gold + white, no blue) */
     body::before{
       content:"";
       pointer-events:none;
@@ -46,9 +47,9 @@
       inset:0;
       background-image:
         radial-gradient(circle at 20% 20%, rgba(255,255,255,.12) 0 2px, transparent 3px),
-        radial-gradient(circle at 80% 30%, rgba(233,185,73,.18) 0 2px, transparent 3px),
-        radial-gradient(circle at 10% 80%, rgba(96,165,250,.18) 0 2px, transparent 3px),
-        radial-gradient(circle at 90% 70%, rgba(248,250,252,.12) 0 2px, transparent 3px);
+        radial-gradient(circle at 80% 30%, rgba(233,185,73,.22) 0 2px, transparent 3px),
+        radial-gradient(circle at 10% 80%, rgba(250,204,21,.18) 0 2px, transparent 3px),
+        radial-gradient(circle at 90% 70%, rgba(248,250,252,.10) 0 2px, transparent 3px);
       opacity:.25;
       mix-blend-mode:screen;
       z-index:0;
@@ -166,7 +167,7 @@
 
     @media (max-width: 640px){
       .logo{height:24px;width:24px}
-      th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
+      th, td { padding-top: .4rem !important; padding-bottom: .4rem !Important; }
       thead th { font-size: .8rem; }
       .network-line{ font-size:9px; letter-spacing:.12em; }
       .badge { font-size: .65rem; padding: .1rem .4rem; }
@@ -577,7 +578,7 @@
         .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season')
         .eq('cfb_season', currentSeason)
         .eq('picked', true)
-        .gt('week', 16);   // 🔹 all picked games where week > 16
+        .gt('week', 16);   // all picked games where week > 16
 
       if(gErr) { status(gErr.message, true); return; }
 
@@ -613,7 +614,7 @@
         renderHeader(gameNameMap, games);
         renderTable(teamRows, {}, winnerMap, revealByGameEmpty);
         renderWeeklySubmissions(teamRows, {});
-        status(`No picked playoff games (week > 16) yet for season ${currentSeason}.`);
+        status(`No picked playoff games yet for season ${currentSeason}.`);
         return;
       }
 
@@ -626,13 +627,17 @@
 
       const pickMap = buildPickMap(pickRows);
 
+      // 🔹 SORT: first by total playoff points (desc), then by seed (asc)
       const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
         const pa = winsByTeam[a.team_id] || 0;
         const pb = winsByTeam[b.team_id] || 0;
-        if(pb !== pa) return pb - pa;
-        // tie breaker by seed then name
-        if (a.seed != null && b.seed != null && a.seed !== b.seed) return a.seed - b.seed;
-        return a.team_name.localeCompare(b.team_name);
+        if (pb !== pa) return pb - pa;
+
+        const sa = (a.seed != null) ? a.seed : Number.POSITIVE_INFINITY;
+        const sb = (b.seed != null) ? b.seed : Number.POSITIVE_INFINITY;
+        if (sa !== sb) return sa - sb;
+
+        return 0; // no name tiebreaker
       });
 
       lastTeams = teamsSorted;
@@ -662,7 +667,7 @@
       return logoByTeam[pick] || null;
     }
 
-    // 🔹 Per-game reveal: true if kickoff time has passed or no time
+    // Per-game reveal: true if kickoff time has passed or no time
     function computeRevealByGame(){
       const now = Date.now();
       const map = {};
@@ -748,7 +753,7 @@
       });
     }
 
-    // 🔹 Now per-game reveal rather than per-week
+    // Now per-game reveal rather than per-week
     function renderTable(teams, pickMap, winnerMap, revealByGame){
       tbody.innerHTML = '';
 
@@ -788,7 +793,7 @@
 
           const reveal = revealByGame && revealByGame[id];
 
-          // 🔒 Hide pick until this game's kickoff time
+          // Hide pick until this game's kickoff time
           if(!reveal){
             td.classList.add('text-gray-500');
             td.textContent = '•';
@@ -952,12 +957,17 @@
       if (winnerChanged) {
         await computeSeasonWins();
 
+        // 🔹 Re-sort: points desc, then seed asc
         lastTeams.sort((a,b)=>{
           const pa = winsByTeam[a.team_id] || 0;
           const pb = winsByTeam[b.team_id] || 0;
           if (pb !== pa) return pb - pa;
-          if (a.seed != null && b.seed != null && a.seed !== b.seed) return a.seed - b.seed;
-          return a.team_name.localeCompare(b.team_name);
+
+          const sa = (a.seed != null) ? a.seed : Number.POSITIVE_INFINITY;
+          const sb = (b.seed != null) ? b.seed : Number.POSITIVE_INFINITY;
+          if (sa !== sb) return sa - sb;
+
+          return 0;
         });
       }
 
