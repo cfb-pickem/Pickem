@@ -53,11 +53,6 @@
     .badge-live{background:var(--cfp-gold);color:#0b0b0b}
     .badge-sched{background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
 
-    /* Playoff-specific badges */
-    .badge-clinch{background:rgba(34,197,94,.18);color:#bbf7d0;border:1px solid rgba(34,197,94,.5)}
-    .badge-elim{background:rgba(248,113,113,.16);color:#fecaca;border:1px solid rgba(248,113,113,.5)}
-    .badge-hunt{background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
-
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr:hover{background:rgba(233,185,73,.06)}
 
@@ -97,7 +92,6 @@
         max-width: 130px;
         display: inline-block;
       }
-      .group-header-cell{ font-size:.65rem; }
     }
 
     nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
@@ -121,17 +115,6 @@
     tr[data-me="true"]:hover{
       background:
         linear-gradient(90deg, rgba(233,185,73,.24), transparent 65%);
-    }
-
-    /* Playoff group headers */
-    .group-header-cell{
-      font-size:.7rem;
-      text-transform:uppercase;
-      letter-spacing:.18em;
-      color:#d1d5db;
-      background:rgba(0,0,0,.7);
-      padding:.4rem .75rem;
-      border-top:1px solid rgba(231,231,231,.24);
     }
   </style>
 </head>
@@ -179,59 +162,20 @@
       <span class="ml-2">Win cells tint green; loss cells tint red.</span>
     </div>
 
-    <!-- Weekly Submissions + Playoff Picture side-by-side -->
-    <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Weekly Submissions -->
-      <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow px-4 md:px-6 py-4">
-        <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
-          Weekly Submissions
-        </h2>
+    <!-- Weekly Submissions -->
+    <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow mt-4 px-4 md:px-6 py-4">
+      <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
+        Weekly Submissions
+      </h2>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <div class="ws-label">Made Picks</div>
-            <div id="ws-made" class="flex flex-wrap gap-2"></div>
-          </div>
-          <div>
-            <div class="ws-label">Not Yet</div>
-            <div id="ws-not" class="flex flex-wrap gap-2"></div>
-          </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <div class="ws-label">Made Picks</div>
+          <div id="ws-made" class="flex flex-wrap gap-2"></div>
         </div>
-      </div>
-
-      <!-- Playoff Picture -->
-      <div id="playoff-section" class="cfp-card rounded-none gold-shadow px-4 md:px-6 py-4">
-        <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
-          Playoff Picture
-        </h2>
-
-        <!-- Legend -->
-        <div class="mb-3 text-xs text-gray-300 flex flex-wrap items-center gap-3">
-          <span class="badge badge-clinch">Clinched playoff</span>
-          <span class="badge badge-elim">Eliminated</span>
-        </div>
-
-        <!-- Main table -->
-        <div class="overflow-auto">
-          <table class="table min-w-full text-sm">
-            <thead class="table-sticky">
-              <tr class="border-b border-[rgba(231,231,231,.12)]">
-                <th class="sticky-col-1 text-left pl-4 pr-2 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-                  Live Seed
-                </th>
-                <th class="text-left px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-                  Team
-                </th>
-                <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-                  Best After This Week
-                </th>
-                <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody id="playoff-body"></tbody>
-          </table>
+        <div>
+          <div class="ws-label">Not Yet</div>
+          <div id="ws-not" class="flex flex-wrap gap-2"></div>
         </div>
       </div>
     </div>
@@ -250,7 +194,6 @@
     const tbody        = document.getElementById('tbody');
     const wsMade       = document.getElementById('ws-made');
     const wsNot        = document.getElementById('ws-not');
-    const playoffBody  = document.getElementById('playoff-body');
 
     // ---- State ----
     let seasons = [];
@@ -265,10 +208,6 @@
     let logoByTeam = {};
     let abbrByTeam = {};
     let winsByTeam = {}; // points = wins
-
-    const TOTAL_GAMES_SEASON = 66;
-    let totalDecidedGames = 0;
-    let bestRankAfterWeek = {}; // best rank after currentWeek in best-case scenario
 
     let lastTeams = [];
     let lastPickMap = {};
@@ -362,22 +301,6 @@
         const d = new Date(ts);
         return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
       }catch{ return ''; }
-    }
-
-    function ordinal(n){
-      const s = ["th","st","nd","rd"], v = n%100;
-      return n + (s[(v-20)%10] || s[v] || s[0]);
-    }
-
-    function parseStartCT(value){
-      if (!value) return null;
-      try{
-        const d = new Date(value);
-        const ts = d.getTime();
-        return Number.isFinite(ts) ? ts : null;
-      }catch{
-        return null;
-      }
     }
 
     // Build header display name for a game, using abbrev on phones
@@ -526,9 +449,6 @@
     async function computeSeasonWins(){
       status('Computing points…');
 
-      winsByTeam = {};
-      totalDecidedGames = 0;
-
       // Decided games for this season
       const { data: decidedGames, error: dgErr } = await supabase
         .from('all_games')
@@ -538,8 +458,6 @@
       if(dgErr){ status(dgErr.message, true); return; }
 
       const gameIdsSeason = (decidedGames || []).map(g => g.GameId);
-      totalDecidedGames = gameIdsSeason.length;
-
       const winnerByGame = Object.create(null);
       (decidedGames||[]).forEach(g=>{ winnerByGame[g.GameId] = g.winner; });
 
@@ -562,136 +480,6 @@
           winsByTeam[p.team_id] = (winsByTeam[p.team_id] || 0) + 1;
         }
       });
-    }
-
-    function getRemainingGamesForSeason(){
-      return Math.max(0, TOTAL_GAMES_SEASON - (totalDecidedGames || 0));
-    }
-
-    // ---------- Best possible rank after CURRENT week ----------
-    async function computeBestRanksForCurrentWeek(){
-      bestRankAfterWeek = {};
-
-      if (currentWeek == null || !lastTeams.length){
-        return;
-      }
-
-      // Games for this week (only picked games)
-      const { data: games, error: gErr } = await supabase
-        .from('all_games')
-        .select('GameId, winner, Status, "Start (CT)"')
-        .eq('cfb_season', currentSeason)
-        .eq('picked', true)
-        .eq('week', currentWeek);
-
-      if(gErr){
-        console.warn('computeBestRanksForCurrentWeek error:', gErr.message);
-        return;
-      }
-
-      const weekGames = games || [];
-      if (!weekGames.length){
-        return;
-      }
-
-      // Do NOT compute anything until first game of the week has kicked
-      let earliestStart = null;
-      weekGames.forEach(g => {
-        const ts = parseStartCT(g["Start (CT)"]);
-        if (ts != null){
-          if (earliestStart == null || ts < earliestStart){
-            earliestStart = ts;
-          }
-        }
-      });
-
-      const now = Date.now();
-      if (earliestStart != null && now < earliestStart){
-        // before kickoff — no best-rank info yet
-        return;
-      }
-
-      const undecidedIds = weekGames
-        .filter(g => !g.winner)
-        .map(g => g.GameId);
-
-      const teamIds = lastTeams.map(t => t.team_id);
-
-      if (!undecidedIds.length){
-        // No undecided games this week; best rank is just current live seed
-        const sorted = [...lastTeams].sort((a,b)=>{
-          const pa = winsByTeam[a.team_id] || 0;
-          const pb = winsByTeam[b.team_id] || 0;
-          if (pb !== pa) return pb - pa;
-          return a.team_name.localeCompare(b.team_name);
-        });
-        const rankById = {};
-        sorted.forEach((t,idx)=>{ rankById[t.team_id] = idx+1; });
-        bestRankAfterWeek = rankById;
-        return;
-      }
-
-      // Picks for undecided games this week
-      const { data: pickRows, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick')
-        .in('game_id', undecidedIds);
-
-      if(pErr){
-        console.warn('computeBestRanksForCurrentWeek picks error:', pErr.message);
-        return;
-      }
-
-      const remPicksByTeam = {};
-      (pickRows || []).forEach(p => {
-        if (!remPicksByTeam[p.team_id]) remPicksByTeam[p.team_id] = {};
-        remPicksByTeam[p.team_id][p.game_id] = p.pick;
-      });
-
-      const rankById = {};
-      teamIds.forEach(id => {
-        const ptsI = winsByTeam[id] || 0;
-        let cantBeatCount = 0;
-
-        teamIds.forEach(otherId => {
-          if (otherId === id) return;
-          const ptsJ = winsByTeam[otherId] || 0;
-
-          let delta = 0;
-          for (const gId of undecidedIds){
-            const pi = remPicksByTeam[id]?.[gId] || null;
-            const pj = remPicksByTeam[otherId]?.[gId] || null;
-
-            if (!pi && !pj) continue;
-
-            if (pi && pj){
-              if (sameTeam(pi, pj)){
-                // same pick, move together
-                continue;
-              } else {
-                // choose outcome where I am right and they are wrong
-                delta += 1;
-              }
-            } else if (pi && !pj){
-              // I picked, they didn’t; assume it goes my way
-              delta += 1;
-            } else if (!pi && pj){
-              // they picked, I didn’t; best case for me is they’re wrong (no change)
-              continue;
-            }
-          }
-
-          const bestDiff = (ptsI - ptsJ) + delta;
-          // ties are NOT enough to be "ahead"
-          if (bestDiff <= 0){
-            cantBeatCount++;
-          }
-        });
-
-        rankById[id] = cantBeatCount + 1;
-      });
-
-      bestRankAfterWeek = rankById;
     }
 
     // ---------- Load a week (season-scoped) ----------
@@ -761,9 +549,6 @@
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap, showPicks);
       renderWeeklySubmissions(teamsSorted, pickMap);
-
-      await computeBestRanksForCurrentWeek();
-      renderPlayoffTable();
 
       startLiveTicker();
       if (!showPicks && weekStartTs) {
@@ -987,171 +772,6 @@
       ).join('') || `<span class="text-gray-400">—</span>`;
     }
 
-    // ------- Playoff Picture -------
-    function computePlayoffFlags(){
-      const remaining = getRemainingGamesForSeason();
-      const flags = {};
-
-      const teams = lastTeams || [];
-      const minPts = {};
-      const maxPts = {};
-
-      teams.forEach(t => {
-        const id = t.team_id;
-        const cur = winsByTeam[id] || 0;
-        const mx  = cur + remaining;
-        minPts[id] = cur;
-        maxPts[id] = mx;
-      });
-
-      teams.forEach(t => {
-        const id = t.team_id;
-        const myMin = minPts[id];
-        const myMax = maxPts[id];
-
-        // How many teams are GUARANTEED to finish ahead of my best possible?
-        let surelyAhead = 0;
-        teams.forEach(o => {
-          if (o.team_id === id) return;
-          if (minPts[o.team_id] > myMax) surelyAhead++;
-        });
-        const eliminated = surelyAhead >= 4;
-
-        // Clinched: even in worst case I'm strictly ahead of the 4th-best other's best case
-        const othersMax = teams
-          .filter(o => o.team_id !== id)
-          .map(o => maxPts[o.team_id])
-          .sort((a,b)=>b-a);
-        const fourthBest = othersMax[3] ?? -Infinity;
-        const clinched = myMin > fourthBest; // strictly greater — ties not enough
-
-        flags[id] = { clinched, eliminated };
-      });
-
-      return flags;
-    }
-
-    function renderPlayoffTable(){
-      if (!playoffBody) return;
-      playoffBody.innerHTML = '';
-
-      if (!lastTeams.length) return;
-
-      const flags = computePlayoffFlags();
-
-      // Sort by current points (wins), then name
-      const sorted = [...lastTeams].sort((a,b)=>{
-        const pa = winsByTeam[a.team_id] || 0;
-        const pb = winsByTeam[b.team_id] || 0;
-        if (pb !== pa) return pb - pa;
-        return a.team_name.localeCompare(b.team_name);
-      });
-
-      const seedById = {};
-      sorted.forEach((t,idx) => { seedById[t.team_id] = idx+1; });
-
-      // Split into groups
-      const playoffTeams = [];
-      const inHuntTeams = [];
-      const eliminatedTeams = [];
-
-      sorted.forEach(t => {
-        const id = t.team_id;
-        const seed = seedById[id];
-        const { eliminated } = flags[id] || { eliminated:false };
-
-        if (eliminated){
-          eliminatedTeams.push(t);
-        } else if (seed <= 4){
-          playoffTeams.push(t);
-        } else {
-          inHuntTeams.push(t);
-        }
-      });
-
-      const COLSPAN = 4;
-
-      function appendGroupHeader(label){
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = COLSPAN;
-        td.className = 'group-header-cell';
-        td.textContent = label;
-        tr.appendChild(td);
-        playoffBody.appendChild(tr);
-      }
-
-      function appendTeamRow(t){
-        const id = t.team_id;
-        const { clinched, eliminated } = flags[id] || { clinched:false, eliminated:false };
-        const bestWeekRank = bestRankAfterWeek[id];
-        const seed = seedById[id];
-
-        const tr = document.createElement('tr');
-        tr.className = 'border-t border-[rgba(231,231,231,.08)]';
-
-        if (currentTeamId != null && id === currentTeamId){
-          tr.dataset.me = 'true';
-        }
-
-        // Live seed: only for top 4, else blank
-        const tdSeed = document.createElement('td');
-        tdSeed.className = 'sticky-col-1 pl-4 pr-2 py-2 font-semibold text-[var(--cfp-ivory)]';
-        if (seed <= 4){
-          tdSeed.textContent = `#${seed}`;
-        } else {
-          tdSeed.textContent = '—';
-        }
-        tr.appendChild(tdSeed);
-
-        // Team
-        const tdTeam = document.createElement('td');
-        tdTeam.className = 'px-3 py-2';
-        tdTeam.textContent = t.team_name;
-        tr.appendChild(tdTeam);
-
-        // Best After This Week
-        const tdBestWeek = document.createElement('td');
-        tdBestWeek.className = 'px-3 py-2 text-center text-sm';
-        if (bestWeekRank == null){
-          tdBestWeek.textContent = '—';
-        } else {
-          tdBestWeek.textContent = ordinal(bestWeekRank);
-        }
-        tr.appendChild(tdBestWeek);
-
-        // Status (blank unless clinched/eliminated)
-        const tdStatus = document.createElement('td');
-        tdStatus.className = 'px-3 py-2 text-center';
-        if (clinched){
-          tdStatus.innerHTML = '<span class="badge badge-clinch">Clinched</span>';
-        } else if (eliminated){
-          tdStatus.innerHTML = '<span class="badge badge-elim">Eliminated</span>';
-        } else {
-          tdStatus.textContent = '';
-        }
-        tr.appendChild(tdStatus);
-
-        playoffBody.appendChild(tr);
-      }
-
-      // Render groups in order
-      if (playoffTeams.length){
-        appendGroupHeader('Playoff if the season ended today');
-        playoffTeams.forEach(appendTeamRow);
-      }
-
-      if (inHuntTeams.length){
-        appendGroupHeader('In the hunt');
-        inHuntTeams.forEach(appendTeamRow);
-      }
-
-      if (eliminatedTeams.length){
-        appendGroupHeader('Eliminated');
-        eliminatedTeams.forEach(appendTeamRow);
-      }
-    }
-
     // ------- LIVE TICKER -------
     async function startLiveTicker(){
       await refreshBadgesFromAllGames();
@@ -1234,10 +854,8 @@
           return a.team_name.localeCompare(b.team_name);
         });
 
-        await computeBestRanksForCurrentWeek();
         renderTable(lastTeams, lastPickMap, winnerMap, showPicks);
         renderWeeklySubmissions(lastTeams, lastPickMap);
-        renderPlayoffTable();
       }
     }
   </script>
