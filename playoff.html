@@ -15,8 +15,8 @@
 
   <style>
     :root{
-      --cfp-black:#0B0B0B;
-      --cfp-charcoal:#111213;
+      --cfp-black:#050505;
+      --cfp-charcoal:#101010;
       --cfp-gold:#C99210;
       --cfp-gold-2:#E3B23C;
       --cfp-ivory:#F7F4ED;
@@ -25,10 +25,9 @@
     }
 
     body{
-      /* CFP-themed: top gold glow + dark stadium bowl, no blue */
       background:
-        radial-gradient(1400px 700px at 50% -10%, rgba(201,146,16,.35), transparent 60%),
-        radial-gradient(1100px 700px at 50% 120%, rgba(0,0,0,.95), transparent 70%),
+        radial-gradient(1400px 700px at 50% -15%, rgba(201,146,16,.36), transparent 60%),
+        radial-gradient(1200px 600px at 50% 110%, rgba(0,0,0,.95), transparent 60%),
         linear-gradient(135deg, rgba(255,255,255,.04) 0 25%, transparent 25% 50%, rgba(255,255,255,.04) 50% 75%, transparent 75% 100%),
         var(--cfp-charcoal);
       background-size:100% 100%,100% 100%,24px 24px,auto;
@@ -39,7 +38,7 @@
       overflow-x:hidden;
     }
 
-    /* subtle confetti (gold + white, no blue) */
+    /* subtle confetti without blue */
     body::before{
       content:"";
       pointer-events:none;
@@ -47,11 +46,34 @@
       inset:0;
       background-image:
         radial-gradient(circle at 20% 20%, rgba(255,255,255,.12) 0 2px, transparent 3px),
-        radial-gradient(circle at 80% 30%, rgba(233,185,73,.22) 0 2px, transparent 3px),
-        radial-gradient(circle at 10% 80%, rgba(250,204,21,.18) 0 2px, transparent 3px),
-        radial-gradient(circle at 90% 70%, rgba(248,250,252,.10) 0 2px, transparent 3px);
-      opacity:.25;
+        radial-gradient(circle at 80% 30%, rgba(233,185,73,.20) 0 2px, transparent 3px),
+        radial-gradient(circle at 10% 80%, rgba(251,191,36,.18) 0 2px, transparent 3px),
+        radial-gradient(circle at 90% 70%, rgba(248,250,252,.14) 0 2px, transparent 3px);
+      opacity:.28;
       mix-blend-mode:screen;
+      z-index:0;
+    }
+
+    /* Big translucent CFP-style trophy silhouette in the center */
+    body::after{
+      content:"";
+      position:fixed;
+      left:50%;
+      top:50%;
+      transform:translate(-50%,-46%);
+      width:260px;
+      height:520px;
+      border-radius:999px;
+      border:3px solid rgba(227,178,60,.18);
+      box-shadow:
+        0 0 60px rgba(233,185,73,.40),
+        0 0 120px rgba(0,0,0,.95) inset;
+      background:
+        radial-gradient(circle at 50% 0, rgba(253,224,71,.25), transparent 60%),
+        radial-gradient(circle at 50% 85%, rgba(0,0,0,.95), transparent 70%);
+      opacity:.32;
+      mix-blend-mode:screen;
+      pointer-events:none;
       z-index:0;
     }
 
@@ -82,18 +104,24 @@
     nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
 
     /* Trophy + playoff flare */
-    .trophy-oval{width:22px;height:42px;border:2px solid var(--cfp-gold-2);border-radius:999px;position:relative;box-shadow:0 0 18px rgba(233,185,73,.8)}
-    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
-    .playoff-tag{
-      font-size:.6rem;letter-spacing:.28em;text-transform:uppercase;
-      padding:.125rem .75rem;border:1px solid rgba(249,250,251,.2);
-      background:rgba(15,23,42,.8);backdrop-filter:blur(4px);
-      border-radius:999px;color:#e5e7eb;display:inline-flex;align-items:center;gap:.35rem;
+    .trophy-oval{
+      width:22px;
+      height:42px;
+      border:2px solid var(--cfp-gold-2);
+      border-radius:999px;
+      position:relative;
+      box-shadow:0 0 18px rgba(233,185,73,.8);
+      background:radial-gradient(circle at 50% 0,rgba(253,224,71,.25),transparent 60%);
     }
-    .playoff-tag span{
-      width:6px;height:6px;border-radius:999px;
-      background:radial-gradient(circle at 30% 30%,#fff, var(--cfp-gold));
-      box-shadow:0 0 10px rgba(250,204,21,.8);
+    .trophy-oval::before{
+      content:"";
+      position:absolute;
+      left:50%;
+      top:4px;
+      bottom:4px;
+      width:2px;
+      background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));
+      transform:translateX(-50%);
     }
 
     .playoff-sub{
@@ -121,9 +149,58 @@
       font-weight:700;
       letter-spacing:.4em;
       text-transform:uppercase;
-      color:rgba(15,23,42,.18);
+      color:rgba(15,23,42,.22);
       transform:rotate(-12deg);
       pointer-events:none;
+    }
+
+    /* Bracket-style frame behind the leaderboard card */
+    .bracket-bg{
+      position:relative;
+      overflow:auto;
+    }
+
+    .bracket-bg::before,
+    .bracket-bg::after{
+      content:"";
+      position:absolute;
+      inset:10% 6%;
+      border-radius:28px;
+      pointer-events:none;
+      z-index:0;
+    }
+
+    /* Outer bracket frame */
+    .bracket-bg::before{
+      border:1px solid rgba(233,185,73,.22);
+      box-shadow:
+        0 0 26px rgba(0,0,0,.85) inset,
+        0 0 22px rgba(233,185,73,.25);
+      opacity:.65;
+    }
+
+    /* Inner "bracket arms" using gradient lines */
+    .bracket-bg::after{
+      background:
+        linear-gradient(to right,
+          transparent 0,
+          rgba(233,185,73,.55) 15%,
+          rgba(233,185,73,.55) 35%,
+          transparent 36%,
+          transparent 64%,
+          rgba(233,185,73,.55) 65%,
+          rgba(233,185,73,.55) 85%,
+          transparent 100%
+        ),
+        linear-gradient(to bottom,
+          transparent 0,
+          rgba(233,185,73,.35) 24%,
+          transparent 25%,
+          transparent 75%,
+          rgba(233,185,73,.35) 76%,
+          transparent 77%
+        );
+      opacity:.36;
     }
 
     /* Sticky first column and highlight user team */
@@ -136,7 +213,7 @@
     tr[data-me="true"]{
       background:
         radial-gradient(circle at 0 50%, rgba(233,185,73,.3), transparent 55%),
-        rgba(15,23,42,.90);
+        rgba(15,23,42,.96);
     }
     tr[data-me="true"] .sticky-col-1{
       font-weight:700;
@@ -167,7 +244,7 @@
 
     @media (max-width: 640px){
       .logo{height:24px;width:24px}
-      th, td { padding-top: .4rem !important; padding-bottom: .4rem !Important; }
+      th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
       thead th { font-size: .8rem; }
       .network-line{ font-size:9px; letter-spacing:.12em; }
       .badge { font-size: .65rem; padding: .1rem .4rem; }
@@ -182,6 +259,10 @@
       .playoff-banner::after{
         font-size:3rem;
         bottom:-35%;
+      }
+      body::after{
+        width:200px;
+        height:420px;
       }
     }
   </style>
@@ -222,8 +303,8 @@
     </header>
 
     <!-- Main playoff leaderboard -->
-    <div class="cfp-card rounded-none gold-shadow overflow-auto scroll-shadows">
-      <table class="table min-w-full text-sm" style="table-layout:auto;">
+    <div class="cfp-card rounded-none gold-shadow overflow-auto scroll-shadows bracket-bg">
+      <table class="table min-w-full text-sm relative z-[1]" style="table-layout:auto;">
         <thead class="table-sticky">
           <tr id="thead-row" class="border-b"></tr>
         </thead>
@@ -627,17 +708,12 @@
 
       const pickMap = buildPickMap(pickRows);
 
-      // 🔹 SORT: first by total playoff points (desc), then by seed (asc)
       const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
         const pa = winsByTeam[a.team_id] || 0;
         const pb = winsByTeam[b.team_id] || 0;
-        if (pb !== pa) return pb - pa;
-
-        const sa = (a.seed != null) ? a.seed : Number.POSITIVE_INFINITY;
-        const sb = (b.seed != null) ? b.seed : Number.POSITIVE_INFINITY;
-        if (sa !== sb) return sa - sb;
-
-        return 0; // no name tiebreaker
+        if(pb !== pa) return pb - pa;  // sort by total playoff points desc
+        if (a.seed != null && b.seed != null && a.seed !== b.seed) return a.seed - b.seed; // then by seed asc
+        return a.team_name.localeCompare(b.team_name); // then by name
       });
 
       lastTeams = teamsSorted;
@@ -753,7 +829,7 @@
       });
     }
 
-    // Now per-game reveal rather than per-week
+    // Per-game reveal
     function renderTable(teams, pickMap, winnerMap, revealByGame){
       tbody.innerHTML = '';
 
@@ -914,7 +990,7 @@
 
         // Update kickoff times if they changed in DB
         const ts = r?.["Start (CT)"] ? new Date(r["Start (CT)"]).getTime() : null;
-        gameKickoffMsById[r.GameId] = Number.isFinite(ts) ? ts : gameKickoffMsById[r.GameId] ?? null;
+        gameKickoffMsById[r.GameId] = Number.isFinite(ts) ? ts : (gameKickoffMsById[r.GameId] ?? null);
 
         if(r.Status === 'final'){
           if (networkEl) networkEl.style.display = 'none';
@@ -957,17 +1033,12 @@
       if (winnerChanged) {
         await computeSeasonWins();
 
-        // 🔹 Re-sort: points desc, then seed asc
         lastTeams.sort((a,b)=>{
           const pa = winsByTeam[a.team_id] || 0;
           const pb = winsByTeam[b.team_id] || 0;
-          if (pb !== pa) return pb - pa;
-
-          const sa = (a.seed != null) ? a.seed : Number.POSITIVE_INFINITY;
-          const sb = (b.seed != null) ? b.seed : Number.POSITIVE_INFINITY;
-          if (sa !== sb) return sa - sb;
-
-          return 0;
+          if (pb !== pa) return pb - pa;  // points desc
+          if (a.seed != null && b.seed != null && a.seed !== b.seed) return a.seed - b.seed; // then seed asc
+          return a.team_name.localeCompare(b.team_name);
         });
       }
 
