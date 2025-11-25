@@ -48,7 +48,7 @@
         <div>
           <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
           <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Commissioner Console</h1>
-          <p class="text-xs text-gray-300 mt-1">Select games, set lines, and insert team picks.</p>
+          <p class="text-xs text-gray-300 mt-1">Select games, set lines, insert team picks, and assign playoff seeds.</p>
         </div>
 
         <div class="flex flex-wrap gap-3 items-center">
@@ -92,6 +92,31 @@
       </div>
     </section>
 
+    <!-- NEW: Playoff Seeds -->
+    <section class="cfp-card mb-6">
+      <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex flex-wrap items-center gap-3">
+        <strong class="text-[var(--cfp-ivory)] mr-2">Playoff Seeds</strong>
+
+        <label class="text-gray-300">Seed</label>
+        <select id="seed-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[80px]">
+          <option value="1">Seed 1</option>
+          <option value="2">Seed 2</option>
+          <option value="3">Seed 3</option>
+          <option value="4">Seed 4</option>
+        </select>
+
+        <label class="text-gray-300">Team</label>
+        <select id="seed-team-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[220px]"></select>
+
+        <button id="save-seed-btn" class="bg-[var(--cfp-gold)] text-black font-semibold px-4 py-2 text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+          Save Seed
+        </button>
+      </div>
+      <div id="seed-current" class="px-4 py-3 text-sm text-gray-200">
+        Loading seeds…
+      </div>
+    </section>
+
     <!-- B) Manage Games -->
     <section class="cfp-card overflow-auto">
       <table class="table min-w-full text-sm">
@@ -124,18 +149,26 @@
     const savePicksBtn  = document.getElementById('save-picks-btn');
     const picksTbody    = document.getElementById('picks-body');
 
+    // playoff seeds panel
+    const seedSel       = document.getElementById('seed-select');
+    const seedTeamSel   = document.getElementById('seed-team-select');
+    const saveSeedBtn   = document.getElementById('save-seed-btn');
+    const seedCurrentEl = document.getElementById('seed-current');
+
     // games table
     const gamesTbody    = document.getElementById('games-body');
 
     // state
     let rows = [];                 // current games for selected season+week (Manage Games)
-    // Track ONLY the fields we intend to edit: line, picked
     let original = {};             // GameId -> { line, picked }
     let edited   = {};             // GameId -> { line, picked }
 
     let pickableGames = [];        // picked=true games for current season+week (what teams pick)
     let tempTeamPicks = {};        // UI selections: game_id -> pick (Away/Home)
     let existingTeamPicks = {};    // silently fetched from DB for diffing (not displayed)
+
+    let allTeams = [];             // all teams rows
+    let currentSeeds = {};         // seed -> { team_id }
 
     // --- status helper ---
     function status(msg,isErr=false){
@@ -162,7 +195,16 @@
 
       return true;
     }
-    function lockAll(){ seasonSel.disabled = weekSel.disabled = saveBtn.disabled = savePicksBtn.disabled = teamSel.disabled = true; }
+    function lockAll(){
+      seasonSel.disabled = true;
+      weekSel.disabled = true;
+      saveBtn.disabled = true;
+      savePicksBtn.disabled = true;
+      teamSel.disabled = true;
+      seedSel.disabled = true;
+      seedTeamSel.disabled = true;
+      saveSeedBtn.disabled = true;
+    }
 
     // --- seasons / weeks / teams ---
     async function loadSeasons(){
@@ -188,7 +230,7 @@
         .from('all_games')
         .select ('week, cfb_season')
         .eq('cfb_season', season)
-        .range(0, 3999); // big enough to cover all rows;
+        .range(0, 3999);
       if(error){ status(error.message, true); return false; }
 
       const weeks = [...new Set((data||[]).map(r => r.week).filter(w => Number.isFinite(Number(w))))].sort((a,b)=>a-b);
@@ -205,9 +247,16 @@
         .select('team_id, team_name')
         .order('team_name', { ascending: true });
       if(error){ status(error.message, true); return false; }
-      const teams = data || [];
-      teamSel.innerHTML = teams.map(t => `<option value="${t.team_id}">${t.team_name}</option>`).join('');
-      if(teams.length) teamSel.value = String(teams[0].team_id);
+      allTeams = data || [];
+
+      const optionsHtml = allTeams.map(t => `<option value="${t.team_id}">${t.team_name}</option>`).join('');
+      teamSel.innerHTML = optionsHtml;
+      seedTeamSel.innerHTML = optionsHtml;
+
+      if(allTeams.length){
+        teamSel.value = String(allTeams[0].team_id);
+        seedTeamSel.value = String(allTeams[0].team_id);
+      }
       return true;
     }
 
@@ -230,7 +279,7 @@
       return text;
     }
 
-    // --- load games for Manage Games (season + week), then sort as requested ---
+    // --- load games for Manage Games ---
     async function loadWeek(){
       const season = Number(seasonSel.value);
       const week = Number(weekSel.value);
@@ -261,7 +310,6 @@
         return atms - btms;
       });
 
-      // snapshot for diffing edits (ONLY the fields we will update)
       original = {};
       edited   = {};
       for(const r of rows){
@@ -270,13 +318,13 @@
       }
 
       renderGamesTable();
-      await loadPickableGames();      // for team picks panel
-      await loadExistingTeamPicks();  // silent fetch for diffing only
-      renderPicksPanel();             // no prefill
+      await loadPickableGames();
+      await loadExistingTeamPicks();
+      renderPicksPanel();
       status(`Season ${season} — Week ${week} loaded.`);
     }
 
-    // --- pickable games = only those flagged picked=true for the season+week ---
+    // --- pickable games ---
     async function loadPickableGames(){
       const season = Number(seasonSel.value);
       const week = Number(weekSel.value);
@@ -289,10 +337,10 @@
         .order('GameId', { ascending: true });
       if(error){ status(error.message, true); return; }
       pickableGames = data || [];
-      tempTeamPicks = {}; // clear UI selections on week/season change
+      tempTeamPicks = {};
     }
 
-    // --- silently pull existing picks for selected team+week (for diffing only) ---
+    // --- existing team picks (silent) ---
     async function loadExistingTeamPicks(){
       const teamId = Number(teamSel.value);
       const week   = Number(weekSel.value);
@@ -307,7 +355,6 @@
 
       existingTeamPicks = {};
       (data || []).forEach(r => { existingTeamPicks[r.game_id] = r.pick || ''; });
-      // Not rendering these; used only for diffing on save.
     }
 
     // --- render picks panel (no prefill) ---
@@ -350,7 +397,7 @@
       }
     }
 
-    // --- save team picks: only overwrite diffs vs existingTeamPicks ---
+    // --- save team picks (diff only) ---
     async function saveTeamPicks(){
       const teamId = Number(teamSel.value);
       const week   = Number(weekSel.value);
@@ -359,9 +406,9 @@
       const payload = [];
       for (const g of pickableGames){
         const chosen = (tempTeamPicks[g.GameId] || '').trim();
-        if (!chosen) continue; // no new choice
+        if (!chosen) continue;
         const existing = (existingTeamPicks[g.GameId] || '').trim();
-        if (existing === chosen) continue; // no change
+        if (existing === chosen) continue;
         payload.push({ team_id: teamId, week, game_id: g.GameId, pick: chosen });
       }
 
@@ -398,25 +445,21 @@
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // Game (link to espn_url)
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
         tdGame.innerHTML = gameLinkText(g);
         tr.appendChild(tdGame);
 
-        // Start (CT)
         const tdStart = document.createElement('td');
         tdStart.className = 'px-3 py-2 text-center';
         tdStart.textContent = niceTime(g['Start (CT)']);
         tr.appendChild(tdStart);
 
-        // Network
         const tdNet = document.createElement('td');
         tdNet.className = 'px-3 py-2 text-center';
         tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
 
-        // Line (editable)
         const tdLine = document.createElement('td');
         tdLine.className = 'px-3 py-2 text-center';
         tdLine.innerHTML = `<input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />`;
@@ -427,7 +470,6 @@
         });
         tr.appendChild(tdLine);
 
-        // Picked (checkbox)
         const tdPicked = document.createElement('td');
         tdPicked.className = 'px-3 py-2 text-center';
         tdPicked.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.picked ? 'checked' : ''}/>`;
@@ -437,7 +479,6 @@
         });
         tr.appendChild(tdPicked);
 
-        // Week (display-only; never edited/saved)
         const tdWeek = document.createElement('td');
         tdWeek.className = 'px-3 py-2 text-center text-gray-300';
         tdWeek.textContent = g.week ?? '';
@@ -457,7 +498,6 @@
         const pickChanged  = Boolean(curr.picked) !== Boolean(orig.picked);
 
         if(lineChanged || pickChanged){
-          // IMPORTANT: exclude 'week' from the payload so it is NEVER overwritten
           changes.push({
             GameId: Number(id),
             line: curr.line,
@@ -475,7 +515,6 @@
       saveBtn.disabled = true;
       status('Saving…');
 
-      // Upsert ONLY the columns we intend to modify.
       const { error } = await supabase
         .from('all_games')
         .upsert(payload, { onConflict: 'GameId' });
@@ -485,15 +524,92 @@
       if(error){
         status(`Save failed: ${error.message}`, true);
       }else{
-        // Update local originals for changed fields only
         for(const row of payload){
           if (!original[row.GameId]) original[row.GameId] = {};
           original[row.GameId].line = row.line;
           original[row.GameId].picked = row.picked;
         }
-        // Re-load to re-apply sort (in case picked changed)
         await loadWeek();
         status('Saved.');
+      }
+    }
+
+    // --- Playoff Seeds: load & render ---
+    async function loadPlayoffSeedsForSeason(){
+      const season = Number(seasonSel.value);
+      if (!Number.isFinite(season)){
+        seedCurrentEl.textContent = 'Select a season.';
+        return;
+      }
+
+      seedCurrentEl.textContent = 'Loading seeds…';
+
+      const { data, error } = await supabase
+        .from('playoffs')
+        .select('team_id, season, seed')
+        .eq('season', season)
+        .order('seed', { ascending: true });
+
+      if (error){
+        seedCurrentEl.textContent = `Error loading seeds: ${error.message}`;
+        return;
+      }
+
+      currentSeeds = {};
+      (data || []).forEach(row => {
+        currentSeeds[row.seed] = { team_id: row.team_id };
+      });
+
+      renderCurrentSeeds();
+    }
+
+    function renderCurrentSeeds(){
+      const season = Number(seasonSel.value);
+      const lines = [];
+
+      for (let seed = 1; seed <= 4; seed++){
+        const entry = currentSeeds[seed];
+        let label = '#'+seed+': ';
+        if (entry && entry.team_id != null){
+          const team = allTeams.find(t => t.team_id === entry.team_id);
+          label += team ? team.team_name : `Team ${entry.team_id}`;
+        } else {
+          label += '—';
+        }
+        lines.push(label);
+      }
+
+      seedCurrentEl.textContent = `Season ${season} seeds:\n` + lines.join('\n');
+      seedCurrentEl.style.whiteSpace = 'pre-line';
+    }
+
+    // --- Save playoff seed (upsert on season,seed) ---
+    async function savePlayoffSeed(){
+      const season = Number(seasonSel.value);
+      const seed   = Number(seedSel.value);
+      const teamId = Number(seedTeamSel.value);
+
+      if (!Number.isFinite(season) || !Number.isFinite(seed) || !Number.isFinite(teamId)){
+        status('Select season, seed, and team for playoff seed.', true);
+        return;
+      }
+
+      saveSeedBtn.disabled = true;
+      status(`Saving Seed ${seed} for season ${season}…`);
+
+      const payload = { season, seed, team_id: teamId };
+
+      const { error } = await supabase
+        .from('playoffs')
+        .upsert(payload, { onConflict: 'season,seed' });
+
+      saveSeedBtn.disabled = false;
+
+      if (error){
+        status(`Save playoff seed failed: ${error.message}`, true);
+      } else {
+        status(`Playoff Seed ${seed} saved for season ${season}.`);
+        await loadPlayoffSeedsForSeason();
       }
     }
 
@@ -511,12 +627,15 @@
       const okTeams = await loadTeams();
       if(!okTeams) return;
 
+      await loadPlayoffSeedsForSeason();
       await loadWeek();
 
       seasonSel.onchange = async () => {
-        // On season change, refresh week list (scoped), then load first/last week
         const ok = await loadWeeksForSeason();
-        if(ok) await loadWeek();
+        if(ok){
+          await loadPlayoffSeedsForSeason();
+          await loadWeek();
+        }
       };
 
       weekSel.onchange = async () => {
@@ -531,6 +650,7 @@
 
       saveBtn.onclick = saveChanges;
       savePicksBtn.onclick = saveTeamPicks;
+      saveSeedBtn.onclick = savePlayoffSeed;
 
       status('Ready.');
     })();
