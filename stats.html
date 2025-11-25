@@ -252,7 +252,8 @@
         .from('all_games')
         .select('GameId, week, winner, picked, Away, Home, line, "Start (CT)", cfb_season')
         .eq('picked', true)
-        .eq('cfb_season', season);
+        .eq('cfb_season', season)
+        .lt('week', 16);   // 👈 only use weeks < 16
 
       if(gErr){ console.error(gErr); return setStatus('Error loading games', true); }
 
