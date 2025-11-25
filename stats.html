@@ -97,8 +97,54 @@
       </div>
     </section>
 
-    <!-- LOWER CARDS: 2-up grid -->
+    <!-- SEASON-WIDE TABLES: Win % + Top Dawg -->
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <!-- LEFT: Total Season Win % -->
+      <div class="cfp-card gold-shadow rounded-none">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval"></span>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
+            Total Season Win %
+          </h2>
+        </div>
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead>
+              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                <th class="px-4 py-2 text-left font-semibold">Team</th>
+                <th class="px-4 py-2 text-left font-semibold">Record</th>
+                <th class="px-4 py-2 text-left font-semibold">Win %</th>
+              </tr>
+            </thead>
+            <tbody id="season-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- RIGHT: Top Dawg – Underdog Outright Wins -->
+      <div class="cfp-card gold-shadow rounded-none">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval"></span>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
+            Top Dawg – Underdog Outright Wins
+          </h2>
+        </div>
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead>
+              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                <th class="px-4 py-2 text-left font-semibold">Team</th>
+                <th class="px-4 py-2 text-left font-semibold">Dog Wins</th>
+              </tr>
+            </thead>
+            <tbody id="dog-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOWER CARDS -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Win % in Last 8 Picks -->
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
@@ -138,30 +184,6 @@
         </div>
       </div>
     </section>
-
-    <!-- NEW: Total Season Win % (full-width card) -->
-    <section class="mb-6">
-      <div class="cfp-card gold-shadow rounded-none">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
-          <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
-            Total Season Win %
-          </h2>
-        </div>
-        <div class="overflow-auto">
-          <table class="table min-w-full text-sm">
-            <thead>
-              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
-                <th class="px-4 py-2 text-left font-semibold">Team</th>
-                <th class="px-4 py-2 text-left font-semibold">Record</th>
-                <th class="px-4 py-2 text-left font-semibold">Win %</th>
-              </tr>
-            </thead>
-            <tbody id="season-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
   </div>
 
   <script type="module">
@@ -174,7 +196,8 @@
     const zeroRibbon    = document.getElementById('zero-ribbon');
     const favoriteBody  = document.getElementById('favorite-body');
     const formBody      = document.getElementById('form-body');
-    const seasonBody    = document.getElementById('season-body'); // 🔹 new
+    const seasonBody    = document.getElementById('season-body');
+    const dogBody       = document.getElementById('dog-body');
 
     function stripAccents(s){ try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); } catch { return s; } }
     function norm(v){
@@ -268,7 +291,8 @@
         zeroRibbon.innerHTML    = '<span class="text-sm text-gray-300">No picked games found for this season.</span>';
         favoriteBody.innerHTML  = '';
         formBody.innerHTML      = '';
-        seasonBody.innerHTML    = '<tr><td class="px-4 py-2 text-sm text-gray-300" colspan="3">No decided games yet for this season.</td></tr>';
+        seasonBody.innerHTML    = '<tr><td class="px-4 py-2 text-gray-300" colspan="3">No decided picks yet.</td></tr>';
+        dogBody.innerHTML       = '<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>';
         return setStatus('Loaded');
       }
 
@@ -295,7 +319,7 @@
       const teamName = new Map((teams||[]).map(t => [t.team_id, t.team_name]));
 
       // ------- Build per-week and decided maps for THIS season -------
-      const byTeamWeek = new Map();   // "teamId|week" -> rows[]
+      const byTeamWeek = new Map();    // "teamId|week" -> rows[]
       const byTeamDecided = new Map(); // teamId -> decided rows[]
 
       for(const p of (picks||[])){
@@ -362,6 +386,39 @@
         zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet (completed weeks only).</span>';
       }
 
+      // ------- Total Season Win % (all decided picks this season) -------
+      const seasonStats = new Map(); // team_id -> { wins, total }
+
+      for(const [team_id, arr] of byTeamDecided.entries()){
+        let wins = 0;
+        for(const r of arr){
+          if(sameTeam(r.pick, r.winner)) wins++;
+        }
+        seasonStats.set(team_id, { wins, total: arr.length });
+      }
+
+      const seasonRows = [...seasonStats.entries()].map(([team_id, {wins, total}])=>{
+        const pct = total ? wins / total : 0;
+        const pctStr = pct.toFixed(3).slice(1); // .459 format
+        return {
+          team: teamName.get(team_id) || `Team ${team_id}`,
+          record: `${wins}-${total - wins}`,
+          pct,
+          pctStr
+        };
+      }).sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
+
+      seasonBody.innerHTML =
+        seasonRows.length
+          ? seasonRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.record}</td>
+                <td class="px-4 py-2">${r.pctStr}</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="3">No decided picks yet.</td></tr>`;
+
       // ------- Favorite Pick % (exclude weeks that haven't started) -------
       const favStats = new Map(); // team_id -> { fav: n, opp: d }
       function favoriteTeamFor(game){
@@ -370,6 +427,12 @@
         // Convention: line is from home perspective; negative => home favorite; positive => away favorite
         return line < 0 ? game.home : game.away;
       }
+      function underdogTeamFor(game){
+        const line = game.line;
+        if(line == null || isNaN(line) || line === 0) return null;
+        return line < 0 ? game.away : game.home;
+      }
+
       for(const p of (picks||[])){
         const g = gameMeta[p.game_id];
         if(!g || !p.pick) continue;
@@ -390,11 +453,15 @@
         team: teamName.get(team_id) || `Team ${team_id}`,
         pct: opp ? (fav/opp*100) : 0
       })).sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
-      favoriteBody.innerHTML = favRows.map(r =>
-        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-          <td class="px-4 py-2">${escapeHtml(r.team)}</td>
-          <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
-        </tr>`).join('');
+      favoriteBody.innerHTML =
+        favRows.length
+          ? favRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="2">No favorite picks yet.</td></tr>`;
 
       // ------- Form: last 8 decided picks (season-only) -------
       const formRows = [];
@@ -407,49 +474,50 @@
         formRows.push({ team: teamName.get(team_id) || `Team ${team_id}`, record: `${wins}-${last8.length - wins}`, pct });
       }
       formRows.sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
-      formBody.innerHTML = formRows.map(r =>
-        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-          <td class="px-4 py-2">${escapeHtml(r.team)}</td>
-          <td class="px-4 py-2">${r.record}</td>
-          <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
-        </tr>`).join('');
+      formBody.innerHTML =
+        formRows.length
+          ? formRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.record}</td>
+                <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="3">No decided picks yet.</td></tr>`;
 
-      // ------- NEW: Total Season Win % (decided games only) -------
-      const seasonRows = [];
-      for (const [team_id, arr] of byTeamDecided.entries()) {
-        const total = arr.length;
-        if (!total) continue;
-        let wins = 0;
-        for (const r of arr) {
-          if (sameTeam(r.pick, r.winner)) wins++;
+      // ------- Top Dawg – Underdog Outright Wins -------
+      const dogWins = new Map();  // team_id -> count
+
+      for (const p of (picks || [])) {
+        const g = gameMeta[p.game_id];
+        if (!g || !p.pick || !g.winner) continue;
+
+        const dog = underdogTeamFor(g);
+        if (!dog) continue;
+
+        // If they picked the underdog AND the underdog won outright
+        if (sameTeam(p.pick, dog) && sameTeam(g.winner, dog)) {
+          const tId = p.team_id;
+          dogWins.set(tId, (dogWins.get(tId) || 0) + 1);
         }
-        const pct = total ? wins / total : 0;
-        let pctStr = pct.toFixed(3);    // e.g. "0.459"
-        if (pctStr.startsWith('0')) {   // display as ".459"
-          pctStr = pctStr.slice(1);
-        }
-        const teamLabel = teamName.get(team_id) || `Team ${team_id}`;
-        seasonRows.push({
-          team: teamLabel,
-          record: `${wins}-${total - wins}`,
-          pctStr
-        });
       }
 
-      if (seasonRows.length) {
-        seasonRows.sort(
-          (a,b) => parseFloat(b.pctStr) - parseFloat(a.pctStr) || a.team.localeCompare(b.team)
-        );
-        seasonBody.innerHTML = seasonRows.map(r =>
-          `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-            <td class="px-4 py-2">${escapeHtml(r.team)}</td>
-            <td class="px-4 py-2">${r.record}</td>
-            <td class="px-4 py-2 font-mono">${r.pctStr}</td>
-          </tr>`
-        ).join('');
-      } else {
-        seasonBody.innerHTML = '<tr><td class="px-4 py-2 text-sm text-gray-300" colspan="3">No decided games yet for this season.</td></tr>';
-      }
+      const dogRows = [...dogWins.entries()]
+        .map(([team_id, wins]) => ({
+          team: teamName.get(team_id) || `Team ${team_id}`,
+          wins
+        }))
+        .sort((a,b)=> b.wins - a.wins || a.team.localeCompare(b.team));
+
+      dogBody.innerHTML =
+        dogRows.length
+          ? dogRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.wins}</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>`;
 
       setStatus(`Loaded • Season ${season}`);
     }
