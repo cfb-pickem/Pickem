@@ -13,6 +13,9 @@
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
+  <!-- NEW: Chart.js for line chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     :root{
       --cfp-black:#0B0B0B;
@@ -144,7 +147,7 @@
     </section>
 
     <!-- LOWER CARDS -->
-    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       <!-- Win % in Last 8 Picks -->
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
@@ -184,6 +187,22 @@
         </div>
       </div>
     </section>
+
+    <!-- NEW: WEEKLY RANKINGS LINE CHART -->
+    <section class="mt-6">
+      <div class="cfp-card gold-shadow rounded-none">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval"></span>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
+            Weekly Rankings – Season Progression
+          </h2>
+        </div>
+        <div class="px-4 md:px-6 py-4" style="height: 360px;">
+          <canvas id="ranking-chart"></canvas>
+          <p id="ranking-note" class="mt-2 text-xs text-gray-300"></p>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script type="module">
@@ -198,6 +217,11 @@
     const formBody      = document.getElementById('form-body');
     const seasonBody    = document.getElementById('season-body');
     const dogBody       = document.getElementById('dog-body');
+
+    // NEW: ranking chart elements
+    const rankingCanvas = document.getElementById('ranking-chart');
+    const rankingNote   = document.getElementById('ranking-note');
+    let rankingChart    = null;
 
     function stripAccents(s){ try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); } catch { return s; } }
     function norm(v){
@@ -239,6 +263,172 @@
       seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
       seasonSel.value = String(seasons[seasons.length-1]); // latest
       return true;
+    }
+
+    // NEW: build / update weekly ranking line chart
+    function updateRankingChart({ byTeamDecided, pickedByWeek, completeWeeks, teamName }) {
+      if (!rankingCanvas) return;
+
+      const weeksSorted = [...pickedByWeek.keys()]
+        .filter(w => completeWeeks.has(w))
+        .sort((a,b) => a - b);
+
+      const teamIds = [...byTeamDecided.keys()];
+
+      if (!weeksSorted.length || !teamIds.length) {
+        if (rankingChart) {
+          rankingChart.destroy();
+          rankingChart = null;
+        }
+        if (rankingNote) {
+          rankingNote.textContent = 'No ranking data yet for this season.';
+        }
+        return;
+      }
+
+      // Running cumulative stats per team
+      const running = new Map(); // teamId -> { wins, total }
+      for (const id of teamIds) running.set(id, { wins: 0, total: 0 });
+
+      // week -> Map(teamId -> rank)
+      const ranksPerWeek = new Map();
+
+      for (const week of weeksSorted) {
+        // update stats for all teams for this week
+        for (const [teamId, arr] of byTeamDecided.entries()) {
+          const state = running.get(teamId);
+          for (const r of arr) {
+            if (r.week === week && r.winner != null) {
+              state.total++;
+              if (sameTeam(r.pick, r.winner)) state.wins++;
+            }
+          }
+        }
+
+        // Build snapshot and rank by cumulative win %
+        const snapshot = [];
+        for (const [teamId, st] of running.entries()) {
+          if (st.total === 0) continue; // must have at least one decided pick to appear
+          const pct = st.wins / st.total;
+          snapshot.push({
+            teamId,
+            pct,
+            wins: st.wins
+          });
+        }
+
+        snapshot.sort((a,b) =>
+          b.pct - a.pct ||
+          b.wins - a.wins ||
+          (teamName.get(a.teamId) || '').localeCompare(teamName.get(b.teamId) || '')
+        );
+
+        const rankMap = new Map();
+        snapshot.forEach((row, idx) => {
+          rankMap.set(row.teamId, idx + 1);
+        });
+        ranksPerWeek.set(week, rankMap);
+      }
+
+      const labels = weeksSorted.map(w => `W${w}`);
+      const datasets = teamIds.map(teamId => {
+        const label = teamName.get(teamId) || `Team ${teamId}`;
+        const data = weeksSorted.map(week => {
+          const m = ranksPerWeek.get(week);
+          if (!m) return null;
+          const r = m.get(teamId);
+          return r == null ? null : r;
+        });
+        return {
+          label,
+          data,
+          spanGaps: true,
+          tension: 0.25,
+          pointRadius: 3,
+          pointHitRadius: 6,
+        };
+      });
+
+      if (rankingChart) {
+        rankingChart.destroy();
+      }
+
+      const ctx = rankingCanvas.getContext('2d');
+
+      // Apply some dark-mode friendly defaults
+      if (window.Chart) {
+        Chart.defaults.color = '#e7e7e7';
+        Chart.defaults.font.family = 'Roboto, system-ui, -apple-system, Segoe UI, Arial, sans-serif';
+        Chart.defaults.borderColor = 'rgba(231,231,231,0.15)';
+      }
+
+      rankingChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'nearest',
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                boxWidth: 14,
+                boxHeight: 2,
+                usePointStyle: true,
+                pointStyle: 'line'
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const team = context.dataset.label || 'Team';
+                  const rank = context.parsed.y;
+                  return `${team}: Rank ${rank}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: 'Week'
+              },
+              grid: {
+                color: 'rgba(231,231,231,0.08)'
+              },
+              ticks: {
+                maxRotation: 0
+              }
+            },
+            y: {
+              reverse: true, // 1 at the top
+              title: {
+                display: true,
+                text: 'Rank (1 = best)'
+              },
+              ticks: {
+                stepSize: 1,
+                precision: 0
+              },
+              grid: {
+                color: 'rgba(231,231,231,0.08)'
+              }
+            }
+          }
+        }
+      });
+
+      if (rankingNote) {
+        rankingNote.textContent = 'Ranking is based on cumulative season win % after each completed week.';
+      }
     }
 
     async function main(){
@@ -293,6 +483,15 @@
         formBody.innerHTML      = '';
         seasonBody.innerHTML    = '<tr><td class="px-4 py-2 text-gray-300" colspan="3">No decided picks yet.</td></tr>';
         dogBody.innerHTML       = '<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>';
+
+        // Clear ranking chart as well
+        updateRankingChart({
+          byTeamDecided: new Map(),
+          pickedByWeek: pickedByWeek,
+          completeWeeks: new Set(),
+          teamName: new Map()
+        });
+
         return setStatus('Loaded');
       }
 
@@ -376,7 +575,7 @@
       }
       if(zeroTally.size){
         const chips = [...zeroTally.entries()]
-          .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||''))
+          .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||'')))
           .map(([id,cnt]) => {
             const label = `${escapeHtml(teamName.get(id) || `Team ${id}`)}${cnt>1 ? ` (${cnt})` : ''}`;
             return `<span class="chip px-3 py-1 rounded-md whitespace-nowrap">${label}</span>`;
@@ -518,6 +717,14 @@
               </tr>`
             ).join('')
           : `<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>`;
+
+      // NEW: update rankings line chart (same season filter)
+      updateRankingChart({
+        byTeamDecided,
+        pickedByWeek,
+        completeWeeks,
+        teamName
+      });
 
       setStatus(`Loaded • Season ${season}`);
     }
