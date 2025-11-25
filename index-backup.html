@@ -196,34 +196,36 @@
     const wsNot        = document.getElementById('ws-not');
 
     // ---- State ----
+    const PLAYOFF_KEY = 'playoff';
+
     let seasons = [];
     let currentSeason = null;
 
-    let weeks = [];
-    let currentWeek = null; // numeric week when not in playoff mode
+    let weeks = [];                // numeric weeks with picks (<= 15)
+    let currentWeek = null;        // number or PLAYOFF_KEY
 
     let gameIds = [];
     let winnerMap = {};
     let lineMap   = {};
     let logoByTeam = {};
     let abbrByTeam = {};
-    let winsByTeam = {}; // points = wins for current mode
+    let winsByTeam = {}; // points = wins
 
     let lastTeams = [];
     let lastPickMap = {};
     let lastGames = [];
 
-    // 🔹 Currently logged-in user's team (for highlight)
+    // Playoff state
+    let hasPlayoffForSeason = false;
+    let isPlayoffModeCurrent = false;
+    let seedsByTeam = {};      // team_id -> seed
+    let playoffTeamIds = [];   // [team_id]
+
+    // Per-game reveal control
+    let showPickByGame = {};   // gameId -> boolean
+
+    // Logged in user's team (for highlight)
     let currentTeamId = null;
-
-    // Reveal control
-    let weekStartTs = null;
-    let showPicks = true;
-
-    // Playoff mode
-    let isPlayoffMode = false;
-    let playoffTeamIds = new Set();
-    let earliestPlayoffCreatedAt = null; // ms since epoch (earliest playoffs.created_at for season)
 
     // Phone detection
     const phoneMQ = window.matchMedia('(max-width: 640px)');
@@ -244,7 +246,7 @@
     // ---------- Performance helpers ----------
     const STORAGE_KEYS = {
       lastSeason: 'cfb_last_season_v1',
-      lastWeek:   'cfb_last_week_v1',
+      lastWeek:   'cfb_last_week_v1', // numeric only; playoff not persisted
       logos: 'cfb_logos_v1',
       logosTTL: 'cfb_logos_ttl_v1',
       abbrev: 'cfb_abbrev_v1',
@@ -347,6 +349,34 @@
       }
     }
 
+    // ---------- Playoff info ----------
+    async function loadPlayoffInfoForSeason(season){
+      seedsByTeam = {};
+      playoffTeamIds = [];
+      hasPlayoffForSeason = false;
+
+      const { data, error } = await supabase
+        .from('playoffs')
+        .select('team_id, season, seed')
+        .eq('season', season);
+
+      if (error) {
+        console.warn('loadPlayoffInfo error:', error.message);
+        return;
+      }
+
+      (data || []).forEach(r => {
+        if (r.team_id != null) {
+          playoffTeamIds.push(r.team_id);
+          if (r.seed != null) {
+            seedsByTeam[r.team_id] = r.seed;
+          }
+        }
+      });
+
+      hasPlayoffForSeason = playoffTeamIds.length > 0;
+    }
+
     // ---------- App startup ----------
     async function startup() {
       await initNav();
@@ -361,6 +391,7 @@
       }
       seasonSelect.value = String(currentSeason);
 
+      await loadPlayoffInfoForSeason(currentSeason);
       await loadWeeksForSeason(currentSeason);
 
       const hintedWeek = getCached(STORAGE_KEYS.lastWeek);
@@ -369,36 +400,48 @@
       } else {
         currentWeek = weeks[weeks.length-1];
       }
+      isPlayoffModeCurrent = false;
       weekSelect.value = String(currentWeek);
-      isPlayoffMode = false;
 
-      await init();
-      await computeSeasonWins();
+      await initAssets();
+      await computeSeasonWins(false);
       await loadWeek(currentWeek);
 
       seasonSelect.onchange = async () => {
         currentSeason = Number(seasonSelect.value);
         setCached(STORAGE_KEYS.lastSeason, currentSeason);
-        isPlayoffMode = false;
+
+        stopLiveTicker();
+        headerStatusEls.clear();
+
+        await loadPlayoffInfoForSeason(currentSeason);
         await loadWeeksForSeason(currentSeason);
+
+        // default to latest numeric week
         currentWeek = weeks[weeks.length-1];
+        isPlayoffModeCurrent = false;
         weekSelect.value = String(currentWeek);
-        await computeSeasonWins();
+
+        await computeSeasonWins(false);
         await loadWeek(currentWeek);
       };
 
       weekSelect.onchange = async ()=> {
-        const val = weekSelect.value;
-        if (val === 'playoff') {
-          isPlayoffMode = true;
-          // don't cache playoff as a numeric week
-          await computeSeasonWins();
-          await loadPlayoffWeek();
+        const value = weekSelect.value;
+        stopLiveTicker();
+        headerStatusEls.clear();
+
+        if (value === PLAYOFF_KEY) {
+          isPlayoffModeCurrent = true;
+          currentWeek = PLAYOFF_KEY;
+          // do not cache playoff as numeric
+          await computeSeasonWins(true);
+          await loadWeek(PLAYOFF_KEY);
         } else {
-          isPlayoffMode = false;
-          currentWeek = Number(val);
+          isPlayoffModeCurrent = false;
+          currentWeek = Number(value);
           setCached(STORAGE_KEYS.lastWeek, currentWeek);
-          await computeSeasonWins();
+          await computeSeasonWins(false);
           await loadWeek(currentWeek);
         }
       };
@@ -420,12 +463,6 @@
 
     async function loadWeeksForSeason(season){
       status(`Loading weeks for ${season}…`);
-
-      // reset playoff state for new season
-      isPlayoffMode = false;
-      playoffTeamIds = new Set();
-      earliestPlayoffCreatedAt = null;
-
       const { data, error } = await supabase
         .from('all_games')
         .select('week')
@@ -435,9 +472,7 @@
         .order('week', { ascending: true });
       if(error){ status(error.message, true); throw error; }
 
-      // Unique weeks for this season
       const uniqueWeeks = [...new Set((data || []).map(r => r.week))].sort((a,b)=>a-b);
-
       if (!uniqueWeeks.length){
         weeks = [];
         weekSelect.innerHTML = '';
@@ -445,50 +480,26 @@
         return;
       }
 
-      // Cap to min(maxWeekInSeason, 15)
       const maxWeekInSeason = uniqueWeeks[uniqueWeeks.length - 1];
       const maxAllowedWeek = Math.min(maxWeekInSeason, 15);
-
       weeks = uniqueWeeks.filter(w => w <= maxAllowedWeek);
 
       if (!weeks.length){
-        weekSelect.innerHTML = '';
-        status('No selectable weeks (all games are week 16+).', true);
+        weekSelect.innerHTML = hasPlayoffForSeason
+          ? `<option value="${PLAYOFF_KEY}">Playoffs</option>`
+          : '';
+        status('No selectable regular-season weeks (all games are week 16+).', true);
         return;
       }
 
-      weekSelect.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
-
-      // 🔹 Check for playoffs for this season; if any, add "Playoff" option
-      try {
-        const { data: playoffRows, error: pErr } = await supabase
-          .from('playoffs')
-          .select('team_id, season, created_at')
-          .eq('season', season);
-
-        if (!pErr && playoffRows && playoffRows.length) {
-          playoffTeamIds = new Set(playoffRows.map(r => r.team_id));
-
-          let earliestMs = null;
-          playoffRows.forEach(r => {
-            if (!r.created_at) return;
-            const t = new Date(r.created_at).getTime();
-            if (!Number.isFinite(t)) return;
-            earliestMs = (earliestMs == null) ? t : Math.min(earliestMs, t);
-          });
-          earliestPlayoffCreatedAt = earliestMs;
-
-          const opt = document.createElement('option');
-          opt.value = 'playoff';
-          opt.textContent = 'Playoff';
-          weekSelect.appendChild(opt);
-        }
-      } catch (e) {
-        console.warn('playoff lookup error', e);
+      let options = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+      if (hasPlayoffForSeason) {
+        options += `<option value="${PLAYOFF_KEY}">Playoffs</option>`;
       }
+      weekSelect.innerHTML = options;
     }
 
-    async function init(){
+    async function initAssets(){
       status('Loading assets…');
 
       const logoCached = getCachedMap(STORAGE_KEYS.logos, STORAGE_KEYS.logosTTL);
@@ -517,23 +528,22 @@
     }
 
     // ---------- Points ----------
-    async function computeSeasonWins(){
-      if (isPlayoffMode) {
-        await computePlayoffWins();
-      } else {
-        await computeRegularWins();
-      }
-    }
-
-    // Regular-season: all decided games in season, all teams
-    async function computeRegularWins(){
+    async function computeSeasonWins(playoffMode){
       status('Computing points…');
 
-      const { data: decidedGames, error: dgErr } = await supabase
+      let q = supabase
         .from('all_games')
-        .select('GameId, winner')
+        .select('GameId, winner, week')
         .eq('cfb_season', currentSeason)
         .not('winner', 'is', null);
+
+      if (playoffMode) {
+        q = q.gt('week', 15);
+      } else {
+        q = q.lte('week', 15);
+      }
+
+      const { data: decidedGames, error: dgErr } = await q;
       if(dgErr){ status(dgErr.message, true); return; }
 
       const gameIdsSeason = (decidedGames || []).map(g => g.GameId);
@@ -561,68 +571,27 @@
       });
     }
 
-    // Playoff mode: only playoff teams, only picked games that kick after earliest playoffs.created_at
-    async function computePlayoffWins(){
-      status('Computing playoff points…');
-
-      if (!playoffTeamIds || !playoffTeamIds.size || !earliestPlayoffCreatedAt) {
-        winsByTeam = Object.create(null);
-        return;
-      }
-
-      const earliestISO = new Date(earliestPlayoffCreatedAt).toISOString();
-      const playoffIdsArr = Array.from(playoffTeamIds);
-
-      const { data: decidedGames, error: dgErr } = await supabase
-        .from('all_games')
-        .select('GameId, winner, "Start (CT)", picked')
-        .eq('cfb_season', currentSeason)
-        .not('winner', 'is', null)
-        .eq('picked', true)
-        .gte('Start (CT)', earliestISO);
-
-      if(dgErr){ status(dgErr.message, true); return; }
-
-      const filtered = (decidedGames || []);
-      const gameIdsSeason = filtered.map(g => g.GameId);
-      const winnerByGame = Object.create(null);
-      filtered.forEach(g => { winnerByGame[g.GameId] = g.winner; });
-
-      if (!gameIdsSeason.length){
-        winsByTeam = Object.create(null);
-        return;
-      }
-
-      const { data: allPicks, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick')
-        .in('game_id', gameIdsSeason)
-        .in('team_id', playoffIdsArr);
-
-      if(pErr){ status(pErr.message, true); return; }
-
-      winsByTeam = Object.create(null);
-      (allPicks||[]).forEach(p=>{
-        const winner = winnerByGame[p.game_id];
-        if(!winner) return;
-        if(sameTeam(p.pick, winner)){
-          winsByTeam[p.team_id] = (winsByTeam[p.team_id] || 0) + 1;
-        }
-      });
-    }
-
-    // ---------- Load a week (season-scoped, regular mode) ----------
-    async function loadWeek(week){
-      status(`Loading S${currentSeason} • W${week}…`);
+    // ---------- Load regular week or playoff "week" ----------
+    async function loadWeek(weekOrPlayoff){
+      const modeLabel = isPlayoffModeCurrent ? 'Playoffs' : `W${weekOrPlayoff}`;
+      status(`Loading S${currentSeason} • ${modeLabel}…`);
       stopLiveTicker();
       headerStatusEls.clear();
+      showPickByGame = {};
 
-      const { data: gamesRaw, error: gErr } = await supabase
+      let q = supabase
         .from('all_games')
         .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season')
         .eq('cfb_season', currentSeason)
-        .eq('picked', true)
-        .eq('week', week);
+        .eq('picked', true);
+
+      if (isPlayoffModeCurrent) {
+        q = q.gt('week', 15);
+      } else {
+        q = q.eq('week', weekOrPlayoff);
+      }
+
+      const { data: gamesRaw, error: gErr } = await q;
       if(gErr) return status(gErr.message, true);
 
       const games = (gamesRaw || []).slice().sort((a, b) => {
@@ -632,15 +601,19 @@
       });
       lastGames = games;
 
-      // Earliest kickoff timestamp
-      weekStartTs = null;
-      for (const g of games) {
-        const ts = g?.["Start (CT)"] ? new Date(g["Start (CT)"]).getTime() : null;
+      // per-game reveal
+      games.forEach(g => {
+        const id = g.GameId;
+        const ts = g && g["Start (CT)"] ? new Date(g["Start (CT)"]).getTime() : null;
+        let reveal = true;
         if (Number.isFinite(ts)) {
-          weekStartTs = (weekStartTs==null) ? ts : Math.min(weekStartTs, ts);
+          reveal = Date.now() >= ts;
         }
-      }
-      showPicks = (weekStartTs == null) ? true : (Date.now() >= weekStartTs);
+        if (g.Status === 'in_progress' || g.Status === 'final') {
+          reveal = true;
+        }
+        showPickByGame[id] = !!reveal;
+      });
 
       winnerMap = {}; lineMap = {};
       gameIds = games.map(g=>g.GameId);
@@ -650,11 +623,18 @@
         lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
       });
 
+      // Teams
       const { data: teamRows, error: tErr } = await supabase
         .from('teams')
         .select('team_id, team_name')
         .order('team_name', { ascending: true });
       if(tErr) return status(tErr.message, true);
+
+      let teamsFiltered = [...(teamRows || [])];
+      if (isPlayoffModeCurrent && playoffTeamIds.length) {
+        const set = new Set(playoffTeamIds);
+        teamsFiltered = teamsFiltered.filter(t => set.has(t.team_id));
+      }
 
       const { data: pickRows, error: pErr } = await supabase
         .from('picks')
@@ -664,7 +644,7 @@
 
       const pickMap = buildPickMap(pickRows);
 
-      const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
+      const teamsSorted = [...teamsFiltered].sort((a,b)=>{
         const pa = winsByTeam[a.team_id] || 0;
         const pb = winsByTeam[b.team_id] || 0;
         if(pb !== pa) return pb - pa;
@@ -676,117 +656,15 @@
 
       const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
-      renderTable(teamsSorted, pickMap, winnerMap, showPicks);
+      renderTable(teamsSorted, pickMap, winnerMap);
       renderWeeklySubmissions(teamsSorted, pickMap);
 
       startLiveTicker();
-      if (!showPicks && weekStartTs) {
-        status(`Picks hidden until kickoff at ${formatTimeLocal(weekStartTs)} CT • Season ${currentSeason} • Week ${week}`);
+
+      if (isPlayoffModeCurrent) {
+        status(`Season ${currentSeason} • Playoffs`);
       } else {
-        status(`Season ${currentSeason} • Week ${week}`);
-      }
-    }
-
-    // ---------- Load playoff mode ----------
-    async function loadPlayoffWeek(){
-      status(`Loading playoffs for Season ${currentSeason}…`);
-      stopLiveTicker();
-      headerStatusEls.clear();
-
-      if (!playoffTeamIds || !playoffTeamIds.size) {
-        tbody.innerHTML = '';
-        theadRow.innerHTML = '';
-        wsMade.innerHTML = '<span class="text-gray-400">—</span>';
-        wsNot.innerHTML = '<span class="text-gray-400">—</span>';
-        status('No playoff teams for this season.', true);
-        return;
-      }
-
-      let query = supabase
-        .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season')
-        .eq('cfb_season', currentSeason)
-        .eq('picked', true);
-
-      if (earliestPlayoffCreatedAt) {
-        query = query.gte('Start (CT)', new Date(earliestPlayoffCreatedAt).toISOString());
-      }
-
-      const { data: gamesRaw, error: gErr } = await query;
-      if(gErr) {
-        status(gErr.message, true);
-        return;
-      }
-
-      const games = (gamesRaw || []).slice().sort((a, b) => {
-        const ta = a?.["Start (CT)"] ? new Date(a["Start (CT)"]).getTime() : Infinity;
-        const tb = b?.["Start (CT)"] ? new Date(b["Start (CT)"]).getTime() : Infinity;
-        return ta - tb;
-      });
-      lastGames = games;
-
-      // Earliest playoff kickoff
-      weekStartTs = null;
-      for (const g of games) {
-        const ts = g?.["Start (CT)"] ? new Date(g["Start (CT)"]).getTime() : null;
-        if (Number.isFinite(ts)) {
-          weekStartTs = (weekStartTs==null) ? ts : Math.min(weekStartTs, ts);
-        }
-      }
-      showPicks = (weekStartTs == null) ? true : (Date.now() >= weekStartTs);
-
-      winnerMap = {}; lineMap = {};
-      gameIds = games.map(g=>g.GameId);
-
-      games.forEach(g=>{
-        winnerMap[g.GameId] = g.winner ?? null;
-        lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
-      });
-
-      const playoffIdsArr = Array.from(playoffTeamIds);
-
-      const { data: teamRows, error: tErr } = await supabase
-        .from('teams')
-        .select('team_id, team_name')
-        .in('team_id', playoffIdsArr)
-        .order('team_name', { ascending: true });
-      if(tErr) {
-        status(tErr.message, true);
-        return;
-      }
-
-      const { data: pickRows, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick')
-        .in('game_id', gameIds)
-        .in('team_id', playoffIdsArr);
-      if(pErr) {
-        status(pErr.message, true);
-        return;
-      }
-
-      const pickMap = buildPickMap(pickRows);
-
-      const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
-        const pa = winsByTeam[a.team_id] || 0;
-        const pb = winsByTeam[b.team_id] || 0;
-        if(pb !== pa) return pb - pa;
-        return a.team_name.localeCompare(b.team_name);
-      });
-
-      lastTeams = teamsSorted;
-      lastPickMap = pickMap;
-
-      const gameNameMap = buildGameNameMap(games);
-      renderHeader(gameNameMap, games);
-      renderTable(teamsSorted, pickMap, winnerMap, showPicks);
-      renderWeeklySubmissions(teamsSorted, pickMap); // only playoff teams
-
-      startLiveTicker();
-      if (!showPicks && weekStartTs) {
-        status(`Picks hidden until first playoff kickoff at ${formatTimeLocal(weekStartTs)} CT • Season ${currentSeason}`);
-      } else {
-        status(`Season ${currentSeason} • Playoff`);
+        status(`Season ${currentSeason} • Week ${weekOrPlayoff}`);
       }
     }
 
@@ -810,13 +688,22 @@
       // TEAM
       const thTeam = document.createElement('th');
       thTeam.className = 'text-left pl-4 pr-2 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-1';
-      thTeam.textContent = isPlayoffMode ? 'Playoff Team' : 'Team';
+      thTeam.textContent = 'Team';
       theadRow.appendChild(thTeam);
+
+      // Seed column only in playoff mode
+      const hasSeedsColumn = isPlayoffModeCurrent && playoffTeamIds.length > 0;
+      if (hasSeedsColumn) {
+        const thSeed = document.createElement('th');
+        thSeed.className = 'pl-2 pr-2 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
+        thSeed.textContent = 'Seed';
+        theadRow.appendChild(thSeed);
+      }
 
       // POINTS
       const thPts = document.createElement('th');
       thPts.className = 'pl-2 pr-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
-      thPts.textContent = isPlayoffMode ? 'Playoff Points' : 'Points';
+      thPts.textContent = 'Points';
       theadRow.appendChild(thPts);
 
       gameIds.forEach(id=>{
@@ -880,7 +767,7 @@
       });
     }
 
-    function renderTable(teams, pickMap, winnerMap, revealPicks){
+    function renderTable(teams, pickMap, winnerMap){
       tbody.innerHTML = '';
 
       const pointsArray = teams.map(t => winsByTeam[t.team_id] || 0);
@@ -893,13 +780,14 @@
         } else break;
       }
 
-      const shouldInsertDivider = !isPlayoffMode && lastCutIndex >= 0 && lastCutIndex < teams.length - 1;
+      const shouldInsertDivider = lastCutIndex >= 0 && lastCutIndex < teams.length - 1;
+      const hasSeedsColumn = isPlayoffModeCurrent && playoffTeamIds.length > 0;
+      const extraCols = hasSeedsColumn ? 1 : 0;
 
       teams.forEach((team, idx)=>{
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // 🔹 Mark logged-in user's team row
         if (currentTeamId != null && team.team_id === currentTeamId) {
           tr.dataset.me = 'true';
         }
@@ -908,6 +796,14 @@
         tdTeam.className = 'pl-4 pr-2 py-2 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
         tdTeam.textContent = team.team_name;
         tr.appendChild(tdTeam);
+
+        if (hasSeedsColumn) {
+          const tdSeed = document.createElement('td');
+          tdSeed.className = 'pl-2 pr-2 py-2 text-center text-sm text-[var(--cfp-ivory)]';
+          const seed = seedsByTeam[team.team_id];
+          tdSeed.textContent = (seed != null) ? String(seed) : '';
+          tr.appendChild(tdSeed);
+        }
 
         const tdPts = document.createElement('td');
         tdPts.className = 'pl-2 pr-3 py-2 text-center font-semibold text-[var(--cfp-ivory)]';
@@ -918,7 +814,8 @@
           const td = document.createElement('td');
           td.className = 'px-3 py-2 text-center text-sm align-middle';
 
-          if(!revealPicks){
+          // per-game reveal
+          if (!showPickByGame[id]) {
             td.classList.add('pick-empty');
             td.textContent = '—';
             tr.appendChild(td);
@@ -963,7 +860,7 @@
           const divTr = document.createElement('tr');
           divTr.className = 'playoff-divider';
           const divTd = document.createElement('td');
-          divTd.colSpan = 2 + gameIds.length;
+          divTd.colSpan = 2 + extraCols + gameIds.length;
           divTd.textContent = 'Projected Playoff';
           divTr.appendChild(divTd);
           tbody.appendChild(divTr);
@@ -1027,6 +924,7 @@
       }
 
       let winnerChanged = false;
+      let revealChanged = false;
 
       (rows || []).forEach(r=>{
         const entry = headerStatusEls.get(String(r.GameId));
@@ -1062,26 +960,33 @@
           badgeEl.className = 'badge badge-sched inline-fix';
         }
 
+        // winner changes
         const prevWinner = winnerMap[r.GameId] ?? null;
         const currWinner = r.winner ?? null;
         if (prevWinner !== currWinner) {
           winnerMap[r.GameId] = currWinner;
           winnerChanged = true;
         }
+
+        // per-game reveal changes
+        const prevReveal = !!showPickByGame[r.GameId];
+        const ts = r && r["Start (CT)"] ? new Date(r["Start (CT)"]).getTime() : null;
+        let reveal = true;
+        if (Number.isFinite(ts)) {
+          reveal = Date.now() >= ts;
+        }
+        if (r.Status === 'in_progress' || r.Status === 'final') {
+          reveal = true;
+        }
+        const newReveal = !!reveal;
+        showPickByGame[r.GameId] = newReveal;
+        if (prevReveal !== newReveal) {
+          revealChanged = true;
+        }
       });
 
-      if (!showPicks && weekStartTs && Date.now() >= weekStartTs) {
-        showPicks = true;
-        if (isPlayoffMode) {
-          status(`Kickoff! Showing picks for Season ${currentSeason} • Playoff games.`);
-        } else {
-          status(`Kickoff! Showing picks for Season ${currentSeason} • Week ${currentWeek}.`);
-        }
-        winnerChanged = true;
-      }
-
-      if (winnerChanged) {
-        await computeSeasonWins();
+      if (winnerChanged || revealChanged) {
+        await computeSeasonWins(isPlayoffModeCurrent);
 
         lastTeams.sort((a,b)=>{
           const pa = winsByTeam[a.team_id] || 0;
@@ -1090,7 +995,7 @@
           return a.team_name.localeCompare(b.team_name);
         });
 
-        renderTable(lastTeams, lastPickMap, winnerMap, showPicks);
+        renderTable(lastTeams, lastPickMap, winnerMap);
         renderWeeklySubmissions(lastTeams, lastPickMap);
       }
     }
