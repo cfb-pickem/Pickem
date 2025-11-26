@@ -13,6 +13,10 @@
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
+  <link rel="stylesheet" href="./css/theme-halloween.css">
+  <link rel="stylesheet" href="./css/theme-thanksgiving.css">
+  <link rel="stylesheet" href="./css/theme-christmas.css">
+
   <style>
     :root{
       --cfp-black:#0B0B0B;
@@ -180,7 +184,7 @@
   <script type="module">
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
-
+    import { updateSeasonalTheme } from './js/seasonalTheme.js';
     // DOM
     const seasonSelect = document.getElementById('season-select');
     const weekSelect   = document.getElementById('week-select');
@@ -612,6 +616,7 @@
         return ta - tb;
       });
       lastGames = games;
+      updateSeasonalTheme(currentSeason, games);
 
       weekStartTs = null;
       gameStartTs = {};
@@ -689,6 +694,7 @@
         return ta - tb;
       });
       lastGames = games;
+      updateSeasonalTheme(currentSeason, games);
 
       weekStartTs = null;
       gameStartTs = {};
