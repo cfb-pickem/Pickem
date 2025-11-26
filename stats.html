@@ -61,8 +61,6 @@
       border:2px solid var(--cfp-gold);
       border-radius:999px;
       position:relative;
-      box-shadow:0 0 12px rgba(233,185,73,.7);
-      animation:pulse-gold 2.4s infinite;
     }
     .trophy-oval::before{
       content:"";
@@ -73,12 +71,6 @@
       width:2px;
       background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));
       transform:translateX(-50%);
-    }
-
-    @keyframes pulse-gold{
-      0%{box-shadow:0 0 0 0 rgba(233,185,73,.7);}
-      70%{box-shadow:0 0 0 16px rgba(233,185,73,0);}
-      100%{box-shadow:0 0 0 0 rgba(233,185,73,0);}
     }
 
     .table th,.table td{border-color:rgba(231,231,231,.08)}
@@ -133,6 +125,36 @@
       background:rgba(0,0,0,.5);
       border:1px solid rgba(231,231,231,.22);
     }
+
+    /* Top Dawg doggy flair */
+    .dog-card{
+      position:relative;
+      overflow:hidden;
+    }
+    .dog-card::before{
+      content:"";
+      position:absolute;
+      inset:-40%;
+      background:
+        radial-gradient(circle at 10% 20%, rgba(233,185,73,.22) 0 12%, transparent 40%),
+        radial-gradient(circle at 70% 40%, rgba(233,185,73,.18) 0 10%, transparent 40%),
+        radial-gradient(circle at 30% 80%, rgba(233,185,73,.16) 0 9%, transparent 40%);
+      opacity:.5;
+      mix-blend-mode:screen;
+      pointer-events:none;
+    }
+    .dog-header-badge{
+      border-radius:999px;
+      padding:.15rem .5rem;
+      font-size:.65rem;
+      text-transform:uppercase;
+      letter-spacing:.18em;
+      background:rgba(0,0,0,.65);
+      border:1px solid rgba(231,231,231,.22);
+      display:inline-flex;
+      align-items:center;
+      gap:.25rem;
+    }
   </style>
 </head>
 
@@ -175,10 +197,7 @@
       <div class="ribbon gold-shadow rounded-none">
         <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
           <span class="trophy-oval"></span>
-          <div>
-            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Perfect Week Club</h2>
-            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Completed weeks only</p>
-          </div>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Perfect Week Club</h2>
         </div>
         <div id="perfect-ribbon" class="relative flex items-center gap-2 overflow-x-auto px-4 md:px-6 py-3 z-10"></div>
       </div>
@@ -187,10 +206,7 @@
       <div class="ribbon gold-shadow rounded-none">
         <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
           <span class="trophy-oval"></span>
-          <div>
-            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Winless Week Club</h2>
-            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Only weeks with picks count</p>
-          </div>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Winless Week Club</h2>
         </div>
         <div id="zero-ribbon" class="relative flex flex-wrap items-center gap-2 px-4 md:px-6 py-3 z-10"></div>
       </div>
@@ -225,17 +241,22 @@
       </div>
 
       <!-- RIGHT: Top Dawg – Underdog Outright Wins -->
-      <div class="cfp-card gold-shadow rounded-none">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+      <div class="cfp-card gold-shadow rounded-none dog-card">
+        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
           <span class="trophy-oval"></span>
           <div>
-            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
-              Top Dawg – Underdog Outright Wins
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] flex items-center gap-2">
+              Top Dawg 🐶
             </h2>
-            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Picked the dog & it won</p>
+            <p class="mt-1 text-[10px] text-gray-300">
+              <span class="dog-header-badge">
+                <span class="text-[.65rem] tracking-[.18em] uppercase">Underdog outright wins</span>
+                <span>🐾</span>
+              </span>
+            </p>
           </div>
         </div>
-        <div class="overflow-auto">
+        <div class="relative overflow-auto z-10">
           <table class="table min-w-full text-sm">
             <thead>
               <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
@@ -520,7 +541,7 @@
           }).join('');
         perfectRibbon.innerHTML = chips;
       } else {
-        perfectRibbon.innerHTML = '<span class="text-sm text-gray-300">No perfect weeks yet (completed weeks only).</span>';
+        perfectRibbon.innerHTML = '<span class="text-sm text-gray-300">No perfect weeks yet.</span>';
       }
 
       // ------- Winless Week tally (completed weeks only) -------
@@ -545,13 +566,11 @@
           .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||''))
           .map(([id,cnt]) => {
             const label = `${escapeHtml(teamName.get(id) || `Team ${id}`)}${cnt>1 ? ` (${cnt})` : ''}`;
-            return `<span class="chip px-3 py-1 rounded-md whitespace-nowrap bg-black/80 text-[var(--cfp-gold)] border border-[var(--cfp-gold)]">
-              ${label}
-            </span>`;
+            return `<span class="chip px-3 py-1 rounded-md whitespace-nowrap">${label}</span>`;
           }).join('');
         zeroRibbon.innerHTML = chips;
       } else {
-        zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet (completed weeks only, weeks with picks only).</span>';
+        zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet.</span>';
       }
 
       // ------- Weeks with picked games (for Missed Weeks calc) -------
