@@ -405,33 +405,32 @@ body[data-theme="thanksgiving"] #ws-not .badge{
 }
 
 /* ============================================================
-   Main table card = platter with steam from center
+   Main table card = platter 
    ============================================================ */
 
 /* Target the card that wraps the big table layout */
 body[data-theme="thanksgiving"] .cfp-card.scroll-shadows{
   position:relative;
-  overflow:hidden;
+  /* let Tailwind's overflow-auto do its job; don't kill scrolling */
+  overflow:auto;
 }
 
-/* Rising little "steam" emojis from centre */
+/* Remove the floating emoji and keep a very subtle glow only */
 body[data-theme="thanksgiving"] .cfp-card.scroll-shadows::after{
-  content:"🥔";
+  content:"";                 /* no 🥔 */
   position:absolute;
-  bottom:-6px;
-  left:50%;
-  transform:translateX(-50%);
-  font-size:1.8rem;
-  filter:drop-shadow(0 0 8px rgba(255,255,255,.4));
-  animation:thanksgivingSteam 3s infinite ease-in-out;
-  opacity:.95;
-}
-
-@keyframes thanksgivingSteam{
-  0%   { transform:translate(-50%, 4px) scale(.95); opacity:.5; }
-  30%  { transform:translate(-50%, -4px) scale(1.05); opacity:1; }
-  70%  { transform:translate(-50%, -10px) scale(1); opacity:.7; }
-  100% { transform:translate(-50%, 4px) scale(.95); opacity:.5; }
+  bottom:0;
+  left:0;
+  right:0;
+  height:18px;
+  pointer-events:none;        /* don't block touch scroll */
+  background:linear-gradient(
+    to top,
+    rgba(247,195,92,.25),
+    transparent
+  );
+  opacity:.7;
+  /* no animation anymore */
 }
 
 /* ============================================================
