@@ -35,19 +35,104 @@
       min-height: 100vh;
     }
 
-    .gold-shadow{box-shadow: 0 0 0 1px rgba(233,185,73,.35), 0 0 24px rgba(233,185,73,.08) inset}
-    .cfp-card{background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
-    .stripe{background: repeating-linear-gradient(90deg, transparent 0 40px, rgba(233,185,73,.12) 40px 48px)}
-    .trophy-oval{width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative}
-    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
+    .gold-shadow{
+      box-shadow:
+        0 0 0 1px rgba(233,185,73,.35),
+        0 24px 40px rgba(0,0,0,.55),
+        0 0 24px rgba(233,185,73,.08) inset;
+    }
+
+    .cfp-card{
+      background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));
+      border:1px solid rgba(231,231,231,.10);
+      backdrop-filter: blur(6px);
+    }
+
+    .stripe{
+      background:
+        repeating-linear-gradient(90deg, transparent 0 40px, rgba(233,185,73,.12) 40px 48px),
+        linear-gradient(120deg, rgba(255,255,255,.03), transparent 40%, rgba(255,255,255,.03));
+      background-blend-mode: screen;
+    }
+
+    .trophy-oval{
+      width:18px;
+      height:36px;
+      border:2px solid var(--cfp-gold);
+      border-radius:999px;
+      position:relative;
+      box-shadow:0 0 12px rgba(233,185,73,.7);
+      animation:pulse-gold 2.4s infinite;
+    }
+    .trophy-oval::before{
+      content:"";
+      position:absolute;
+      left:50%;
+      top:4px;
+      bottom:4px;
+      width:2px;
+      background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));
+      transform:translateX(-50%);
+    }
+
+    @keyframes pulse-gold{
+      0%{box-shadow:0 0 0 0 rgba(233,185,73,.7);}
+      70%{box-shadow:0 0 0 16px rgba(233,185,73,0);}
+      100%{box-shadow:0 0 0 0 rgba(233,185,73,0);}
+    }
 
     .table th,.table td{border-color:rgba(231,231,231,.08)}
-    .table tbody tr:hover{background:rgba(233,185,73,.06)}
+    .table tbody tr:hover{
+      background:radial-gradient(circle at 0 0, rgba(233,185,73,.18), transparent 55%);
+      transition:background .18s ease-out;
+    }
 
-    .ribbon{background:linear-gradient(180deg,#2b2c2e,#1b1c1d);border:1px solid rgba(231,231,231,.10)}
-    .chip{background:var(--cfp-gold); color:#0b0b0b; font-weight:700; letter-spacing:.01em}
-    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
+    .ribbon{
+      background:linear-gradient(180deg,#2b2c2e,#1b1c1d);
+      border:1px solid rgba(231,231,231,.10);
+      position:relative;
+      overflow:hidden;
+    }
+
+    .ribbon::after{
+      content:"";
+      position:absolute;
+      inset:-40%;
+      background:conic-gradient(from 200deg, transparent 0 30deg, rgba(233,185,73,.16) 60deg 80deg, transparent 110deg 360deg);
+      opacity:.4;
+      mix-blend-mode:screen;
+      pointer-events:none;
+    }
+
+    .chip{
+      background:var(--cfp-gold);
+      color:#0b0b0b;
+      font-weight:700;
+      letter-spacing:.01em;
+      box-shadow:0 8px 18px rgba(0,0,0,.55);
+      text-transform:uppercase;
+      font-size:.7rem;
+    }
+
+    .cfp-select{
+      background:var(--cfp-black);
+      color:#f1f1f1;
+      border:1px solid rgba(231,231,231,.12);
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      font-size:.65rem;
+    }
     .cfp-select:focus{outline:none;box-shadow:var(--ring)}
+
+    .badge-pill{
+      border-radius:999px;
+      padding:.15rem .5rem;
+      font-size:.65rem;
+      text-transform:uppercase;
+      letter-spacing:.18em;
+      background:rgba(0,0,0,.5);
+      border:1px solid rgba(231,231,231,.22);
+    }
   </style>
 </head>
 
@@ -56,22 +141,30 @@
     <div id="site-nav"></div>
 
     <header class="cfp-card rounded-none stripe gold-shadow mb-4">
-      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between px-4 py-4 md:px-6 md:py-5 gap-3">
         <div class="flex items-center gap-3 md:gap-4">
           <span class="trophy-oval"></span>
           <div>
             <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Season Stats</h1>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">
+              Season Stats
+            </h1>
+            <p class="text-xs text-gray-300 mt-1 flex items-center gap-2">
+              <span class="inline-flex items-center gap-1 badge-pill">
+                <span class="w-1.5 h-1.5 rounded-full bg-[var(--cfp-gold)] animate-pulse"></span>
+                Live form & favorites
+              </span>
+            </p>
           </div>
         </div>
 
         <!-- Season filter -->
-        <div class="flex items-center gap-3 text-sm">
-          <label class="text-gray-300">Season</label>
-          <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[120px]"></select>
+        <div class="flex items-center gap-3 text-xs md:text-sm md:self-end">
+          <label class="text-gray-300 tracking-[.18em] uppercase">Season</label>
+          <select id="season-select" class="cfp-select rounded-none px-3 py-2 min-w-[120px]"></select>
         </div>
       </div>
-      <div class="px-4 md:px-6 pb-3 text-xs text-gray-300">
+      <div class="px-4 md:px-6 pb-3 text-xs text-gray-300 flex items-center justify-between gap-3">
         <span id="status">Loading…</span>
       </div>
     </header>
@@ -80,20 +173,26 @@
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       <!-- Perfect Week Club -->
       <div class="ribbon gold-shadow rounded-none">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
           <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Perfect Week Club</h2>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Perfect Week Club</h2>
+            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Completed weeks only</p>
+          </div>
         </div>
-        <div id="perfect-ribbon" class="flex items-center gap-2 overflow-x-auto px-4 md:px-6 py-3"></div>
+        <div id="perfect-ribbon" class="relative flex items-center gap-2 overflow-x-auto px-4 md:px-6 py-3 z-10"></div>
       </div>
 
       <!-- Winless Week Club -->
       <div class="ribbon gold-shadow rounded-none">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
           <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Winless Week Club</h2>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Winless Week Club</h2>
+            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Only weeks with picks count</p>
+          </div>
         </div>
-        <div id="zero-ribbon" class="flex flex-wrap items-center gap-2 px-4 md:px-6 py-3"></div>
+        <div id="zero-ribbon" class="relative flex flex-wrap items-center gap-2 px-4 md:px-6 py-3 z-10"></div>
       </div>
     </section>
 
@@ -103,9 +202,12 @@
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
-            Total Season Win %
-          </h2>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
+              Total Season Win %
+            </h2>
+            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Includes only decided games</p>
+          </div>
         </div>
         <div class="overflow-auto">
           <table class="table min-w-full text-sm">
@@ -114,6 +216,7 @@
                 <th class="px-4 py-2 text-left font-semibold">Team</th>
                 <th class="px-4 py-2 text-left font-semibold">Record</th>
                 <th class="px-4 py-2 text-left font-semibold">Win %</th>
+                <th class="px-4 py-2 text-left font-semibold">Missed Weeks</th>
               </tr>
             </thead>
             <tbody id="season-body"></tbody>
@@ -125,9 +228,12 @@
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
-            Top Dawg – Underdog Outright Wins
-          </h2>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
+              Top Dawg – Underdog Outright Wins
+            </h2>
+            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Picked the dog & it won</p>
+          </div>
         </div>
         <div class="overflow-auto">
           <table class="table min-w-full text-sm">
@@ -149,7 +255,10 @@
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Win % in Last 8 Picks</h2>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Win % in Last 8 Picks</h2>
+            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Season-only form tracker</p>
+          </div>
         </div>
         <div class="overflow-auto">
           <table class="table min-w-full text-sm">
@@ -169,7 +278,10 @@
       <div class="cfp-card gold-shadow rounded-none">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
           <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Favorite Pick %</h2>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Favorite Pick %</h2>
+            <p class="text-[10px] tracking-[.18em] uppercase text-gray-300">Only weeks that have started</p>
+          </div>
         </div>
         <div class="overflow-auto">
           <table class="table min-w-full text-sm">
@@ -199,7 +311,14 @@
     const seasonBody    = document.getElementById('season-body');
     const dogBody       = document.getElementById('dog-body');
 
-    function stripAccents(s){ try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); } catch { return s; } }
+    function stripAccents(s){
+      try {
+        return s.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+      } catch {
+        return s;
+      }
+    }
+
     function norm(v){
       if(!v) return '';
       return stripAccents(String(v))
@@ -210,15 +329,26 @@
         .replace(/\s+/g,' ')
         .trim();
     }
+
     const stToState = s => s.replace(/\bst\b/g,'state');
     const stateToSt = s => s.replace(/\bstate\b/g,'st');
-    function sameTeam(a,b){ const na=norm(a), nb=norm(b); return na===nb || stToState(na)===stToState(nb) || stateToSt(na)===stateToSt(nb); }
+
+    function sameTeam(a,b){
+      const na = norm(a), nb = norm(b);
+      return na===nb || stToState(na)===stToState(nb) || stateToSt(na)===stateToSt(nb);
+    }
 
     function setStatus(msg, isErr=false){
       statusEl.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
     }
-    function escapeHtml(str){ return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s])); }
+
+    function escapeHtml(str){
+      return String(str).replace(/[&<>"']/g, s => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'
+      }[s]));
+    }
+
     // Parse "Start (CT)" which is stored as a timestamp in CT; we read it as local Date.
     function parseCT(ts){
       if(!ts) return null;
@@ -232,10 +362,19 @@
         .from('all_games')
         .select('cfb_season')
         .not('cfb_season', 'is', null);
-      if(error){ setStatus('Error loading seasons', true); return false; }
-      const seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(n => Number.isFinite(n)))]
+      if(error){
+        setStatus('Error loading seasons', true);
+        return false;
+      }
+      const seasons = [...new Set((data||[])
+        .map(r => Number(r.cfb_season))
+        .filter(n => Number.isFinite(n)))]
         .sort((a,b)=>a-b);
-      if(!seasons.length){ setStatus('No seasons found', true); return false; }
+
+      if(!seasons.length){
+        setStatus('No seasons found', true);
+        return false;
+      }
       seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
       seasonSel.value = String(seasons[seasons.length-1]); // latest
       return true;
@@ -245,7 +384,10 @@
       setStatus('Loading data…');
 
       const season = Number(seasonSel.value);
-      if(!Number.isFinite(season)){ setStatus('Select a season', true); return; }
+      if(!Number.isFinite(season)){
+        setStatus('Select a season', true);
+        return;
+      }
 
       // Pull only picked games for the chosen season
       const { data: allGames, error: gErr } = await supabase
@@ -253,9 +395,12 @@
         .select('GameId, week, winner, picked, Away, Home, line, "Start (CT)", cfb_season')
         .eq('picked', true)
         .eq('cfb_season', season)
-        .lt('week', 16);   // 👈 only use weeks < 16
+        .lt('week', 16);   // only use weeks < 16
 
-      if(gErr){ console.error(gErr); return setStatus('Error loading games', true); }
+      if(gErr){
+        console.error(gErr);
+        return setStatus('Error loading games', true);
+      }
 
       // --- Build per-game metadata + week aggregates ---
       const gameMeta = Object.create(null);
@@ -273,8 +418,8 @@
           winner: g.winner ?? null,
           away: g.Away || null,
           home: g.Home || null,
-          line: (g.line==null? null : Number(g.line)),
-          start: start
+          line: (g.line==null ? null : Number(g.line)),
+          start
         };
         gameIds.push(g.GameId);
 
@@ -292,7 +437,7 @@
         zeroRibbon.innerHTML    = '<span class="text-sm text-gray-300">No picked games found for this season.</span>';
         favoriteBody.innerHTML  = '';
         formBody.innerHTML      = '';
-        seasonBody.innerHTML    = '<tr><td class="px-4 py-2 text-gray-300" colspan="3">No decided picks yet.</td></tr>';
+        seasonBody.innerHTML    = '<tr><td class="px-4 py-2 text-gray-300" colspan="4">No decided picks yet.</td></tr>';
         dogBody.innerHTML       = '<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>';
         return setStatus('Loaded');
       }
@@ -314,23 +459,35 @@
         supabase.from('picks').select('team_id, game_id, pick').in('game_id', gameIds),
         supabase.from('teams').select('team_id, team_name')
       ]);
-      if(pErr){ console.error(pErr); return setStatus('Error loading picks', true); }
-      if(tErr){ console.error(tErr); return setStatus('Error loading teams', true); }
+      if(pErr){
+        console.error(pErr);
+        return setStatus('Error loading picks', true);
+      }
+      if(tErr){
+        console.error(tErr);
+        return setStatus('Error loading teams', true);
+      }
 
       const teamName = new Map((teams||[]).map(t => [t.team_id, t.team_name]));
 
       // ------- Build per-week and decided maps for THIS season -------
-      const byTeamWeek = new Map();    // "teamId|week" -> rows[]
+      const byTeamWeek    = new Map(); // "teamId|week" -> rows[]
       const byTeamDecided = new Map(); // teamId -> decided rows[]
+      const teamWeeks     = new Map(); // teamId -> Set(weeks with at least one pick)
 
       for(const p of (picks||[])){
         const meta = gameMeta[p.game_id];
         if(!meta) continue;
-        const week = meta.week; const winner = meta.winner;
+        const week   = meta.week;
+        const winner = meta.winner;
 
         const twKey = `${p.team_id}|${week}`;
         if(!byTeamWeek.has(twKey)) byTeamWeek.set(twKey, []);
         byTeamWeek.get(twKey).push({ ...p, week, winner });
+
+        // Track weeks where a team actually made picks
+        if(!teamWeeks.has(p.team_id)) teamWeeks.set(p.team_id, new Set());
+        teamWeeks.get(p.team_id).add(week);
 
         if(winner != null){
           if(!byTeamDecided.has(p.team_id)) byTeamDecided.set(p.team_id, []);
@@ -345,12 +502,15 @@
         if(!completeWeeks.has(week)) continue; // only finished weeks
 
         let correct = 0;
-        for(const r of rows){ if(sameTeam(r.pick, r.winner)) correct++; }
+        for(const r of rows){
+          if(sameTeam(r.pick, r.winner)) correct++;
+        }
         if(rows.length > 0 && correct === rows.length){
           const teamId = Number(key.split('|')[0]);
           perfectTally.set(teamId, (perfectTally.get(teamId) || 0) + 1);
         }
       }
+
       if(perfectTally.size){
         const chips = [...perfectTally.entries()]
           .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||''))
@@ -364,28 +524,43 @@
       }
 
       // ------- Winless Week tally (completed weeks only) -------
+      // Only count weeks where a team made picks AND all of those picks were wrong.
       const zeroTally = new Map(); // team_id -> count
       for(const [key, rows] of byTeamWeek.entries()){
         const week = rows.length ? rows[0].week : null;
         if(!completeWeeks.has(week)) continue;
 
-        let correct = 0; for(const r of rows){ if(sameTeam(r.pick, r.winner)) correct++; }
+        let correct = 0;
+        for(const r of rows){
+          if(sameTeam(r.pick, r.winner)) correct++;
+        }
         if(rows.length > 0 && correct === 0){
           const teamId = Number(key.split('|')[0]);
           zeroTally.set(teamId, (zeroTally.get(teamId) || 0) + 1);
         }
       }
+
       if(zeroTally.size){
         const chips = [...zeroTally.entries()]
           .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||''))
           .map(([id,cnt]) => {
             const label = `${escapeHtml(teamName.get(id) || `Team ${id}`)}${cnt>1 ? ` (${cnt})` : ''}`;
-            return `<span class="chip px-3 py-1 rounded-md whitespace-nowrap">${label}</span>`;
+            return `<span class="chip px-3 py-1 rounded-md whitespace-nowrap bg-black/80 text-[var(--cfp-gold)] border border-[var(--cfp-gold)]">
+              ${label}
+            </span>`;
           }).join('');
         zeroRibbon.innerHTML = chips;
       } else {
-        zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet (completed weeks only).</span>';
+        zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet (completed weeks only, weeks with picks only).</span>';
       }
+
+      // ------- Weeks with picked games (for Missed Weeks calc) -------
+      const allWeeksWithPicks = new Set(
+        [...pickedByWeek.entries()]
+          .filter(([_, agg]) => agg.totalPicked > 0)
+          .map(([w]) => w)
+      );
+      const totalWeeksWithPicks = allWeeksWithPicks.size;
 
       // ------- Total Season Win % (all decided picks this season) -------
       const seasonStats = new Map(); // team_id -> { wins, total }
@@ -401,11 +576,18 @@
       const seasonRows = [...seasonStats.entries()].map(([team_id, {wins, total}])=>{
         const pct = total ? wins / total : 0;
         const pctStr = pct.toFixed(3).slice(1); // .459 format
+
+        const weeksPlayed = teamWeeks.has(team_id) ? teamWeeks.get(team_id).size : 0;
+        const missedWeeks = totalWeeksWithPicks > 0
+          ? Math.max(0, totalWeeksWithPicks - weeksPlayed)
+          : 0;
+
         return {
           team: teamName.get(team_id) || `Team ${team_id}`,
           record: `${wins}-${total - wins}`,
           pct,
-          pctStr
+          pctStr,
+          missedWeeks
         };
       }).sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
 
@@ -416,12 +598,14 @@
                 <td class="px-4 py-2">${escapeHtml(r.team)}</td>
                 <td class="px-4 py-2">${r.record}</td>
                 <td class="px-4 py-2">${r.pctStr}</td>
+                <td class="px-4 py-2">${r.missedWeeks}</td>
               </tr>`
             ).join('')
-          : `<tr><td class="px-4 py-2 text-gray-300" colspan="3">No decided picks yet.</td></tr>`;
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="4">No decided picks yet.</td></tr>`;
 
       // ------- Favorite Pick % (exclude weeks that haven't started) -------
       const favStats = new Map(); // team_id -> { fav: n, opp: d }
+
       function favoriteTeamFor(game){
         const line = game.line;
         if(line == null || isNaN(line) || line === 0) return null; // no favorite
@@ -450,10 +634,12 @@
         entry.opp++;
         if(sameTeam(p.pick, favTeam)) entry.fav++;
       }
+
       const favRows = [...favStats.entries()].map(([team_id, {fav, opp}])=>({
         team: teamName.get(team_id) || `Team ${team_id}`,
         pct: opp ? (fav/opp*100) : 0
       })).sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
+
       favoriteBody.innerHTML =
         favRows.length
           ? favRows.map(r =>
@@ -470,10 +656,18 @@
         const decidedSorted = [...arr].sort((a,b)=> (a.week - b.week) || (a.game_id - b.game_id));
         const last8 = decidedSorted.slice(-8);
         if(!last8.length) continue;
-        let wins = 0; for(const r of last8){ if(sameTeam(r.pick, r.winner)) wins++; }
+        let wins = 0;
+        for(const r of last8){
+          if(sameTeam(r.pick, r.winner)) wins++;
+        }
         const pct = (wins / last8.length) * 100;
-        formRows.push({ team: teamName.get(team_id) || `Team ${team_id}`, record: `${wins}-${last8.length - wins}`, pct });
+        formRows.push({
+          team: teamName.get(team_id) || `Team ${team_id}`,
+          record: `${wins}-${last8.length - wins}`,
+          pct
+        });
       }
+
       formRows.sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
       formBody.innerHTML =
         formRows.length
