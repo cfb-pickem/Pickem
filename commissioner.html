@@ -149,6 +149,7 @@
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Tiebreaker</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">Week</th>
           </tr>
         </thead>
@@ -180,9 +181,9 @@
 
     // state
     let rows = [];                 // current games for selected season+week (Manage Games)
-    // Track ONLY the fields we intend to edit: line, picked
-    let original = {};             // GameId -> { line, picked }
-    let edited   = {};             // GameId -> { line, picked }
+    // Track ONLY the fields we intend to edit: line, picked, tiebreaker
+    let original = {};             // GameId -> { line, picked, tiebreaker }
+    let edited   = {};             // GameId -> { line, picked, tiebreaker }
 
     let pickableGames = [];        // picked=true games for current season+week (what teams pick)
     let tempTeamPicks = {};        // UI selections: game_id -> pick (Away/Home)
@@ -301,7 +302,7 @@
 
       const { data, error } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, picked, week, "Network", espn_url, cfb_season')
+        .select('GameId, Away, Home, "Start (CT)", line, picked, tiebreaker, week, "Network", espn_url, cfb_season')
         .eq('cfb_season', season)
         .eq('week', week)
         .order('GameId', { ascending: true });
@@ -327,8 +328,8 @@
       original = {};
       edited   = {};
       for(const r of rows){
-        original[r.GameId] = { line: r.line ?? null, picked: !!r.picked };
-        edited[r.GameId]   = { line: r.line ?? null, picked: !!r.picked };
+        original[r.GameId] = { line: r.line ?? null, picked: !!r.picked, tiebreaker: !!r.tiebreaker };
+        edited[r.GameId]   = { line: r.line ?? null, picked: !!r.picked, tiebreaker: !!r.tiebreaker };
       }
 
       renderGamesTable();
@@ -580,7 +581,7 @@
     function renderGamesTable(){
       gamesTbody.innerHTML = '';
       if(!rows.length){
-        gamesTbody.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
+        gamesTbody.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
         return;
       }
       for(const g of rows){
@@ -620,11 +621,21 @@
         const tdPicked = document.createElement('td');
         tdPicked.className = 'px-3 py-2 text-center';
         tdPicked.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.picked ? 'checked' : ''}/>`;
-        const cb = tdPicked.querySelector('input');
-        cb.addEventListener('change', e => {
+        const cbPicked = tdPicked.querySelector('input');
+        cbPicked.addEventListener('change', e => {
           edited[g.GameId].picked = !!e.target.checked;
         });
         tr.appendChild(tdPicked);
+
+        // Tiebreaker (checkbox)
+        const tdTB = document.createElement('td');
+        tdTB.className = 'px-3 py-2 text-center';
+        tdTB.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.tiebreaker ? 'checked' : ''}/>`;
+        const cbTB = tdTB.querySelector('input');
+        cbTB.addEventListener('change', e => {
+          edited[g.GameId].tiebreaker = !!e.target.checked;
+        });
+        tr.appendChild(tdTB);
 
         // Week (display-only; never edited/saved)
         const tdWeek = document.createElement('td');
@@ -642,15 +653,17 @@
       for(const id of Object.keys(edited)){
         const curr = edited[id];
         const orig = original[id] || {};
-        const lineChanged  = (curr.line ?? null)  !== (orig.line ?? null);
-        const pickChanged  = Boolean(curr.picked) !== Boolean(orig.picked);
+        const lineChanged  = (curr.line ?? null)       !== (orig.line ?? null);
+        const pickChanged  = Boolean(curr.picked)      !== Boolean(orig.picked);
+        const tbChanged    = Boolean(curr.tiebreaker)  !== Boolean(orig.tiebreaker);
 
-        if(lineChanged || pickChanged){
+        if(lineChanged || pickChanged || tbChanged){
           // IMPORTANT: exclude 'week' from the payload so it is NEVER overwritten
           changes.push({
             GameId: Number(id),
             line: curr.line,
-            picked: Boolean(curr.picked)
+            picked: Boolean(curr.picked),
+            tiebreaker: Boolean(curr.tiebreaker)
           });
         }
       }
@@ -679,6 +692,7 @@
           if (!original[row.GameId]) original[row.GameId] = {};
           original[row.GameId].line = row.line;
           original[row.GameId].picked = row.picked;
+          original[row.GameId].tiebreaker = row.tiebreaker;
         }
         // Re-load to re-apply sort (in case picked changed)
         await loadWeek();
