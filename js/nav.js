@@ -2,11 +2,12 @@
 import { supabase } from './supabaseClient.js';
 
 const LINKS = [
-  { href: './index.html',      key: 'leaderboard', label: 'Leaderboard' },
-  { href: './picks.html',      key: 'picks',       label: 'Make Picks', authOnly: true, id: 'nav-picks' },
-  { href: './cfb-genius.html', key: 'genius',      label: 'CFB Genius' },
-  { href: './stats.html',      key: 'stats',       label: 'Stats' },
-  { href: './commissioner.html', key: 'commissioner', label: 'Commissioner', authOnly: true, id: 'nav-commissioner' } // new
+  { href: './index.html',        key: 'leaderboard',  label: 'Leaderboard' },
+  { href: './tiebreakers.html',  key: 'tiebreakers',  label: 'Tiebreakers' }, // NEW
+  { href: './picks.html',        key: 'picks',        label: 'Make Picks', authOnly: true, id: 'nav-picks' },
+  { href: './cfb-genius.html',   key: 'genius',       label: 'CFB Genius' },
+  { href: './stats.html',        key: 'stats',        label: 'Stats' },
+  { href: './commissioner.html', key: 'commissioner', label: 'Commissioner', authOnly: true, id: 'nav-commissioner' } // existing
 ];
 
 function clsActive(isActive){
