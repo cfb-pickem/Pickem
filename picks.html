@@ -121,7 +121,18 @@
     </div>
 
     <div id="games-wrap" class="hidden">
+      <!-- Normal picks -->
       <div id="games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+      <!-- Tiebreaker picks -->
+      <section id="tiebreaker-section" class="mt-8 hidden">
+        <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Tiebreakers</h2>
+        <p class="text-xs text-gray-300 mb-3">
+          These picks are only used as tiebreakers. They lock at the same time as your other picks.
+        </p>
+        <div id="tiebreaker-games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </section>
+
       <div class="mt-6 flex items-center gap-3">
         <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold inline-flex items-center gap-2">
           <span class="sr-only">Save</span>
@@ -148,6 +159,8 @@
     const authGate   = document.getElementById('auth-gate');
     const gamesWrap  = document.getElementById('games-wrap');
     const gamesEl    = document.getElementById('games');
+    const tiebreakerSection = document.getElementById('tiebreaker-section');
+    const tiebreakerEl = document.getElementById('tiebreaker-games');
     const saveBtn    = document.getElementById('save');
     const clearBtn   = document.getElementById('clear');
     const saveStatus = document.getElementById('saveStatus');
@@ -161,7 +174,8 @@
     let session = null;
     let currentSeason = null;   // cfb_season
     let currentWeek = null;
-    let currentGames = [];
+    let regularGames = [];
+    let tiebreakerGames = [];
     let selectedTeamId = null;
     let selectedTeamName = '';
     let existingPicks = new Map(); // game_id -> pick
@@ -173,6 +187,10 @@
     // Playoff mode
     let isPlayoffMode = false;
     let userInPlayoffs = false;
+
+    function getAllGames() {
+      return [...regularGames, ...tiebreakerGames];
+    }
 
     // ------- Helpers -------
     function setStatus(msg, err=false){
@@ -196,7 +214,7 @@
 
     // Earliest kickoff among loaded games (regular season only)
     function computeEarliestKickoff(){
-      const times = currentGames
+      const times = getAllGames()
         .map(g => g.start ? new Date(g.start).getTime() : Infinity)
         .filter(t => Number.isFinite(t));
       earliestKickoff = times.length ? new Date(Math.min(...times)) : null;
@@ -218,6 +236,7 @@
         lockMsg.textContent = '';
       }
       gamesEl.classList.toggle('locked', isLocked);
+      tiebreakerEl.classList.toggle('locked', isLocked);
       document.querySelectorAll('input[type="radio"]').forEach(inp => { inp.disabled = isLocked; });
       saveBtn.disabled = isLocked;
       clearBtn.disabled = isLocked;
@@ -234,7 +253,8 @@
     function applyPerGameLocks(){
       if (!isPlayoffMode) return;
 
-      currentGames.forEach(g => {
+      const all = getAllGames();
+      all.forEach(g => {
         const card = document.querySelector(`[data-game-id="${g.game_id}"]`);
         if (!card) return;
 
@@ -396,7 +416,7 @@
       await loadExistingPicksForVisibleGames();
       overlayDraft();
 
-      // Lock state (week-based)
+      // Lock state (week-based) uses both regular + tiebreaker games
       computeEarliestKickoff();
       updateLockState();
       applyLockUI();
@@ -419,17 +439,35 @@
       currentWeek = week;
       setStatus(`Loading games for week ${week} (Season ${currentSeason})…`);
       gamesEl.innerHTML = '';
+      tiebreakerEl.innerHTML = '';
+      regularGames = [];
+      tiebreakerGames = [];
 
-      const { data, error } = await supabase
+      // Normal picked games (exclude tiebreakers)
+      const { data: regularData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
         .eq('picked', true)
+        .eq('cfb_season', currentSeason)
+        .eq('week', week)
+        .or('tiebreaker.is.null,tiebreaker.eq.false');
+
+      if (regErr) { setStatus(regErr.message, true); return; }
+
+      // Tiebreaker games for this week (use tiebreaker flag instead of picked)
+      const { data: tbData, error: tbErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .eq('tiebreaker', true)
         .eq('cfb_season', currentSeason)
         .eq('week', week);
 
-      if (error) { setStatus(error.message, true); return; }
+      if (tbErr) {
+        setStatus(tbErr.message, true);
+        return;
+      }
 
-      currentGames = (data||[]).map(g => ({
+      regularGames = (regularData||[]).map(g => ({
         game_id: Number(g.GameId),
         away: g.Away,
         home: g.Home,
@@ -444,24 +482,60 @@
         return ta - tb;
       });
 
-      renderGameCards(currentGames);
+      tiebreakerGames = (tbData||[]).map(g => ({
+        game_id: Number(g.GameId),
+        away: g.Away,
+        home: g.Home,
+        line: (g.line == null ? null : Number(g.line)),
+        espn_url: g.espn_url || null,
+        start: g['Start (CT)'],
+        week: g.week,
+        winner: g.winner || null
+      })).sort((a,b)=>{
+        const ta = a.start ? new Date(a.start).getTime() : Infinity;
+        const tb = b.start ? new Date(b.start).getTime() : Infinity;
+        return ta - tb;
+      });
+
+      renderGameCards(regularGames);
+      renderTiebreakerCards(tiebreakerGames);
+      addPickHighlighting();
     }
 
     async function loadPlayoffGames(){
       gamesEl.innerHTML = '';
-      const { data, error } = await supabase
+      tiebreakerEl.innerHTML = '';
+      regularGames = [];
+      tiebreakerGames = [];
+
+      // Playoff-eligible normal games (picked=true, no winner yet, not tiebreakers)
+      const { data: regData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
         .eq('picked', true)
         .eq('cfb_season', currentSeason)
-        .is('winner', null); // only games without winner
+        .is('winner', null)
+        .or('tiebreaker.is.null,tiebreaker.eq.false');
 
-      if (error) {
-        setStatus(error.message, true);
+      if (regErr) {
+        setStatus(regErr.message, true);
         return;
       }
 
-      currentGames = (data || []).map(g => ({
+      // Playoff tiebreaker games (tiebreaker=true, no winner yet)
+      const { data: tbData, error: tbErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .eq('tiebreaker', true)
+        .eq('cfb_season', currentSeason)
+        .is('winner', null);
+
+      if (tbErr) {
+        setStatus(tbErr.message, true);
+        return;
+      }
+
+      regularGames = (regData || []).map(g => ({
         game_id: Number(g.GameId),
         away: g.Away,
         home: g.Home,
@@ -476,13 +550,33 @@
         return ta - tb;
       });
 
-      renderGameCards(currentGames);
-      setStatus(`Loaded ${currentGames.length} playoff-eligible games for Season ${currentSeason}.`);
+      tiebreakerGames = (tbData || []).map(g => ({
+        game_id: Number(g.GameId),
+        away: g.Away,
+        home: g.Home,
+        line: (g.line == null ? null : Number(g.line)),
+        espn_url: g.espn_url || null,
+        start: g['Start (CT)'],
+        week: g.week,
+        winner: g.winner || null
+      })).sort((a,b)=>{
+        const ta = a.start ? new Date(a.start).getTime() : Infinity;
+        const tb = b.start ? new Date(b.start).getTime() : Infinity;
+        return ta - tb;
+      });
+
+      renderGameCards(regularGames);
+      renderTiebreakerCards(tiebreakerGames);
+      addPickHighlighting();
+      applyPerGameLocks();
+
+      const totalGames = getAllGames().length;
+      setStatus(`Loaded ${totalGames} playoff-eligible games for Season ${currentSeason}.`);
     }
 
     async function loadExistingPicksForVisibleGames(){
       existingPicks.clear();
-      const gameIds = currentGames.map(g => g.game_id);
+      const gameIds = getAllGames().map(g => g.game_id);
       if (!gameIds.length) return;
 
       let query = supabase
@@ -542,14 +636,57 @@
       });
 
       gamesEl.innerHTML = cards.join('');
-      addPickHighlighting(); // wire up highlight + draft save on change
+    }
 
-      // Apply locks appropriate to current mode
-      if (isPlayoffMode) {
-        applyPerGameLocks();
-      } else {
-        applyLockUI();
+    function renderTiebreakerCards(games){
+      if (!games.length) {
+        tiebreakerSection.classList.add('hidden');
+        tiebreakerEl.innerHTML = '';
+        return;
       }
+
+      tiebreakerSection.classList.remove('hidden');
+
+      const cards = games.map(g => {
+        const name = `game_${g.game_id}`;
+        const when = kickoffFmt(g.start);
+        const espnLink = g.espn_url
+          ? '<a href="' + g.espn_url + '" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>'
+          : '';
+
+        const hasLine = g.line != null && !isNaN(g.line);
+        const fmt = (n) => (n > 0 ? ('+' + n) : String(n));
+        const awayLabel = hasLine ? (g.away + ' (' + fmt(-g.line) + ')') : g.away;
+        const homeLabel = hasLine ? (g.home + ' (' + fmt(g.line) + ')') : g.home;
+
+        const modeRow = isPlayoffMode
+          ? `<div class="flex justify-between text-[11px] text-gray-400 mb-2">
+               <span>Week ${g.week ?? '-'}</span>
+               <span data-lock-state class="uppercase tracking-[.12em]"></span>
+             </div>`
+          : '';
+
+        return (
+          '<div class="cfp-card gold-shadow p-4" data-game-id="'+ g.game_id +'">' +
+            '<div class="text-[11px] uppercase tracking-[.18em] text-[var(--cfp-gold-2)] text-center mb-1">Tiebreaker</div>' +
+            '<div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-1 text-center">' + g.away + ' @ ' + g.home + '</div>' +
+            '<div class="text-xs text-gray-400 text-center mb-1">' + (when || 'Scheduled') + (espnLink ? (' ' + espnLink) : '') + '</div>' +
+            modeRow +
+            '<div class="flex justify-center gap-6 mt-2">' +
+              '<label class="pick-label flex items-center gap-2">' +
+                '<input type="radio" name="' + name + '" value="' + g.away.replace(/"/g,'&quot;') + '"> ' +
+                '<span>' + awayLabel + '</span>' +
+              '</label>' +
+              '<label class="pick-label flex items-center gap-2">' +
+                '<input type="radio" name="' + name + '" value="' + g.home.replace(/"/g,'&quot;') + '"> ' +
+                '<span>' + homeLabel + '</span>' +
+              '</label>' +
+            '</div>' +
+          '</div>'
+        );
+      });
+
+      tiebreakerEl.innerHTML = cards.join('');
     }
 
     function addPickHighlighting(){
@@ -648,9 +785,10 @@
       }
 
       const rows = [];
+      const allGames = getAllGames();
       for (const p of selected){
         const gameIdNum = Number(p.game_id);
-        const game = currentGames.find(g => g.game_id === gameIdNum);
+        const game = allGames.find(g => g.game_id === gameIdNum);
         if (!game) continue;
 
         if (isPlayoffMode) {
