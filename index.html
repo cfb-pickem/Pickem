@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>CFB Pick'em — Thanksgiving Leaderboard</title>
+  <title>CFB Pick'em — Leaderboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,227 +13,70 @@
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
+  <link rel="stylesheet" href="./css/theme-halloween.css">
+  <link rel="stylesheet" href="./css/theme-thanksgiving.css">
+  <link rel="stylesheet" href="./css/theme-christmas.css">
+
   <style>
     :root{
-      /* Harvest / Thanksgiving palette */
-      --cfp-black:#1a120b;        /* roasted coffee brown */
-      --cfp-charcoal:#120c07;     /* deep roasted turkey skin */
-      --cfp-gold:#f2a71b;         /* pumpkin pie filling */
-      --cfp-gold-2:#f7c35c;       /* cornbread / cornbread crust */
-      --cfp-ivory:#fff7e6;        /* mashed potatoes / parchment */
-      --cfp-gray:#3a2517;         /* gravy brown */
+      --cfp-black:#0B0B0B;
+      --cfp-charcoal:#111213;
+      --cfp-gold:#C99210;
+      --cfp-gold-2:#E3B23C;
+      --cfp-ivory:#F7F4ED;
+      --cfp-gray:#1F2022;
       --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
     }
 
-    body{
-      background:
-        radial-gradient(1200px 600px at 50% -10%, rgba(242,167,27,.25), transparent 60%),
-        radial-gradient(900px 600px at 0% 0%, rgba(178,93,29,.22), transparent 60%),
-        radial-gradient(900px 600px at 100% 0%, rgba(139,69,19,.25), transparent 60%),
-        linear-gradient(135deg, rgba(255,255,255,.05) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
-        var(--cfp-charcoal);
-      background-size:100% 100%,100% 100%,100% 100%,24px 24px,auto;
-      color:#f9f5ee;
-      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
-      min-height:100vh;
-      position:relative;
-      overflow-x:hidden;
-    }
-
-    /* Subtle falling leaves for over-the-top vibe */
-    .leaf{
-      position:fixed;
-      top:-40px;
-      font-size:20px;
-      opacity:.35;
-      filter:drop-shadow(0 0 6px rgba(0,0,0,.5));
-      pointer-events:none;
-      animation:fall 16s linear infinite;
-    }
-    .leaf:nth-child(2){left:10%;animation-duration:19s;font-size:22px;animation-delay:2s;}
-    .leaf:nth-child(3){left:25%;animation-duration:15s;font-size:18px;animation-delay:5s;}
-    .leaf:nth-child(4){left:55%;animation-duration:21s;font-size:24px;animation-delay:1s;}
-    .leaf:nth-child(5){left:72%;animation-duration:18s;font-size:20px;animation-delay:7s;}
-    .leaf:nth-child(6){left:88%;animation-duration:20s;font-size:19px;animation-delay:3s;}
-
-    @keyframes fall{
-      0%{transform:translateY(0) rotate(0deg);}
-      50%{transform:translateY(60vh) rotate(140deg);}
-      100%{transform:translateY(110vh) rotate(320deg);}
-    }
-
-    .network-line{
-      display:inline-flex;
-      align-items:center;
-      font-size:10px;
-      line-height:1;
-      letter-spacing:.15em;
-      text-transform:uppercase;
-      color:#fec89a;
-      margin:0;
-    }
+    .network-line{display:inline-flex;align-items:center;font-size:10px;line-height:1;letter-spacing:.15em;text-transform:uppercase;color:var(--cfp-gold-2);margin:0}
     .badge.inline-fix{display:inline-flex;align-items:center;line-height:1;padding-top:.125rem;padding-bottom:.125rem}
 
+    body{
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        var(--cfp-charcoal);
+      background-size:100% 100%,24px 24px,auto;
+      color:#e7e7e7;
+      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+      min-height:100vh;
+    }
+
     .table-sticky th{position:sticky;top:0;background-color:var(--cfp-black);z-index:10}
-    .gold-shadow{box-shadow:
-      0 0 0 1px rgba(247,195,92,.4),
-      0 0 24px rgba(247,195,92,.22) inset,
-      0 18px 40px rgba(0,0,0,.55);
-    }
+    .gold-shadow{box-shadow:0 0 0 1px rgba(233,185,73,.35),0 0 24px rgba(233,185,73,.08) inset}
 
-    /* From trophy to turkey platter */
-    .trophy-oval{
-      width:40px;
-      height:40px;
-      border-radius:999px;
-      position:relative;
-      background:radial-gradient(circle at 30% 30%, #ffe8b3, #f2a71b 45%, #8b4513 80%);
-      box-shadow:
-        0 0 0 2px rgba(255,248,220,.7),
-        0 0 18px rgba(0,0,0,.6);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      overflow:hidden;
-    }
-    .trophy-oval::before{
-      content:"🦃";
-      font-size:1.5rem;
-      transform:translateY(1px);
-    }
+    .trophy-oval{width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative}
+    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
 
-    .cfp-select{
-      background:linear-gradient(135deg,#3b2515,#231207);
-      color:#fdf3dc;
-      border:1px solid rgba(255,248,220,.35);
-      box-shadow:0 0 0 1px rgba(0,0,0,.65);
-    }
-    .cfp-select:focus{
-      outline:none;
-      box-shadow:var(--ring),0 0 0 1px rgba(0,0,0,.9);
-    }
-    .cfp-card{
-      background:
-        linear-gradient(180deg,rgba(255,247,230,.03),transparent 40%),
-        radial-gradient(circle at 0 0,rgba(255,255,255,.08),transparent 55%),
-        radial-gradient(circle at 100% 0,rgba(255,255,255,.05),transparent 45%),
-        linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));
-      border:1px solid rgba(255,247,230,.14);
-      position:relative;
-    }
+    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
+    .cfp-select:focus{outline:none;box-shadow:var(--ring)}
+    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
 
-    /* Thanksgiving ribbon border */
-    .harvest-border{
-      border-image-slice:1;
-      border-style:solid;
-      border-width:3px 0 0 0;
-      border-image-source:repeating-linear-gradient(
-        90deg,
-        #f2a71b 0 16px,
-        #c55a11 16px 32px,
-        #8b4513 32px 48px,
-        #f9dec9 48px 64px
-      );
-    }
+    .badge{font-size:.72rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.125rem .5rem;border-radius:0}
+    .badge-final{background:#6b7280;color:#fff}
+    .badge-live{background:var(--cfp-gold);color:#0b0b0b}
+    .badge-sched{background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
 
-    .badge{
-      font-size:.72rem;
-      line-height:1rem;
-      display:inline-flex;
-      align-items:center;
-      gap:.375rem;
-      padding:.125rem .55rem;
-      border-radius:999px;
-      border:1px solid rgba(0,0,0,.5);
-      box-shadow:0 1px 4px rgba(0,0,0,.4);
-    }
-    .badge-final{
-      background:linear-gradient(135deg,#7b341e,#c05621);
-      color:#fff7e6;
-    }
-    .badge-live{
-      background:radial-gradient(circle at 20% 20%,#ffe6a7,#f2a71b);
-      color:#3b2515;
-    }
-    .badge-sched{
-      background:linear-gradient(135deg,#2b211b,#4a3420);
-      color:#f5e6c8;
-      border:1px solid rgba(245,230,200,.2);
-    }
+    .table th,.table td{border-color:rgba(231,231,231,.08)}
+    .table tbody tr:hover{background:rgba(233,185,73,.06)}
 
-    .table th,.table td{border-color:rgba(255,247,230,.11)}
-    .table tbody tr:hover{
-      background:linear-gradient(90deg,rgba(242,167,27,.2),rgba(114,54,23,.35));
-    }
+    .pick-win{background:rgba(88,214,141,.15);color:#8ef2b9}
+    .pick-loss{background:rgba(255,92,92,.15);color:#ffb3b3}
+    .pick-empty{color:#9ca3af}
 
-    .pick-win{
-      background:linear-gradient(135deg,rgba(128,179,71,.35),rgba(88,129,50,.45));
-      color:#e3f6c7;
-      box-shadow:0 0 12px rgba(89,139,43,.45) inset;
-    }
-    .pick-loss{
-      background:linear-gradient(135deg,rgba(185,63,63,.35),rgba(142,38,38,.45));
-      color:#ffd5d5;
-      box-shadow:0 0 12px rgba(110,22,22,.55) inset;
-    }
-    .pick-empty{
-      color:#cbd5f0;
-      opacity:.8;
-    }
+    .logo{height:32px;width:32px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
 
-    .logo{
-      height:32px;
-      width:32px;
-      object-fit:contain;
-      margin-left:auto;
-      margin-right:auto;
-      filter:
-        drop-shadow(0 0 3px rgba(0,0,0,.7))
-        sepia(.18)
-        saturate(1.2);
-    }
-
-    .stripe{
-      background:
-        repeating-linear-gradient(45deg,
-          rgba(242,167,27,.08) 0 10px,
-          rgba(92,46,16,.24) 10px 20px
-        );
-    }
+    .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
     .ring-gold{box-shadow:var(--ring)}
 
     .playoff-divider td{
-      padding:.25rem 0;
-      background:linear-gradient(90deg,rgba(242,167,27,.2),rgba(255,247,230,.05));
-      border-top:2px dashed rgba(247,195,92,.9);
-      color:var(--cfp-ivory);
-      text-align:center;
-      letter-spacing:.16em;
-      font-size:.75rem;
-      text-transform:uppercase;
-      position:relative;
-    }
-    .playoff-divider td::before{
-      content:"🥧";
-      position:absolute;
-      left:8px;
-      top:50%;
-      transform:translateY(-50%);
-    }
-    .playoff-divider td::after{
-      content:"🥧";
-      position:absolute;
-      right:8px;
-      top:50%;
-      transform:translateY(-50%);
+      padding:.15rem 0;background:transparent;border-top:2px solid var(--cfp-gold);color:var(--cfp-ivory);
+      text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
     }
 
     th.sticky-col-1, td.sticky-col-1{
-      position: sticky;
-      left: 0;
-      z-index: 25;
-      background: linear-gradient(90deg,var(--cfp-black),#351d0f);
-      box-shadow: 2px 0 0 rgba(231,231,231,.08) inset;
+      position: sticky; left: 0; z-index: 25; background: var(--cfp-black);
+      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
     }
     thead th.sticky-col-1{ z-index: 50; }
 
@@ -244,8 +87,8 @@
       th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
       thead th { font-size: .8rem; }
       .network-line{ font-size:9px; letter-spacing:.12em; }
-      .badge { font-size: .65rem; padding: .08rem .45rem; }
-      .table tbody td { font-size: .84rem; }
+      .badge { font-size: .65rem; padding: .1rem .4rem; }
+      .table tbody td { font-size: .85rem; }
       thead th > :first-child{
         white-space: nowrap;
         overflow: hidden;
@@ -257,145 +100,50 @@
 
     nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
 
-    /* Weekly submissions labels */
     .ws-label{
-      font-size:.72rem;
-      letter-spacing:.18em;
-      text-transform:uppercase;
-      color:#ffe8c2;
-      border-bottom:1px solid rgba(231,231,231,.12);
-      padding-bottom:.25rem;
-      margin-bottom:.5rem;
-      display:flex;
-      align-items:center;
-      gap:.5rem;
-    }
-    .ws-label span.icon{
-      font-size:1rem;
+      font-size:.72rem; letter-spacing:.16em; text-transform:uppercase;
+      color:#d1d5db; border-bottom:1px solid rgba(231,231,231,.08);
+      padding-bottom:.25rem; margin-bottom:.5rem;
     }
 
-    /* Highlight logged-in user's team row */
     tr[data-me="true"]{
-      background:
-        linear-gradient(90deg,rgba(247,195,92,.45),rgba(242,167,27,.12));
+      background-color: rgba(255,255,255,0.05);
     }
     tr[data-me="true"] .sticky-col-1{
       font-weight:700;
-      text-shadow:0 0 8px rgba(0,0,0,.9);
-      box-shadow:2px 0 0 rgba(247,195,92,.9) inset;
-    }
-    tr[data-me="true"] .sticky-col-1::before{
-      content:"🍗";
-      margin-right:.4rem;
+      text-shadow:0 0 8px rgba(0,0,0,.6);
+      box-shadow:1px 0 0 rgba(233,185,73,.4) inset;
     }
     tr[data-me="true"]:hover{
       background:
-        linear-gradient(90deg, rgba(247,195,92,.65), rgba(179,94,34,.45));
-    }
-
-    /* Thanksgiving header extras */
-    .thanksgiving-header{
-      position:relative;
-      overflow:hidden;
-    }
-    .thanksgiving-header::before{
-      content:"";
-      position:absolute;
-      inset:0;
-      background:
-        radial-gradient(circle at 0 0,rgba(255,255,255,.15),transparent 60%),
-        radial-gradient(circle at 100% 0,rgba(255,255,255,.12),transparent 60%);
-      opacity:.35;
-      pointer-events:none;
-    }
-    .header-pill{
-      display:inline-flex;
-      align-items:center;
-      gap:.35rem;
-      padding:.18rem .6rem;
-      border-radius:999px;
-      background:linear-gradient(135deg,rgba(59,37,21,.9),rgba(36,20,11,.95));
-      border:1px solid rgba(255,247,230,.35);
-      box-shadow:0 0 14px rgba(0,0,0,.7);
-      font-size:.7rem;
-      letter-spacing:.18em;
-      text-transform:uppercase;
-      color:#ffe7bb;
-    }
-    .header-pill span.emoji{
-      font-size:1rem;
-    }
-
-    /* Legend chips */
-    .legend-chip{
-      display:inline-flex;
-      align-items:center;
-      gap:.35rem;
-      padding:.15rem .55rem;
-      border-radius:999px;
-      background:radial-gradient(circle at 0 0,#50301b,#24140b);
-      border:1px solid rgba(255,247,230,.2);
-      box-shadow:0 1px 3px rgba(0,0,0,.6);
+        linear-gradient(90deg, rgba(233,185,73,.24), transparent 65%);
     }
   </style>
 </head>
 
 <body data-page="leaderboard">
-  <!-- Floating leaves -->
-  <div aria-hidden="true">
-    <div class="leaf">🍂</div>
-    <div class="leaf">🍁</div>
-    <div class="leaf">🍃</div>
-    <div class="leaf">🍂</div>
-    <div class="leaf">🍁</div>
-    <div class="leaf">🍃</div>
-  </div>
-
   <div class="max-w-7xl mx-auto p-4 md:p-6">
     <div id="site-nav"></div>
 
-    <header class="cfp-card rounded-none stripe gold-shadow harvest-border thanksgiving-header mb-5">
-      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5 gap-3 md:gap-6">
+    <header class="cfp-card rounded-none stripe gold-shadow mb-5">
+      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
         <div class="flex items-center gap-3 md:gap-4">
           <span class="trophy-oval" aria-hidden="true"></span>
           <div>
-            <div class="header-pill mb-1">
-              <span class="emoji">🦃</span>
-              <span>College Football Pick'em</span>
-              <span class="emoji hidden sm:inline">🏈</span>
-            </div>
-            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">
-              Thanksgiving Leaderboard Feast
-            </h1>
-            <p class="text-xs text-amber-100/80 mt-1">
-              Where winning picks are the main course and upsets are the spicy stuffing.
-            </p>
+            <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Leaderboard</h1>
           </div>
         </div>
         <div class="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-3 text-sm">
-          <div class="flex flex-col gap-1">
-            <label class="hidden md:block text-amber-100/90">Season</label>
-            <div class="flex items-center gap-1 md:gap-2">
-              <span class="hidden md:inline text-xs text-amber-200/80">🍁</span>
-              <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
-            </div>
-          </div>
+          <label class="hidden md:block text-gray-300">Season</label>
+          <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
 
-          <div class="flex flex-col gap-1 md:ml-2">
-            <label class="hidden md:block text-amber-100/90">Week</label>
-            <div class="flex items-center gap-1 md:gap-2">
-              <span class="hidden md:inline text-xs text-amber-200/80">🥧</span>
-              <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
-            </div>
-          </div>
+          <label class="hidden md:block text-gray-300">Week</label>
+          <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
         </div>
       </div>
-      <div class="border-t border-[rgba(231,231,231,.18)] px-4 md:px-6 py-2 text-[11px] md:text-xs text-amber-50/90 flex items-center justify-between gap-3">
+      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
         <span id="status">Loading…</span>
-        <span class="hidden sm:inline-flex items-center gap-1 text-[10px] tracking-[.16em] uppercase text-amber-100/70">
-          <span>Gravy Metric:</span>
-          <span class="font-semibold text-amber-300">1 point per correct pick</span>
-        </span>
       </div>
     </header>
 
@@ -408,62 +156,36 @@
       </table>
     </div>
 
-    <!-- Legend above Weekly Submissions -->
-    <div class="mt-4 text-xs text-amber-100/90 flex flex-wrap items-center gap-3">
-      <div class="legend-chip">
-        <span class="badge badge-live">Live</span>
-        <span>Games cooking in the oven</span>
-      </div>
-      <div class="legend-chip">
-        <span class="badge badge-final">Final</span>
-        <span>Served &amp; carved</span>
-      </div>
-      <div class="legend-chip">
-        <span class="badge badge-sched">Scheduled</span>
-        <span>Still marinating</span>
-      </div>
-      <span class="ml-1 md:ml-3 text-[11px] text-amber-50/70">
-        ✅ Win cells get a hearty sage-green glaze; ❌ loss cells get cranberry-red.
-      </span>
+    <div class="mt-4 text-xs text-gray-300 flex flex-wrap items-center gap-3">
+      <span class="badge badge-live">Live</span>
+      <span class="badge badge-final">Final</span>
+      <span class="badge badge-sched">Scheduled</span>
+      <span class="ml-2">Win cells tint green; loss cells tint red.</span>
     </div>
 
-    <!-- Weekly Submissions -->
     <div id="weekly-submissions" class="cfp-card rounded-none gold-shadow mt-4 px-4 md:px-6 py-4">
-      <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3 flex items-center gap-2">
-        Weekly Submissions Buffet
-        <span class="text-lg">🍽️</span>
+      <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-3">
+        Weekly Submissions
       </h2>
-
-      <p class="text-xs text-amber-100/80 mb-4">
-        Think of your picks as dishes at the Thanksgiving table: the more complete your plate, the better your shot at the
-        <span class="font-semibold text-amber-300">CFB Genius Trophy</span>.
-      </p>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <div class="ws-label">
-            <span class="icon">🦃</span>
-            <span>Stuffed With Picks (Complete Plates)</span>
-          </div>
+          <div class="ws-label">Made Picks</div>
           <div id="ws-made" class="flex flex-wrap gap-2"></div>
         </div>
         <div>
-          <div class="ws-label">
-            <span class="icon">🥔</span>
-            <span>Leftovers (Missing a Few Sides)</span>
-          </div>
+          <div class="ws-label">Not Yet</div>
           <div id="ws-not" class="flex flex-wrap gap-2"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Page script (unchanged functionality) -->
   <script type="module">
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
-
-    // ---- DOM ----
+    import { updateSeasonalTheme } from './js/seasonalTheme.js';
+    // DOM
     const seasonSelect = document.getElementById('season-select');
     const weekSelect   = document.getElementById('week-select');
     const statusEl     = document.getElementById('status');
@@ -472,32 +194,37 @@
     const wsMade       = document.getElementById('ws-made');
     const wsNot        = document.getElementById('ws-not');
 
-    // ---- State ----
+    // State
     let seasons = [];
     let currentSeason = null;
 
     let weeks = [];
-    let currentWeek = null;
+    let currentWeek = null; // number or 'playoff'
 
     let gameIds = [];
     let winnerMap = {};
     let lineMap   = {};
     let logoByTeam = {};
     let abbrByTeam = {};
-    let winsByTeam = {}; // points = wins
+
+    // Points
+    let winsByTeamRegular = {};  // all season games
+    let winsByTeamPlayoff = {};  // only weeks > 15
+    let isPlayoffView = false;
 
     let lastTeams = [];
     let lastPickMap = {};
     let lastGames = [];
 
-    // 🔹 Currently logged-in user's team (for highlight)
-    let currentTeamId = null;
+    // kickoff times
+    let weekStartTs = null;      // earliest kickoff in current week (regular)
+    let gameStartTs = {};        // GameId -> kickoff time (for playoff per-game gating)
 
-    // Reveal control
-    let weekStartTs = null;
-    let showPicks = true;
+    let currentTeamId = null;    // logged-in user's team for highlight
+    let hasPlayoffOption = false;
 
-    // Phone detection
+    let showPicks = true;        // global gating for regular weeks
+
     const phoneMQ = window.matchMedia('(max-width: 640px)');
     let isPhone = phoneMQ.matches;
     phoneMQ.addEventListener?.('change', (e) => {
@@ -513,7 +240,7 @@
 
     const headerStatusEls = new Map(); // game_id -> { badgeEl, networkEl }
 
-    // ---------- Performance helpers ----------
+    // Perf cache
     const STORAGE_KEYS = {
       lastSeason: 'cfb_last_season_v1',
       lastWeek:   'cfb_last_week_v1',
@@ -546,7 +273,7 @@
       }catch{}
     }
 
-    // ---------- Helpers ----------
+    // Helpers
     function stripAccents(s){
       try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); }
       catch { return s; }
@@ -569,7 +296,7 @@
     }
 
     function status(msg,isErr=false){
-      statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-amber-100/90');
+      statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
     }
     function formatTimeLocal(ts){
@@ -580,7 +307,6 @@
       }catch{ return ''; }
     }
 
-    // Build header display name for a game, using abbrev on phones
     function teamLabel(name){
       if (isPhone && abbrByTeam[name]) return abbrByTeam[name];
       return name;
@@ -595,11 +321,18 @@
       return map;
     }
 
-    // ---------- Load current user's team (for highlight) ----------
+    function getPointsMapForCurrentView(){
+      return isPlayoffView ? winsByTeamPlayoff : winsByTeamRegular;
+    }
+    function getPoints(pointsMap, teamId){
+      return (pointsMap && pointsMap[teamId]) || 0;
+    }
+
+    // Load current user's team
     async function loadCurrentUserTeam(){
       try{
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return; // not signed in, no highlight
+        if (!session) return;
 
         const { data: myTeams, error: tErr } = await supabase
           .from('teams')
@@ -612,61 +345,104 @@
           return;
         }
         if (myTeams && myTeams.length){
-          currentTeamId = myTeams[0].team_id; // first team alphabetically
+          currentTeamId = myTeams[0].team_id;
         }
       }catch(e){
         console.warn('loadCurrentUserTeam exception:', e);
       }
     }
 
-    // ---------- App startup ----------
+    // Startup
     async function startup() {
       await initNav();
-      await loadCurrentUserTeam(); // 🔹 get user team before we render
+      await loadCurrentUserTeam();
 
       await loadSeasons();
       const hintedSeason = getCached(STORAGE_KEYS.lastSeason);
       if (Number.isFinite(hintedSeason) && seasons.includes(hintedSeason)) {
         currentSeason = hintedSeason;
       } else {
-        currentSeason = seasons[seasons.length-1]; // latest
+        currentSeason = seasons[seasons.length-1];
       }
       seasonSelect.value = String(currentSeason);
 
       await loadWeeksForSeason(currentSeason);
 
       const hintedWeek = getCached(STORAGE_KEYS.lastWeek);
-      if (Number.isFinite(hintedWeek) && weeks.includes(hintedWeek)) {
+      if (weeks.length && Number.isFinite(hintedWeek) && weeks.includes(hintedWeek)) {
         currentWeek = hintedWeek;
-      } else {
+      } else if (weeks.length) {
         currentWeek = weeks[weeks.length-1];
+      } else if (hasPlayoffOption) {
+        currentWeek = 'playoff';
+      } else {
+        currentWeek = null;
       }
-      weekSelect.value = String(currentWeek);
+
+      isPlayoffView = (currentWeek === 'playoff');
+
+      if (currentWeek === 'playoff') {
+        weekSelect.value = 'playoff';
+      } else if (currentWeek != null) {
+        weekSelect.value = String(currentWeek);
+      }
 
       await init();
       await computeSeasonWins();
-      await loadWeek(currentWeek);
+      if (isPlayoffView) {
+        await computePlayoffWins();
+        await loadPlayoffWeek();
+      } else if (currentWeek != null) {
+        await loadWeek(currentWeek);
+      }
 
       seasonSelect.onchange = async () => {
         currentSeason = Number(seasonSelect.value);
         setCached(STORAGE_KEYS.lastSeason, currentSeason);
         await loadWeeksForSeason(currentSeason);
-        currentWeek = weeks[weeks.length-1];
-        weekSelect.value = String(currentWeek);
+
+        if (weeks.length) {
+          currentWeek = weeks[weeks.length-1];
+          weekSelect.value = String(currentWeek);
+        } else if (hasPlayoffOption) {
+          currentWeek = 'playoff';
+          weekSelect.value = 'playoff';
+        } else {
+          currentWeek = null;
+          weekSelect.value = '';
+        }
+
+        isPlayoffView = (currentWeek === 'playoff');
+
         await computeSeasonWins();
-        await loadWeek(currentWeek);
+        if (isPlayoffView) {
+          await computePlayoffWins();
+          await loadPlayoffWeek();
+        } else if (currentWeek != null) {
+          await loadWeek(currentWeek);
+        }
       };
 
       weekSelect.onchange = async ()=> {
-        currentWeek = Number(weekSelect.value);
-        setCached(STORAGE_KEYS.lastWeek, currentWeek);
-        await computeSeasonWins();
-        await loadWeek(currentWeek);
+        const val = weekSelect.value;
+        if (val === 'playoff') {
+          currentWeek = 'playoff';
+          isPlayoffView = true;
+          localStorage.removeItem(STORAGE_KEYS.lastWeek);
+          await computePlayoffWins();
+          await loadPlayoffWeek();
+        } else {
+          currentWeek = Number(val);
+          isPlayoffView = false;
+          setCached(STORAGE_KEYS.lastWeek, currentWeek);
+          await computeSeasonWins();
+          await loadWeek(currentWeek);
+        }
       };
     }
     startup();
 
-    // ---------- Loaders ----------
+    // Loaders
     async function loadSeasons(){
       status('Loading seasons…');
       const { data, error } = await supabase
@@ -689,13 +465,40 @@
         .not('week', 'is', null)
         .order('week', { ascending: true });
       if(error){ status(error.message, true); throw error; }
-      weeks = [...new Set((data||[]).map(r=>r.week))].sort((a,b)=>a-b);
-      if(!weeks.length){ status('No weeks for this season.', true); }
-      weekSelect.innerHTML = weeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+
+      const uniqueWeeks = [...new Set((data || []).map(r => r.week))].sort((a,b)=>a-b);
+
+      if (!uniqueWeeks.length){
+        weeks = [];
+        weekSelect.innerHTML = '';
+        hasPlayoffOption = false;
+        status('No weeks for this season.', true);
+        return;
+      }
+
+      hasPlayoffOption = uniqueWeeks.some(w => w > 15);
+      const regularWeeks = uniqueWeeks.filter(w => w <= 15);
+      weeks = regularWeeks;
+
+      let html = '';
+      if (regularWeeks.length){
+        html += regularWeeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
+      }
+      if (hasPlayoffOption){
+        html += `<option value="playoff">Playoff</option>`;
+      }
+
+      if (!html){
+        weekSelect.innerHTML = '';
+        status('No selectable weeks.', true);
+        return;
+      }
+
+      weekSelect.innerHTML = html;
     }
 
     async function init(){
-      status('Loading logos & trimmings…');
+      status('Loading assets…');
 
       const logoCached = getCachedMap(STORAGE_KEYS.logos, STORAGE_KEYS.logosTTL);
       const abbrCached = getCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL);
@@ -722,11 +525,8 @@
       }
     }
 
-    // ---------- Points (season-only) ----------
+    // Points
     async function computeSeasonWins(){
-      status('Basting the season standings…');
-
-      // Decided games for this season
       const { data: decidedGames, error: dgErr } = await supabase
         .from('all_games')
         .select('GameId, winner')
@@ -739,7 +539,7 @@
       (decidedGames||[]).forEach(g=>{ winnerByGame[g.GameId] = g.winner; });
 
       if (!gameIdsSeason.length){
-        winsByTeam = Object.create(null);
+        winsByTeamRegular = Object.create(null);
         return;
       }
 
@@ -749,19 +549,56 @@
         .in('game_id', gameIdsSeason);
       if(pErr){ status(pErr.message, true); return; }
 
-      winsByTeam = Object.create(null);
+      const map = Object.create(null);
       (allPicks||[]).forEach(p=>{
         const winner = winnerByGame[p.game_id];
         if(!winner) return;
         if(sameTeam(p.pick, winner)){
-          winsByTeam[p.team_id] = (winsByTeam[p.team_id] || 0) + 1;
+          map[p.team_id] = (map[p.team_id] || 0) + 1;
         }
       });
+      winsByTeamRegular = map;
     }
 
-    // ---------- Load a week (season-scoped) ----------
+    async function computePlayoffWins(){
+      const { data: decidedGames, error: dgErr } = await supabase
+        .from('all_games')
+        .select('GameId, winner, week')
+        .eq('cfb_season', currentSeason)
+        .gt('week', 15)
+        .not('winner', 'is', null);
+      if(dgErr){ status(dgErr.message, true); return; }
+
+      const gameIdsPo = (decidedGames || []).map(g => g.GameId);
+      const winnerByGame = Object.create(null);
+      (decidedGames||[]).forEach(g=>{ winnerByGame[g.GameId] = g.winner; });
+
+      if (!gameIdsPo.length){
+        winsByTeamPlayoff = Object.create(null);
+        return;
+      }
+
+      const { data: allPicks, error: pErr } = await supabase
+        .from('picks')
+        .select('team_id, game_id, pick')
+        .in('game_id', gameIdsPo);
+      if(pErr){ status(pErr.message, true); return; }
+
+      const map = Object.create(null);
+      (allPicks||[]).forEach(p=>{
+        const winner = winnerByGame[p.game_id];
+        if(!winner) return;
+        if(sameTeam(p.pick, winner)){
+          map[p.team_id] = (map[p.team_id] || 0) + 1;
+        }
+      });
+      winsByTeamPlayoff = map;
+    }
+
+    // Week loaders
     async function loadWeek(week){
-      status(`Loading S${currentSeason} • W${week}…`);
+      status(`Loading S${currentSeason} • Week ${week}…`);
+      isPlayoffView = false;
       stopLiveTicker();
       headerStatusEls.clear();
 
@@ -779,12 +616,14 @@
         return ta - tb;
       });
       lastGames = games;
+      updateSeasonalTheme(currentSeason, games);
 
-      // Earliest kickoff timestamp
       weekStartTs = null;
+      gameStartTs = {};
       for (const g of games) {
         const ts = g?.["Start (CT)"] ? new Date(g["Start (CT)"]).getTime() : null;
         if (Number.isFinite(ts)) {
+          gameStartTs[g.GameId] = ts;
           weekStartTs = (weekStartTs==null) ? ts : Math.min(weekStartTs, ts);
         }
       }
@@ -792,7 +631,6 @@
 
       winnerMap = {}; lineMap = {};
       gameIds = games.map(g=>g.GameId);
-
       games.forEach(g=>{
         winnerMap[g.GameId] = g.winner ?? null;
         lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
@@ -812,9 +650,10 @@
 
       const pickMap = buildPickMap(pickRows);
 
+      const pointsMap = winsByTeamRegular;
       const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
-        const pa = winsByTeam[a.team_id] || 0;
-        const pb = winsByTeam[b.team_id] || 0;
+        const pa = getPoints(pointsMap, a.team_id);
+        const pb = getPoints(pointsMap, b.team_id);
         if(pb !== pa) return pb - pa;
         return a.team_name.localeCompare(b.team_name);
       });
@@ -824,7 +663,7 @@
 
       const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
-      renderTable(teamsSorted, pickMap, winnerMap, showPicks);
+      renderTable(teamsSorted, pickMap, winnerMap, showPicks, pointsMap, false);
       renderWeeklySubmissions(teamsSorted, pickMap);
 
       startLiveTicker();
@@ -835,6 +674,92 @@
       }
     }
 
+    async function loadPlayoffWeek(){
+      status(`Loading S${currentSeason} • Playoff…`);
+      isPlayoffView = true;
+      stopLiveTicker();
+      headerStatusEls.clear();
+
+      const { data: gamesRaw, error: gErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season')
+        .eq('cfb_season', currentSeason)
+        .eq('picked', true)
+        .gt('week', 15);
+      if(gErr) return status(gErr.message, true);
+
+      const games = (gamesRaw || []).slice().sort((a, b) => {
+        const ta = a?.["Start (CT)"] ? new Date(a["Start (CT)"]).getTime() : Infinity;
+        const tb = b?.["Start (CT)"] ? new Date(b["Start (CT)"]).getTime() : Infinity;
+        return ta - tb;
+      });
+      lastGames = games;
+      updateSeasonalTheme(currentSeason, games);
+
+      weekStartTs = null;
+      gameStartTs = {};
+      for (const g of games) {
+        const ts = g?.["Start (CT)"] ? new Date(g["Start (CT)"]).getTime() : null;
+        if (Number.isFinite(ts)) {
+          gameStartTs[g.GameId] = ts;
+          weekStartTs = (weekStartTs==null) ? ts : Math.min(weekStartTs, ts);
+        }
+      }
+      showPicks = true; // playoff uses per-game gating, not global
+
+      winnerMap = {}; lineMap = {};
+      gameIds = games.map(g=>g.GameId);
+      games.forEach(g=>{
+        winnerMap[g.GameId] = g.winner ?? null;
+        lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
+      });
+
+      // Only playoff teams for this season
+      const { data: playoffRows, error: poErr } = await supabase
+        .from('playoffs')
+        .select('team_id, seed, teams ( team_name )')
+        .eq('season', currentSeason)
+        .order('seed', { ascending: true });
+      if (poErr) return status(poErr.message, true);
+
+      const playoffTeams = (playoffRows || []).map(r => ({
+        team_id: r.team_id,
+        team_name: r.teams?.team_name || `Team ${r.team_id}`,
+        seed: r.seed
+      }));
+
+      const { data: pickRows, error: pErr } = await supabase
+        .from('picks')
+        .select('team_id, game_id, pick')
+        .in('game_id', gameIds);
+      if(pErr) return status(pErr.message, true);
+
+      const pickMap = buildPickMap(pickRows);
+
+      const pointsMap = winsByTeamPlayoff;
+      const teamsSorted = [...playoffTeams].sort((a,b)=>{
+        const pa = getPoints(pointsMap, a.team_id);
+        const pb = getPoints(pointsMap, b.team_id);
+        if (pb !== pa) return pb - pa;
+        if ((a.seed ?? Infinity) !== (b.seed ?? Infinity)) {
+          return (a.seed ?? Infinity) - (b.seed ?? Infinity);
+        }
+        return a.team_name.localeCompare(b.team_name);
+      });
+
+      lastTeams = teamsSorted;
+      lastPickMap = pickMap;
+
+      const gameNameMap = buildGameNameMap(games);
+      renderHeader(gameNameMap, games);
+      renderTable(teamsSorted, pickMap, winnerMap, true, pointsMap, true);
+      renderWeeklySubmissions(teamsSorted, pickMap);
+
+      startLiveTicker();
+      status(`Season ${currentSeason} • Playoff (points from weeks > 15 only)`);
+    }
+
+    // Build pick map
     function buildPickMap(rows){
       const map = {};
       (rows||[]).forEach(r=>{
@@ -852,16 +777,14 @@
     function renderHeader(gameNameMap, gameRows){
       theadRow.innerHTML = '';
 
-      // TEAM
       const thTeam = document.createElement('th');
       thTeam.className = 'text-left pl-4 pr-2 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-1';
-      thTeam.textContent = 'Table Guest';
+      thTeam.textContent = 'Team';
       theadRow.appendChild(thTeam);
 
-      // POINTS
       const thPts = document.createElement('th');
       thPts.className = 'pl-2 pr-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
-      thPts.textContent = 'Turkey Points';
+      thPts.textContent = 'Points';
       theadRow.appendChild(thPts);
 
       gameIds.forEach(id=>{
@@ -870,7 +793,6 @@
 
         const row = (gameRows||[]).find(g=>g.GameId===id);
 
-        // Title: link to espn_url if present
         const hasUrl = !!(row?.espn_url && /^https?:\/\//i.test(row.espn_url));
         const title = document.createElement(hasUrl ? 'a' : 'div');
         title.className = 'mb-1';
@@ -925,15 +847,15 @@
       });
     }
 
-    function renderTable(teams, pickMap, winnerMap, revealPicks){
+    function renderTable(teams, pickMap, winnerMap, revealPicks, pointsMap, playoffMode){
       tbody.innerHTML = '';
 
-      const pointsArray = teams.map(t => winsByTeam[t.team_id] || 0);
+      const pointsArray = teams.map(t => getPoints(pointsMap, t.team_id));
       const cutoffPts = pointsArray.length ? (pointsArray[Math.min(3, pointsArray.length - 1)] || 0) : 0;
 
       let lastCutIndex = -1;
       for(let i = 0; i < teams.length; i++){
-        if((winsByTeam[teams[i].team_id] || 0) >= cutoffPts){
+        if(getPoints(pointsMap, teams[i].team_id) >= cutoffPts){
           lastCutIndex = i;
         } else break;
       }
@@ -942,9 +864,8 @@
 
       teams.forEach((team, idx)=>{
         const tr = document.createElement('tr');
-        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.08)]';
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // 🔹 Mark logged-in user's team row
         if (currentTeamId != null && team.team_id === currentTeamId) {
           tr.dataset.me = 'true';
         }
@@ -956,14 +877,22 @@
 
         const tdPts = document.createElement('td');
         tdPts.className = 'pl-2 pr-3 py-2 text-center font-semibold text-[var(--cfp-ivory)]';
-        tdPts.textContent = (winsByTeam[team.team_id] || 0).toString();
+        tdPts.textContent = getPoints(pointsMap, team.team_id).toString();
         tr.appendChild(tdPts);
 
         gameIds.forEach(id=>{
           const td = document.createElement('td');
           td.className = 'px-3 py-2 text-center text-sm align-middle';
 
-          if(!revealPicks){
+          const shouldRevealThisGame = playoffMode
+            ? (() => {
+                const ts = gameStartTs[id];
+                if (!ts) return true;
+                return Date.now() >= ts;
+              })()
+            : revealPicks;
+
+          if(!shouldRevealThisGame){
             td.classList.add('pick-empty');
             td.textContent = '—';
             tr.appendChild(td);
@@ -1009,14 +938,14 @@
           divTr.className = 'playoff-divider';
           const divTd = document.createElement('td');
           divTd.colSpan = 2 + gameIds.length;
-          divTd.textContent = 'Projected Playoff Table (Kids’ Table Below)';
+          divTd.textContent = 'Projected Playoff';
           divTr.appendChild(divTd);
           tbody.appendChild(divTr);
         }
       });
     }
 
-    // ------- Weekly Submissions -------
+    // Weekly submissions
     function escapeHtml(s){
       return String(s)
         .replace(/&/g,'&amp;')
@@ -1026,7 +955,6 @@
         .replace(/'/g,'&#39;');
     }
 
-    // COMPLETE submission rule: must have a non-empty pick for EVERY game in gameIds
     function renderWeeklySubmissions(teams, pickMap){
       const made = [];
       const notYet = [];
@@ -1041,15 +969,15 @@
       });
 
       wsMade.innerHTML = made.map(name =>
-        `<span class="badge badge-sched inline-fix rounded-full bg-[linear-gradient(135deg,#824026,#c56a30)] text-[var(--cfp-ivory)] border border-amber-200/40">🦃 ${escapeHtml(name)}</span>`
-      ).join('') || `<span class="text-amber-100/70">No plates piled high just yet.</span>`;
+        `<span class="badge badge-sched inline-fix rounded-full">${escapeHtml(name)}</span>`
+      ).join('') || `<span class="text-gray-400">—</span>`;
 
       wsNot.innerHTML = notYet.map(name =>
-        `<span class="badge badge-sched inline-fix rounded-full bg-[linear-gradient(135deg,#3a2517,#1f130b)] text-amber-100/90 border border-amber-50/30">🥄 ${escapeHtml(name)}</span>`
-      ).join('') || `<span class="text-amber-100/70">Everyone’s plate is full. Beautiful.</span>`;
+        `<span class="badge badge-sched inline-fix rounded-full">${escapeHtml(name)}</span>`
+      ).join('') || `<span class="text-gray-400">—</span>`;
     }
 
-    // ------- LIVE TICKER -------
+    // Live ticker
     async function startLiveTicker(){
       await refreshBadgesFromAllGames();
       liveTimer = setInterval(refreshBadgesFromAllGames, LIVE_INTERVAL_MS);
@@ -1115,23 +1043,40 @@
         }
       });
 
-      if (!showPicks && weekStartTs && Date.now() >= weekStartTs) {
+      let needRerender = false;
+
+      // Regular weeks: global reveal when earliest kickoff hits
+      if (!isPlayoffView && !showPicks && weekStartTs && Date.now() >= weekStartTs) {
         showPicks = true;
-        status(`Kickoff! The feast is served for Season ${currentSeason} • Week ${currentWeek}.`);
-        winnerChanged = true;
+        const label = `Week ${currentWeek}`;
+        status(`Kickoff! Showing picks for Season ${currentSeason} • ${label}.`);
+        needRerender = true;
+      }
+
+      // Playoff: per-game gating (we always re-render so games that have kicked off reveal)
+      if (isPlayoffView) {
+        needRerender = true;
       }
 
       if (winnerChanged) {
-        await computeSeasonWins();
+        if (isPlayoffView) {
+          await computePlayoffWins();
+        } else {
+          await computeSeasonWins();
+        }
+        needRerender = true;
+      }
 
+      if (needRerender) {
+        const pointsMap = getPointsMapForCurrentView();
         lastTeams.sort((a,b)=>{
-          const pa = winsByTeam[a.team_id] || 0;
-          const pb = winsByTeam[b.team_id] || 0;
+          const pa = getPoints(pointsMap, a.team_id);
+          const pb = getPoints(pointsMap, b.team_id);
           if (pb !== pa) return pb - pa;
           return a.team_name.localeCompare(b.team_name);
         });
 
-        renderTable(lastTeams, lastPickMap, winnerMap, showPicks);
+        renderTable(lastTeams, lastPickMap, winnerMap, showPicks, pointsMap, isPlayoffView);
         renderWeeklySubmissions(lastTeams, lastPickMap);
       }
     }
