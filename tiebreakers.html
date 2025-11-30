@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CFB Pick'em — Tiebreakers</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <link rel="modulepreload" href="./js/nav.js">
+
+  <link rel="stylesheet" href="./css/theme-halloween.css">
+  <link rel="stylesheet" href="./css/theme-thanksgiving.css">
+  <link rel="stylesheet" href="./css/theme-christmas.css">
+
+  <style>
+    :root{
+      --cfp-black:#0B0B0B;
+      --cfp-charcoal:#111213;
+      --cfp-gold:#C99210;
+      --cfp-gold-2:#E3B23C;
+      --cfp-ivory:#F7F4ED;
+      --cfp-gray:#1F2022;
+      --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+    }
+
+    .network-line{display:inline-flex;align-items:center;font-size:10px;line-height:1;letter-spacing:.15em;text-transform:uppercase;color:var(--cfp-gold-2);margin:0}
+    .badge.inline-fix{display:inline-flex;align-items:center;line-height:1;padding-top:.125rem;padding-bottom:.125rem}
+
+    body{
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
+        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+        var(--cfp-charcoal);
+      background-size:100% 100%,24px 24px,auto;
+      color:#e7e7e7;
+      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+      min-height:100vh;
+    }
+
+    .table-sticky th{position:sticky;top:0;background-color:var(--cfp-black);z-index:10}
+    .gold-shadow{box-shadow:0 0 0 1px rgba(233,185,73,.35),0 0 24px rgba(233,185,73,.08) inset}
+
+    .trophy-oval{width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative}
+    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
+
+    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
+    .cfp-select:focus{outline:none;box-shadow:var(--ring)}
+    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
+
+    .badge{font-size:.72rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.125rem .5rem;border-radius:0}
+    .badge-final{background:#6b7280;color:#fff}
+    .badge-live{background:var(--cfp-gold);color:#0b0b0b}
+    .badge-sched{background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
+
+    .table th,.table td{border-color:rgba(231,231,231,.08)}
+    .table tbody tr:hover{background:rgba(233,185,73,.06)}
+
+    .pick-win{background:rgba(88,214,141,.15);color:#8ef2b9}
+    .pick-loss{background:rgba(255,92,92,.15);color:#ffb3b3}
+    .pick-empty{color:#9ca3af}
+
+    .logo{height:32px;width:32px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
+
+    .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
+    .ring-gold{box-shadow:var(--ring)}
+
+    th.sticky-col-1, td.sticky-col-1{
+      position: sticky; left: 0; z-index: 25; background: var(--cfp-black);
+      box-shadow: 1px 0 0 rgba(231,231,231,.08) inset;
+    }
+    thead th.sticky-col-1{ z-index: 50; }
+
+    .scroll-shadows{ position: relative; }
+
+    @media (max-width: 640px){
+      .logo{height:24px;width:24px}
+      th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; }
+      thead th { font-size: .8rem; }
+      .network-line{ font-size:9px; letter-spacing:.12em; }
+      .badge { font-size: .65rem; padding: .1rem .4rem; }
+      .table tbody td { font-size: .85rem; }
+      thead th > :first-child{
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 130px;
+        display: inline-block;
+      }
+    }
+
+    nav[data-nav="root"]{position:relative;z-index:60;pointer-events:auto}
+
+    tr[data-me="true"]{
+      background-color: rgba(255,255,255,0.05);
+    }
+    tr[data-me="true"] .sticky-col-1{
+      font-weight:700;
+      text-shadow:0 0 8px rgba(0,0,0,.6);
+      box-shadow:1px 0 0 rgba(233,185,73,.4) inset;
+    }
+    tr[data-me="true"]:hover{
+      background:
+        linear-gradient(90deg, rgba(233,185,73,.24), transparent 65%);
+    }
+  </style>
+</head>
+
+<body data-page="tiebreakers">
+  <div class="max-w-7xl mx-auto p-4 md:p-6">
+    <div id="site-nav"></div>
+
+    <header class="cfp-card rounded-none stripe gold-shadow mb-5">
+      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
+        <div class="flex items-center gap-3 md:gap-4">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <div>
+            <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Tiebreakers</h1>
+          </div>
+        </div>
+        <div class="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-3 text-sm">
+          <label class="hidden md:block text-gray-300">Season</label>
+          <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
+        </div>
+      </div>
+      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
+        <span id="status">Loading…</span>
+      </div>
+    </header>
+
+    <div class="cfp-card rounded-none gold-shadow overflow-auto scroll-shadows">
+      <table class="table min-w-full text-sm" style="table-layout:auto;">
+        <thead class="table-sticky">
+          <tr id="thead-row" class="border-b"></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="mt-4 text-xs text-gray-300 flex flex-wrap items-center gap-3">
+      <span class="badge badge-live">Live</span>
+      <span class="badge badge-final">Final</span>
+      <span class="badge badge-sched">Scheduled</span>
+      <span class="ml-2">Win cells tint green; loss cells tint red. Tiebreaker “points” are correct tiebreaker picks only.</span>
+    </div>
+  </div>
+
+  <script type="module">
+    import initNav from './js/nav.js';
+    import { supabase } from './js/supabaseClient.js';
+    import { updateSeasonalTheme } from './js/seasonalTheme.js';
+
+    // DOM
+    const seasonSelect = document.getElementById('season-select');
+    const statusEl     = document.getElementById('status');
+    const theadRow     = document.getElementById('thead-row');
+    const tbody        = document.getElementById('tbody');
+
+    // State
+    let seasons = [];
+    let currentSeason = null;
+
+    let gameIds = [];
+    let winnerMap = {};
+    let lineMap   = {};
+    let logoByTeam = {};
+    let abbrByTeam = {};
+
+    // Tiebreaker points (per season)
+    let tbWinsByTeam = {};
+
+    let lastTeams = [];
+    let lastPickMap = {};
+    let lastGames = [];
+
+    let currentTeamId = null;    // logged-in user's team for highlight
+
+    let liveTimer = null;
+    const LIVE_INTERVAL_MS = 30000;
+
+    const headerStatusEls = new Map(); // game_id -> { badgeEl, networkEl }
+
+    const phoneMQ = window.matchMedia('(max-width: 640px)');
+    let isPhone = phoneMQ.matches;
+    phoneMQ.addEventListener?.('change', (e) => {
+      isPhone = e.matches;
+      if (lastGames.length) {
+        const nameMap = buildGameNameMap(lastGames);
+        renderHeader(nameMap, lastGames);
+      }
+    });
+
+    // Perf cache
+    const STORAGE_KEYS = {
+      lastSeasonTB: 'cfb_tb_last_season_v1',
+      logos: 'cfb_logos_v1',
+      logosTTL: 'cfb_logos_ttl_v1',
+      abbrev: 'cfb_abbrev_v1',
+      abbrevTTL: 'cfb_abbrev_ttl_v1',
+    };
+    const LOGOS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+    function getCached(key) {
+      const v = localStorage.getItem(key);
+      return v ? Number(v) : null;
+    }
+    function setCached(key, val) {
+      if (Number.isFinite(val)) localStorage.setItem(key, String(val));
+    }
+    function getCachedMap(key, ttlKey){
+      try{
+        const ttl = Number(localStorage.getItem(ttlKey) || 0);
+        if (Date.now() > ttl) return null;
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      }catch{ return null; }
+    }
+    function setCachedMap(key, ttlKey, obj){
+      try{
+        localStorage.setItem(key, JSON.stringify(obj || {}));
+        localStorage.setItem(ttlKey, String(Date.now() + LOGOS_TTL_MS));
+      }catch{}
+    }
+
+    // Helpers
+    function stripAccents(s){
+      try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); }
+      catch { return s; }
+    }
+    function norm(v){
+      if(!v) return '';
+      return stripAccents(String(v))
+        .toLowerCase()
+        .replace(/&/g,' and ')
+        .replace(/\./g,'')
+        .replace(/[^a-z0-9\s]/g,' ')
+        .replace(/\s+/g,' ')
+        .trim();
+    }
+    const stToState = s => s.replace(/\bst\b/g,'state');
+    const stateToSt = s => s.replace(/\bstate\b/g,'st');
+    function sameTeam(a,b){
+      const na = norm(a), nb = norm(b);
+      return na === nb || stToState(na) === stToState(nb) || stateToSt(na) === stateToSt(nb);
+    }
+
+    function status(msg,isErr=false){
+      statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
+      statusEl.textContent = msg;
+    }
+    function formatTimeLocal(ts){
+      if(!ts) return '';
+      try{
+        const d = new Date(ts);
+        return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+      }catch{ return ''; }
+    }
+
+    function teamLabel(name){
+      if (isPhone && abbrByTeam[name]) return abbrByTeam[name];
+      return name;
+    }
+    function buildGameNameMap(games){
+      const map = {};
+      games.forEach(g=>{
+        const ln = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
+        const lineTxt = (ln!=null && !isNaN(ln)) ? (ln>0?` (+${ln})`:` (${ln})`) : '';
+        map[g.GameId] = `${teamLabel(g.Away)} @ ${teamLabel(g.Home)}${lineTxt}`;
+      });
+      return map;
+    }
+    function getPoints(teamId){
+      return (tbWinsByTeam && tbWinsByTeam[teamId]) || 0;
+    }
+
+    async function loadCurrentUserTeam(){
+      try{
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const { data: myTeams, error: tErr } = await supabase
+          .from('teams')
+          .select('team_id, team_name')
+          .eq('user_id', session.user.id)
+          .order('team_name', { ascending: true });
+
+        if (tErr) {
+          console.warn('loadCurrentUserTeam error:', tErr.message);
+          return;
+        }
+        if (myTeams && myTeams.length){
+          currentTeamId = myTeams[0].team_id;
+        }
+      }catch(e){
+        console.warn('loadCurrentUserTeam exception:', e);
+      }
+    }
+
+    async function startup(){
+      await initNav();
+      await loadCurrentUserTeam();
+
+      await initAssets();
+      await loadSeasons();
+
+      let hintedSeason = getCached(STORAGE_KEYS.lastSeasonTB);
+      if (!Number.isFinite(hintedSeason) || !seasons.includes(hintedSeason)) {
+        hintedSeason = seasons[seasons.length - 1];
+      }
+      currentSeason = hintedSeason;
+      seasonSelect.value = String(currentSeason);
+
+      await computeTiebreakerWinsForSeason(currentSeason);
+      await loadSeasonTiebreakers(currentSeason);
+
+      seasonSelect.onchange = async () => {
+        currentSeason = Number(seasonSelect.value);
+        setCached(STORAGE_KEYS.lastSeasonTB, currentSeason);
+        await computeTiebreakerWinsForSeason(currentSeason);
+        await loadSeasonTiebreakers(currentSeason);
+      };
+    }
+    startup();
+
+    async function initAssets(){
+      status('Loading assets…');
+      const logoCached = getCachedMap(STORAGE_KEYS.logos, STORAGE_KEYS.logosTTL);
+      const abbrCached = getCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL);
+      if (logoCached) logoByTeam = logoCached;
+      if (abbrCached) abbrByTeam = abbrCached;
+
+      const { data: logoRows, error: lErr } = await supabase
+        .from('logos')
+        .select('Team, LogoURL, Abbrev');
+
+      if(!lErr) {
+        const mergedLogos = { ...(logoCached || {}) };
+        const mergedAbbrs = { ...(abbrCached || {}) };
+        (logoRows || []).forEach(r => {
+          if (r?.Team) {
+            if (r.LogoURL) mergedLogos[r.Team] = r.LogoURL;
+            if (r.Abbrev)  mergedAbbrs[r.Team] = r.Abbrev;
+          }
+        });
+        logoByTeam = mergedLogos;
+        abbrByTeam = mergedAbbrs;
+        setCachedMap(STORAGE_KEYS.logos,  STORAGE_KEYS.logosTTL,  logoByTeam);
+        setCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL, abbrByTeam);
+      }
+    }
+
+    async function loadSeasons(){
+      status('Loading seasons…');
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('cfb_season')
+        .eq('tiebreaker', true)
+        .not('cfb_season', 'is', null);
+      if(error){ status(error.message, true); throw error; }
+
+      seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(Number.isFinite))]
+        .sort((a,b)=>a-b);
+      if(!seasons.length){
+        status('No seasons with tiebreakers found.', true);
+        throw new Error('no seasons');
+      }
+      seasonSelect.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    // Compute per-team tiebreaker wins for currentSeason
+    async function computeTiebreakerWinsForSeason(season){
+      status('Computing tiebreaker points…');
+      // decided tiebreaker games in this season
+      const { data: decidedGames, error: dgErr } = await supabase
+        .from('all_games')
+        .select('GameId, winner')
+        .eq('cfb_season', season)
+        .eq('tiebreaker', true)
+        .not('winner', 'is', null);
+
+      if(dgErr){ status(dgErr.message, true); return; }
+
+      const gameIdList = (decidedGames || []).map(g => g.GameId);
+      const winnerByGame = Object.create(null);
+      (decidedGames || []).forEach(g => { winnerByGame[g.GameId] = g.winner; });
+
+      if (!gameIdList.length){
+        tbWinsByTeam = Object.create(null);
+        return;
+      }
+
+      const { data: allPicks, error: pErr } = await supabase
+        .from('picks')
+        .select('team_id, game_id, pick')
+        .in('game_id', gameIdList);
+
+      if(pErr){ status(pErr.message, true); return; }
+
+      const map = Object.create(null);
+      (allPicks || []).forEach(p => {
+        const winner = winnerByGame[p.game_id];
+        if (!winner) return;
+        if (sameTeam(p.pick, winner)){
+          map[p.team_id] = (map[p.team_id] || 0) + 1;
+        }
+      });
+      tbWinsByTeam = map;
+    }
+
+    async function loadSeasonTiebreakers(season){
+      status(`Loading tiebreakers for ${season}…`);
+      stopLiveTicker();
+      headerStatusEls.clear();
+
+      const { data: gamesRaw, error: gErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, espn_url, cfb_season')
+        .eq('cfb_season', season)
+        .eq('tiebreaker', true);
+
+      if(gErr){ status(gErr.message, true); return; }
+
+      const games = (gamesRaw || []).slice().sort((a,b)=>{
+        const ta = a?.["Start (CT)"] ? new Date(a["Start (CT)"]).getTime() : Infinity;
+        const tb = b?.["Start (CT)"] ? new Date(b["Start (CT)"]).getTime() : Infinity;
+        return ta - tb;
+      });
+
+      lastGames = games;
+      updateSeasonalTheme(season, games);
+
+      winnerMap = {}; lineMap = {};
+      gameIds = games.map(g=>g.GameId);
+      games.forEach(g=>{
+        winnerMap[g.GameId] = g.winner ?? null;
+        lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
+      });
+
+      // All teams in league
+      const { data: teamRows, error: tErr } = await supabase
+        .from('teams')
+        .select('team_id, team_name')
+        .order('team_name', { ascending: true });
+
+      if(tErr){ status(tErr.message, true); return; }
+
+      let pickMap = {};
+      if (gameIds.length){
+        const { data: pickRows, error: pErr } = await supabase
+          .from('picks')
+          .select('team_id, game_id, pick')
+          .in('game_id', gameIds);
+        if(pErr){ status(pErr.message, true); return; }
+        pickMap = buildPickMap(pickRows);
+      }
+
+      lastPickMap = pickMap;
+
+      const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
+        const pa = getPoints(a.team_id);
+        const pb = getPoints(b.team_id);
+        if (pb !== pa) return pb - pa;
+        return a.team_name.localeCompare(b.team_name);
+      });
+
+      lastTeams = teamsSorted;
+
+      const gameNameMap = buildGameNameMap(games);
+      renderHeader(gameNameMap, games);
+      renderTable(teamsSorted, pickMap, winnerMap);
+      status(`Season ${season} • Tiebreaker results`);
+
+      startLiveTicker();
+    }
+
+    function buildPickMap(rows){
+      const map = {};
+      (rows||[]).forEach(r=>{
+        if(!map[r.team_id]) map[r.team_id] = {};
+        map[r.team_id][r.game_id] = r.pick;
+      });
+      return map;
+    }
+
+    function getLogoForPickExact(pick){
+      if(!pick) return null;
+      return logoByTeam[pick] || null;
+    }
+
+    function renderHeader(gameNameMap, gameRows){
+      theadRow.innerHTML = '';
+
+      const thTeam = document.createElement('th');
+      thTeam.className = 'text-left pl-4 pr-2 py-3 font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide sticky-col-1';
+      thTeam.textContent = 'Team';
+      theadRow.appendChild(thTeam);
+
+      const thPts = document.createElement('th');
+      thPts.className = 'pl-2 pr-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
+      thPts.textContent = 'TB Points';
+      theadRow.appendChild(thPts);
+
+      gameIds.forEach(id=>{
+        const th = document.createElement('th');
+        th.className = 'px-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] whitespace-nowrap align-middle font-[Oswald] tracking-wide';
+
+        const row = (gameRows||[]).find(g=>g.GameId===id);
+
+        const hasUrl = !!(row?.espn_url && /^https?:\/\//i.test(row.espn_url));
+        const title = document.createElement(hasUrl ? 'a' : 'div');
+        title.className = 'mb-1';
+        title.textContent = gameNameMap[id] || `Game ${id}`;
+        if (hasUrl) {
+          title.href = row.espn_url.trim();
+          title.target = '_blank';
+          title.rel = 'noopener noreferrer';
+          title.className = 'mb-1 text-[var(--cfp-ivory)] hover:underline underline-offset-2';
+        }
+        th.appendChild(title);
+
+        const networkLine = document.createElement('div');
+        networkLine.className = 'network-line';
+
+        const badge = document.createElement('div');
+        badge.className = 'badge badge-sched inline-fix';
+
+        if(row?.Status === 'final'){
+          networkLine.style.display = 'none';
+          const a = row.AwayPts ?? '';
+          const h = row.HomePts ?? '';
+          badge.textContent = `Final ${a}–${h}`;
+          badge.className = 'badge badge-final inline-fix';
+        } else if(row?.Status === 'in_progress'){
+          if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
+          else { networkLine.style.display='none'; }
+
+          const p = row?.Period || 1;
+          const clk = row?.Clock || '';
+          const a = row?.AwayPts ?? '';
+          const h = row?.HomePts ?? '';
+          const score = (a!=='' && h!=='') ? `${a}–${h}` : '';
+          badge.textContent = `${p >= 5 ? 'OT' : 'Q'+(p||1)} ${clk} ${score}`.trim();
+          badge.className = 'badge badge-live inline-fix';
+        } else {
+          if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
+          else { networkLine.style.display='none'; }
+          const t = formatTimeLocal(row && row['Start (CT)']);
+          badge.textContent = t || 'Scheduled';
+          badge.className = 'badge badge-sched inline-fix';
+        }
+
+        const statusWrap = document.createElement('div');
+        statusWrap.className = 'flex items-center justify-center gap-1 w-full text-center whitespace-nowrap';
+        statusWrap.appendChild(networkLine);
+        statusWrap.appendChild(badge);
+        th.appendChild(statusWrap);
+
+        headerStatusEls.set(String(id), { badgeEl: badge, networkEl: networkLine });
+        theadRow.appendChild(th);
+      });
+    }
+
+    function renderTable(teams, pickMap, winnerMap){
+      tbody.innerHTML = '';
+
+      teams.forEach(team => {
+        const tr = document.createElement('tr');
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+
+        if (currentTeamId != null && team.team_id === currentTeamId) {
+          tr.dataset.me = 'true';
+        }
+
+        const tdTeam = document.createElement('td');
+        tdTeam.className = 'pl-4 pr-2 py-2 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
+        tdTeam.textContent = team.team_name;
+        tr.appendChild(tdTeam);
+
+        const tdPts = document.createElement('td');
+        tdPts.className = 'pl-2 pr-3 py-2 text-center font-semibold text-[var(--cfp-ivory)]';
+        tdPts.textContent = getPoints(team.team_id).toString();
+        tr.appendChild(tdPts);
+
+        gameIds.forEach(id=>{
+          const td = document.createElement('td');
+          td.className = 'px-3 py-2 text-center text-sm align-middle';
+
+          const pick   = pickMap[team.team_id]?.[id];
+          const winner = winnerMap[id];
+          const hasPick = !!(pick && String(pick).trim() !== '');
+
+          if(hasPick){
+            if(winner && sameTeam(pick, winner)){
+              td.classList.add('pick-win');
+            }else if(winner && !sameTeam(pick, winner)){
+              td.classList.add('pick-loss');
+            }else{
+              td.classList.add('pick-empty');
+            }
+          }else{
+            td.classList.add('pick-empty');
+          }
+
+          const url = hasPick ? getLogoForPickExact(pick) : null;
+          if(url){
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = pick;
+            img.title = pick;
+            img.loading = 'lazy';
+            img.className = 'logo';
+            td.appendChild(img);
+          }else{
+            td.textContent = hasPick ? pick : '—';
+          }
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Live ticker (for header badges + winners)
+    async function startLiveTicker(){
+      await refreshBadgesFromAllGames();
+      liveTimer = setInterval(refreshBadgesFromAllGames, LIVE_INTERVAL_MS);
+    }
+    function stopLiveTicker(){
+      if(liveTimer){ clearInterval(liveTimer); liveTimer = null; }
+    }
+
+    async function refreshBadgesFromAllGames(){
+      if(!gameIds || !gameIds.length) return;
+
+      const { data: rows, error } = await supabase
+        .from('all_games')
+        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner')
+        .in('GameId', gameIds);
+
+      if(error){
+        console.warn('all_games refresh error:', error.message);
+        return;
+      }
+
+      let winnerChanged = false;
+
+      (rows || []).forEach(r=>{
+        const entry = headerStatusEls.get(String(r.GameId));
+        if(!entry) return;
+
+        const { badgeEl, networkEl } = entry;
+
+        if(r.Status === 'final'){
+          if (networkEl) networkEl.style.display = 'none';
+          const a = r.AwayPts ?? '';
+          const h = r.HomePts ?? '';
+          badgeEl.textContent = `Final ${a}–${h}`;
+          badgeEl.className = 'badge badge-final inline-fix';
+        }else if(r.Status === 'in_progress'){
+          if (networkEl) {
+            if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
+            else { networkEl.style.display = 'none'; }
+          }
+          const p = r.Period || 1;
+          const clk = r.Clock || '';
+          const a = r.AwayPts ?? '';
+          const h = r.HomePts ?? '';
+          const score = (a!=='' && h!=='') ? `${a}–${h}` : '';
+          badgeEl.textContent = `${p >= 5 ? 'OT' : 'Q'+(p||1)} ${clk} ${score}`.trim();
+          badgeEl.className = 'badge badge-live inline-fix';
+        }else{
+          if (networkEl) {
+            if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
+            else { networkEl.style.display = 'none'; }
+          }
+          const t = formatTimeLocal(r['Start (CT)']);
+          badgeEl.textContent = t || 'Scheduled';
+          badgeEl.className = 'badge badge-sched inline-fix';
+        }
+
+        const prevWinner = winnerMap[r.GameId] ?? null;
+        const currWinner = r.winner ?? null;
+        if (prevWinner !== currWinner) {
+          winnerMap[r.GameId] = currWinner;
+          winnerChanged = true;
+        }
+      });
+
+      if (winnerChanged) {
+        await computeTiebreakerWinsForSeason(currentSeason);
+        // re-sort teams by updated TB points
+        lastTeams.sort((a,b)=>{
+          const pa = getPoints(a.team_id);
+          const pb = getPoints(b.team_id);
+          if (pb !== pa) return pb - pa;
+          return a.team_name.localeCompare(b.team_name);
+        });
+        renderTable(lastTeams, lastPickMap, winnerMap);
+      }
+    }
+  </script>
+</body>
+</html>
