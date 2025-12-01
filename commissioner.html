@@ -269,14 +269,14 @@
       if(!weeks.length){ status('No weeks found for this season.', true); return false; }
 
       const maxWeek = weeks[weeks.length - 1];
-      const hasWeek17 = weeks.includes(17);
+      const hasWeek16 = weeks.includes(16);
 
       let optionsHtml = weeks
         .map(w => `<option value="${w}">Week ${w}</option>`)
         .join('');
 
-      // Only show "Playoff" once we actually have weeks beyond 17
-      if (hasWeek17 && maxWeek > 17) {
+      // Only show "Playoff" once we actually have weeks beyond 16
+      if (hasWeek16 && maxWeek > 16) {
         optionsHtml += `<option value="playoff">Playoff</option>`;
       }
 
@@ -337,7 +337,7 @@
         .eq('cfb_season', season);
 
       if (viewingPlayoffs) {
-        query = query.gt('week', 17);
+        query = query.gt('week', 16);
       } else {
         query = query.eq('week', weekNum);
       }
@@ -393,7 +393,7 @@
         .eq('picked', true);
 
       if (viewingPlayoffs) {
-        query = query.gt('week', 17);
+        query = query.gt('week', 16);
       } else {
         const week = Number(rawWeek);
         if (!Number.isFinite(week)) { pickableGames = []; return; }
