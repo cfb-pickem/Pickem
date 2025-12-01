@@ -199,6 +199,10 @@
       statusEl.textContent = msg;
     }
 
+    function isPlayoffView(){
+      return weekSel.value === 'playoff';
+    }
+
     // --- auth / commissioner gate ---
     async function gatekeep(){
       await initNav();
@@ -249,16 +253,35 @@
       status(`Loading weeks for season ${season}…`);
       const { data, error } = await supabase
         .from('all_games')
-        .select ('week, cfb_season')
+        .select('week, cfb_season')
         .eq('cfb_season', season)
-        .range(0, 3999); // big enough to cover all rows;
+        .range(0, 3999); // big enough to cover all rows
       if(error){ status(error.message, true); return false; }
 
-      const weeks = [...new Set((data||[]).map(r => r.week).filter(w => Number.isFinite(Number(w))))].sort((a,b)=>a-b);
+      const weekSet = new Set();
+      (data || []).forEach(r => {
+        if (r.week === null || r.week === undefined) return; // drop nulls
+        const n = Number(r.week);
+        if (Number.isFinite(n)) weekSet.add(n);
+      });
+
+      const weeks = Array.from(weekSet).sort((a,b)=>a-b);
       if(!weeks.length){ status('No weeks found for this season.', true); return false; }
 
-      weekSel.innerHTML = weeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
-      weekSel.value = String(weeks[weeks.length - 1]); // latest week in that season
+      const maxWeek = weeks[weeks.length - 1];
+      const hasWeek17 = weeks.includes(17);
+
+      let optionsHtml = weeks
+        .map(w => `<option value="${w}">Week ${w}</option>`)
+        .join('');
+
+      // Only show "Playoff" once we actually have weeks beyond 17
+      if (hasWeek17 && maxWeek > 17) {
+        optionsHtml += `<option value="playoff">Playoff</option>`;
+      }
+
+      weekSel.innerHTML = optionsHtml;
+      weekSel.value = String(maxWeek); // default to latest regular-season week
       return true;
     }
 
@@ -293,19 +316,33 @@
       return text;
     }
 
-    // --- load games for Manage Games (season + week), then sort as requested ---
+    // --- load games for Manage Games (season + week / playoffs), then sort as requested ---
     async function loadWeek(){
       const season = Number(seasonSel.value);
-      const week = Number(weekSel.value);
-      if(!Number.isFinite(season) || !Number.isFinite(week)){ status('Select a season and week.'); return; }
-      status(`Loading season ${season} — week ${week} games…`);
+      const rawWeek = weekSel.value;
+      const viewingPlayoffs = (rawWeek === 'playoff');
+      const weekNum = viewingPlayoffs ? null : Number(rawWeek);
 
-      const { data, error } = await supabase
+      if(!Number.isFinite(season) || (!viewingPlayoffs && !Number.isFinite(weekNum))){
+        status('Select a season and week.');
+        return;
+      }
+
+      const label = viewingPlayoffs ? 'playoffs' : `week ${weekNum}`;
+      status(`Loading season ${season} — ${label} games…`);
+
+      let query = supabase
         .from('all_games')
         .select('GameId, Away, Home, "Start (CT)", line, picked, tiebreaker, week, "Network", espn_url, cfb_season')
-        .eq('cfb_season', season)
-        .eq('week', week)
-        .order('GameId', { ascending: true });
+        .eq('cfb_season', season);
+
+      if (viewingPlayoffs) {
+        query = query.gt('week', 17);
+      } else {
+        query = query.eq('week', weekNum);
+      }
+
+      const { data, error } = await query.order('GameId', { ascending: true });
 
       if(error) return status(error.message,true);
       rows = data || [];
@@ -333,40 +370,67 @@
       }
 
       renderGamesTable();
-      await loadPickableGames();      // for team picks panel
-      await loadExistingTeamPicks();  // silent fetch for diffing only
-      renderPicksPanel();             // no prefill
+
+      // picks panel + existing picks
+      await loadPickableGames();
+      await loadExistingTeamPicks();
+      renderPicksPanel();
+
       await loadPlayoffsForSeason();  // refresh playoffs for season
-      status(`Season ${season} — Week ${week} loaded.`);
+      status(`Season ${season} — ${viewingPlayoffs ? 'Playoffs' : 'Week ' + weekNum} loaded.`);
     }
 
-    // --- pickable games = only those flagged picked=true for the season+week ---
+    // --- pickable games = only those flagged picked=true for the season+week or playoffs ---
     async function loadPickableGames(){
       const season = Number(seasonSel.value);
-      const week = Number(weekSel.value);
-      const { data, error } = await supabase
+      const rawWeek = weekSel.value;
+      const viewingPlayoffs = (rawWeek === 'playoff');
+
+      let query = supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", espn_url, cfb_season')
+        .select('GameId, Away, Home, "Start (CT)", espn_url, cfb_season, week')
         .eq('cfb_season', season)
-        .eq('week', week)
-        .eq('picked', true)
-        .order('GameId', { ascending: true });
+        .eq('picked', true);
+
+      if (viewingPlayoffs) {
+        query = query.gt('week', 17);
+      } else {
+        const week = Number(rawWeek);
+        if (!Number.isFinite(week)) { pickableGames = []; return; }
+        query = query.eq('week', week);
+      }
+
+      const { data, error } = await query.order('GameId', { ascending: true });
       if(error){ status(error.message, true); return; }
+
       pickableGames = data || [];
       tempTeamPicks = {}; // clear UI selections on week/season change
     }
 
-    // --- silently pull existing picks for selected team+week (for diffing only) ---
+    // --- silently pull existing picks for selected team+week or playoffs (for diffing only) ---
     async function loadExistingTeamPicks(){
       const teamId = Number(teamSel.value);
-      const week   = Number(weekSel.value);
-      if(!Number.isFinite(teamId) || !Number.isFinite(week)){ existingTeamPicks = {}; return; }
+      const rawWeek = weekSel.value;
+      const viewingPlayoffs = (rawWeek === 'playoff');
 
-      const { data, error } = await supabase
+      if(!Number.isFinite(teamId)){ existingTeamPicks = {}; return; }
+
+      let query = supabase
         .from('picks')
         .select('game_id, pick')
-        .eq('team_id', teamId)
-        .eq('week', week);
+        .eq('team_id', teamId);
+
+      if (viewingPlayoffs) {
+        const gameIds = pickableGames.map(g => g.GameId);
+        if (!gameIds.length) { existingTeamPicks = {}; return; }
+        query = query.in('game_id', gameIds);
+      } else {
+        const week = Number(rawWeek);
+        if (!Number.isFinite(week)){ existingTeamPicks = {}; return; }
+        query = query.eq('week', week);
+      }
+
+      const { data, error } = await query;
       if(error){ status(error.message, true); existingTeamPicks = {}; return; }
 
       existingTeamPicks = {};
@@ -378,7 +442,7 @@
     function renderPicksPanel(){
       picksTbody.innerHTML = '';
       if(!pickableGames.length){
-        picksTbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-gray-300">No picked games for this week.</td></tr>`;
+        picksTbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-gray-300">No picked games for this selection.</td></tr>`;
         return;
       }
       for(const g of pickableGames){
@@ -417,8 +481,10 @@
     // --- save team picks: only overwrite diffs vs existingTeamPicks ---
     async function saveTeamPicks(){
       const teamId = Number(teamSel.value);
-      const week   = Number(weekSel.value);
-      if(!Number.isFinite(teamId) || !Number.isFinite(week)) return;
+      const rawWeek = weekSel.value;
+      const viewingPlayoffs = (rawWeek === 'playoff');
+
+      if(!Number.isFinite(teamId)) return;
 
       const payload = [];
       for (const g of pickableGames){
@@ -426,7 +492,11 @@
         if (!chosen) continue; // no new choice
         const existing = (existingTeamPicks[g.GameId] || '').trim();
         if (existing === chosen) continue; // no change
-        payload.push({ team_id: teamId, week, game_id: g.GameId, pick: chosen });
+
+        const weekForGame = viewingPlayoffs ? Number(g.week) : Number(rawWeek);
+        if (!Number.isFinite(weekForGame)) continue;
+
+        payload.push({ team_id: teamId, week: weekForGame, game_id: g.GameId, pick: chosen });
       }
 
       if (payload.length === 0){
@@ -581,7 +651,7 @@
     function renderGamesTable(){
       gamesTbody.innerHTML = '';
       if(!rows.length){
-        gamesTbody.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-gray-300">No games found for this week.</td></tr>`;
+        gamesTbody.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-gray-300">No games found for this selection.</td></tr>`;
         return;
       }
       for(const g of rows){
@@ -718,7 +788,6 @@
       await loadWeek();
 
       seasonSel.onchange = async () => {
-        // On season change, refresh week list (scoped), then load first/last week + playoffs
         const ok = await loadWeeksForSeason();
         if(ok){
           await loadWeek();
