@@ -128,7 +128,7 @@
       <section id="tiebreaker-section" class="mt-8 hidden">
         <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Tiebreakers</h2>
         <p class="text-xs text-gray-300 mb-3">
-          These picks are only used as tiebreakers. They lock at the same time as your other picks.
+          These picks are only used as tiebreakers. They lock at each game’s kickoff.
         </p>
         <div id="tiebreaker-games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
       </section>
@@ -180,7 +180,7 @@
     let selectedTeamName = '';
     let existingPicks = new Map(); // game_id -> pick
 
-    // Regular-season lock tracking (week-level)
+    // Regular-season lock tracking (week-level, for normal picks)
     let earliestKickoff = null;
     let isLocked = false;
 
@@ -212,9 +212,9 @@
       return afterFeb1 ? y : (y - 1);
     }
 
-    // Earliest kickoff among loaded games (regular season only)
+    // Earliest kickoff among loaded games (for regular picks only)
     function computeEarliestKickoff(){
-      const times = getAllGames()
+      const times = regularGames
         .map(g => g.start ? new Date(g.start).getTime() : Infinity)
         .filter(t => Number.isFinite(t));
       earliestKickoff = times.length ? new Date(Math.min(...times)) : null;
@@ -223,9 +223,22 @@
       if (!earliestKickoff) { isLocked = false; return; }
       isLocked = Date.now() >= earliestKickoff.getTime();
     }
-    function applyLockUI(){
-      if (isPlayoffMode) return; // per-game locking in playoff mode
 
+    // Does this tiebreaker game still allow picks?
+    function isGameLocked(g){
+      if (!g.start) return false;
+      try { return Date.now() >= new Date(g.start).getTime(); }
+      catch { return false; }
+    }
+
+    function hasOpenTiebreakerGame(){
+      return tiebreakerGames.some(g => !isGameLocked(g));
+    }
+
+    function applyLockUI(){
+      if (isPlayoffMode) return; // playoff mode handled separately
+
+      // Week-level lock banner still for normal picks
       if (isLocked) {
         lockBanner.classList.remove('hidden');
         lockBannerTitle.textContent = 'Picks locked:';
@@ -235,21 +248,52 @@
         lockBanner.classList.add('hidden');
         lockMsg.textContent = '';
       }
+
+      // Lock normal game grid at week-level
       gamesEl.classList.toggle('locked', isLocked);
-      tiebreakerEl.classList.toggle('locked', isLocked);
-      document.querySelectorAll('input[type="radio"]').forEach(inp => { inp.disabled = isLocked; });
-      saveBtn.disabled = isLocked;
-      clearBtn.disabled = isLocked;
-      if (isLocked) setStatus('Picks are locked for this week.');
+
+      // Disable only radios for regular (non-tiebreaker) games
+      const regularIds = new Set(regularGames.map(g => String(g.game_id)));
+      document.querySelectorAll('input[type="radio"]').forEach(inp => {
+        const name = inp.name || '';
+        const gameId = name.startsWith('game_') ? name.slice(5) : null;
+        if (gameId && regularIds.has(gameId)) {
+          inp.disabled = isLocked;
+        }
+      });
+
+      // Tiebreaker radios get per-game locking separately
+      applyTiebreakerLocksRegular();
+
+      // Save / clear buttons:
+      // - If week not locked -> enabled.
+      // - If week locked -> still enabled if any tiebreaker is open.
+      const canAct = !isLocked || hasOpenTiebreakerGame();
+      saveBtn.disabled = !canAct;
+      clearBtn.disabled = !canAct;
+
+      if (isLocked && !hasOpenTiebreakerGame()) {
+        setStatus('Picks are locked for this week and all tiebreakers have kicked.');
+      } else if (isLocked) {
+        setStatus('Regular picks are locked. You can still adjust tiebreakers that have not kicked.');
+      }
     }
 
-    // Per-game lock helper (playoff mode)
-    function isGameLocked(g){
-      if (!g.start) return false;
-      try { return Date.now() >= new Date(g.start).getTime(); }
-      catch { return false; }
+    // Per-game lock helper for tiebreakers in regular season
+    function applyTiebreakerLocksRegular(){
+      if (isPlayoffMode) return; // in playoff mode we use applyPerGameLocks
+      tiebreakerGames.forEach(g => {
+        const card = document.querySelector(`[data-game-id="${g.game_id}"]`);
+        if (!card) return;
+        const lockedNow = isGameLocked(g);
+        // Only toggle lock class for tiebreaker cards here
+        card.classList.toggle('locked', lockedNow);
+        const radios = card.querySelectorAll('input[type="radio"]');
+        radios.forEach(r => { r.disabled = lockedNow; });
+      });
     }
 
+    // Per-game lock helper (playoff mode: all games)
     function applyPerGameLocks(){
       if (!isPlayoffMode) return;
 
@@ -284,7 +328,7 @@
         if (!userInPlayoffs) {
           lockMsg.textContent = 'Your team is not in the playoffs, so you may view games but cannot make picks.';
         } else {
-          lockMsg.textContent = 'You are in the playoffs. Picks lock at each game\'s kickoff time.';
+          lockMsg.textContent = 'You are in the playoffs. Picks lock at each game\'s kickoff time (including tiebreakers).';
         }
         saveBtn.disabled = !userInPlayoffs;
         clearBtn.disabled = !userInPlayoffs;
@@ -416,12 +460,12 @@
       await loadExistingPicksForVisibleGames();
       overlayDraft();
 
-      // Lock state (week-based) uses both regular + tiebreaker games
+      // Lock state (week-based) for normal picks; tiebreakers per-game
       computeEarliestKickoff();
       updateLockState();
       applyLockUI();
 
-      // Re-check lock state every minute
+      // Re-check lock state and tiebreaker per-game locks every minute
       setInterval(() => {
         updateLockState();
         applyLockUI();
@@ -475,7 +519,8 @@
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
         week: g.week,
-        winner: g.winner || null
+        winner: g.winner || null,
+        isTiebreaker: false
       })).sort((a,b)=>{
         const ta = a.start ? new Date(a.start).getTime() : Infinity;
         const tb = b.start ? new Date(b.start).getTime() : Infinity;
@@ -490,7 +535,8 @@
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
         week: g.week,
-        winner: g.winner || null
+        winner: g.winner || null,
+        isTiebreaker: true
       })).sort((a,b)=>{
         const ta = a.start ? new Date(a.start).getTime() : Infinity;
         const tb = b.start ? new Date(b.start).getTime() : Infinity;
@@ -500,6 +546,9 @@
       renderGameCards(regularGames);
       renderTiebreakerCards(tiebreakerGames);
       addPickHighlighting();
+
+      // Apply per-game locks for tiebreakers immediately
+      applyTiebreakerLocksRegular();
     }
 
     async function loadPlayoffGames(){
@@ -543,7 +592,8 @@
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
         week: g.week,
-        winner: g.winner || null
+        winner: g.winner || null,
+        isTiebreaker: false
       })).sort((a,b)=>{
         const ta = a.start ? new Date(a.start).getTime() : Infinity;
         const tb = b.start ? new Date(b.start).getTime() : Infinity;
@@ -558,7 +608,8 @@
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
         week: g.week,
-        winner: g.winner || null
+        winner: g.winner || null,
+        isTiebreaker: true
       })).sort((a,b)=>{
         const ta = a.start ? new Date(a.start).getTime() : Infinity;
         const tb = b.start ? new Date(b.start).getTime() : Infinity;
@@ -745,18 +796,29 @@
     function renderSaved(){
       saveBtn.classList.remove('btn-saving');
       saveBtn.classList.add('btn-success');
-      saveBtn.disabled = isPlayoffMode ? !userInPlayoffs : isLocked;
+      const canAct = isPlayoffMode
+        ? userInPlayoffs
+        : (!isLocked || hasOpenTiebreakerGame());
+      saveBtn.disabled = !canAct;
       saveBtn.innerHTML = `
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <span>Saved!</span>
       `;
-      setTimeout(() => { if (!(isPlayoffMode ? !userInPlayoffs : isLocked)) renderSaveDefault(); }, 1400);
+      setTimeout(() => {
+        const canAct2 = isPlayoffMode
+          ? userInPlayoffs
+          : (!isLocked || hasOpenTiebreakerGame());
+        if (canAct2) renderSaveDefault();
+      }, 1400);
     }
     function renderSaveDefault(){
       saveBtn.classList.remove('btn-saving','btn-success');
-      saveBtn.disabled = isPlayoffMode ? !userInPlayoffs : isLocked;
+      const canAct = isPlayoffMode
+        ? userInPlayoffs
+        : (!isLocked || hasOpenTiebreakerGame());
+      saveBtn.disabled = !canAct;
       saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
     }
     function renderSaveError(){
@@ -771,10 +833,6 @@
 
       if (isPlayoffMode && !userInPlayoffs) {
         setStatus('Playoff mode: only playoff teams can save picks.', true);
-        return;
-      }
-      if (!isPlayoffMode && isLocked) {
-        setStatus('Picks are locked — the first game has started.', true);
         return;
       }
 
@@ -792,9 +850,17 @@
         if (!game) continue;
 
         if (isPlayoffMode) {
+          // In playoffs, all picks (normal + tiebreaker) lock per-game
           if (isGameLocked(game)) continue;
         } else {
-          if (isLocked) continue;
+          // Regular season:
+          if (!game.isTiebreaker) {
+            // Normal picks respect global week lock
+            if (isLocked) continue;
+          } else {
+            // Tiebreaker picks always lock per-game
+            if (isGameLocked(game)) continue;
+          }
         }
 
         rows.push({
@@ -835,14 +901,20 @@
         setStatus('Playoff mode: only playoff teams can clear picks.', true);
         return;
       }
-      if (!isPlayoffMode && isLocked) {
+
+      // In regular season: block clearing if week locked and all tiebreakers locked
+      if (!isPlayoffMode && isLocked && !hasOpenTiebreakerGame()) {
         setStatus('Picks are locked — cannot clear.', true);
         return;
       }
-      document.querySelectorAll('input[type="radio"]').forEach(i=> i.checked=false);
+
+      // Only clear radios that are NOT disabled (so locked games stay as-is)
+      document.querySelectorAll('input[type="radio"]').forEach(i=> {
+        if (!i.disabled) i.checked = false;
+      });
       document.querySelectorAll('.pick-label').forEach(l => l.classList.remove('selected'));
       saveDraft();
-      setStatus('Selections cleared.');
+      setStatus('Selections cleared for unlocked games.');
     }
 
     document.getElementById('save').addEventListener('click', savePicks);
