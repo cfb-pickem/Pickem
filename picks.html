@@ -181,7 +181,8 @@
     let existingPicks = new Map(); // game_id -> pick
 
     // Regular-season lock tracking (week-level, for normal picks)
-    let earliestKickoff = null;
+    let earliestKickoff = null;       // numeric comparable CT timestamp
+    let earliestKickoffStr = null;    // raw start string for display
     let isLocked = false;
 
     // Playoff mode
@@ -192,47 +193,160 @@
       return [...regularGames, ...tiebreakerGames];
     }
 
-    // ------- Helpers -------
-    function setStatus(msg, err=false){
-      statusEl.className = 'text-xs ' + (err? 'text-red-300':'text-gray-300');
-      statusEl.textContent = msg;
+    // ------- Time helpers (force everything to CT) -------
+
+    // Parse "Start (CT)" as CT wall time; supports "YYYY-MM-DD HH:MM[:SS]" or "YYYY-MM-DDTHH:MM[:SS]"
+    function parseCTDateParts(raw) {
+      if (!raw) return null;
+      const s = String(raw).trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (!m) return null;
+      return {
+        year: Number(m[1]),
+        month: Number(m[2]),
+        day: Number(m[3]),
+        hour: Number(m[4]),
+        minute: Number(m[5]),
+        second: m[6] ? Number(m[6]) : 0
+      };
     }
-    function kickoffFmt(ts){
-      if(!ts) return '';
-      try { return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
-      catch { return ts; }
+
+    // Get current time as CT parts
+    function getNowChicagoParts() {
+      const now = new Date();
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      const parts = fmt.formatToParts(now).reduce((acc, p) => {
+        acc[p.type] = p.value;
+        return acc;
+      }, {});
+      return {
+        year: Number(parts.year),
+        month: Number(parts.month),
+        day: Number(parts.day),
+        hour: Number(parts.hour),
+        minute: Number(parts.minute),
+        second: Number(parts.second)
+      };
+    }
+
+    // Map CT parts to a comparable numeric timestamp (treat CT wall time as if UTC)
+    function ctPartsToComparableMs(parts) {
+      if (!parts) return null;
+      return Date.UTC(
+        parts.year,
+        parts.month - 1,
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second || 0
+      );
+    }
+
+    // Current CT comparable timestamp
+    function nowCTTimestamp() {
+      return ctPartsToComparableMs(getNowChicagoParts());
+    }
+
+    // Comparable CT timestamp from "Start (CT)" field
+    function ctTimestampFromStart(raw) {
+      const parts = parseCTDateParts(raw);
+      if (!parts) return null;
+      return ctPartsToComparableMs(parts);
+    }
+
+    // Nice display string for CT kickoff (does not affect locking)
+    function kickoffFmt(raw) {
+      if (!raw) return '';
+      const parts = parseCTDateParts(raw);
+      if (!parts) {
+        // Fallback if format unexpected
+        try {
+          return new Date(raw).toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+          });
+        } catch {
+          return raw;
+        }
+      }
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const mName = monthNames[parts.month - 1] || parts.month;
+      let h = parts.hour;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12;
+      if (h === 0) h = 12;
+      const min = String(parts.minute).padStart(2,'0');
+      return `${mName} ${parts.day}, ${h}:${min} ${ampm} CT`;
     }
 
     // Determine current CFB season using America/Chicago and Feb 1 boundary
     function getCurrentSeasonCT(now = new Date()){
-      const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: 'numeric', day: 'numeric' });
-      const parts = fmt.formatToParts(now).reduce((acc,p)=>{acc[p.type]=p.value;return acc;},{});
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric'
+      });
+      const parts = fmt.formatToParts(now).reduce((acc,p)=>{acc[p.type]=p.value;return acc;},{}); 
       const y = Number(parts.year), m = Number(parts.month), d = Number(parts.day);
       const afterFeb1 = (m > 2) || (m === 2 && d >= 1);
       return afterFeb1 ? y : (y - 1);
     }
 
-    // Earliest kickoff among loaded games (for regular picks only)
+    // ------- Lock helpers (CT-based) -------
+
+    // Earliest kickoff among loaded games (for regular picks only, CT-based)
     function computeEarliestKickoff(){
-      const times = regularGames
-        .map(g => g.start ? new Date(g.start).getTime() : Infinity)
-        .filter(t => Number.isFinite(t));
-      earliestKickoff = times.length ? new Date(Math.min(...times)) : null;
-    }
-    function updateLockState(){
-      if (!earliestKickoff) { isLocked = false; return; }
-      isLocked = Date.now() >= earliestKickoff.getTime();
+      let bestTs = null;
+      let bestStr = null;
+      for (const g of regularGames) {
+        const ts = ctTimestampFromStart(g.start);
+        if (ts == null) continue;
+        if (bestTs == null || ts < bestTs) {
+          bestTs = ts;
+          bestStr = g.start;
+        }
+      }
+      earliestKickoff = bestTs;
+      earliestKickoffStr = bestStr;
     }
 
-    // Does this tiebreaker game still allow picks?
+    function updateLockState(){
+      if (earliestKickoff == null) { 
+        isLocked = false; 
+        return; 
+      }
+      isLocked = nowCTTimestamp() >= earliestKickoff;
+    }
+
+    // Does this game (tiebreaker or playoff) still allow picks? (CT-based)
     function isGameLocked(g){
       if (!g.start) return false;
-      try { return Date.now() >= new Date(g.start).getTime(); }
-      catch { return false; }
+      const gameTs = ctTimestampFromStart(g.start);
+      if (gameTs == null) return false;
+      return nowCTTimestamp() >= gameTs;
     }
 
     function hasOpenTiebreakerGame(){
       return tiebreakerGames.some(g => !isGameLocked(g));
+    }
+
+    // ------- UI helpers -------
+
+    function setStatus(msg, err=false){
+      statusEl.className = 'text-xs ' + (err? 'text-red-300':'text-gray-300');
+      statusEl.textContent = msg;
     }
 
     function applyLockUI(){
@@ -242,7 +356,7 @@
       if (isLocked) {
         lockBanner.classList.remove('hidden');
         lockBannerTitle.textContent = 'Picks locked:';
-        const when = kickoffFmt(earliestKickoff);
+        const when = kickoffFmt(earliestKickoffStr);
         lockMsg.textContent = `Week ${currentWeek} locked when the first game kicked at ${when}.`;
       } else {
         lockBanner.classList.add('hidden');
@@ -422,7 +536,7 @@
         overlayDraft();
         applyPerGameLocks();
 
-        // Re-check per-game locks every minute
+        // Re-check per-game locks every minute (CT-based)
         setInterval(() => {
           applyPerGameLocks();
         }, 60_000);
@@ -522,9 +636,9 @@
         winner: g.winner || null,
         isTiebreaker: false
       })).sort((a,b)=>{
-        const ta = a.start ? new Date(a.start).getTime() : Infinity;
-        const tb = b.start ? new Date(b.start).getTime() : Infinity;
-        return ta - tb;
+        const ta = ctTimestampFromStart(a.start);
+        const tb = ctTimestampFromStart(b.start);
+        return (ta ?? Infinity) - (tb ?? Infinity);
       });
 
       tiebreakerGames = (tbData||[]).map(g => ({
@@ -538,9 +652,9 @@
         winner: g.winner || null,
         isTiebreaker: true
       })).sort((a,b)=>{
-        const ta = a.start ? new Date(a.start).getTime() : Infinity;
-        const tb = b.start ? new Date(b.start).getTime() : Infinity;
-        return ta - tb;
+        const ta = ctTimestampFromStart(a.start);
+        const tb = ctTimestampFromStart(b.start);
+        return (ta ?? Infinity) - (tb ?? Infinity);
       });
 
       renderGameCards(regularGames);
@@ -595,9 +709,9 @@
         winner: g.winner || null,
         isTiebreaker: false
       })).sort((a,b)=>{
-        const ta = a.start ? new Date(a.start).getTime() : Infinity;
-        const tb = b.start ? new Date(b.start).getTime() : Infinity;
-        return ta - tb;
+        const ta = ctTimestampFromStart(a.start);
+        const tb = ctTimestampFromStart(b.start);
+        return (ta ?? Infinity) - (tb ?? Infinity);
       });
 
       tiebreakerGames = (tbData || []).map(g => ({
@@ -611,9 +725,9 @@
         winner: g.winner || null,
         isTiebreaker: true
       })).sort((a,b)=>{
-        const ta = a.start ? new Date(a.start).getTime() : Infinity;
-        const tb = b.start ? new Date(b.start).getTime() : Infinity;
-        return ta - tb;
+        const ta = ctTimestampFromStart(a.start);
+        const tb = ctTimestampFromStart(b.start);
+        return (ta ?? Infinity) - (tb ?? Infinity);
       });
 
       renderGameCards(regularGames);
@@ -782,6 +896,7 @@
     }
 
     // ------- Save & Clear -------
+
     function renderSaving(){
       saveBtn.classList.add('btn-saving');
       saveBtn.disabled = true;
