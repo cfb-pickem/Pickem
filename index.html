@@ -70,7 +70,7 @@
     .ring-gold{box-shadow:var(--ring)}
 
     .playoff-divider td{
-      padding:.15rem 0;background:transparent;border-top:2px solid var(--cfp-gold);color:var(--cfp-ivory);
+      padding:.15rem 0;background:transparent;border-top:2px solid(var(--cfp-gold));color:var(--cfp-ivory);
       text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
     }
 
@@ -217,9 +217,9 @@
     let lastPickMap = {};
     let lastGames = [];
 
-    // kickoff times
-    let weekStartTs = null;      // earliest kickoff in current week (regular)
-    let gameStartTs = {};        // GameId -> kickoff time (for playoff per-game gating)
+    // kickoff times (CT-based comparable timestamps)
+    let weekStartTs = null;      // earliest kickoff in current week (regular; CT timestamp)
+    let gameStartTs = {};        // GameId -> CT kickoff time (for playoff per-game gating)
 
     let currentTeamId = null;    // logged-in user's team for highlight
     let hasPlayoffOption = false;
@@ -274,7 +274,105 @@
       }catch{}
     }
 
-    // Helpers
+    // ---------- Time helpers: ALWAYS CENTRAL TIME ----------
+
+    // parse "YYYY-MM-DD HH:MM[:SS]" or "YYYY-MM-DDTHH:MM[:SS]" as CT wall time
+    function parseCTDateParts(raw) {
+      if (!raw) return null;
+      const s = String(raw).trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (!m) return null;
+      return {
+        year: Number(m[1]),
+        month: Number(m[2]),
+        day: Number(m[3]),
+        hour: Number(m[4]),
+        minute: Number(m[5]),
+        second: m[6] ? Number(m[6]) : 0
+      };
+    }
+
+    // current time as CT parts
+    function getNowChicagoParts() {
+      const now = new Date();
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      const parts = fmt.formatToParts(now).reduce((acc, p) => {
+        acc[p.type] = p.value;
+        return acc;
+      }, {});
+      return {
+        year: Number(parts.year),
+        month: Number(parts.month),
+        day: Number(parts.day),
+        hour: Number(parts.hour),
+        minute: Number(parts.minute),
+        second: Number(parts.second)
+      };
+    }
+
+    // Map CT parts -> numeric comparable timestamp (treat CT as if UTC)
+    function ctPartsToComparableMs(parts) {
+      if (!parts) return null;
+      return Date.UTC(
+        parts.year,
+        parts.month - 1,
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second || 0
+      );
+    }
+
+    // CT timestamp from "Start (CT)" raw string
+    function ctTimestampFromStart(raw) {
+      const parts = parseCTDateParts(raw);
+      if (!parts) return null;
+      return ctPartsToComparableMs(parts);
+    }
+
+    // Current CT timestamp
+    function nowCTTimestamp() {
+      return ctPartsToComparableMs(getNowChicagoParts());
+    }
+
+    // Format a CT timestamp or "Start (CT)" field as a CT time string
+    function formatTimeLocal(rawOrTs) {
+      if (rawOrTs == null) return '';
+      try {
+        let d;
+        if (typeof rawOrTs === 'number') {
+          d = new Date(rawOrTs);
+        } else {
+          const parts = parseCTDateParts(rawOrTs);
+          if (parts) {
+            const ms = ctPartsToComparableMs(parts);
+            d = new Date(ms);
+          } else {
+            d = new Date(rawOrTs);
+          }
+        }
+        const fmt = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Chicago',
+          hour: 'numeric',
+          minute: '2-digit'
+        });
+        return fmt.format(d) + ' CT';
+      } catch {
+        return '';
+      }
+    }
+
+    // ---------- Normal helpers ----------
+
     function stripAccents(s){
       try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); }
       catch { return s; }
@@ -299,13 +397,6 @@
     function status(msg,isErr=false){
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
-    }
-    function formatTimeLocal(ts){
-      if(!ts) return '';
-      try{
-        const d = new Date(ts);
-        return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
-      }catch{ return ''; }
     }
 
     function teamLabel(name){
@@ -618,9 +709,9 @@
       if(gErr) return status(gErr.message, true);
 
       const games = (gamesRaw || []).slice().sort((a, b) => {
-        const ta = a?.["Start (CT)"] ? new Date(a["Start (CT)"]).getTime() : Infinity;
-        const tb = b?.["Start (CT)"] ? new Date(b["Start (CT)"]).getTime() : Infinity;
-        return ta - tb;
+        const ta = a?.["Start (CT)"] ? ctTimestampFromStart(a["Start (CT)"]) : null;
+        const tb = b?.["Start (CT)"] ? ctTimestampFromStart(b["Start (CT)"]) : null;
+        return (ta ?? Infinity) - (tb ?? Infinity);
       });
       lastGames = games;
       updateSeasonalTheme(currentSeason, games);
@@ -628,13 +719,13 @@
       weekStartTs = null;
       gameStartTs = {};
       for (const g of games) {
-        const ts = g?.["Start (CT)"] ? new Date(g["Start (CT)"]).getTime() : null;
-        if (Number.isFinite(ts)) {
+        const ts = g?.["Start (CT)"] ? ctTimestampFromStart(g["Start (CT)"]) : null;
+        if (ts != null) {
           gameStartTs[g.GameId] = ts;
           weekStartTs = (weekStartTs==null) ? ts : Math.min(weekStartTs, ts);
         }
       }
-      showPicks = (weekStartTs == null) ? true : (Date.now() >= weekStartTs);
+      showPicks = (weekStartTs == null) ? true : (nowCTTimestamp() >= weekStartTs);
 
       winnerMap = {}; lineMap = {};
       gameIds = games.map(g=>g.GameId);
@@ -675,7 +766,7 @@
 
       startLiveTicker();
       if (!showPicks && weekStartTs) {
-        status(`Picks hidden until kickoff at ${formatTimeLocal(weekStartTs)} CT • Season ${currentSeason} • Week ${week}`);
+        status(`Picks hidden until kickoff at ${formatTimeLocal(weekStartTs)} • Season ${currentSeason} • Week ${week}`);
       } else {
         status(`Season ${currentSeason} • Week ${week}`);
       }
@@ -696,9 +787,9 @@
       if(gErr) return status(gErr.message, true);
 
       const games = (gamesRaw || []).slice().sort((a, b) => {
-        const ta = a?.["Start (CT)"] ? new Date(a["Start (CT)"]).getTime() : Infinity;
-        const tb = b?.["Start (CT)"] ? new Date(b["Start (CT)"]).getTime() : Infinity;
-        return ta - tb;
+        const ta = a?.["Start (CT)"] ? ctTimestampFromStart(a["Start (CT)"]) : null;
+        const tb = b?.["Start (CT)"] ? ctTimestampFromStart(b["Start (CT)"]) : null;
+        return (ta ?? Infinity) - (tb ?? Infinity);
       });
       lastGames = games;
       updateSeasonalTheme(currentSeason, games);
@@ -706,8 +797,8 @@
       weekStartTs = null;
       gameStartTs = {};
       for (const g of games) {
-        const ts = g?.["Start (CT)"] ? new Date(g["Start (CT)"]).getTime() : null;
-        if (Number.isFinite(ts)) {
+        const ts = g?.["Start (CT)"] ? ctTimestampFromStart(g["Start (CT)"]) : null;
+        if (ts != null) {
           gameStartTs[g.GameId] = ts;
           weekStartTs = (weekStartTs==null) ? ts : Math.min(weekStartTs, ts);
         }
@@ -895,7 +986,7 @@
             ? (() => {
                 const ts = gameStartTs[id];
                 if (!ts) return true;
-                return Date.now() >= ts;
+                return nowCTTimestamp() >= ts;
               })()
             : revealPicks;
 
@@ -1052,15 +1143,15 @@
 
       let needRerender = false;
 
-      // Regular weeks: global reveal when earliest kickoff hits
-      if (!isPlayoffView && !showPicks && weekStartTs && Date.now() >= weekStartTs) {
+      // Regular weeks: global reveal when earliest kickoff hits (CT-based)
+      if (!isPlayoffView && !showPicks && weekStartTs && nowCTTimestamp() >= weekStartTs) {
         showPicks = true;
         const label = `Week ${currentWeek}`;
         status(`Kickoff! Showing picks for Season ${currentSeason} • ${label}.`);
         needRerender = true;
       }
 
-      // Playoff: per-game gating (we always re-render so games that have kicked off reveal)
+      // Playoff: per-game gating -> always re-render so newly-kicked games reveal
       if (isPlayoffView) {
         needRerender = true;
       }
