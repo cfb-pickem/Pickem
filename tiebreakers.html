@@ -126,6 +126,12 @@
         <div class="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-3 text-sm">
           <label class="hidden md:block text-gray-300">Season</label>
           <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
+
+          <label class="hidden md:block text-gray-300">View</label>
+          <select id="view-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[140px]">
+            <option value="regular">Regular Season</option>
+            <option value="playoff">Playoff</option>
+          </select>
         </div>
       </div>
       <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
@@ -171,9 +177,13 @@
 
     // DOM
     const seasonSelect = document.getElementById('season-select');
+    const viewSelect   = document.getElementById('view-select');
     const statusEl     = document.getElementById('status');
     const theadRow     = document.getElementById('thead-row');
     const tbody        = document.getElementById('tbody');
+
+    // Timezone: always Central Time
+    const CENTRAL_TZ = 'America/Chicago';
 
     // State
     let seasons = [];
@@ -189,13 +199,15 @@
     let gameStartTs = {}; // GameId -> millis
 
     // Tiebreaker points (per season)
-    let tbWinsByTeam = {};
+    let tbWinsByTeamRegular = {};
+    let tbWinsByTeamPlayoff = {};
 
     let lastTeams = [];
     let lastPickMap = {};
     let lastGames = [];
 
     let currentTeamId = null;    // logged-in user's team for highlight
+    let isPlayoffView = false;
 
     let liveTimer = null;
     const LIVE_INTERVAL_MS = 30000;
@@ -215,6 +227,7 @@
     // Perf cache
     const STORAGE_KEYS = {
       lastSeasonTB: 'cfb_tb_last_season_v1',
+      lastViewTB:   'cfb_tb_last_view_v1',
       logos: 'cfb_logos_v1',
       logosTTL: 'cfb_logos_ttl_v1',
       abbrev: 'cfb_abbrev_v1',
@@ -227,7 +240,11 @@
       return v ? Number(v) : null;
     }
     function setCached(key, val) {
-      if (Number.isFinite(val)) localStorage.setItem(key, String(val));
+      if (typeof val === 'string') {
+        localStorage.setItem(key, val);
+      } else if (Number.isFinite(val)) {
+        localStorage.setItem(key, String(val));
+      }
     }
     function getCachedMap(key, ttlKey){
       try{
@@ -270,12 +287,20 @@
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
     }
-    function formatTimeLocal(ts){
+
+    // Always format times in Central Time
+    function formatTimeCentral(ts){
       if(!ts) return '';
       try{
-        const d = new Date(ts);
-        return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
-      }catch{ return ''; }
+        const d = (ts instanceof Date) ? ts : new Date(ts);
+        return d.toLocaleTimeString('en-US', {
+          hour:'2-digit',
+          minute:'2-digit',
+          timeZone: CENTRAL_TZ,
+        });
+      }catch{
+        return '';
+      }
     }
 
     function teamLabel(name){
@@ -292,7 +317,8 @@
       return map;
     }
     function getPoints(teamId){
-      return (tbWinsByTeam && tbWinsByTeam[teamId]) || 0;
+      const map = isPlayoffView ? tbWinsByTeamPlayoff : tbWinsByTeamRegular;
+      return (map && map[teamId]) || 0;
     }
 
     async function loadCurrentUserTeam(){
@@ -325,12 +351,18 @@
       await initAssets();
       await loadSeasons();
 
+      // Season hint
       let hintedSeason = getCached(STORAGE_KEYS.lastSeasonTB);
       if (!Number.isFinite(hintedSeason) || !seasons.includes(hintedSeason)) {
         hintedSeason = seasons[seasons.length - 1];
       }
       currentSeason = hintedSeason;
       seasonSelect.value = String(currentSeason);
+
+      // View hint
+      const storedView = localStorage.getItem(STORAGE_KEYS.lastViewTB);
+      isPlayoffView = (storedView === 'playoff');
+      viewSelect.value = isPlayoffView ? 'playoff' : 'regular';
 
       await computeTiebreakerWinsForSeason(currentSeason);
       await loadSeasonTiebreakers(currentSeason);
@@ -339,6 +371,12 @@
         currentSeason = Number(seasonSelect.value);
         setCached(STORAGE_KEYS.lastSeasonTB, currentSeason);
         await computeTiebreakerWinsForSeason(currentSeason);
+        await loadSeasonTiebreakers(currentSeason);
+      };
+
+      viewSelect.onchange = async () => {
+        isPlayoffView = (viewSelect.value === 'playoff');
+        setCached(STORAGE_KEYS.lastViewTB, isPlayoffView ? 'playoff' : 'regular');
         await loadSeasonTiebreakers(currentSeason);
       };
     }
@@ -392,53 +430,89 @@
     // Compute per-team tiebreaker wins for currentSeason
     async function computeTiebreakerWinsForSeason(season){
       status('Computing tiebreaker points…');
-      // decided tiebreaker games in this season
+
       const { data: decidedGames, error: dgErr } = await supabase
         .from('all_games')
-        .select('GameId, winner')
+        .select('GameId, winner, week')
         .eq('cfb_season', season)
         .eq('tiebreaker', true)
         .not('winner', 'is', null);
 
       if(dgErr){ status(dgErr.message, true); return; }
 
-      const gameIdList = (decidedGames || []).map(g => g.GameId);
-      const winnerByGame = Object.create(null);
-      (decidedGames || []).forEach(g => { winnerByGame[g.GameId] = g.winner; });
+      tbWinsByTeamRegular = Object.create(null);
+      tbWinsByTeamPlayoff = Object.create(null);
 
-      if (!gameIdList.length){
-        tbWinsByTeam = Object.create(null);
-        return;
+      if (!decidedGames || !decidedGames.length) return;
+
+      const regularGames = decidedGames.filter(g => g.week == null || g.week < 16);
+      const playoffGames = decidedGames.filter(g => g.week != null && g.week >= 16);
+
+      // Regular-season tiebreakers
+      if (regularGames.length){
+        const regIds = regularGames.map(g => g.GameId);
+        const winnerByGameReg = Object.create(null);
+        regularGames.forEach(g => { winnerByGameReg[g.GameId] = g.winner; });
+
+        const { data: regPicks, error: pErrReg } = await supabase
+          .from('picks')
+          .select('team_id, game_id, pick')
+          .in('game_id', regIds);
+
+        if (!pErrReg && regPicks){
+          regPicks.forEach(p => {
+            const w = winnerByGameReg[p.game_id];
+            if (!w) return;
+            if (sameTeam(p.pick, w)){
+              tbWinsByTeamRegular[p.team_id] = (tbWinsByTeamRegular[p.team_id] || 0) + 1;
+            }
+          });
+        }
       }
 
-      const { data: allPicks, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick')
-        .in('game_id', gameIdList);
+      // Playoff tiebreakers
+      if (playoffGames.length){
+        const poIds = playoffGames.map(g => g.GameId);
+        const winnerByGamePo = Object.create(null);
+        playoffGames.forEach(g => { winnerByGamePo[g.GameId] = g.winner; });
 
-      if(pErr){ status(pErr.message, true); return; }
+        const { data: poPicks, error: pErrPo } = await supabase
+          .from('picks')
+          .select('team_id, game_id, pick')
+          .in('game_id', poIds);
 
-      const map = Object.create(null);
-      (allPicks || []).forEach(p => {
-        const winner = winnerByGame[p.game_id];
-        if (!winner) return;
-        if (sameTeam(p.pick, winner)){
-          map[p.team_id] = (map[p.team_id] || 0) + 1;
+        if (!pErrPo && poPicks){
+          poPicks.forEach(p => {
+            const w = winnerByGamePo[p.game_id];
+            if (!w) return;
+            if (sameTeam(p.pick, w)){
+              tbWinsByTeamPlayoff[p.team_id] = (tbWinsByTeamPlayoff[p.team_id] || 0) + 1;
+            }
+          });
         }
-      });
-      tbWinsByTeam = map;
+      }
     }
 
     async function loadSeasonTiebreakers(season){
-      status(`Loading tiebreakers for ${season}…`);
+      const viewLabel = isPlayoffView ? 'Playoff (weeks ≥ 16)' : 'Regular Season (weeks < 16)';
+      status(`Loading ${viewLabel} tiebreakers for ${season}…`);
       stopLiveTicker();
       headerStatusEls.clear();
 
-      const { data: gamesRaw, error: gErr } = await supabase
+      // Load games for this season + view
+      let query = supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, espn_url, cfb_season')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, espn_url, cfb_season, week')
         .eq('cfb_season', season)
         .eq('tiebreaker', true);
+
+      if (isPlayoffView) {
+        query = query.gte('week', 16);
+      } else {
+        query = query.lt('week', 16);
+      }
+
+      const { data: gamesRaw, error: gErr } = await query;
 
       if(gErr){ status(gErr.message, true); return; }
 
@@ -462,13 +536,31 @@
         }
       });
 
-      // All teams in league
-      const { data: teamRows, error: tErr } = await supabase
-        .from('teams')
-        .select('team_id, team_name')
-        .order('team_name', { ascending: true });
+      // Teams: Regular = all teams; Playoff = only teams in playoffs table
+      let teams;
+      if (isPlayoffView) {
+        const { data: playoffRows, error: poErr } = await supabase
+          .from('playoffs')
+          .select('team_id, seed, teams ( team_name )')
+          .eq('season', season)
+          .order('seed', { ascending: true });
 
-      if(tErr){ status(tErr.message, true); return; }
+        if (poErr){ status(poErr.message, true); return; }
+
+        teams = (playoffRows || []).map(r => ({
+          team_id: r.team_id,
+          team_name: r.teams?.team_name || `Team ${r.team_id}`,
+          seed: r.seed
+        }));
+      } else {
+        const { data: teamRows, error: tErr } = await supabase
+          .from('teams')
+          .select('team_id, team_name')
+          .order('team_name', { ascending: true });
+
+        if(tErr){ status(tErr.message, true); return; }
+        teams = teamRows || [];
+      }
 
       let pickMap = {};
       if (gameIds.length){
@@ -482,10 +574,16 @@
 
       lastPickMap = pickMap;
 
-      const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
+      const teamsSorted = [...teams].sort((a,b)=>{
         const pa = getPoints(a.team_id);
         const pb = getPoints(b.team_id);
         if (pb !== pa) return pb - pa;
+        // For playoff view, fall back to seed before name
+        if (isPlayoffView) {
+          const sa = a.seed ?? Infinity;
+          const sb = b.seed ?? Infinity;
+          if (sa !== sb) return sa - sb;
+        }
         return a.team_name.localeCompare(b.team_name);
       });
 
@@ -494,7 +592,7 @@
       const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap);
-      status(`Season ${season} • Tiebreaker results`);
+      status(`Season ${season} • ${viewLabel} tiebreaker results`);
 
       startLiveTicker();
     }
@@ -570,7 +668,7 @@
         } else {
           if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
           else { networkLine.style.display='none'; }
-          const t = formatTimeLocal(row && row['Start (CT)']);
+          const t = formatTimeCentral(row && row['Start (CT)']);
           badge.textContent = t || 'Scheduled';
           badge.className = 'badge badge-sched inline-fix';
         }
@@ -711,7 +809,7 @@
             if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
             else { networkEl.style.display = 'none'; }
           }
-          const t = formatTimeLocal(r['Start (CT)']);
+          const t = formatTimeCentral(r['Start (CT)']);
           badgeEl.textContent = t || 'Scheduled';
           badgeEl.className = 'badge badge-sched inline-fix';
         }
@@ -737,6 +835,11 @@
           const pa = getPoints(a.team_id);
           const pb = getPoints(b.team_id);
           if (pb !== pa) return pb - pa;
+          if (isPlayoffView) {
+            const sa = a.seed ?? Infinity;
+            const sb = b.seed ?? Infinity;
+            if (sa !== sb) return sa - sb;
+          }
           return a.team_name.localeCompare(b.team_name);
         });
       }
