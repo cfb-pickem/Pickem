@@ -502,7 +502,7 @@
         teamWeeks.get(p.team_id).add(week);
 
         if(winner != null){
-          if(!byTeamDecided.has(p.team_id)) byTeamDecided.set(p.team_id, [];
+          if(!byTeamDecided.has(p.team_id)) byTeamDecided.set(p.team_id, []);
           byTeamDecided.get(p.team_id).push({ ...p, week, winner });
         }
       }
@@ -564,9 +564,16 @@
         zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet.</span>';
       }
 
+      // ------- Weeks with picked games (for Missed Weeks calc) -------
+      const allWeeksWithPicks = new Set(
+        [...pickedByWeek.entries()]
+          .filter(([_, agg]) => agg.totalPicked > 0)
+          .map(([w]) => w)
+      );
+      const totalWeeksWithPicks = allWeeksWithPicks.size;
+
       // ------- Total Season Win % (all decided picks this season) -------
       const seasonStats = new Map(); // team_id -> { wins, total }
-      const totalStartedWeeks = startedWeeks.size; // only count weeks whose first game has started
 
       for(const [team_id, arr] of byTeamDecided.entries()){
         let wins = 0;
@@ -580,13 +587,9 @@
         const pct = total ? wins / total : 0;
         const pctStr = pct.toFixed(3).slice(1); // .459 format
 
-        // Weeks this team has played in that have actually started
-        const weeksPlayed = teamWeeks.has(team_id)
-          ? [...teamWeeks.get(team_id)].filter(w => startedWeeks.has(w)).length
-          : 0;
-
-        const missedWeeks = totalStartedWeeks > 0
-          ? Math.max(0, totalStartedWeeks - weeksPlayed)
+        const weeksPlayed = teamWeeks.has(team_id) ? teamWeeks.get(team_id).size : 0;
+        const missedWeeks = totalWeeksWithPicks > 0
+          ? Math.max(0, totalWeeksWithPicks - weeksPlayed)
           : 0;
 
         return {
