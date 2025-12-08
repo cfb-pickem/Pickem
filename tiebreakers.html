@@ -139,18 +139,20 @@
       </div>
     </header>
 
-    <!-- Official tiebreaker description -->
+    <!-- Tiebreaker description (changes with view) -->
     <section class="cfp-card rounded-none gold-shadow mb-5 px-4 md:px-6 py-4">
-      <h2 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-2">
+      <h2 id="tb-title" class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)] mb-2">
         Official Tiebreakers (regular season)
       </h2>
-      <ol class="list-decimal list-inside text-sm text-gray-200 space-y-1">
-        <li>Total wins of other conference championship games</li>
-        <li>Army v Navy</li>
-        <li>Celebration Bowl</li>
-        <li>Win % over last 8 regular season games</li>
-        <li>Coin flip</li>
-      </ol>
+      <div id="tb-body" class="text-sm text-gray-200">
+        <ol class="list-decimal list-inside space-y-1">
+          <li>Total wins of other conference championship games</li>
+          <li>Army v Navy</li>
+          <li>Celebration Bowl</li>
+          <li>Win % over last 8 regular season games</li>
+          <li>Coin flip</li>
+        </ol>
+      </div>
     </section>
     
     <div class="cfp-card rounded-none gold-shadow overflow-auto scroll-shadows">
@@ -181,6 +183,8 @@
     const statusEl     = document.getElementById('status');
     const theadRow     = document.getElementById('thead-row');
     const tbody        = document.getElementById('tbody');
+    const tbTitle      = document.getElementById('tb-title');
+    const tbBody       = document.getElementById('tb-body');
 
     // Timezone: always Central Time
     const CENTRAL_TZ = 'America/Chicago';
@@ -321,6 +325,29 @@
       return (map && map[teamId]) || 0;
     }
 
+    function updateTiebreakerDescription(){
+      if (!tbTitle || !tbBody) return;
+      if (isPlayoffView){
+        tbTitle.textContent = 'Official Tiebreakers (playoff)';
+        tbBody.innerHTML = `
+          <p class="text-sm text-gray-200">
+            Games will be picked one at a time until the tie has been broken.
+          </p>
+        `;
+      } else {
+        tbTitle.textContent = 'Official Tiebreakers (regular season)';
+        tbBody.innerHTML = `
+          <ol class="list-decimal list-inside text-sm text-gray-200 space-y-1">
+            <li>Total wins of other conference championship games</li>
+            <li>Army v Navy</li>
+            <li>Celebration Bowl</li>
+            <li>Win % over last 8 regular season games</li>
+            <li>Coin flip</li>
+          </ol>
+        `;
+      }
+    }
+
     async function loadCurrentUserTeam(){
       try{
         const { data: { session } } = await supabase.auth.getSession();
@@ -363,6 +390,7 @@
       const storedView = localStorage.getItem(STORAGE_KEYS.lastViewTB);
       isPlayoffView = (storedView === 'playoff');
       viewSelect.value = isPlayoffView ? 'playoff' : 'regular';
+      updateTiebreakerDescription();
 
       await computeTiebreakerWinsForSeason(currentSeason);
       await loadSeasonTiebreakers(currentSeason);
@@ -377,6 +405,7 @@
       viewSelect.onchange = async () => {
         isPlayoffView = (viewSelect.value === 'playoff');
         setCached(STORAGE_KEYS.lastViewTB, isPlayoffView ? 'playoff' : 'regular');
+        updateTiebreakerDescription();
         await loadSeasonTiebreakers(currentSeason);
       };
     }
@@ -494,7 +523,7 @@
     }
 
     async function loadSeasonTiebreakers(season){
-      const viewLabel = isPlayoffView ? 'Playoff (weeks ≥ 16)' : 'Regular Season (weeks < 16)';
+      const viewLabel = isPlayoffView ? 'Playoff' : 'Regular Season';
       status(`Loading ${viewLabel} tiebreakers for ${season}…`);
       stopLiveTicker();
       headerStatusEls.clear();
