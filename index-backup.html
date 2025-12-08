@@ -185,6 +185,7 @@
     import initNav from './js/nav.js';
     import { supabase } from './js/supabaseClient.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
+
     // DOM
     const seasonSelect = document.getElementById('season-select');
     const weekSelect   = document.getElementById('week-select');
@@ -208,8 +209,8 @@
     let abbrByTeam = {};
 
     // Points
-    let winsByTeamRegular = {};  // all season games
-    let winsByTeamPlayoff = {};  // only weeks > 15
+    let winsByTeamRegular = {};  // all season games (excluding tiebreakers)
+    let winsByTeamPlayoff = {};  // only weeks > 15 (excluding tiebreakers)
     let isPlayoffView = false;
 
     let lastTeams = [];
@@ -525,13 +526,16 @@
       }
     }
 
-    // Points
+    // -------- Points (EXCLUDING tiebreakers) --------
     async function computeSeasonWins(){
+      // Only non-tiebreaker, decided games for this season
       const { data: decidedGames, error: dgErr } = await supabase
         .from('all_games')
         .select('GameId, winner')
         .eq('cfb_season', currentSeason)
-        .not('winner', 'is', null);
+        .not('winner', 'is', null)
+        .or('tiebreaker.is.null,tiebreaker.eq.false');
+
       if(dgErr){ status(dgErr.message, true); return; }
 
       const gameIdsSeason = (decidedGames || []).map(g => g.GameId);
@@ -561,12 +565,15 @@
     }
 
     async function computePlayoffWins(){
+      // Only non-tiebreaker, decided playoff games (week > 15)
       const { data: decidedGames, error: dgErr } = await supabase
         .from('all_games')
         .select('GameId, winner, week')
         .eq('cfb_season', currentSeason)
         .gt('week', 15)
-        .not('winner', 'is', null);
+        .not('winner', 'is', null)
+        .or('tiebreaker.is.null,tiebreaker.eq.false');
+
       if(dgErr){ status(dgErr.message, true); return; }
 
       const gameIdsPo = (decidedGames || []).map(g => g.GameId);
@@ -756,7 +763,7 @@
       renderWeeklySubmissions(teamsSorted, pickMap);
 
       startLiveTicker();
-      status(`Season ${currentSeason} • Playoff (points from weeks > 15 only)`);
+      status(`Season ${currentSeason} • Playoff (points from weeks > 15 only, tiebreakers excluded)`);
     }
 
     // Build pick map

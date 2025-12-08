@@ -195,6 +195,9 @@
     const wsMade       = document.getElementById('ws-made');
     const wsNot        = document.getElementById('ws-not');
 
+    // Timezone
+    const CENTRAL_TZ = 'America/Chicago';
+
     // State
     let seasons = [];
     let currentSeason = null;
@@ -300,12 +303,20 @@
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
     }
-    function formatTimeLocal(ts){
-      if(!ts) return '';
+
+    // Always format using Central Time
+    function formatTimeCentral(ts){
+      if (!ts) return '';
       try{
-        const d = new Date(ts);
-        return d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
-      }catch{ return ''; }
+        const d = (ts instanceof Date) ? ts : new Date(ts);
+        return d.toLocaleTimeString('en-US', {
+          hour:'2-digit',
+          minute:'2-digit',
+          timeZone: CENTRAL_TZ,
+        });
+      }catch{
+        return '';
+      }
     }
 
     function teamLabel(name){
@@ -675,7 +686,7 @@
 
       startLiveTicker();
       if (!showPicks && weekStartTs) {
-        status(`Picks hidden until kickoff at ${formatTimeLocal(weekStartTs)} CT • Season ${currentSeason} • Week ${week}`);
+        status(`Picks hidden until kickoff at ${formatTimeCentral(weekStartTs)} CT • Season ${currentSeason} • Week ${week}`);
       } else {
         status(`Season ${currentSeason} • Week ${week}`);
       }
@@ -838,7 +849,7 @@
         } else {
           if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
           else { networkLine.style.display='none'; }
-          const t = formatTimeLocal(row && row['Start (CT)']);
+          const t = formatTimeCentral(row && row['Start (CT)']);
           badge.textContent = t || 'Scheduled';
           badge.className = 'badge badge-sched inline-fix';
         }
@@ -1037,7 +1048,7 @@
             if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
             else { networkEl.style.display = 'none'; }
           }
-          const t = formatTimeLocal(r['Start (CT)']);
+          const t = formatTimeCentral(r['Start (CT)']);
           badgeEl.textContent = t || 'Scheduled';
           badgeEl.className = 'badge badge-sched inline-fix';
         }
