@@ -212,8 +212,8 @@
     let abbrByTeam = {};
 
     // Points
-    let winsByTeamRegular = {};  // all season games (excluding tiebreakers)
-    let winsByTeamPlayoff = {};  // only weeks > 15 (excluding tiebreakers)
+    let winsByTeamRegular = {};
+    let winsByTeamPlayoff = {};
     let isPlayoffView = false;
 
     let lastTeams = [];
@@ -221,13 +221,13 @@
     let lastGames = [];
 
     // kickoff times
-    let weekStartTs = null;      // earliest kickoff in current week (regular)
-    let gameStartTs = {};        // GameId -> kickoff time (for playoff per-game gating)
+    let weekStartTs = null;
+    let gameStartTs = {};
 
-    let currentTeamId = null;    // logged-in user's team for highlight
+    let currentTeamId = null;
     let hasPlayoffOption = false;
 
-    let showPicks = true;        // global gating for regular weeks
+    let showPicks = true;
 
     const phoneMQ = window.matchMedia('(max-width: 640px)');
     let isPhone = phoneMQ.matches;
@@ -242,7 +242,7 @@
     let liveTimer = null;
     const LIVE_INTERVAL_MS = 30000;
 
-    const headerStatusEls = new Map(); // game_id -> { badgeEl, networkEl }
+    const headerStatusEls = new Map();
 
     // Perf cache
     const STORAGE_KEYS = {
@@ -378,29 +378,30 @@
       }
       seasonSelect.value = String(currentSeason);
 
-      await loadWeeksForSeason(currentSeason);
+      // IMPORTANT: loadWeeksForSeason now RETURNS maxPickedWeek
+      const maxPickedWeek = await loadWeeksForSeason(currentSeason);
 
-      const hintedWeek = getCached(STORAGE_KEYS.lastWeek);
-      if (hasPlayoffOption) {
+      // Default behavior:
+      // - If max picked week > 15, default to playoff
+      // - Else default to max picked regular week (week 1-15)
+      if (Number.isFinite(maxPickedWeek) && maxPickedWeek > 15) {
         currentWeek = 'playoff';
-      } else if (weeks.length && Number.isFinite(hintedWeek) && weeks.includes(hintedWeek)) {
-        currentWeek = hintedWeek;
-      } else if (weeks.length) {
-        currentWeek = weeks[weeks.length - 1];
+        isPlayoffView = true;
+        weekSelect.value = 'playoff';
+        localStorage.removeItem(STORAGE_KEYS.lastWeek);
+      } else if (Number.isFinite(maxPickedWeek)) {
+        currentWeek = maxPickedWeek;
+        isPlayoffView = false;
+        weekSelect.value = String(currentWeek);
+        setCached(STORAGE_KEYS.lastWeek, currentWeek);
       } else {
         currentWeek = null;
-      }
-
-      isPlayoffView = (currentWeek === 'playoff');
-
-      if (currentWeek === 'playoff') {
-        weekSelect.value = 'playoff';
-      } else if (currentWeek != null) {
-        weekSelect.value = String(currentWeek);
+        isPlayoffView = false;
       }
 
       await init();
       await computeSeasonWins();
+
       if (isPlayoffView) {
         await computePlayoffWins();
         await loadPlayoffWeek();
@@ -411,20 +412,24 @@
       seasonSelect.onchange = async () => {
         currentSeason = Number(seasonSelect.value);
         setCached(STORAGE_KEYS.lastSeason, currentSeason);
-        await loadWeeksForSeason(currentSeason);
 
-        if (weeks.length) {
-          currentWeek = weeks[weeks.length-1];
-          weekSelect.value = String(currentWeek);
-        } else if (hasPlayoffOption) {
+        const maxPickedWeek2 = await loadWeeksForSeason(currentSeason);
+
+        if (Number.isFinite(maxPickedWeek2) && maxPickedWeek2 > 15) {
           currentWeek = 'playoff';
+          isPlayoffView = true;
           weekSelect.value = 'playoff';
+          localStorage.removeItem(STORAGE_KEYS.lastWeek);
+        } else if (Number.isFinite(maxPickedWeek2)) {
+          currentWeek = maxPickedWeek2;
+          isPlayoffView = false;
+          weekSelect.value = String(currentWeek);
+          setCached(STORAGE_KEYS.lastWeek, currentWeek);
         } else {
           currentWeek = null;
+          isPlayoffView = false;
           weekSelect.value = '';
         }
-
-        isPlayoffView = (currentWeek === 'playoff');
 
         await computeSeasonWins();
         if (isPlayoffView) {
@@ -467,6 +472,7 @@
       seasonSelect.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
     }
 
+    // UPDATED: returns maxPickedWeek
     async function loadWeeksForSeason(season){
       status(`Loading weeks for ${season}…`);
       const { data, error } = await supabase
@@ -476,19 +482,22 @@
         .eq('picked', true)
         .not('week', 'is', null)
         .order('week', { ascending: true });
+
       if(error){ status(error.message, true); throw error; }
 
-      const uniqueWeeks = [...new Set((data || []).map(r => r.week))].sort((a,b)=>a-b);
+      const uniqueWeeks = [...new Set((data || []).map(r => Number(r.week)).filter(Number.isFinite))].sort((a,b)=>a-b);
 
       if (!uniqueWeeks.length){
         weeks = [];
         weekSelect.innerHTML = '';
         hasPlayoffOption = false;
         status('No weeks for this season.', true);
-        return;
+        return null;
       }
 
-      hasPlayoffOption = uniqueWeeks.some(w => w > 15);
+      const maxPickedWeek = uniqueWeeks[uniqueWeeks.length - 1];
+      hasPlayoffOption = maxPickedWeek > 15;
+
       const regularWeeks = uniqueWeeks.filter(w => w <= 15);
       weeks = regularWeeks;
 
@@ -500,13 +509,8 @@
         html += `<option value="playoff">Playoff</option>`;
       }
 
-      if (!html){
-        weekSelect.innerHTML = '';
-        status('No selectable weeks.', true);
-        return;
-      }
-
       weekSelect.innerHTML = html;
+      return maxPickedWeek;
     }
 
     async function init(){
@@ -539,7 +543,6 @@
 
     // -------- Points (EXCLUDING tiebreakers) --------
     async function computeSeasonWins(){
-      // Only non-tiebreaker, decided games for this season
       const { data: decidedGames, error: dgErr } = await supabase
         .from('all_games')
         .select('GameId, winner')
@@ -576,7 +579,6 @@
     }
 
     async function computePlayoffWins(){
-      // Only non-tiebreaker, decided playoff games (week > 15)
       const { data: decidedGames, error: dgErr } = await supabase
         .from('all_games')
         .select('GameId, winner, week')
@@ -723,7 +725,7 @@
           weekStartTs = (weekStartTs==null) ? ts : Math.min(weekStartTs, ts);
         }
       }
-      showPicks = true; // playoff uses per-game gating, not global
+      showPicks = true;
 
       winnerMap = {}; lineMap = {};
       gameIds = games.map(g=>g.GameId);
@@ -732,7 +734,6 @@
         lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
       });
 
-      // Only playoff teams for this season
       const { data: playoffRows, error: poErr } = await supabase
         .from('playoffs')
         .select('team_id, seed, teams ( team_name )')
@@ -777,7 +778,6 @@
       status(`Season ${currentSeason} • Playoff`);
     }
 
-    // Build pick map
     function buildPickMap(rows){
       const map = {};
       (rows||[]).forEach(r=>{
@@ -963,7 +963,6 @@
       });
     }
 
-    // Weekly submissions
     function escapeHtml(s){
       return String(s)
         .replace(/&/g,'&amp;')
@@ -1071,7 +1070,7 @@
         needRerender = true;
       }
 
-      // Playoff: per-game gating (we always re-render so games that have kicked off reveal)
+      // Playoff: per-game gating
       if (isPlayoffView) {
         needRerender = true;
       }
