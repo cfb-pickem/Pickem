@@ -10,7 +10,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
-  <!-- Keep your existing modules -->
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
 
@@ -47,11 +46,31 @@
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr:hover{background:rgba(233,185,73,.06)}
 
-    input[type="number"]{background:var(--cfp-black);border:1px solid rgba(231,231,231,.12);padding:.375rem .5rem}
-    input[type="number"]:focus{outline:none;box-shadow:var(--ring)}
+    input[type="number"], input[type="text"]{
+      background:var(--cfp-black);
+      border:1px solid rgba(231,231,231,.12);
+      padding:.375rem .5rem;
+      color:#f1f1f1;
+    }
+    input[type="number"]:focus, input[type="text"]:focus{outline:none;box-shadow:var(--ring)}
 
     a.link{color:var(--cfp-gold-2)}
     a.link:hover{text-decoration:underline}
+
+    /* Sticky first column (Game) in Manage Weekly Picks table */
+    .sticky-col{
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: rgba(17,18,19,.98); /* keeps it readable when scrolling */
+    }
+    thead .sticky-col{
+      z-index: 3;
+      background: var(--cfp-black);
+    }
+    .table tbody tr:hover .sticky-col{
+      background: rgba(31,32,34,.98);
+    }
   </style>
 </head>
 
@@ -141,22 +160,22 @@
           Save Weekly Picks
         </button>
       </div>
+
       <table class="table min-w-full text-sm">
         <thead class="bg-[var(--cfp-black)]">
           <tr class="border-b">
-            <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
+            <th class="text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)] sticky-col">Game</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
-
-            <!-- ADDED -->
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">AwayPts</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">HomePts</th>
-            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Status</th>
-
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Tiebreaker</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">Week</th>
+
+            <!-- MOVED after Week + now EDITABLE -->
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">AwayPts</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">HomePts</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-44">Status</th>
           </tr>
         </thead>
         <tbody id="games-body"></tbody>
@@ -186,30 +205,25 @@
     const gamesTbody    = document.getElementById('games-body');
 
     // state
-    let rows = [];                 // current games for selected season+week (Manage Games)
-    // Track ONLY the fields we intend to edit: line, picked, tiebreaker
-    let original = {};             // GameId -> { line, picked, tiebreaker }
-    let edited   = {};             // GameId -> { line, picked, tiebreaker }
+    let rows = [];
+    // Track ONLY fields we intend to edit:
+    // line, picked, tiebreaker, AwayPts, HomePts, Status
+    let original = {}; // GameId -> { line, picked, tiebreaker, AwayPts, HomePts, Status }
+    let edited   = {}; // GameId -> { line, picked, tiebreaker, AwayPts, HomePts, Status }
 
-    let pickableGames = [];        // picked=true games for current season+week (what teams pick)
-    let tempTeamPicks = {};        // UI selections: game_id -> pick (Away/Home)
-    let existingTeamPicks = {};    // silently fetched from DB for diffing (not displayed)
+    let pickableGames = [];
+    let tempTeamPicks = {};
+    let existingTeamPicks = {};
 
     // teams + playoffs state
-    let teams = [];                // all teams
-    let playoffsBySeed = {};       // seed -> { id, team_id, season, seed }
+    let teams = [];
+    let playoffsBySeed = {};
 
-    // --- status helper ---
     function status(msg,isErr=false){
       statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
     }
 
-    function isPlayoffView(){
-      return weekSel.value === 'playoff';
-    }
-
-    // --- auth / commissioner gate ---
     async function gatekeep(){
       await initNav();
 
@@ -228,6 +242,7 @@
 
       return true;
     }
+
     function lockAll(){
       seasonSel.disabled = true;
       weekSel.disabled = true;
@@ -237,7 +252,6 @@
       if (savePlayoffsBtn) savePlayoffsBtn.disabled = true;
     }
 
-    // --- seasons / weeks / teams ---
     async function loadSeasons(){
       status('Loading seasons…');
       const { data, error } = await supabase
@@ -248,11 +262,11 @@
       const seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(Number.isFinite))].sort((a,b)=>a-b);
       if(!seasons.length){ status('No seasons found in all_games.', true); return false; }
       seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
-      seasonSel.value = String(seasons[seasons.length - 1]); // latest
+      seasonSel.value = String(seasons[seasons.length - 1]);
       return true;
     }
 
-    // CHANGED: weeks dropdown only shows <=16, plus "Playoff" if any week > 16 exists
+    // Weeks dropdown: only weeks <= 16, plus "Playoff" if any week > 16 exists
     async function loadWeeksForSeason(){
       const season = Number(seasonSel.value);
       if(!Number.isFinite(season)){ status('Select a season.', true); return false; }
@@ -290,10 +304,7 @@
       if (hasPlayoffs) optionsHtml += `<option value="playoff">Playoff</option>`;
 
       weekSel.innerHTML = optionsHtml;
-
-      // default to latest regular week; if none exist, default to playoff
       weekSel.value = regularWeeks.length ? String(regularWeeks[regularWeeks.length - 1]) : 'playoff';
-
       return true;
     }
 
@@ -309,7 +320,6 @@
       return true;
     }
 
-    // --- utilities for times / links ---
     function niceTime(ts){
       if(!ts) return '';
       try{
@@ -328,7 +338,6 @@
       return text;
     }
 
-    // --- load games for Manage Games (season + week / playoffs), then sort as requested ---
     async function loadWeek(){
       const season = Number(seasonSel.value);
       const rawWeek = weekSel.value;
@@ -345,14 +354,11 @@
 
       let query = supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", "AwayPts", "HomePts", "Status", line, picked, tiebreaker, week, "Network", espn_url, cfb_season')
+        .select('GameId, Away, Home, "Start (CT)", "Network", line, picked, tiebreaker, week, espn_url, cfb_season, "AwayPts", "HomePts", "Status"')
         .eq('cfb_season', season);
 
-      if (viewingPlayoffs) {
-        query = query.gt('week', 16);
-      } else {
-        query = query.eq('week', weekNum);
-      }
+      if (viewingPlayoffs) query = query.gt('week', 16);
+      else query = query.eq('week', weekNum);
 
       const { data, error } = await query.order('GameId', { ascending: true });
       if(error) return status(error.message,true);
@@ -372,26 +378,38 @@
         return atms - btms;
       });
 
-      // snapshot for diffing edits (ONLY the fields we will update)
+      // snapshot for diffing edits (ONLY fields we will update)
       original = {};
       edited   = {};
       for(const r of rows){
-        original[r.GameId] = { line: r.line ?? null, picked: !!r.picked, tiebreaker: !!r.tiebreaker };
-        edited[r.GameId]   = { line: r.line ?? null, picked: !!r.picked, tiebreaker: !!r.tiebreaker };
+        original[r.GameId] = {
+          line: r.line ?? null,
+          picked: !!r.picked,
+          tiebreaker: !!r.tiebreaker,
+          AwayPts: (r.AwayPts ?? null),
+          HomePts: (r.HomePts ?? null),
+          Status: (r.Status ?? '')
+        };
+        edited[r.GameId] = {
+          line: r.line ?? null,
+          picked: !!r.picked,
+          tiebreaker: !!r.tiebreaker,
+          AwayPts: (r.AwayPts ?? null),
+          HomePts: (r.HomePts ?? null),
+          Status: (r.Status ?? '')
+        };
       }
 
       renderGamesTable();
 
-      // picks panel + existing picks
       await loadPickableGames();
       await loadExistingTeamPicks();
       renderPicksPanel();
 
-      await loadPlayoffsForSeason();  // refresh playoffs for season
+      await loadPlayoffsForSeason();
       status(`Season ${season} — ${viewingPlayoffs ? 'Playoffs' : 'Week ' + weekNum} loaded.`);
     }
 
-    // --- pickable games = only those flagged picked=true for the season+week or playoffs ---
     async function loadPickableGames(){
       const season = Number(seasonSel.value);
       const rawWeek = weekSel.value;
@@ -403,9 +421,8 @@
         .eq('cfb_season', season)
         .eq('picked', true);
 
-      if (viewingPlayoffs) {
-        query = query.gt('week', 16);
-      } else {
+      if (viewingPlayoffs) query = query.gt('week', 16);
+      else {
         const week = Number(rawWeek);
         if (!Number.isFinite(week)) { pickableGames = []; return; }
         query = query.eq('week', week);
@@ -415,10 +432,9 @@
       if(error){ status(error.message, true); return; }
 
       pickableGames = data || [];
-      tempTeamPicks = {}; // clear UI selections on week/season change
+      tempTeamPicks = {};
     }
 
-    // --- silently pull existing picks for selected team+week or playoffs (for diffing only) ---
     async function loadExistingTeamPicks(){
       const teamId = Number(teamSel.value);
       const rawWeek = weekSel.value;
@@ -446,10 +462,8 @@
 
       existingTeamPicks = {};
       (data || []).forEach(r => { existingTeamPicks[r.game_id] = r.pick || ''; });
-      // Not rendering these; used only for diffing on save.
     }
 
-    // --- render picks panel (no prefill) ---
     function renderPicksPanel(){
       picksTbody.innerHTML = '';
       if(!pickableGames.length){
@@ -489,20 +503,18 @@
       }
     }
 
-    // --- save team picks: only overwrite diffs vs existingTeamPicks ---
     async function saveTeamPicks(){
       const teamId = Number(teamSel.value);
       const rawWeek = weekSel.value;
       const viewingPlayoffs = (rawWeek === 'playoff');
-
       if(!Number.isFinite(teamId)) return;
 
       const payload = [];
       for (const g of pickableGames){
         const chosen = (tempTeamPicks[g.GameId] || '').trim();
-        if (!chosen) continue; // no new choice
+        if (!chosen) continue;
         const existing = (existingTeamPicks[g.GameId] || '').trim();
-        if (existing === chosen) continue; // no change
+        if (existing === chosen) continue;
 
         const weekForGame = viewingPlayoffs ? Number(g.week) : Number(rawWeek);
         if (!Number.isFinite(weekForGame)) continue;
@@ -531,8 +543,6 @@
         status('Team picks saved.');
       }
     }
-
-    // --- PLAYOFFS: load + render + save ---
 
     async function loadPlayoffsForSeason(){
       const season = Number(seasonSel.value);
@@ -596,7 +606,6 @@
 
         tdTeam.appendChild(sel);
         tr.appendChild(tdTeam);
-
         playoffsTbody.appendChild(tr);
       }
     }
@@ -615,22 +624,17 @@
         const sel = document.getElementById(`playoff-seed-${seed}`);
         if (!sel) continue;
         const value = sel.value;
-        if (!value) continue; // nothing selected for this seed
+        if (!value) continue;
 
         const teamId = Number(value);
         if (!Number.isFinite(teamId)) continue;
 
         const existing = playoffsBySeed[seed];
         const existingTeamId = existing ? Number(existing.team_id) : null;
-
-        // Only write if it actually changed or is new
         if (existing && existingTeamId === teamId) continue;
 
         const row = { season, seed, team_id: teamId };
-        if (existing && existing.id){
-          // include id so upsert on primary key overwrites that specific row
-          row.id = existing.id;
-        }
+        if (existing && existing.id) row.id = existing.id;
         payload.push(row);
       }
 
@@ -642,8 +646,6 @@
       savePlayoffsBtn.disabled = true;
       status('Saving playoff teams…');
 
-      // Upsert by primary key id. Existing rows (with id) are updated,
-      // new rows (without id) are inserted.
       const { error } = await supabase
         .from('playoffs')
         .upsert(payload, { onConflict: 'id' });
@@ -654,24 +656,24 @@
         status(`Save playoff teams failed: ${error.message}`, true);
       } else {
         status('Playoff teams saved.');
-        await loadPlayoffsForSeason(); // refresh local state
+        await loadPlayoffsForSeason();
       }
     }
 
-    // --- render Manage Games table ---
     function renderGamesTable(){
       gamesTbody.innerHTML = '';
       if(!rows.length){
         gamesTbody.innerHTML = `<tr><td colspan="10" class="px-4 py-4 text-gray-300">No games found for this selection.</td></tr>`;
         return;
       }
+
       for(const g of rows){
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
-        // Game (link to espn_url)
+        // Game (sticky)
         const tdGame = document.createElement('td');
-        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
+        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)] sticky-col';
         tdGame.innerHTML = gameLinkText(g);
         tr.appendChild(tdGame);
 
@@ -687,30 +689,11 @@
         tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
 
-        // ADDED: AwayPts
-        const tdAwayPts = document.createElement('td');
-        tdAwayPts.className = 'px-3 py-2 text-center text-gray-200';
-        tdAwayPts.textContent = (g.AwayPts ?? '');
-        tr.appendChild(tdAwayPts);
-
-        // ADDED: HomePts
-        const tdHomePts = document.createElement('td');
-        tdHomePts.className = 'px-3 py-2 text-center text-gray-200';
-        tdHomePts.textContent = (g.HomePts ?? '');
-        tr.appendChild(tdHomePts);
-
-        // ADDED: Status
-        const tdStatus = document.createElement('td');
-        tdStatus.className = 'px-3 py-2 text-center text-gray-200';
-        tdStatus.textContent = (g.Status ?? '');
-        tr.appendChild(tdStatus);
-
         // Line (editable)
         const tdLine = document.createElement('td');
         tdLine.className = 'px-3 py-2 text-center';
         tdLine.innerHTML = `<input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />`;
-        const lineInput = tdLine.querySelector('input');
-        lineInput.addEventListener('input', e => {
+        tdLine.querySelector('input').addEventListener('input', e => {
           const v = e.target.value;
           edited[g.GameId].line = (v === '' ? null : Number(v));
         });
@@ -720,8 +703,7 @@
         const tdPicked = document.createElement('td');
         tdPicked.className = 'px-3 py-2 text-center';
         tdPicked.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.picked ? 'checked' : ''}/>`;
-        const cbPicked = tdPicked.querySelector('input');
-        cbPicked.addEventListener('change', e => {
+        tdPicked.querySelector('input').addEventListener('change', e => {
           edited[g.GameId].picked = !!e.target.checked;
         });
         tr.appendChild(tdPicked);
@@ -730,39 +712,74 @@
         const tdTB = document.createElement('td');
         tdTB.className = 'px-3 py-2 text-center';
         tdTB.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.tiebreaker ? 'checked' : ''}/>`;
-        const cbTB = tdTB.querySelector('input');
-        cbTB.addEventListener('change', e => {
+        tdTB.querySelector('input').addEventListener('change', e => {
           edited[g.GameId].tiebreaker = !!e.target.checked;
         });
         tr.appendChild(tdTB);
 
-        // Week (display-only; never edited/saved)
+        // Week (display only)
         const tdWeek = document.createElement('td');
         tdWeek.className = 'px-3 py-2 text-center text-gray-300';
         tdWeek.textContent = g.week ?? '';
         tr.appendChild(tdWeek);
 
+        // AwayPts (editable)
+        const tdAwayPts = document.createElement('td');
+        tdAwayPts.className = 'px-3 py-2 text-center';
+        tdAwayPts.innerHTML = `<input type="number" step="1" class="w-20 text-center rounded-none" value="${g.AwayPts ?? ''}" />`;
+        tdAwayPts.querySelector('input').addEventListener('input', e => {
+          const v = e.target.value;
+          edited[g.GameId].AwayPts = (v === '' ? null : Number(v));
+        });
+        tr.appendChild(tdAwayPts);
+
+        // HomePts (editable)
+        const tdHomePts = document.createElement('td');
+        tdHomePts.className = 'px-3 py-2 text-center';
+        tdHomePts.innerHTML = `<input type="number" step="1" class="w-20 text-center rounded-none" value="${g.HomePts ?? ''}" />`;
+        tdHomePts.querySelector('input').addEventListener('input', e => {
+          const v = e.target.value;
+          edited[g.GameId].HomePts = (v === '' ? null : Number(v));
+        });
+        tr.appendChild(tdHomePts);
+
+        // Status (editable)
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'px-3 py-2 text-center';
+        const safeStatus = (g.Status ?? '');
+        tdStatus.innerHTML = `<input type="text" class="w-40 text-center rounded-none" value="${String(safeStatus).replaceAll('"','&quot;')}" />`;
+        tdStatus.querySelector('input').addEventListener('input', e => {
+          edited[g.GameId].Status = (e.target.value ?? '');
+        });
+        tr.appendChild(tdStatus);
+
         gamesTbody.appendChild(tr);
       }
     }
 
-    // --- diff/save Manage Games edits ---
     function diffPayload(){
       const changes = [];
       for(const id of Object.keys(edited)){
         const curr = edited[id];
         const orig = original[id] || {};
-        const lineChanged  = (curr.line ?? null)       !== (orig.line ?? null);
-        const pickChanged  = Boolean(curr.picked)      !== Boolean(orig.picked);
-        const tbChanged    = Boolean(curr.tiebreaker)  !== Boolean(orig.tiebreaker);
 
-        if(lineChanged || pickChanged || tbChanged){
-          // IMPORTANT: exclude 'week' from the payload so it is NEVER overwritten
+        const lineChanged   = (curr.line ?? null)        !== (orig.line ?? null);
+        const pickChanged   = Boolean(curr.picked)       !== Boolean(orig.picked);
+        const tbChanged     = Boolean(curr.tiebreaker)   !== Boolean(orig.tiebreaker);
+        const awayChanged   = (curr.AwayPts ?? null)     !== (orig.AwayPts ?? null);
+        const homeChanged   = (curr.HomePts ?? null)     !== (orig.HomePts ?? null);
+        const statusChanged = String(curr.Status ?? '')  !== String(orig.Status ?? '');
+
+        if(lineChanged || pickChanged || tbChanged || awayChanged || homeChanged || statusChanged){
+          // exclude 'week' so it is NEVER overwritten
           changes.push({
             GameId: Number(id),
             line: curr.line,
             picked: Boolean(curr.picked),
-            tiebreaker: Boolean(curr.tiebreaker)
+            tiebreaker: Boolean(curr.tiebreaker),
+            AwayPts: curr.AwayPts,
+            HomePts: curr.HomePts,
+            Status: curr.Status
           });
         }
       }
@@ -776,7 +793,6 @@
       saveBtn.disabled = true;
       status('Saving…');
 
-      // Upsert ONLY the columns we intend to modify.
       const { error } = await supabase
         .from('all_games')
         .upsert(payload, { onConflict: 'GameId' });
@@ -786,20 +802,20 @@
       if(error){
         status(`Save failed: ${error.message}`, true);
       }else{
-        // Update local originals for changed fields only
         for(const row of payload){
           if (!original[row.GameId]) original[row.GameId] = {};
           original[row.GameId].line = row.line;
           original[row.GameId].picked = row.picked;
           original[row.GameId].tiebreaker = row.tiebreaker;
+          original[row.GameId].AwayPts = row.AwayPts ?? null;
+          original[row.GameId].HomePts = row.HomePts ?? null;
+          original[row.GameId].Status = row.Status ?? '';
         }
-        // Re-load to re-apply sort (in case picked changed)
-        await loadWeek();
+        await loadWeek(); // re-apply sort if picked changed
         status('Saved.');
       }
     }
 
-    // --- wire up ---
     (async () => {
       const ok = await gatekeep();
       if(!ok) return;
@@ -813,7 +829,7 @@
       const okTeams = await loadTeams();
       if(!okTeams) return;
 
-      await loadPlayoffsForSeason();  // needs teams + season
+      await loadPlayoffsForSeason();
       await loadWeek();
 
       seasonSel.onchange = async () => {
