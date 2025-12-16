@@ -62,7 +62,7 @@
       position: sticky;
       left: 0;
       z-index: 2;
-      background: rgba(17,18,19,.98);
+      background: rgba(17,18,19,.98); /* keeps it readable when scrolling */
     }
     thead .sticky-col{
       z-index: 3;
@@ -171,6 +171,8 @@
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Tiebreaker</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">Week</th>
+
+            <!-- MOVED after Week + now EDITABLE -->
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">AwayPts</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">HomePts</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-44">Status</th>
@@ -204,13 +206,16 @@
 
     // state
     let rows = [];
-    let original = {};
-    let edited   = {};
+    // Track ONLY fields we intend to edit:
+    // line, picked, tiebreaker, AwayPts, HomePts, Status
+    let original = {}; // GameId -> { line, picked, tiebreaker, AwayPts, HomePts, Status }
+    let edited   = {}; // GameId -> { line, picked, tiebreaker, AwayPts, HomePts, Status }
 
     let pickableGames = [];
     let tempTeamPicks = {};
     let existingTeamPicks = {};
 
+    // teams + playoffs state
     let teams = [];
     let playoffsBySeed = {};
 
@@ -261,55 +266,46 @@
       return true;
     }
 
-    // UPDATED:
-    // - only considers weeks with picked=true
-    // - returns maxPickedWeek
-    // - defaults weekSel to playoff if maxPickedWeek > 16 else week maxPickedWeek
+    // Weeks dropdown: only weeks <= 16, plus "Playoff" if any week > 16 exists
     async function loadWeeksForSeason(){
       const season = Number(seasonSel.value);
-      if(!Number.isFinite(season)){ status('Select a season.', true); return null; }
+      if(!Number.isFinite(season)){ status('Select a season.', true); return false; }
 
       status(`Loading weeks for season ${season}…`);
       const { data, error } = await supabase
         .from('all_games')
-        .select('week')
+        .select('week, cfb_season')
         .eq('cfb_season', season)
-        .eq('picked', true)
-        .not('week', 'is', null)
-        .order('week', { ascending: true });
+        .range(0, 3999);
+      if(error){ status(error.message, true); return false; }
 
-      if(error){ status(error.message, true); return null; }
+      const weekSet = new Set();
+      (data || []).forEach(r => {
+        if (r.week === null || r.week === undefined) return;
+        const n = Number(r.week);
+        if (Number.isFinite(n)) weekSet.add(n);
+      });
 
-      const uniqueWeeks = [...new Set((data || []).map(r => Number(r.week)).filter(Number.isFinite))].sort((a,b)=>a-b);
-      if(!uniqueWeeks.length){
-        weekSel.innerHTML = '';
-        status('No picked weeks found for this season.', true);
-        return null;
+      const allWeeks = Array.from(weekSet).sort((a,b)=>a-b);
+      if(!allWeeks.length){ status('No weeks found for this season.', true); return false; }
+
+      const regularWeeks = allWeeks.filter(w => w <= 16);
+      const hasPlayoffs  = allWeeks.some(w => w > 16);
+
+      if(!regularWeeks.length && !hasPlayoffs){
+        status('No valid weeks found for this season.', true);
+        return false;
       }
 
-      const maxPickedWeek = uniqueWeeks[uniqueWeeks.length - 1];
-      const hasPlayoffs = maxPickedWeek > 16;
+      let optionsHtml = regularWeeks
+        .map(w => `<option value="${w}">Week ${w}</option>`)
+        .join('');
 
-      const regularWeeks = uniqueWeeks.filter(w => w <= 16);
-
-      let optionsHtml = '';
-      if (regularWeeks.length){
-        optionsHtml += regularWeeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
-      }
-      if (hasPlayoffs){
-        optionsHtml += `<option value="playoff">Playoff</option>`;
-      }
+      if (hasPlayoffs) optionsHtml += `<option value="playoff">Playoff</option>`;
 
       weekSel.innerHTML = optionsHtml;
-
-      // Default selection based on max picked week
-      if (hasPlayoffs){
-        weekSel.value = 'playoff';
-      } else {
-        weekSel.value = String(maxPickedWeek);
-      }
-
-      return maxPickedWeek;
+      weekSel.value = regularWeeks.length ? String(regularWeeks[regularWeeks.length - 1]) : 'playoff';
+      return true;
     }
 
     async function loadTeams(){
@@ -368,6 +364,7 @@
       if(error) return status(error.message,true);
       rows = data || [];
 
+      // SORT: picked desc, then has Network, then Start time asc
       rows.sort((a,b) => {
         if (Boolean(a.picked) !== Boolean(b.picked)) return a.picked ? -1 : 1;
 
@@ -381,6 +378,7 @@
         return atms - btms;
       });
 
+      // snapshot for diffing edits (ONLY fields we will update)
       original = {};
       edited   = {};
       for(const r of rows){
@@ -673,21 +671,25 @@
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
+        // Game (sticky)
         const tdGame = document.createElement('td');
         tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)] sticky-col';
         tdGame.innerHTML = gameLinkText(g);
         tr.appendChild(tdGame);
 
+        // Start (CT)
         const tdStart = document.createElement('td');
         tdStart.className = 'px-3 py-2 text-center';
         tdStart.textContent = niceTime(g['Start (CT)']);
         tr.appendChild(tdStart);
 
+        // Network
         const tdNet = document.createElement('td');
         tdNet.className = 'px-3 py-2 text-center';
         tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
 
+        // Line (editable)
         const tdLine = document.createElement('td');
         tdLine.className = 'px-3 py-2 text-center';
         tdLine.innerHTML = `<input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />`;
@@ -697,6 +699,7 @@
         });
         tr.appendChild(tdLine);
 
+        // Picked (checkbox)
         const tdPicked = document.createElement('td');
         tdPicked.className = 'px-3 py-2 text-center';
         tdPicked.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.picked ? 'checked' : ''}/>`;
@@ -705,6 +708,7 @@
         });
         tr.appendChild(tdPicked);
 
+        // Tiebreaker (checkbox)
         const tdTB = document.createElement('td');
         tdTB.className = 'px-3 py-2 text-center';
         tdTB.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.tiebreaker ? 'checked' : ''}/>`;
@@ -713,11 +717,13 @@
         });
         tr.appendChild(tdTB);
 
+        // Week (display only)
         const tdWeek = document.createElement('td');
         tdWeek.className = 'px-3 py-2 text-center text-gray-300';
         tdWeek.textContent = g.week ?? '';
         tr.appendChild(tdWeek);
 
+        // AwayPts (editable)
         const tdAwayPts = document.createElement('td');
         tdAwayPts.className = 'px-3 py-2 text-center';
         tdAwayPts.innerHTML = `<input type="number" step="1" class="w-20 text-center rounded-none" value="${g.AwayPts ?? ''}" />`;
@@ -727,6 +733,7 @@
         });
         tr.appendChild(tdAwayPts);
 
+        // HomePts (editable)
         const tdHomePts = document.createElement('td');
         tdHomePts.className = 'px-3 py-2 text-center';
         tdHomePts.innerHTML = `<input type="number" step="1" class="w-20 text-center rounded-none" value="${g.HomePts ?? ''}" />`;
@@ -736,6 +743,7 @@
         });
         tr.appendChild(tdHomePts);
 
+        // Status (editable)
         const tdStatus = document.createElement('td');
         tdStatus.className = 'px-3 py-2 text-center';
         const safeStatus = (g.Status ?? '');
@@ -763,6 +771,7 @@
         const statusChanged = String(curr.Status ?? '')  !== String(orig.Status ?? '');
 
         if(lineChanged || pickChanged || tbChanged || awayChanged || homeChanged || statusChanged){
+          // exclude 'week' so it is NEVER overwritten
           changes.push({
             GameId: Number(id),
             line: curr.line,
@@ -802,7 +811,7 @@
           original[row.GameId].HomePts = row.HomePts ?? null;
           original[row.GameId].Status = row.Status ?? '';
         }
-        await loadWeek();
+        await loadWeek(); // re-apply sort if picked changed
         status('Saved.');
       }
     }
@@ -814,9 +823,8 @@
       const okSeasons = await loadSeasons();
       if(!okSeasons) return;
 
-      // UPDATED: loadWeeksForSeason now defaults the weekSel appropriately
-      const maxPickedWeek = await loadWeeksForSeason();
-      if(maxPickedWeek == null) return;
+      const okWeeks = await loadWeeksForSeason();
+      if(!okWeeks) return;
 
       const okTeams = await loadTeams();
       if(!okTeams) return;
@@ -825,8 +833,8 @@
       await loadWeek();
 
       seasonSel.onchange = async () => {
-        const max2 = await loadWeeksForSeason();
-        if(max2 != null){
+        const ok = await loadWeeksForSeason();
+        if(ok){
           await loadWeek();
           await loadPlayoffsForSeason();
         }
