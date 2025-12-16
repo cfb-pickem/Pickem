@@ -381,12 +381,12 @@
       await loadWeeksForSeason(currentSeason);
 
       const hintedWeek = getCached(STORAGE_KEYS.lastWeek);
-      if (weeks.length && Number.isFinite(hintedWeek) && weeks.includes(hintedWeek)) {
+      if (hasPlayoffOption) {
+        currentWeek = 'playoff';
+      } else if (weeks.length && Number.isFinite(hintedWeek) && weeks.includes(hintedWeek)) {
         currentWeek = hintedWeek;
       } else if (weeks.length) {
-        currentWeek = weeks[weeks.length-1];
-      } else if (hasPlayoffOption) {
-        currentWeek = 'playoff';
+        currentWeek = weeks[weeks.length - 1];
       } else {
         currentWeek = null;
       }
