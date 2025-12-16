@@ -147,6 +147,12 @@
             <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
+
+            <!-- ADDED -->
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">AwayPts</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">HomePts</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Status</th>
+
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
             <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Tiebreaker</th>
@@ -246,6 +252,7 @@
       return true;
     }
 
+    // CHANGED: weeks dropdown only shows <=16, plus "Playoff" if any week > 16 exists
     async function loadWeeksForSeason(){
       const season = Number(seasonSel.value);
       if(!Number.isFinite(season)){ status('Select a season.', true); return false; }
@@ -255,33 +262,38 @@
         .from('all_games')
         .select('week, cfb_season')
         .eq('cfb_season', season)
-        .range(0, 3999); // big enough to cover all rows
+        .range(0, 3999);
       if(error){ status(error.message, true); return false; }
 
       const weekSet = new Set();
       (data || []).forEach(r => {
-        if (r.week === null || r.week === undefined) return; // drop nulls
+        if (r.week === null || r.week === undefined) return;
         const n = Number(r.week);
         if (Number.isFinite(n)) weekSet.add(n);
       });
 
-      const weeks = Array.from(weekSet).sort((a,b)=>a-b);
-      if(!weeks.length){ status('No weeks found for this season.', true); return false; }
+      const allWeeks = Array.from(weekSet).sort((a,b)=>a-b);
+      if(!allWeeks.length){ status('No weeks found for this season.', true); return false; }
 
-      const maxWeek = weeks[weeks.length - 1];
-      const hasWeek16 = weeks.includes(16);
+      const regularWeeks = allWeeks.filter(w => w <= 16);
+      const hasPlayoffs  = allWeeks.some(w => w > 16);
 
-      let optionsHtml = weeks
+      if(!regularWeeks.length && !hasPlayoffs){
+        status('No valid weeks found for this season.', true);
+        return false;
+      }
+
+      let optionsHtml = regularWeeks
         .map(w => `<option value="${w}">Week ${w}</option>`)
         .join('');
 
-      // Only show "Playoff" once we actually have weeks beyond 16
-      if (hasWeek16 && maxWeek > 16) {
-        optionsHtml += `<option value="playoff">Playoff</option>`;
-      }
+      if (hasPlayoffs) optionsHtml += `<option value="playoff">Playoff</option>`;
 
       weekSel.innerHTML = optionsHtml;
-      weekSel.value = String(maxWeek); // default to latest regular-season week
+
+      // default to latest regular week; if none exist, default to playoff
+      weekSel.value = regularWeeks.length ? String(regularWeeks[regularWeeks.length - 1]) : 'playoff';
+
       return true;
     }
 
@@ -333,7 +345,7 @@
 
       let query = supabase
         .from('all_games')
-        .select('GameId, Away, Home, "Start (CT)", line, picked, tiebreaker, week, "Network", espn_url, cfb_season')
+        .select('GameId, Away, Home, "Start (CT)", "AwayPts", "HomePts", "Status", line, picked, tiebreaker, week, "Network", espn_url, cfb_season')
         .eq('cfb_season', season);
 
       if (viewingPlayoffs) {
@@ -343,7 +355,6 @@
       }
 
       const { data, error } = await query.order('GameId', { ascending: true });
-
       if(error) return status(error.message,true);
       rows = data || [];
 
@@ -651,7 +662,7 @@
     function renderGamesTable(){
       gamesTbody.innerHTML = '';
       if(!rows.length){
-        gamesTbody.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-gray-300">No games found for this selection.</td></tr>`;
+        gamesTbody.innerHTML = `<tr><td colspan="10" class="px-4 py-4 text-gray-300">No games found for this selection.</td></tr>`;
         return;
       }
       for(const g of rows){
@@ -675,6 +686,24 @@
         tdNet.className = 'px-3 py-2 text-center';
         tdNet.textContent = g['Network'] ?? '';
         tr.appendChild(tdNet);
+
+        // ADDED: AwayPts
+        const tdAwayPts = document.createElement('td');
+        tdAwayPts.className = 'px-3 py-2 text-center text-gray-200';
+        tdAwayPts.textContent = (g.AwayPts ?? '');
+        tr.appendChild(tdAwayPts);
+
+        // ADDED: HomePts
+        const tdHomePts = document.createElement('td');
+        tdHomePts.className = 'px-3 py-2 text-center text-gray-200';
+        tdHomePts.textContent = (g.HomePts ?? '');
+        tr.appendChild(tdHomePts);
+
+        // ADDED: Status
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'px-3 py-2 text-center text-gray-200';
+        tdStatus.textContent = (g.Status ?? '');
+        tr.appendChild(tdStatus);
 
         // Line (editable)
         const tdLine = document.createElement('td');
