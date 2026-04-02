@@ -1,13 +1,21 @@
 /* css/base.css — Shared design tokens & components */
+/* NCAA Game-Day Theme — Field Green + Championship Gold */
+
+/* Athletic heading font */
+h1, h2, h3 {
+  font-family: 'Teko', 'Oswald', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 
 :root {
-  --cfp-black: #0B0B0B;
-  --cfp-charcoal: #111213;
-  --cfp-gold: #C99210;
-  --cfp-gold-2: #E3B23C;
-  --cfp-ivory: #F7F4ED;
-  --cfp-gray: #1F2022;
-  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+  --cfp-black: #0a1208;
+  --cfp-charcoal: #0f1a0e;
+  --cfp-gold: #DAA520;
+  --cfp-gold-2: #FFD700;
+  --cfp-ivory: #f5f0e0;
+  --cfp-gray: #1a2818;
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 8px rgba(218,165,32,.3);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -20,10 +28,28 @@ html {
 
 body {
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
-    linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
+    /* Stadium floodlights — warm glow from above */
+    radial-gradient(ellipse 1400px 500px at 50% -5%, rgba(255,215,0,.18), transparent 70%),
+    radial-gradient(circle at 15% -5%, rgba(218,165,32,.10), transparent 50%),
+    radial-gradient(circle at 85% -5%, rgba(218,165,32,.10), transparent 50%),
+    /* Subtle vertical turf grain */
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,.012) 0px,
+      rgba(255,255,255,.012) 2px,
+      transparent 2px,
+      transparent 4px
+    ),
+    /* Faint yard-line hints */
+    repeating-linear-gradient(
+      180deg,
+      transparent 0px,
+      transparent 198px,
+      rgba(255,255,255,.025) 198px,
+      rgba(255,255,255,.025) 200px
+    ),
     var(--cfp-charcoal);
-  background-size: 100% 100%, 24px 24px, auto;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 4px 4px, 100% 200px, auto;
   color: #e7e7e7;
   font-family: 'Roboto', system-ui, -apple-system, Segoe UI, Arial, sans-serif;
   min-height: 100vh;
@@ -33,7 +59,7 @@ body {
 
 /* Text selection */
 ::selection {
-  background: rgba(201,146,16,.35);
+  background: rgba(218,165,32,.35);
   color: var(--cfp-ivory);
 }
 
@@ -41,10 +67,10 @@ body {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--cfp-charcoal); }
 ::-webkit-scrollbar-thumb {
-  background: rgba(233,185,73,.25);
+  background: rgba(218,165,32,.25);
   border-radius: 4px;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(233,185,73,.4); }
+::-webkit-scrollbar-thumb:hover { background: rgba(218,165,32,.4); }
 
 /* Focus visible for keyboard nav */
 :focus-visible {
@@ -54,42 +80,101 @@ body {
 
 /* --- Shared components --- */
 
-.gold-shadow { box-shadow: 0 0 0 1px rgba(233,185,73,.35), 0 0 24px rgba(233,185,73,.08) inset }
+.gold-shadow {
+  box-shadow:
+    0 0 0 1px rgba(218,165,32,.25),
+    0 0 20px rgba(218,165,32,.06) inset,
+    0 8px 32px rgba(0,0,0,.5);
+}
+
 .cfp-card {
   background: linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));
-  border: 1px solid rgba(231,231,231,.10);
-  border-radius: .375rem;
+  border: 1px solid rgba(218,165,32,.12);
+  border-top: 3px solid var(--cfp-gold);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
 }
-.stripe { background: repeating-linear-gradient(90deg, transparent 0 40px, rgba(233,185,73,.12) 40px 48px) }
+
+/* Scoreboard top-light glow */
+.cfp-card::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cfp-gold-2), transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.stripe {
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 60px,
+    rgba(218,165,32,.05) 60px 62px
+  );
+}
+
 .ring-gold { box-shadow: var(--ring) }
 
-.trophy-oval { width: 18px; height: 36px; border: 2px solid var(--cfp-gold); border-radius: 999px; position: relative }
+/* --- Football icon (replaces trophy-oval) --- */
+
+.trophy-oval {
+  width: 30px;
+  height: 18px;
+  background: linear-gradient(135deg, #6b3a0a, #8b4513, #a0522d);
+  border: 2px solid #d2691e;
+  border-radius: 50%;
+  position: relative;
+  transform: rotate(-30deg);
+  box-shadow: 0 0 8px rgba(218,165,32,.3);
+  flex-shrink: 0;
+}
+
+/* Center lace */
 .trophy-oval::before {
   content: "";
   position: absolute;
   left: 50%;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  background: linear-gradient(var(--cfp-gold), var(--cfp-gold-2));
+  top: 3px;
+  bottom: 3px;
+  width: 1.5px;
+  background: var(--cfp-ivory);
   transform: translateX(-50%);
 }
 
+/* Cross-laces */
+.trophy-oval::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 28%;
+  right: 28%;
+  height: 0;
+  border-top: 1.5px solid var(--cfp-ivory);
+  transform: translateY(-50%);
+  box-shadow:
+    0 -3px 0 0 var(--cfp-ivory),
+    0 3px 0 0 var(--cfp-ivory);
+}
+
+/* --- Inputs & selects --- */
+
 .cfp-select {
   background: var(--cfp-black); color: #f1f1f1;
-  border: 1px solid rgba(231,231,231,.12);
+  border: 1px solid rgba(218,165,32,.15);
   transition: box-shadow .2s ease, border-color .2s ease;
 }
 .cfp-select:focus { outline: none; box-shadow: var(--ring) }
-.cfp-select:hover { border-color: rgba(231,231,231,.25) }
+.cfp-select:hover { border-color: rgba(218,165,32,.3) }
 
 .cfp-input {
   background: var(--cfp-black); color: #f1f1f1;
-  border: 1px solid rgba(231,231,231,.12);
+  border: 1px solid rgba(218,165,32,.15);
   transition: box-shadow .2s ease, border-color .2s ease;
 }
 .cfp-input:focus { outline: none; box-shadow: var(--ring) }
-.cfp-input:hover { border-color: rgba(231,231,231,.25) }
+.cfp-input:hover { border-color: rgba(218,165,32,.3) }
 
 /* --- Loading spinner --- */
 
@@ -97,7 +182,7 @@ body {
   display: inline-block;
   width: 1.25rem;
   height: 1.25rem;
-  border: 2px solid rgba(233,185,73,.2);
+  border: 2px solid rgba(218,165,32,.2);
   border-top-color: var(--cfp-gold);
   border-radius: 50%;
   animation: cfp-spin .7s linear infinite;
@@ -109,7 +194,7 @@ body {
 
 /* Skeleton shimmer for loading placeholders */
 .skeleton {
-  background: linear-gradient(90deg, var(--cfp-gray) 25%, rgba(233,185,73,.06) 50%, var(--cfp-gray) 75%);
+  background: linear-gradient(90deg, var(--cfp-gray) 25%, rgba(218,165,32,.06) 50%, var(--cfp-gray) 75%);
   background-size: 200% 100%;
   animation: cfp-shimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -135,7 +220,7 @@ body {
 .toast {
   padding: .75rem 1.25rem;
   background: linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));
-  border: 1px solid rgba(233,185,73,.35);
+  border: 1px solid rgba(218,165,32,.35);
   box-shadow: 0 8px 32px rgba(0,0,0,.6);
   color: var(--cfp-ivory);
   font-size: .875rem;
@@ -156,14 +241,62 @@ body {
 .toast-error   { border-left: 3px solid #ff5c5c; }
 .toast-info    { border-left: 3px solid var(--cfp-gold); }
 
-/* --- Fade-in for content appearing --- */
+/* --- Animations --- */
 
+/* Page content fade-in */
 .fade-in {
   animation: cfp-fade-in .35s ease-out both;
 }
 @keyframes cfp-fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Header entrance — slides down with authority */
+header.cfp-card {
+  animation: header-entrance .5s cubic-bezier(.22,1,.36,1) both;
+}
+@keyframes header-entrance {
+  from { opacity: 0; transform: translateY(-12px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Pick snap — gold flash burst when selected */
+@keyframes pick-snap {
+  0%   { box-shadow: 0 0 0 0 var(--cfp-gold); }
+  50%  { box-shadow: 0 0 20px 4px var(--cfp-gold); }
+  100% { box-shadow: 0 0 0 2px var(--cfp-gold-2), 0 4px 16px rgba(218,165,32,.25); }
+}
+
+/* Live badge glow ring */
+.badge-live {
+  position: relative;
+}
+.badge-live::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: var(--cfp-gold);
+  opacity: 0;
+  animation: live-ring 2s ease-in-out infinite;
+  z-index: -1;
+}
+@keyframes live-ring {
+  0%, 100% { opacity: 0; transform: scale(1); }
+  50%      { opacity: .25; transform: scale(1.12); }
+}
+
+/* --- Scoreboard table styles --- */
+
+.table tbody tr:nth-child(even) {
+  background: rgba(255,255,255,.02);
+}
+
+.table tbody td:nth-child(2) {
+  font-weight: 700;
+  color: var(--cfp-gold);
+  text-shadow: 0 0 8px rgba(218,165,32,.3);
 }
 
 /* --- Empty state --- */
@@ -188,7 +321,7 @@ body {
 .site-footer {
   margin-top: 3rem;
   padding: 1.25rem 1rem;
-  border-top: 1px solid rgba(231,231,231,.06);
+  border-top: 1px solid rgba(218,165,32,.08);
   text-align: center;
   font-size: .7rem;
   color: #6b7280;
@@ -214,12 +347,10 @@ body {
 
 /* --- Mobile optimizations --- */
 
-/* Touch-friendly inputs & buttons on small screens */
 @media (max-width: 640px) {
   .cfp-select { min-height: 44px; padding-top: .625rem; padding-bottom: .625rem; }
   .cfp-input  { min-height: 44px; padding-top: .625rem; padding-bottom: .625rem; }
 
-  /* Toast: full-width at bottom on mobile */
   .toast-container {
     right: .75rem;
     left: .75rem;
@@ -241,7 +372,7 @@ body {
   position: absolute;
   top: 0; bottom: 0; right: 0;
   width: 32px;
-  background: linear-gradient(90deg, transparent, rgba(11,11,11,.85));
+  background: linear-gradient(90deg, transparent, rgba(10,18,8,.85));
   pointer-events: none;
   z-index: 30;
   opacity: 1;

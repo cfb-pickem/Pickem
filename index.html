@@ -9,7 +9,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="./css/base.css">
   <link rel="stylesheet" href="./css/theme-halloween.css">
@@ -31,8 +31,11 @@
     .badge-sched{background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
 
     .table th,.table td{border-color:rgba(231,231,231,.08)}
-    .table tbody tr{transition:background .15s ease}
-    .table tbody tr:hover{background:rgba(233,185,73,.08)}
+    .table tbody tr{transition:background .15s ease, box-shadow .15s ease}
+    .table tbody tr:hover{
+      background:linear-gradient(90deg, rgba(218,165,32,.08), transparent 60%);
+      box-shadow:inset 3px 0 0 var(--cfp-gold);
+    }
 
     .pick-win{background:rgba(88,214,141,.15);color:#8ef2b9}
     .pick-loss{background:rgba(255,92,92,.15);color:#ffb3b3}
@@ -44,8 +47,13 @@
     .logo{height:32px;width:32px;object-fit:contain;margin-left:auto;margin-right:auto;filter:drop-shadow(0 0 8px rgba(0,0,0,.2))}
 
     .playoff-divider td{
-      padding:.15rem 0;background:transparent;border-top:2px solid var(--cfp-gold);color:var(--cfp-ivory);
-      text-align:center;letter-spacing:.08em;font-size:.75rem;text-transform:uppercase;
+      padding:.35rem 0;
+      background:repeating-linear-gradient(90deg, rgba(255,255,255,.04) 0 4px, transparent 4px 8px);
+      border-top:2px solid rgba(255,255,255,.4);
+      border-bottom:1px dashed rgba(255,255,255,.15);
+      color:var(--cfp-ivory);
+      text-align:center;letter-spacing:.15em;font-size:.75rem;text-transform:uppercase;
+      font-family:'Teko','Oswald',sans-serif;font-weight:600;
     }
 
     th.sticky-col-1, td.sticky-col-1{

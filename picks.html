@@ -9,7 +9,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="./css/base.css">
   <link rel="modulepreload" href="./js/supabaseClient.js">
@@ -40,7 +40,7 @@
       .pick-label { min-width: 0; width: 100%; justify-content: center; }
     }
     .pick-label:hover:not(.selected) {
-      background: rgba(233,185,73,.12);
+      background: rgba(218,165,32,.10);
       color: var(--cfp-ivory);
     }
     .pick-label input[type="radio"]{ position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
@@ -49,7 +49,8 @@
       color: var(--cfp-black);
       font-weight: 600;
       transform: scale(1.05);
-      box-shadow: 0 0 0 2px var(--cfp-gold-2), 0 4px 16px rgba(201,146,16,.25);
+      box-shadow: 0 0 0 2px var(--cfp-gold-2), 0 4px 16px rgba(218,165,32,.25);
+      animation: pick-snap .3s ease-out;
     }
 
     /* Locked state (used for whole grid OR per-game card) */
