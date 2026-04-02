@@ -1,8 +1,8 @@
 /* css/base.css — Shared design tokens & components */
 /* NCAA Game-Day Theme — Field Green + Athletic Orange */
 
-/* Athletic heading font */
-h1, h2, h3 {
+/* Athletic heading font — only page titles (h1) */
+h1 {
   font-family: 'Teko', 'Oswald', sans-serif;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -66,10 +66,7 @@ body {
 /* Custom scrollbar (webkit) */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--cfp-charcoal); }
-::-webkit-scrollbar-thumb {
-  background: rgba(255,107,26,.25);
-  border-radius: 4px;
-}
+::-webkit-scrollbar-thumb { background: rgba(255,107,26,.25); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,107,26,.4); }
 
 /* Focus visible for keyboard nav */
@@ -85,8 +82,8 @@ body {
 
 .gold-shadow {
   box-shadow:
-    0 0 0 1px rgba(255,107,26,.2),
-    0 0 20px rgba(255,107,26,.06) inset,
+    0 0 0 1px rgba(255,107,26,.15),
+    0 0 20px rgba(255,107,26,.05) inset,
     0 8px 32px rgba(0,0,0,.5);
 }
 
@@ -132,32 +129,22 @@ body {
   box-shadow: 0 0 8px rgba(255,107,26,.3);
   flex-shrink: 0;
 }
-
-/* Center lace */
 .trophy-oval::before {
   content: "";
   position: absolute;
-  left: 50%;
-  top: 3px;
-  bottom: 3px;
+  left: 50%; top: 3px; bottom: 3px;
   width: 1.5px;
   background: var(--cfp-ivory);
   transform: translateX(-50%);
 }
-
-/* Cross-laces */
 .trophy-oval::after {
   content: "";
   position: absolute;
-  top: 50%;
-  left: 28%;
-  right: 28%;
+  top: 50%; left: 28%; right: 28%;
   height: 0;
   border-top: 1.5px solid var(--cfp-ivory);
   transform: translateY(-50%);
-  box-shadow:
-    0 -3px 0 0 var(--cfp-ivory),
-    0 3px 0 0 var(--cfp-ivory);
+  box-shadow: 0 -3px 0 0 var(--cfp-ivory), 0 3px 0 0 var(--cfp-ivory);
 }
 
 /* --- Inputs & selects --- */
@@ -182,8 +169,7 @@ body {
 
 .spinner {
   display: inline-block;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.25rem; height: 1.25rem;
   border: 2px solid rgba(255,107,26,.2);
   border-top-color: var(--cfp-gold);
   border-radius: 50%;
@@ -191,10 +177,8 @@ body {
   vertical-align: middle;
 }
 .spinner-sm { width: .875rem; height: .875rem; border-width: 1.5px; }
-
 @keyframes cfp-spin { to { transform: rotate(360deg); } }
 
-/* Skeleton shimmer */
 .skeleton {
   background: linear-gradient(90deg, var(--cfp-gray) 25%, rgba(255,107,26,.06) 50%, var(--cfp-gray) 75%);
   background-size: 200% 100%;
@@ -210,30 +194,20 @@ body {
 /* --- Toast notifications --- */
 
 .toast-container {
-  position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  gap: .5rem;
-  pointer-events: none;
+  position: fixed; bottom: 1.5rem; right: 1.5rem;
+  z-index: 9999; display: flex; flex-direction: column;
+  gap: .5rem; pointer-events: none;
 }
 .toast {
   padding: .75rem 1.25rem;
-  background: linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));
+  background: linear-gradient(180deg, #111, #1a1a1a);
   border: 1px solid rgba(255,107,26,.35);
   box-shadow: 0 8px 32px rgba(0,0,0,.6);
-  color: var(--cfp-ivory);
-  font-size: .875rem;
-  font-weight: 500;
+  color: var(--cfp-ivory); font-size: .875rem; font-weight: 500;
   pointer-events: auto;
-  transform: translateY(1rem);
-  opacity: 0;
+  transform: translateY(1rem); opacity: 0;
   transition: transform .3s cubic-bezier(.22,1,.36,1), opacity .3s ease;
-  display: flex;
-  align-items: center;
-  gap: .625rem;
+  display: flex; align-items: center; gap: .625rem;
 }
 .toast.show { transform: translateY(0); opacity: 1; }
 .toast-success { border-left: 3px solid #58d68d; }
@@ -242,9 +216,7 @@ body {
 
 /* --- Animations --- */
 
-.fade-in {
-  animation: cfp-fade-in .35s ease-out both;
-}
+.fade-in { animation: cfp-fade-in .35s ease-out both; }
 @keyframes cfp-fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -266,61 +238,43 @@ header.cfp-card {
 
 .badge-live { position: relative; }
 .badge-live::before {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: var(--cfp-gold);
-  opacity: 0;
-  animation: live-ring 2s ease-in-out infinite;
-  z-index: -1;
+  content: ""; position: absolute; inset: -2px;
+  border-radius: inherit; background: var(--cfp-gold);
+  opacity: 0; animation: live-ring 2s ease-in-out infinite; z-index: -1;
 }
 @keyframes live-ring {
   0%, 100% { opacity: 0; transform: scale(1); }
   50%      { opacity: .25; transform: scale(1.12); }
 }
 
-/* --- Scoreboard table styles --- */
-
-.table tbody tr:nth-child(even) {
-  background: rgba(255,255,255,.02);
-}
-
-.table tbody td:nth-child(2) {
-  font-family: 'Teko', 'Oswald', sans-serif;
-  font-size: 1.15em;
-  font-weight: 700;
-  color: var(--cfp-gold);
-  text-shadow: 0 0 8px rgba(255,107,26,.35);
-}
-
-/* --- Scoreboard wrapper (for leaderboard) --- */
+/* ============================================
+   SCOREBOARD — ESPN-style dark panel
+   ============================================ */
 
 .scoreboard-wrap {
-  background:
-    linear-gradient(180deg, #060d04, #0e1a0b 4%, #131f10 50%, #0e1a0b 96%, #060d04);
-  border: 2px solid #2a3a22;
-  border-radius: 4px;
+  background: linear-gradient(180deg, #0d0d0d, #141414 5%, #111 50%, #141414 95%, #0d0d0d);
+  border: 3px solid #333;
+  border-radius: 6px;
   box-shadow:
-    0 0 0 1px rgba(255,107,26,.15),
-    inset 0 1px 0 rgba(255,255,255,.04),
-    0 12px 40px rgba(0,0,0,.6);
+    inset 0 1px 0 rgba(255,255,255,.06),
+    inset 0 -1px 0 rgba(0,0,0,.5),
+    0 12px 48px rgba(0,0,0,.7);
   position: relative;
   overflow: hidden;
 }
 
-/* Scoreboard inner frame border */
+/* Inner bezel */
 .scoreboard-wrap::before {
   content: "";
   position: absolute;
-  inset: 3px;
-  border: 1px solid rgba(255,107,26,.08);
-  border-radius: 2px;
+  inset: 4px;
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 3px;
   pointer-events: none;
   z-index: 1;
 }
 
-/* LED strip along top */
+/* Orange LED strip along top */
 .scoreboard-wrap::after {
   content: "";
   position: absolute;
@@ -331,113 +285,116 @@ header.cfp-card {
     var(--cfp-gold) 0 3px,
     transparent 3px 6px
   );
-  opacity: .6;
+  opacity: .7;
   pointer-events: none;
   z-index: 2;
 }
 
-/* Scoreboard header row */
+/* Scoreboard header row — slightly lighter so it separates */
 .scoreboard-header {
-  background: linear-gradient(180deg, #1a2a14, #0f1c0b) !important;
-  border-bottom: 2px solid rgba(255,107,26,.2);
+  background: linear-gradient(180deg, #1c1c1c, #141414) !important;
+  border-bottom: 2px solid #333;
 }
 
 .scoreboard-header th {
-  font-family: 'Teko', 'Oswald', sans-serif;
-  font-size: .85rem;
-  letter-spacing: .1em;
+  font-family: 'Oswald', sans-serif;
+  font-size: .8rem;
+  letter-spacing: .06em;
   text-transform: uppercase;
-  color: var(--cfp-gold);
-  text-shadow: 0 0 6px rgba(255,107,26,.3);
+  color: #ccc;
   padding-top: .65rem;
   padding-bottom: .65rem;
 }
 
+/* --- Table text readability --- */
+
+/* ALL table text: white/cream, readable */
+.table tbody td {
+  color: #e8e8e8;
+}
+
+/* Points column: bright white, large, bold — the score */
+.table tbody td:nth-child(2) {
+  font-family: 'Teko', 'Oswald', sans-serif;
+  font-size: 1.3em;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(255,255,255,.15);
+}
+
+/* Alternating rows — very subtle on the dark scoreboard */
+.table tbody tr:nth-child(even) {
+  background: rgba(255,255,255,.025);
+}
+
 /* --- Empty state --- */
 
-.empty-state {
-  padding: 2rem 1rem;
-  text-align: center;
-  color: #9ca3af;
-}
+.empty-state { padding: 2rem 1rem; text-align: center; color: #9ca3af; }
 .empty-state-icon { font-size: 2rem; margin-bottom: .5rem; opacity: .5; }
 .empty-state-msg { font-size: .875rem; line-height: 1.5; }
 
 /* --- Footer --- */
 
 .site-footer {
-  margin-top: 3rem;
-  padding: 1.25rem 1rem;
+  margin-top: 3rem; padding: 1.25rem 1rem;
   border-top: 1px solid rgba(255,107,26,.08);
-  text-align: center;
-  font-size: .7rem;
-  color: #6b7280;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  text-align: center; font-size: .7rem;
+  color: #6b7280; letter-spacing: .08em; text-transform: uppercase;
 }
 
 /* --- Buttons --- */
 
 .btn-primary {
-  background: var(--cfp-gold);
-  color: var(--cfp-black);
-  font-weight: 600;
+  background: var(--cfp-gold); color: #fff; font-weight: 600;
   padding: .625rem 1.25rem;
-  transition: background .15s ease, transform .1s ease, box-shadow .15s ease;
-  display: inline-flex;
-  align-items: center;
-  gap: .5rem;
+  transition: background .15s ease, transform .1s ease;
+  display: inline-flex; align-items: center; gap: .5rem;
 }
-.btn-primary:hover { background: var(--cfp-gold-2); }
+.btn-primary:hover { background: var(--cfp-gold-2); color: #000; }
 .btn-primary:active { transform: scale(.98); }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
 /* --- Floating mascots --- */
 
 .mascot-layer {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 0; overflow: hidden;
 }
 
 .mascot {
   position: absolute;
-  font-size: 2.5rem;
-  opacity: .12;
-  filter: grayscale(.3);
+  font-size: 2.8rem;
+  opacity: .15;
+  filter: grayscale(.2);
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
   animation-direction: alternate;
 }
 
-/* Specific mascot positions and animations */
-.mascot-1  { left: 3%;  top: 12%; animation: mascot-bob-1 6s infinite alternate; }
-.mascot-2  { right: 5%; top: 8%;  animation: mascot-bob-2 7s infinite alternate; }
-.mascot-3  { left: 8%;  top: 38%; animation: mascot-bob-1 8s infinite alternate; }
-.mascot-4  { right: 3%; top: 35%; animation: mascot-bob-2 5.5s infinite alternate; }
-.mascot-5  { left: 2%;  top: 60%; animation: mascot-bob-1 7.5s infinite alternate; }
-.mascot-6  { right: 6%; top: 58%; animation: mascot-bob-2 6.5s infinite alternate; }
-.mascot-7  { left: 5%;  top: 82%; animation: mascot-bob-1 5s infinite alternate; }
-.mascot-8  { right: 2%; top: 80%; animation: mascot-bob-2 8.5s infinite alternate; }
-.mascot-9  { left: 12%; top: 25%; animation: mascot-bob-2 9s infinite alternate; font-size: 2rem; opacity: .08; }
-.mascot-10 { right: 10%; top: 50%; animation: mascot-bob-1 7s infinite alternate; font-size: 2rem; opacity: .08; }
-.mascot-11 { left: 6%;  top: 48%; animation: mascot-bob-2 6s infinite alternate; font-size: 1.8rem; opacity: .06; }
-.mascot-12 { right: 8%; top: 22%; animation: mascot-bob-1 8s infinite alternate; font-size: 1.8rem; opacity: .06; }
+.mascot-1  { left: 2%;  top: 10%; animation: mascot-bob-1 6s infinite alternate; }
+.mascot-2  { right: 3%; top: 6%;  animation: mascot-bob-2 7s infinite alternate; }
+.mascot-3  { left: 5%;  top: 35%; animation: mascot-bob-1 8s infinite alternate; }
+.mascot-4  { right: 2%; top: 32%; animation: mascot-bob-2 5.5s infinite alternate; }
+.mascot-5  { left: 1%;  top: 58%; animation: mascot-bob-1 7.5s infinite alternate; }
+.mascot-6  { right: 4%; top: 55%; animation: mascot-bob-2 6.5s infinite alternate; }
+.mascot-7  { left: 3%;  top: 80%; animation: mascot-bob-1 5s infinite alternate; }
+.mascot-8  { right: 1%; top: 78%; animation: mascot-bob-2 8.5s infinite alternate; }
+.mascot-9  { left: 10%; top: 22%; animation: mascot-bob-2 9s infinite alternate; font-size: 2.2rem; opacity: .10; }
+.mascot-10 { right: 8%; top: 48%; animation: mascot-bob-1 7s infinite alternate; font-size: 2.2rem; opacity: .10; }
+.mascot-11 { left: 4%;  top: 46%; animation: mascot-bob-2 6s infinite alternate; font-size: 2rem; opacity: .08; }
+.mascot-12 { right: 6%; top: 20%; animation: mascot-bob-1 8s infinite alternate; font-size: 2rem; opacity: .08; }
 
 @keyframes mascot-bob-1 {
   0%   { transform: translateY(0) rotate(-5deg); }
-  100% { transform: translateY(-12px) rotate(5deg); }
+  100% { transform: translateY(-14px) rotate(5deg); }
 }
 @keyframes mascot-bob-2 {
   0%   { transform: translateY(0) rotate(3deg); }
-  100% { transform: translateY(-15px) rotate(-4deg); }
+  100% { transform: translateY(-18px) rotate(-4deg); }
 }
 
-/* Hide mascots on very small screens to save performance */
 @media (max-width: 640px) {
-  .mascot { font-size: 1.8rem; }
+  .mascot { font-size: 2rem; }
   .mascot-9, .mascot-10, .mascot-11, .mascot-12 { display: none; }
 }
 
@@ -446,7 +403,6 @@ header.cfp-card {
 @media (max-width: 640px) {
   .cfp-select { min-height: 44px; padding-top: .625rem; padding-bottom: .625rem; }
   .cfp-input  { min-height: 44px; padding-top: .625rem; padding-bottom: .625rem; }
-
   .toast-container { right: .75rem; left: .75rem; bottom: .75rem; }
   .toast { font-size: .8rem; padding: .625rem 1rem; }
 }
@@ -457,12 +413,9 @@ header.cfp-card {
 .scroll-hint::after {
   content: "";
   position: absolute;
-  top: 0; bottom: 0; right: 0;
-  width: 32px;
-  background: linear-gradient(90deg, transparent, rgba(10,18,8,.85));
-  pointer-events: none;
-  z-index: 30;
-  opacity: 1;
-  transition: opacity .3s ease;
+  top: 0; bottom: 0; right: 0; width: 32px;
+  background: linear-gradient(90deg, transparent, rgba(13,13,13,.9));
+  pointer-events: none; z-index: 30;
+  opacity: 1; transition: opacity .3s ease;
 }
 .scroll-hint.scrolled-end::after { opacity: 0; }
