@@ -151,6 +151,8 @@
 
   <script type=”module”>
     import initNav from './js/nav.js';
+    import { initMascots } from './js/mascots.js';
+    initMascots();
     import { supabase } from './js/supabaseClient.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
     import { sameTeam, buildPickMap } from './js/utils.js';

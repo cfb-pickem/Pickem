@@ -130,7 +130,7 @@
       </div>
     </header>
 
-    <div class="cfp-card gold-shadow overflow-auto scroll-hint" id="table-scroll-wrap">
+    <div class="scoreboard-wrap overflow-auto scroll-hint" id="table-scroll-wrap">
       <div id="table-loading" class="p-6 space-y-3">
         <div class="skeleton h-6 w-3/4"></div>
         <div class="skeleton h-5 w-full"></div>
@@ -140,7 +140,7 @@
         <div class="skeleton h-5 w-4/5"></div>
       </div>
       <table class="table min-w-full text-sm" style="table-layout:auto;display:none;" id="leaderboard-table">
-        <thead class="table-sticky">
+        <thead class="table-sticky scoreboard-header">
           <tr id="thead-row" class="border-b"></tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -175,6 +175,8 @@
 
   <script type="module">
     import initNav from './js/nav.js';
+    import { initMascots } from './js/mascots.js';
+    initMascots();
     import { supabase } from './js/supabaseClient.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
     import { sameTeam, escapeHtml, buildPickMap } from './js/utils.js';
