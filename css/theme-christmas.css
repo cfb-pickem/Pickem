@@ -1,0 +1,465 @@
+/* ============================================================
+   CHRISTMAS THEME — blinding lights, snow, candy canes everywhere
+   Applied when <body data-theme="christmas"> is active.
+   ============================================================ */
+
+body[data-theme="christmas"] {
+  /* Winter / Christmas palette */
+  --cfp-black:#020813;        /* deep winter night */
+  --cfp-charcoal:#041320;     /* cool midnight blue */
+  --cfp-gold:#f5d76e;        /* warm fairy lights */
+  --cfp-gold-2:#ffeaa7;      /* soft candlelight */
+  --cfp-ivory:#fdfaf3;       /* fresh snow */
+  --cfp-gray:#12343b;        /* evergreen shadow */
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 12px var(--cfp-gold);
+
+  color:#f8fcff;
+
+  /* Night sky with aurora + subtle plaid */
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255,255,255,.18), transparent 60%),
+    radial-gradient(circle at 0 0, rgba(0,255,200,.16), transparent 60%),
+    radial-gradient(circle at 100% 0, rgba(255,0,120,.2), transparent 60%),
+    linear-gradient(135deg,
+      rgba(255,255,255,.03) 0 25%,
+      transparent 25% 50%,
+      rgba(255,255,255,.03) 50% 75%,
+      transparent 75% 100%
+    ),
+    linear-gradient(180deg,#020813,#041320);
+  background-size:100% 100%,100% 100%,100% 100%,24px 24px,auto;
+
+  position:relative;
+  overflow-x:hidden;
+}
+
+/* ============================================================
+   Global snow + glow
+   ============================================================ */
+
+/* Soft warm glow from windows */
+body[data-theme="christmas"]::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(255,248,200,.3), transparent 60%),
+    radial-gradient(circle at 85% 0%, rgba(255,214,170,.25), transparent 60%);
+  opacity:.6;
+  mix-blend-mode:screen;
+  z-index:1;
+}
+
+/* Ground snow fog */
+body[data-theme="christmas"]::after{
+  content:"";
+  position:fixed;
+  left:0;
+  right:0;
+  bottom:0;
+  height:28vh;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 50% 100%, rgba(255,255,255,.65), transparent 60%);
+  opacity:.7;
+  filter:blur(4px);
+  z-index:1;
+}
+
+/* ============================================================
+   Header / cards / selects
+   ============================================================ */
+
+body[data-theme="christmas"] .cfp-card{
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07),transparent 40%),
+    radial-gradient(circle at 0 0,rgba(93,188,210,.25),transparent 55%),
+    radial-gradient(circle at 100% 0,rgba(255,255,255,.12),transparent 55%),
+    linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.18),
+    0 0 28px rgba(160,220,255,.35) inset,
+    0 18px 40px rgba(0,0,0,.7);
+}
+
+/* Header: garland + lights */
+body[data-theme="christmas"] header.cfp-card{
+  position:relative;
+  overflow:hidden;
+}
+
+/* Garland at the top */
+body[data-theme="christmas"] header.cfp-card::before{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  top:0;
+  height:16px;
+  background:
+    repeating-linear-gradient(90deg,
+      #165b33 0 12px,
+      #146b3a 12px 24px
+    );
+  box-shadow:0 4px 10px rgba(0,0,0,.6);
+  z-index:2;
+}
+
+/* Light bulbs hanging from header */
+body[data-theme="christmas"] header.cfp-card::after{
+  content:"🎄✨🎄✨🎄✨🎄✨🎄✨🎄";
+  position:absolute;
+  left:50%;
+  top:10px;
+  transform:translateX(-50%);
+  font-size:12px;
+  letter-spacing:10px;
+  text-shadow:
+    0 0 6px rgba(255,255,255,.8),
+    0 0 10px rgba(255,220,150,.8);
+  z-index:3;
+  pointer-events:none;
+}
+
+/* Selects: gift-wrap style */
+body[data-theme="christmas"] .cfp-select{
+  background:linear-gradient(135deg,#14303a,#071820);
+  color:#fdfaf3;
+  border:1px solid rgba(245,215,110,.7);
+  box-shadow:0 0 0 1px rgba(0,0,0,.8);
+}
+body[data-theme="christmas"] .cfp-select:focus{
+  outline:none;
+  box-shadow:var(--ring),0 0 0 1px rgba(0,0,0,.9);
+}
+
+/* ============================================================
+   Trophy becomes ornament / snow globe
+   ============================================================ */
+
+body[data-theme="christmas"] .trophy-oval{
+  width:42px;
+  height:42px;
+  border-radius:999px;
+  position:relative;
+  background:
+    radial-gradient(circle at 30% 30%, #ffffff, #fef2cc 40%, #c62828 82%);
+  box-shadow:
+    0 0 0 2px rgba(255,255,255,.9),
+    0 0 18px rgba(255,255,255,.7);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+}
+
+/* Tiny ornament hook */
+body[data-theme="christmas"] .trophy-oval::before{
+  content:"🎄";
+  font-size:1.8rem;
+  transform:translateY(1px);
+}
+
+/* ============================================================
+   Table / header / sticky column
+   ============================================================ */
+
+body[data-theme="christmas"] .network-line{
+  display:inline-flex;
+  align-items:center;
+  font-size:10px;
+  line-height:1;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:#e0f7ff;
+  margin:0;
+}
+
+body[data-theme="christmas"] .table-sticky th{
+  position:sticky;
+  top:0;
+  background-color:#020813;
+  z-index:10;
+}
+
+body[data-theme="christmas"] .table th,
+body[data-theme="christmas"] .table td{
+  border-color:rgba(220,238,255,.16);
+}
+
+body[data-theme="christmas"] .table tbody tr:hover{
+  background:linear-gradient(90deg,rgba(160,220,255,.25),rgba(255,255,255,.16));
+}
+
+/* Sticky first column = honored place at the table */
+body[data-theme="christmas"] .sticky-col-1{
+  position:sticky;
+  left:0;
+  z-index:25;
+  background:linear-gradient(90deg,#020813,#12343b);
+  box-shadow:2px 0 0 rgba(220,238,255,.15) inset;
+}
+
+body[data-theme="christmas"] thead th.sticky-col-1{ z-index:50; }
+
+/* Highlight user's row as star of the show */
+body[data-theme="christmas"] tr[data-me="true"]{
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.25),rgba(160,220,255,.35));
+}
+body[data-theme="christmas"] tr[data-me="true"] .sticky-col-1{
+  font-weight:700;
+  text-shadow:0 0 10px rgba(255,255,255,1);
+  box-shadow:2px 0 0 rgba(245,215,110,.95) inset;
+}
+body[data-theme="christmas"] tr[data-me="true"] .sticky-col-1::before{
+  content:"⭐";
+  margin-right:.4rem;
+}
+body[data-theme="christmas"] tr[data-me="true"]:hover{
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.5),rgba(160,220,255,.5));
+}
+
+/* ============================================================
+   Badges (Live / Final / Scheduled) = ornaments
+   ============================================================ */
+
+body[data-theme="christmas"] .badge{
+  font-size:.72rem;
+  line-height:1rem;
+  display:inline-flex;
+  align-items:center;
+  gap:.375rem;
+  padding:.125rem .55rem;
+  border-radius:999px;
+  border:1px solid rgba(0,0,0,.7);
+  box-shadow:0 1px 5px rgba(0,0,0,.7);
+}
+
+/* Live = blinking red + green ornament */
+body[data-theme="christmas"] .badge-live{
+  background:radial-gradient(circle at 25% 25%,#fff5e0,#ff5252);
+  color:#330000;
+  border-color:rgba(255,200,200,.9);
+  box-shadow:0 0 10px rgba(255,82,82,.9);
+}
+body[data-theme="christmas"] .badge-live::before{
+  content:"🎅";
+  font-size:.9rem;
+}
+
+/* Final = gold star */
+body[data-theme="christmas"] .badge-final{
+  background:linear-gradient(135deg,#b8860b,#ffd700);
+  color:#261600;
+  border-color:rgba(255,241,178,.95);
+  box-shadow:0 0 10px rgba(255,215,0,.85);
+}
+body[data-theme="christmas"] .badge-final::before{
+  content:"⭐";
+  font-size:.9rem;
+}
+
+/* Scheduled = frosty blue */
+body[data-theme="christmas"] .badge-sched{
+  background:linear-gradient(135deg,#0f2530,#194b5d);
+  color:#e0f7ff;
+  border-color:rgba(180,220,255,.7);
+}
+body[data-theme="christmas"] .badge-sched::before{
+  content:"❄️";
+  font-size:.9rem;
+}
+
+/* ============================================================
+   Picks (win / loss / empty)
+   ============================================================ */
+
+body[data-theme="christmas"] .pick-win{
+  background:linear-gradient(135deg,rgba(40,167,69,.35),rgba(17,132,60,.45));
+  color:#e8ffe9;
+  box-shadow:0 0 10px rgba(56,183,80,.5) inset;
+  position:relative;
+}
+body[data-theme="christmas"] .pick-win::after{
+  content:"🎁";
+  position:absolute;
+  bottom:3px;
+  right:4px;
+  font-size:.75rem;
+  opacity:.9;
+}
+
+body[data-theme="christmas"] .pick-loss{
+  background:linear-gradient(135deg,rgba(220,20,60,.35),rgba(140,0,0,.45));
+  color:#ffe3e3;
+  box-shadow:0 0 10px rgba(200,0,50,.55) inset;
+  position:relative;
+}
+body[data-theme="christmas"] .pick-loss::after{
+  content:"💔";
+  position:absolute;
+  bottom:2px;
+  right:4px;
+  font-size:.75rem;
+  opacity:.9;
+}
+
+body[data-theme="christmas"] .pick-empty{
+  color:#e1f1ff;
+  opacity:.8;
+  font-style:italic;
+}
+
+/* ============================================================
+   Logos = festive glow
+   ============================================================ */
+
+body[data-theme="christmas"] .logo{
+  height:32px;
+  width:32px;
+  object-fit:contain;
+  margin-left:auto;
+  margin-right:auto;
+  filter:
+    drop-shadow(0 0 4px rgba(255,255,255,.8))
+    drop-shadow(0 0 6px rgba(160,220,255,.7))
+    saturate(1.1);
+}
+
+/* ============================================================
+   Playoff divider = candy cane stripe
+   ============================================================ */
+
+body[data-theme="christmas"] .playoff-divider td{
+  padding:.25rem 0;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255,255,255,.25) 0 8px,
+      rgba(220,20,60,.3) 8px 16px
+    );
+  border-top:2px solid rgba(255,255,255,.9);
+  border-bottom:2px solid rgba(220,20,60,.9);
+  color:#fdfaf3;
+  text-align:center;
+  letter-spacing:.18em;
+  font-size:.75rem;
+  text-transform:uppercase;
+  position:relative;
+}
+body[data-theme="christmas"] .playoff-divider td::before{
+  content:"🍬";
+  position:absolute;
+  left:8px;
+  top:50%;
+  transform:translateY(-50%);
+}
+body[data-theme="christmas"] .playoff-divider td::after{
+  content:"🍬";
+  position:absolute;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+}
+
+/* ============================================================
+   Weekly submissions = Naughty / Nice list vibes
+   ============================================================ */
+
+body[data-theme="christmas"] .ws-label{
+  font-size:.72rem;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:#fdfaf3;
+  border-bottom:1px solid rgba(220,238,255,.28);
+  padding-bottom:.25rem;
+  margin-bottom:.5rem;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+}
+body[data-theme="christmas"] .ws-label::before{
+  content:"📜";
+  font-size:1rem;
+}
+
+/* Fully submitted = Nice list */
+body[data-theme="christmas"] #ws-made .badge{
+  background:linear-gradient(135deg,#1c7c3a,#2ecc71);
+  color:#fdfaf3;
+  border-color:rgba(210,255,220,.7);
+}
+body[data-theme="christmas"] #ws-made .badge::before{
+  content:"✅";
+}
+
+/* Not yet submitted = Naughty-ish but playful */
+body[data-theme="christmas"] #ws-not .badge{
+  background:linear-gradient(135deg,#7f1d1d,#b91c1c);
+  color:#ffecec;
+  border-color:rgba(255,200,200,.75);
+}
+body[data-theme="christmas"] #ws-not .badge::before{
+  content:"🎁?";
+}
+
+/* ============================================================
+   Main table card = snowbank edge
+   ============================================================ */
+
+body[data-theme="christmas"] .cfp-card.scroll-shadows{
+  position:relative;
+  overflow:hidden;
+}
+
+/* Snow lip at top of the table card */
+body[data-theme="christmas"] .cfp-card.scroll-shadows::before{
+  content:"";
+  position:absolute;
+  left:-10%;
+  right:-10%;
+  top:-6px;
+  height:18px;
+  border-radius:0 0 50% 50%;
+  background:
+    radial-gradient(circle at 50% 0, #ffffff, #fdfaf3 55%, rgba(255,255,255,0) 75%);
+  box-shadow:0 4px 10px rgba(0,0,0,.6);
+}
+
+/* Tiny snowflake drifting from top center */
+body[data-theme="christmas"] .cfp-card.scroll-shadows::after{
+  content:"❄️";
+  position:absolute;
+  top:-4px;
+  left:50%;
+  transform:translateX(-50%);
+  font-size:1.3rem;
+  opacity:.9;
+  animation:flakeDrift 3.5s infinite ease-in-out;
+}
+
+@keyframes flakeDrift{
+  0%   { transform:translate(-50%, 0) scale(1); opacity:0.8; }
+  50%  { transform:translate(-50%, 10px) scale(1.1); opacity:1; }
+  100% { transform:translate(-50%, 0) scale(1); opacity:0.8; }
+}
+
+/* ============================================================
+   Responsive tweaks
+   ============================================================ */
+
+@media (max-width: 640px){
+  body[data-theme="christmas"] .logo{height:24px;width:24px;}
+  body[data-theme="christmas"] th,
+  body[data-theme="christmas"] td{
+    padding-top:.4rem !important;
+    padding-bottom:.4rem !important;
+  }
+  body[data-theme="christmas"] thead th{ font-size:.8rem; }
+  body[data-theme="christmas"] .badge{ font-size:.65rem; padding:.08rem .45rem; }
+  body[data-theme="christmas"] .table tbody td{ font-size:.84rem; }
+}

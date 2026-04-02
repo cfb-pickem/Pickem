@@ -3,115 +3,236 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>CFB Pick'em — Stats (CFP Theme)</title>
+  <meta name="theme-color" content="#0B0B0B">
+  <title>CFB Pick'em — Season Stats (Favorites & Form)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <link rel="modulepreload" href="./js/nav.js">
+  <link rel="modulepreload" href="./js/utils.js">
+
   <style>
-    :root{
-      --cfp-black:#0B0B0B;
-      --cfp-charcoal:#111213;
-      --cfp-gold:#C99210;
-      --cfp-gold-2:#E3B23C;
-      --cfp-ivory:#F7F4ED;
-      --cfp-gray:#1F2022;
-      --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+    .gold-shadow{
+      box-shadow:
+        0 0 0 1px rgba(233,185,73,.35),
+        0 24px 40px rgba(0,0,0,.55),
+        0 0 24px rgba(233,185,73,.08) inset;
     }
 
-    body{
+    .cfp-card{
+      background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));
+      border:1px solid rgba(231,231,231,.10);
+      backdrop-filter: blur(6px);
+    }
+
+    .stripe{
       background:
-        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
-        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
-        var(--cfp-charcoal);
-      background-size: 100% 100%, 24px 24px, auto;
-      color: #e7e7e7;
-      font-family: 'Roboto', system-ui, -apple-system, Segoe UI, Arial, sans-serif;
-      min-height: 100vh;
+        repeating-linear-gradient(90deg, transparent 0 40px, rgba(233,185,73,.12) 40px 48px),
+        linear-gradient(120deg, rgba(255,255,255,.03), transparent 40%, rgba(255,255,255,.03));
+      background-blend-mode: screen;
     }
-
-    .gold-shadow{box-shadow: 0 0 0 1px rgba(233, 185, 73, .35), 0 0 24px rgba(233, 185, 73, .08) inset}
-    .cfp-card{background:linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
-    .stripe{background: repeating-linear-gradient(90deg, transparent 0 40px, rgba(233,185,73,.12) 40px 48px)}
-    .trophy-oval{width:18px;height:36px;border:2px solid var(--cfp-gold);border-radius:999px;position:relative}
-    .trophy-oval::before{content:"";position:absolute;left:50%;top:4px;bottom:4px;width:2px;background:linear-gradient(var(--cfp-gold),var(--cfp-gold-2));transform:translateX(-50%)}
 
     .table th,.table td{border-color:rgba(231,231,231,.08)}
-    .table tbody tr:hover{background:rgba(233,185,73,.06)}
+    .table tbody tr{transition:background .18s ease-out}
+    .table tbody tr:hover{
+      background:radial-gradient(circle at 0 0, rgba(233,185,73,.18), transparent 55%);
+    }
+
+    .ribbon{
+      background:linear-gradient(180deg,#2b2c2e,#1b1c1d);
+      border:1px solid rgba(231,231,231,.10);
+      position:relative;
+      overflow:hidden;
+    }
+
+    .ribbon::after{
+      content:"";
+      position:absolute;
+      inset:-40%;
+      background:conic-gradient(from 200deg, transparent 0 30deg, rgba(233,185,73,.16) 60deg 80deg, transparent 110deg 360deg);
+      opacity:.4;
+      mix-blend-mode:screen;
+      pointer-events:none;
+    }
+
+    .chip{
+      background:var(--cfp-gold);
+      color:#0b0b0b;
+      font-weight:700;
+      letter-spacing:.01em;
+      box-shadow:0 8px 18px rgba(0,0,0,.55);
+      text-transform:uppercase;
+      font-size:.7rem;
+    }
+
+    .cfp-select{
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      font-size:.65rem;
+    }
+
+    .badge-pill{
+      border-radius:999px;
+      padding:.15rem .5rem;
+      font-size:.65rem;
+      text-transform:uppercase;
+      letter-spacing:.18em;
+      background:rgba(0,0,0,.5);
+      border:1px solid rgba(231,231,231,.22);
+    }
+
+    /* Top Dawg doggy flair */
+    .dog-card{
+      position:relative;
+      overflow:hidden;
+    }
+    .dog-card::before{
+      content:"";
+      position:absolute;
+      inset:-40%;
+      background:
+        radial-gradient(circle at 10% 20%, rgba(233,185,73,.22) 0 12%, transparent 40%),
+        radial-gradient(circle at 70% 40%, rgba(233,185,73,.18) 0 10%, transparent 40%),
+        radial-gradient(circle at 30% 80%, rgba(233,185,73,.16) 0 9%, transparent 40%);
+      opacity:.5;
+      mix-blend-mode:screen;
+      pointer-events:none;
+    }
+    .dog-header-badge{
+      border-radius:999px;
+      padding:.15rem .5rem;
+      font-size:.65rem;
+      text-transform:uppercase;
+      letter-spacing:.18em;
+      background:rgba(0,0,0,.65);
+      border:1px solid rgba(231,231,231,.22);
+      display:inline-flex;
+      align-items:center;
+      gap:.25rem;
+    }
   </style>
 </head>
-<body>
-  <div class="max-w-7xl mx-auto p-4 md:p-6">
-    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
-        <li><a href="index.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Leaderboard</a></li>
-        <li>
-          <a href="picks.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Make Picks</a>
-        </li>
-        <li><a href="cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a></li>
-        <li><a href="stats.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Stats</a></li>
-      </ul>
-    </nav>
 
-    <header class="cfp-card rounded-none stripe gold-shadow mb-5">
-      <div class="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
+<body data-page="stats">
+  <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
+    <div id="site-nav"></div>
+
+    <header class="cfp-card stripe gold-shadow mb-4">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between px-4 py-4 md:px-6 md:py-5 gap-3">
         <div class="flex items-center gap-3 md:gap-4">
-          <span class="trophy-oval"></span>
+          <span class="trophy-oval" aria-hidden="true"></span>
           <div>
             <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Season Stats</h1>
+            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">
+              Season Stats
+            </h1>
           </div>
         </div>
-        <div class="text-xs text-gray-300" id="status">Loading…</div>
+
+        <!-- Season filter -->
+        <div class="flex items-center gap-3 text-xs md:text-sm md:self-end">
+          <label class="text-gray-300 tracking-[.18em] uppercase">Season</label>
+          <select id="season-select" class="cfp-select rounded-none px-3 py-2 min-w-[120px]"></select>
+        </div>
+      </div>
+      <div class="px-4 md:px-6 pb-3 text-xs text-gray-300 flex items-center gap-2">
+        <span id="status-spinner" class="spinner spinner-sm"></span>
+        <span id="status">Loading…</span>
       </div>
     </header>
 
-    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Perfect Weeks -->
-      <div class="cfp-card gold-shadow rounded-none">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
-          <span class="trophy-oval"></span>
+    <!-- RIBBONS ROW -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <!-- Perfect Week Club -->
+      <div class="ribbon gold-shadow rounded-none">
+        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
+          <span class="trophy-oval" aria-hidden="true"></span>
           <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Perfect Week Club</h2>
         </div>
+        <div id="perfect-ribbon" class="relative flex items-center gap-2 overflow-x-auto px-4 md:px-6 py-3 z-10"></div>
+      </div>
+
+      <!-- Winless Week Club -->
+      <div class="ribbon gold-shadow rounded-none">
+        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Winless Week Club</h2>
+        </div>
+        <div id="zero-ribbon" class="relative flex flex-wrap items-center gap-2 px-4 md:px-6 py-3 z-10"></div>
+      </div>
+    </section>
+
+    <!-- SEASON-WIDE TABLES: Win % + Top Dawg -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <!-- LEFT: Total Season Win % -->
+      <div class="cfp-card gold-shadow">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
+              Total Season Win %
+            </h2>
+          </div>
+        </div>
         <div class="overflow-auto">
           <table class="table min-w-full text-sm">
             <thead>
               <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
                 <th class="px-4 py-2 text-left font-semibold">Team</th>
-                <th class="px-4 py-2 text-left font-semibold">Week</th>
+                <th class="px-4 py-2 text-left font-semibold">Record</th>
+                <th class="px-4 py-2 text-left font-semibold">Win %</th>
+                <th class="px-4 py-2 text-left font-semibold">Missed Weeks</th>
               </tr>
             </thead>
-            <tbody id="perfect-body"></tbody>
+            <tbody id="season-body"></tbody>
           </table>
         </div>
       </div>
 
-      <!-- Zero-Week Club (tally of weeks with 0 wins) -->
-      <div class="cfp-card gold-shadow rounded-none">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
-          <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Zero-Week Club</h2>
+      <!-- RIGHT: Top Dawg – Underdog Outright Wins -->
+      <div class="cfp-card gold-shadow dog-card">
+        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] flex items-center gap-2">
+              Top Dawg 🐶
+            </h2>
+            <p class="mt-1 text-[10px] text-gray-300">
+              <span class="dog-header-badge">
+                <span class="text-[.65rem] tracking-[.18em] uppercase">Underdog outright wins</span>
+                <span>🐾</span>
+              </span>
+            </p>
+          </div>
         </div>
-        <div class="overflow-auto">
+        <div class="relative overflow-auto z-10">
           <table class="table min-w-full text-sm">
             <thead>
               <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
                 <th class="px-4 py-2 text-left font-semibold">Team</th>
-                <th class="px-4 py-2 text-left font-semibold">Zero Weeks</th>
+                <th class="px-4 py-2 text-left font-semibold">Dog Wins</th>
               </tr>
             </thead>
-            <tbody id="zero-body"></tbody>
+            <tbody id="dog-body"></tbody>
           </table>
         </div>
       </div>
+    </section>
 
-      <!-- Win % in last 8 decided picks -->
-      <div class="cfp-card gold-shadow rounded-none">
+    <!-- LOWER CARDS -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Win % in Last 8 Picks -->
+      <div class="cfp-card gold-shadow">
         <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
-          <span class="trophy-oval"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Win % in Last 8 Picks</h2>
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Win % in Last 8 Picks</h2>
+          </div>
         </div>
         <div class="overflow-auto">
           <table class="table min-w-full text-sm">
@@ -126,161 +247,358 @@
           </table>
         </div>
       </div>
+
+      <!-- Favorite Pick % -->
+      <div class="cfp-card gold-shadow">
+        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <div>
+            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Favorite Pick %</h2>
+          </div>
+        </div>
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead>
+              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                <th class="px-4 py-2 text-left font-semibold">Team</th>
+                <th class="px-4 py-2 text-left font-semibold">Favorite %</th>
+              </tr>
+            </thead>
+            <tbody id="favorite-body"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
+    <footer class="site-footer">CFB Pick'em</footer>
   </div>
 
   <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    import initNav from './js/nav.js';
+    import { supabase } from './js/supabaseClient.js';
+    import { sameTeam, escapeHtml } from './js/utils.js';
 
-    const supabase = createClient(
-      'https://vopdioszofwdkwnujtiq.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw'
-    );
+    const statusEl      = document.getElementById('status');
+    const seasonSel     = document.getElementById('season-select');
+    const perfectRibbon = document.getElementById('perfect-ribbon');
+    const zeroRibbon    = document.getElementById('zero-ribbon');
+    const favoriteBody  = document.getElementById('favorite-body');
+    const formBody      = document.getElementById('form-body');
+    const seasonBody    = document.getElementById('season-body');
+    const dogBody       = document.getElementById('dog-body');
 
-    const statusEl    = document.getElementById('status');
-    const perfectBody = document.getElementById('perfect-body');
-    const zeroBody    = document.getElementById('zero-body');
-    const formBody    = document.getElementById('form-body');
+    const statusSpinner = document.getElementById('status-spinner');
 
-    function stripAccents(s){ try { return s.normalize('NFD').replace(/\p{Diacritic}/gu, ''); } catch { return s; } }
-    function norm(v){
-      if(!v) return '';
-      return stripAccents(String(v))
-        .toLowerCase()
-        .replace(/&/g,' and ')
-        .replace(/\./g,'')
-        .replace(/[^a-z0-9\s]/g,' ')
-        .replace(/\s+/g,' ')
-        .trim();
-    }
-    const stToState = s => s.replace(/\bst\b/g,'state');
-    const stateToSt = s => s.replace(/\bstate\b/g,'st');
-    function sameTeam(a,b){ const na=norm(a), nb=norm(b); return na===nb || stToState(na)===stToState(nb) || stateToSt(na)===stateToSt(nb); }
-
-    function setStatus(msg, isErr=false){
+    function setStatus(msg, isErr=false, loading=false){
       statusEl.className = 'text-xs ' + (isErr ? 'text-red-300' : 'text-gray-300');
       statusEl.textContent = msg;
+      if (statusSpinner) statusSpinner.style.display = loading ? '' : 'none';
     }
 
-    function escapeHtml(str){
-      return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s]));
+    // Parse "Start (CT)" which is stored as a timestamp in CT; we read it as local Date.
+    function parseCT(ts){
+      if(!ts) return null;
+      const d = new Date(String(ts).replace(' ', 'T'));
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    async function loadSeasons(){
+      setStatus('Loading seasons…', false, true);
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('cfb_season')
+        .not('cfb_season', 'is', null);
+      if(error){
+        setStatus('Error loading seasons', true);
+        return false;
+      }
+      const seasons = [...new Set((data||[])
+        .map(r => Number(r.cfb_season))
+        .filter(n => Number.isFinite(n)))]
+        .sort((a,b)=>a-b);
+
+      if(!seasons.length){
+        setStatus('No seasons found', true);
+        return false;
+      }
+      seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+      seasonSel.value = String(seasons[seasons.length-1]); // latest
+      return true;
     }
 
     async function main(){
-      setStatus('Loading data…');
+      setStatus('Loading data…', false, true);
 
-      // 1) Pull decided games from all_games for picked games only
+      const season = Number(seasonSel.value);
+      if(!Number.isFinite(season)){
+        setStatus('Select a season', true);
+        return;
+      }
+
+      // Pull only picked games for the chosen season
       const { data: allGames, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, week, winner, picked')
-        .eq('picked', true); // only games we actually picked
+        .select('GameId, week, winner, picked, Away, Home, line, "Start (CT)", cfb_season')
+        .eq('picked', true)
+        .eq('cfb_season', season)
+        .lt('week', 16);   // only use weeks < 16
 
-      if(gErr){ console.error(gErr); return setStatus('Error loading games', true); }
+      if(gErr){
+        console.error(gErr);
+        return setStatus('Error loading games', true);
+      }
 
-      // Map GameId -> { week, winner } (winner may be null; we'll filter when needed)
+      // --- Build per-game metadata + week aggregates ---
       const gameMeta = Object.create(null);
       const gameIds  = [];
+      const pickedByWeek = new Map(); // week -> { totalPicked, withWinner, earliestStart }
+
       for(const g of (allGames||[])){
-        if(g && g.GameId != null){
-          gameMeta[g.GameId] = { week: g.week ?? null, winner: g.winner ?? null };
-          gameIds.push(g.GameId);
+        if(!g || g.GameId == null) continue;
+
+        const start = parseCT(g['Start (CT)']);
+        const w = g.week ?? null;
+
+        gameMeta[g.GameId] = {
+          week: w,
+          winner: g.winner ?? null,
+          away: g.Away || null,
+          home: g.Home || null,
+          line: (g.line==null ? null : Number(g.line)),
+          start
+        };
+        gameIds.push(g.GameId);
+
+        if(!pickedByWeek.has(w)) pickedByWeek.set(w, { totalPicked:0, withWinner:0, earliestStart:null });
+        const agg = pickedByWeek.get(w);
+        agg.totalPicked += 1;
+        if(g.winner != null) agg.withWinner += 1;
+        if(start){
+          if(!agg.earliestStart || start < agg.earliestStart) agg.earliestStart = start;
         }
       }
 
-      if(!gameIds.length){ return setStatus('No picked games found', true); }
+      if(!gameIds.length){
+        perfectRibbon.innerHTML = '<span class="text-sm text-gray-300">No picked games found for this season.</span>';
+        zeroRibbon.innerHTML    = '<span class="text-sm text-gray-300">No picked games found for this season.</span>';
+        favoriteBody.innerHTML  = '';
+        formBody.innerHTML      = '';
+        seasonBody.innerHTML    = '<tr><td class="px-4 py-2 text-gray-300" colspan="4">No decided picks yet.</td></tr>';
+        dogBody.innerHTML       = '<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>';
+        return setStatus('Loaded');
+      }
 
-      // 2) Pull all picks that correspond to those gameIds
-      const { data: picks, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick')
-        .in('game_id', gameIds);
+      // Week sets
+      const now = new Date();
+      const completeWeeks = new Set(
+        [...pickedByWeek.entries()]
+          .filter(([_, v]) => v.totalPicked > 0 && v.totalPicked === v.withWinner)
+          .map(([w]) => w)
+      );
+      const startedWeeks = new Set(
+        [...pickedByWeek.entries()]
+          .filter(([_, v]) => v.earliestStart && v.earliestStart <= now)
+          .map(([w]) => w)
+      );
 
-      if(pErr){ console.error(pErr); return setStatus('Error loading picks', true); }
-
-      // 3) Team names
-      const { data: teams, error: tErr } = await supabase
-        .from('teams')
-        .select('team_id, team_name');
-
-      if(tErr){ console.error(tErr); return setStatus('Error loading teams', true); }
+      const [{ data: picks, error: pErr }, { data: teams, error: tErr }] = await Promise.all([
+        supabase.from('picks').select('team_id, game_id, pick').in('game_id', gameIds),
+        supabase.from('teams').select('team_id, team_name')
+      ]);
+      if(pErr){
+        console.error(pErr);
+        return setStatus('Error loading picks', true);
+      }
+      if(tErr){
+        console.error(tErr);
+        return setStatus('Error loading teams', true);
+      }
 
       const teamName = new Map((teams||[]).map(t => [t.team_id, t.team_name]));
 
-      // ---------- Build indexes ----------
-      // byTeamWeek: team_id|week -> picks[] (decided only when computing)
-      const byTeamWeek = new Map();
-      // byTeamDecided: team_id -> all decided picks across season (for last-8 form)
-      const byTeamDecided = new Map();
+      // ------- Build per-week and decided maps for THIS season -------
+      const byTeamWeek    = new Map(); // "teamId|week" -> rows[]
+      const byTeamDecided = new Map(); // teamId -> decided rows[]
+      const teamWeeks     = new Map(); // teamId -> Set(weeks with at least one pick)
 
       for(const p of (picks||[])){
         const meta = gameMeta[p.game_id];
-        if(!meta) continue; // safety
-        const week = meta.week;
+        if(!meta) continue;
+        const week   = meta.week;
         const winner = meta.winner;
 
-        // Group by team+week (we'll consider decided subset when computing)
         const twKey = `${p.team_id}|${week}`;
         if(!byTeamWeek.has(twKey)) byTeamWeek.set(twKey, []);
         byTeamWeek.get(twKey).push({ ...p, week, winner });
 
-        // For form guide, collect only decided picks
+        // Track weeks where a team actually made picks
+        if(!teamWeeks.has(p.team_id)) teamWeeks.set(p.team_id, new Set());
+        teamWeeks.get(p.team_id).add(week);
+
         if(winner != null){
           if(!byTeamDecided.has(p.team_id)) byTeamDecided.set(p.team_id, []);
           byTeamDecided.get(p.team_id).push({ ...p, week, winner });
         }
       }
 
-      // ---------- Perfect Weeks & Zero-Week tally ----------
-      const perfectRows = [];
-      const zeroTally = new Map(); // team_id -> count of weeks with 0 wins (with at least one decided pick)
-
+      // ------- Perfect Week tally (completed weeks only) -------
+      const perfectTally = new Map(); // team_id -> count
       for(const [key, rows] of byTeamWeek.entries()){
-        // Filter to decided picks only for this team-week
-        const decided = rows.filter(r => r.winner != null);
-        if(decided.length === 0) continue; // skip weeks with no decided games
+        const week = rows.length ? rows[0].week : null;
+        if(!completeWeeks.has(week)) continue; // only finished weeks
 
         let correct = 0;
-        for(const r of decided){
+        for(const r of rows){
           if(sameTeam(r.pick, r.winner)) correct++;
         }
-
-        const [teamIdStr, wkStr] = key.split('|');
-        const team_id = Number(teamIdStr);
-        const week = Number(wkStr);
-
-        if(correct === decided.length){
-          perfectRows.push({ team: teamName.get(team_id) || `Team ${team_id}`, week });
-        }
-        if(correct === 0){
-          zeroTally.set(team_id, (zeroTally.get(team_id)||0) + 1);
+        if(rows.length > 0 && correct === rows.length){
+          const teamId = Number(key.split('|')[0]);
+          perfectTally.set(teamId, (perfectTally.get(teamId) || 0) + 1);
         }
       }
 
-      perfectRows.sort((a,b)=> a.week - b.week || a.team.localeCompare(b.team));
-      perfectBody.innerHTML = perfectRows.map(r =>
-        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-           <td class="px-4 py-2">${escapeHtml(r.team)}</td>
-           <td class="px-4 py-2">${r.week}</td>
-         </tr>`).join('');
+      if(perfectTally.size){
+        const chips = [...perfectTally.entries()]
+          .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||''))
+          .map(([id,cnt]) => {
+            const label = `${escapeHtml(teamName.get(id) || `Team ${id}`)}${cnt>1 ? ` (${cnt})` : ''}`;
+            return `<span class="chip px-3 py-1 rounded-md whitespace-nowrap">${label}</span>`;
+          }).join('');
+        perfectRibbon.innerHTML = chips;
+      } else {
+        perfectRibbon.innerHTML = '<span class="text-sm text-gray-300">No perfect weeks yet.</span>';
+      }
 
-      const zeroRows = [...zeroTally.entries()]
-        .map(([team_id, cnt]) => ({ team: teamName.get(team_id) || `Team ${team_id}`, cnt }))
-        .sort((a,b)=> b.cnt - a.cnt || a.team.localeCompare(b.team));
+      // ------- Winless Week tally (completed weeks only) -------
+      // Only count weeks where a team made picks AND all of those picks were wrong.
+      const zeroTally = new Map(); // team_id -> count
+      for(const [key, rows] of byTeamWeek.entries()){
+        const week = rows.length ? rows[0].week : null;
+        if(!completeWeeks.has(week)) continue;
 
-      zeroBody.innerHTML = zeroRows.map(r =>
-        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-           <td class="px-4 py-2">${escapeHtml(r.team)}</td>
-           <td class="px-4 py-2">${r.cnt}</td>
-         </tr>`).join('');
+        let correct = 0;
+        for(const r of rows){
+          if(sameTeam(r.pick, r.winner)) correct++;
+        }
+        if(rows.length > 0 && correct === 0){
+          const teamId = Number(key.split('|')[0]);
+          zeroTally.set(teamId, (zeroTally.get(teamId) || 0) + 1);
+        }
+      }
 
-      // ---------- Form Guide: last 8 decided picks ----------
+      if(zeroTally.size){
+        const chips = [...zeroTally.entries()]
+          .sort((a,b)=> b[1]-a[1] || (teamName.get(a[0])||'').localeCompare(teamName.get(b[0])||''))
+          .map(([id,cnt]) => {
+            const label = `${escapeHtml(teamName.get(id) || `Team ${id}`)}${cnt>1 ? ` (${cnt})` : ''}`;
+            return `<span class="chip px-3 py-1 rounded-md whitespace-nowrap">${label}</span>`;
+          }).join('');
+        zeroRibbon.innerHTML = chips;
+      } else {
+        zeroRibbon.innerHTML = '<span class="text-sm text-gray-300">No winless weeks yet.</span>';
+      }
+
+      // ------- Weeks with picked games (for Missed Weeks calc) -------
+      const allWeeksWithPicks = new Set(
+        [...pickedByWeek.entries()]
+          .filter(([_, agg]) => agg.totalPicked > 0)
+          .map(([w]) => w)
+      );
+      const totalWeeksWithPicks = allWeeksWithPicks.size;
+
+      // ------- Total Season Win % (all decided picks this season) -------
+      const seasonStats = new Map(); // team_id -> { wins, total }
+
+      for(const [team_id, arr] of byTeamDecided.entries()){
+        let wins = 0;
+        for(const r of arr){
+          if(sameTeam(r.pick, r.winner)) wins++;
+        }
+        seasonStats.set(team_id, { wins, total: arr.length });
+      }
+
+      const seasonRows = [...seasonStats.entries()].map(([team_id, {wins, total}])=>{
+        const pct = total ? wins / total : 0;
+        const pctStr = pct.toFixed(3).slice(1); // .459 format
+
+        const weeksPlayed = teamWeeks.has(team_id) ? teamWeeks.get(team_id).size : 0;
+        const missedWeeks = totalWeeksWithPicks > 0
+          ? Math.max(0, totalWeeksWithPicks - weeksPlayed)
+          : 0;
+
+        return {
+          team: teamName.get(team_id) || `Team ${team_id}`,
+          record: `${wins}-${total - wins}`,
+          pct,
+          pctStr,
+          missedWeeks
+        };
+      }).sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
+
+      seasonBody.innerHTML =
+        seasonRows.length
+          ? seasonRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.record}</td>
+                <td class="px-4 py-2">${r.pctStr}</td>
+                <td class="px-4 py-2">${r.missedWeeks}</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="4">No decided picks yet.</td></tr>`;
+
+      // ------- Favorite Pick % (exclude weeks that haven't started) -------
+      const favStats = new Map(); // team_id -> { fav: n, opp: d }
+
+      function favoriteTeamFor(game){
+        const line = game.line;
+        if(line == null || isNaN(line) || line === 0) return null; // no favorite
+        // Convention: line is from home perspective; negative => home favorite; positive => away favorite
+        return line < 0 ? game.home : game.away;
+      }
+      function underdogTeamFor(game){
+        const line = game.line;
+        if(line == null || isNaN(line) || line === 0) return null;
+        return line < 0 ? game.away : game.home;
+      }
+
+      for(const p of (picks||[])){
+        const g = gameMeta[p.game_id];
+        if(!g || !p.pick) continue;
+
+        // only count this pick if the week has started
+        if(!startedWeeks.has(g.week)) continue;
+
+        const favTeam = favoriteTeamFor(g);
+        if(!favTeam) continue;
+
+        const tId = p.team_id;
+        if(!favStats.has(tId)) favStats.set(tId, { fav:0, opp:0 });
+        const entry = favStats.get(tId);
+        entry.opp++;
+        if(sameTeam(p.pick, favTeam)) entry.fav++;
+      }
+
+      const favRows = [...favStats.entries()].map(([team_id, {fav, opp}])=>({
+        team: teamName.get(team_id) || `Team ${team_id}`,
+        pct: opp ? (fav/opp*100) : 0
+      })).sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
+
+      favoriteBody.innerHTML =
+        favRows.length
+          ? favRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="2">No favorite picks yet.</td></tr>`;
+
+      // ------- Form: last 8 decided picks (season-only) -------
       const formRows = [];
       for(const [team_id, arr] of byTeamDecided.entries()){
-        // Sort by (week asc, game_id asc) for a consistent chronology
         const decidedSorted = [...arr].sort((a,b)=> (a.week - b.week) || (a.game_id - b.game_id));
         const last8 = decidedSorted.slice(-8);
-        if(last8.length === 0) continue;
-
+        if(!last8.length) continue;
         let wins = 0;
         for(const r of last8){
           if(sameTeam(r.pick, r.winner)) wins++;
@@ -289,22 +607,69 @@
         formRows.push({
           team: teamName.get(team_id) || `Team ${team_id}`,
           record: `${wins}-${last8.length - wins}`,
-          pct: pct
+          pct
         });
       }
 
       formRows.sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
-      formBody.innerHTML = formRows.map(r =>
-        `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-           <td class="px-4 py-2">${escapeHtml(r.team)}</td>
-           <td class="px-4 py-2">${r.record}</td>
-           <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
-         </tr>`).join('');
+      formBody.innerHTML =
+        formRows.length
+          ? formRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.record}</td>
+                <td class="px-4 py-2">${r.pct.toFixed(1)}%</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="3">No decided picks yet.</td></tr>`;
 
-      setStatus('Loaded');
+      // ------- Top Dawg – Underdog Outright Wins -------
+      const dogWins = new Map();  // team_id -> count
+
+      for (const p of (picks || [])) {
+        const g = gameMeta[p.game_id];
+        if (!g || !p.pick || !g.winner) continue;
+
+        const dog = underdogTeamFor(g);
+        if (!dog) continue;
+
+        // If they picked the underdog AND the underdog won outright
+        if (sameTeam(p.pick, dog) && sameTeam(g.winner, dog)) {
+          const tId = p.team_id;
+          dogWins.set(tId, (dogWins.get(tId) || 0) + 1);
+        }
+      }
+
+      const dogRows = [...dogWins.entries()]
+        .map(([team_id, wins]) => ({
+          team: teamName.get(team_id) || `Team ${team_id}`,
+          wins
+        }))
+        .sort((a,b)=> b.wins - a.wins || a.team.localeCompare(b.team));
+
+      dogBody.innerHTML =
+        dogRows.length
+          ? dogRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.wins}</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>`;
+
+      setStatus(`Loaded • Season ${season}`);
     }
 
-    main();
+    async function startup(){
+      await initNav();
+      const ok = await loadSeasons();
+      if(!ok) return;
+
+      await main();
+      seasonSel.onchange = main;
+    }
+
+    startup();
   </script>
 </body>
 </html>

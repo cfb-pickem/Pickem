@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#0B0B0B">
+  <title>CFB Pick'em — Select Games</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <link rel="modulepreload" href="./js/nav.js">
+  <link rel="modulepreload" href="./js/utils.js">
+
+  <style>
+
+    .table th,.table td{border-color:rgba(231,231,231,.08)}
+    .table tbody tr:hover{background:rgba(233,185,73,.06)}
+
+    input[type="number"], input[type="text"]{
+      background:var(--cfp-black);
+      border:1px solid rgba(231,231,231,.12);
+      padding:.375rem .5rem;
+      color:#f1f1f1;
+    }
+    input[type="number"]:focus, input[type="text"]:focus{outline:none;box-shadow:var(--ring)}
+
+    a.link{color:var(--cfp-gold-2)}
+    a.link:hover{text-decoration:underline}
+
+    /* Sticky first column (Game) in Manage Weekly Picks table */
+    .sticky-col{
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: rgba(17,18,19,.98); /* keeps it readable when scrolling */
+    }
+    thead .sticky-col{
+      z-index: 3;
+      background: var(--cfp-black);
+    }
+    .table tbody tr:hover .sticky-col{
+      background: rgba(31,32,34,.98);
+    }
+  </style>
+</head>
+
+<body data-page="select-games">
+  <div class="max-w-7xl mx-auto p-4 md:p-6">
+    <div id="site-nav"></div>
+
+    <header class="cfp-card stripe gold-shadow mb-5">
+      <div class="px-4 py-4 md:px-6 md:py-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
+          <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Commissioner Console</h1>
+          <p class="text-xs text-gray-300 mt-1">Select games, set lines, and insert team picks.</p>
+        </div>
+
+        <div class="flex flex-col md:flex-row gap-2 md:gap-3 items-start md:items-center text-sm">
+          <div class="flex items-center gap-2">
+            <label class="hidden md:block text-gray-300">Season</label>
+            <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <label class="hidden md:block text-gray-300">Week</label>
+            <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
+          </div>
+        </div>
+      </div>
+      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300 flex items-center gap-2">
+        <span id="status-spinner" class="spinner spinner-sm"></span>
+        <span id="status">Authorizing…</span>
+      </div>
+    </header>
+
+    <!-- A) Make Picks + Playoff Teams side-by-side -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <!-- Make Picks -->
+      <section class="cfp-card overflow-auto">
+        <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex flex-wrap items-center gap-3">
+          <strong class="text-[var(--cfp-ivory)] mr-2">Make Picks</strong>
+          <label class="text-gray-300">Team</label>
+          <select id="team-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[220px]"></select>
+          <button id="save-picks-btn" class="bg-[var(--cfp-gold)] text-black font-semibold px-4 py-2 text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+            Save Team Picks
+          </button>
+        </div>
+        <table class="table min-w-full text-sm">
+          <thead class="bg-[var(--cfp-black)]">
+            <tr class="border-b">
+              <th class="text-left  px-4 py-3 font-semibold text-[var(--cfp-ivory)]">Game</th>
+              <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Pick</th>
+            </tr>
+          </thead>
+          <tbody id="picks-body"></tbody>
+        </table>
+        <div class="px-4 py-2 text-xs text-gray-400 border-t border-[rgba(231,231,231,.08)]">
+          Picks are <em>not</em> pre-filled. Only choices that differ from what’s already stored will be updated.
+        </div>
+      </section>
+
+      <!-- Playoff Teams -->
+      <section class="cfp-card overflow-auto">
+        <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex flex-wrap items-center gap-3 justify-between">
+          <strong class="text-[var(--cfp-ivory)] mr-2">Playoff Teams</strong>
+          <button id="save-playoffs-btn" class="bg-[var(--cfp-gold)] text-black font-semibold px-4 py-2 text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+            Save Playoff Teams
+          </button>
+        </div>
+        <table class="table min-w-full text-sm">
+          <thead class="bg-[var(--cfp-black)]">
+            <tr class="border-b">
+              <th class="text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Seed</th>
+              <th class="text-left px-3 py-3 font-semibold text-[var(--cfp-ivory)]">Team</th>
+            </tr>
+          </thead>
+          <tbody id="playoffs-body"></tbody>
+        </table>
+        <div class="px-4 py-2 text-xs text-gray-400 border-t border-[rgba(231,231,231,.08)]">
+          Only seeds with a selected team will be saved. Existing seeds not touched here are left as-is.
+        </div>
+      </section>
+    </div>
+
+    <!-- B) Manage Games -->
+    <section class="cfp-card overflow-auto">
+      <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex items-center justify-between">
+        <strong class="text-[var(--cfp-ivory)]">Manage Weekly Picks</strong>
+        <button id="save-btn" class="bg-[var(--cfp-gold)] text-black font-semibold px-4 py-2 text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+          Save Weekly Picks
+        </button>
+      </div>
+
+      <table class="table min-w-full text-sm">
+        <thead class="bg-[var(--cfp-black)]">
+          <tr class="border-b">
+            <th class="text-left px-4 py-3 font-semibold text-[var(--cfp-ivory)] sticky-col">Game</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-40">Start (CT)</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Network</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Line</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">Picked</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-28">Tiebreaker</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-20">Week</th>
+
+            <!-- MOVED after Week + now EDITABLE -->
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">AwayPts</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-24">HomePts</th>
+            <th class="text-center px-3 py-3 font-semibold text-[var(--cfp-ivory)] w-44">Status</th>
+          </tr>
+        </thead>
+        <tbody id="games-body"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script type="module">
+    import initNav from './js/nav.js';
+    import { supabase } from './js/supabaseClient.js';
+    import { escapeHtml } from './js/utils.js';
+
+    const seasonSel = document.getElementById('season-select');
+    const weekSel   = document.getElementById('week-select');
+    const statusEl  = document.getElementById('status');
+    const saveBtn   = document.getElementById('save-btn');
+
+    // picks panel
+    const teamSel       = document.getElementById('team-select');
+    const savePicksBtn  = document.getElementById('save-picks-btn');
+    const picksTbody    = document.getElementById('picks-body');
+
+    // playoffs panel
+    const playoffsTbody    = document.getElementById('playoffs-body');
+    const savePlayoffsBtn  = document.getElementById('save-playoffs-btn');
+
+    // games table
+    const gamesTbody    = document.getElementById('games-body');
+
+    // state
+    let rows = [];
+    // Track ONLY fields we intend to edit:
+    // line, picked, tiebreaker, AwayPts, HomePts, Status
+    let original = {}; // GameId -> { line, picked, tiebreaker, AwayPts, HomePts, Status }
+    let edited   = {}; // GameId -> { line, picked, tiebreaker, AwayPts, HomePts, Status }
+
+    let pickableGames = [];
+    let tempTeamPicks = {};
+    let existingTeamPicks = {};
+
+    // teams + playoffs state
+    let teams = [];
+    let playoffsBySeed = {};
+
+    const statusSpinner = document.getElementById('status-spinner');
+
+    function status(msg,isErr=false,loading=false){
+      statusEl.className = 'text-sm ' + (isErr ? 'text-red-300' : 'text-gray-300');
+      statusEl.textContent = msg;
+      if (statusSpinner) statusSpinner.style.display = loading ? '' : 'none';
+    }
+
+    async function gatekeep(){
+      await initNav();
+
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if(error){ status(error.message,true); return false; }
+      if(!user){ status('Please sign in to continue.', true); lockAll(); return false; }
+
+      const { data, error: tErr } = await supabase
+        .from('teams')
+        .select('commissioner')
+        .eq('user_id', user.id)
+        .eq('commissioner', true);
+
+      if(tErr){ status(tErr.message, true); lockAll(); return false; }
+      if(!data || data.length === 0){ status('Access denied — commissioner only.', true); lockAll(); return false; }
+
+      return true;
+    }
+
+    function lockAll(){
+      seasonSel.disabled = true;
+      weekSel.disabled = true;
+      saveBtn.disabled = true;
+      savePicksBtn.disabled = true;
+      teamSel.disabled = true;
+      if (savePlayoffsBtn) savePlayoffsBtn.disabled = true;
+    }
+
+    async function loadSeasons(){
+      status('Loading seasons…');
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('cfb_season')
+        .not('cfb_season', 'is', null);
+      if(error){ status(error.message, true); return false; }
+      const seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(Number.isFinite))].sort((a,b)=>a-b);
+      if(!seasons.length){ status('No seasons found in all_games.', true); return false; }
+      seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
+      seasonSel.value = String(seasons[seasons.length - 1]);
+      return true;
+    }
+
+    // Weeks dropdown: only weeks <= 16, plus "Playoff" if any week > 16 exists
+    async function loadWeeksForSeason(){
+      const season = Number(seasonSel.value);
+      if(!Number.isFinite(season)){ status('Select a season.', true); return false; }
+
+      status(`Loading weeks for season ${season}…`);
+      const { data, error } = await supabase
+        .from('all_games')
+        .select('week, cfb_season')
+        .eq('cfb_season', season)
+        .range(0, 3999);
+      if(error){ status(error.message, true); return false; }
+
+      const weekSet = new Set();
+      (data || []).forEach(r => {
+        if (r.week === null || r.week === undefined) return;
+        const n = Number(r.week);
+        if (Number.isFinite(n)) weekSet.add(n);
+      });
+
+      const allWeeks = Array.from(weekSet).sort((a,b)=>a-b);
+      if(!allWeeks.length){ status('No weeks found for this season.', true); return false; }
+
+      const regularWeeks = allWeeks.filter(w => w <= 15);
+      const hasPlayoffs  = allWeeks.some(w => w > 15);
+
+      if(!regularWeeks.length && !hasPlayoffs){
+        status('No valid weeks found for this season.', true);
+        return false;
+      }
+
+      let optionsHtml = regularWeeks
+        .map(w => `<option value="${w}">Week ${w}</option>`)
+        .join('');
+
+      if (hasPlayoffs) optionsHtml += `<option value="playoff">Playoff</option>`;
+
+      weekSel.innerHTML = optionsHtml;
+      weekSel.value = regularWeeks.length ? String(regularWeeks[regularWeeks.length - 1]) : 'playoff';
+      return true;
+    }
+
+    async function loadTeams(){
+      const { data, error } = await supabase
+        .from('teams')
+        .select('team_id, team_name')
+        .order('team_name', { ascending: true });
+      if(error){ status(error.message, true); return false; }
+      teams = data || [];
+      teamSel.innerHTML = teams.map(t => `<option value="${t.team_id}">${escapeHtml(t.team_name)}</option>`).join('');
+      if(teams.length) teamSel.value = String(teams[0].team_id);
+      return true;
+    }
+
+    function niceTime(ts){
+      if(!ts) return '';
+      try{
+        const d = new Date(String(ts).replace(' ', 'T'));
+        return d.toLocaleString('en-US', { weekday:'short', hour:'2-digit', minute:'2-digit' });
+      }catch{ return ''; }
+    }
+    function parseCT(ts){
+      if(!ts) return null;
+      const d = new Date(String(ts).replace(' ', 'T'));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    function gameLinkText(g){
+      const text = escapeHtml(`${g.Away} @ ${g.Home}`);
+      if (g.espn_url && /^https?:\/\//i.test(g.espn_url)) {
+        return `<a class="link" href="${escapeHtml(g.espn_url)}" target="_blank" rel="noopener">${text}</a>`;
+      }
+      return text;
+    }
+
+    async function loadWeek(){
+      const season = Number(seasonSel.value);
+      const rawWeek = weekSel.value;
+      const viewingPlayoffs = (rawWeek === 'playoff');
+      const weekNum = viewingPlayoffs ? null : Number(rawWeek);
+
+      if(!Number.isFinite(season) || (!viewingPlayoffs && !Number.isFinite(weekNum))){
+        status('Select a season and week.');
+        return;
+      }
+
+      const label = viewingPlayoffs ? 'playoffs' : `week ${weekNum}`;
+      status(`Loading season ${season} — ${label} games…`);
+
+      let query = supabase
+        .from('all_games')
+        .select('GameId, Away, Home, "Start (CT)", "Network", line, picked, tiebreaker, week, espn_url, cfb_season, "AwayPts", "HomePts", "Status"')
+        .eq('cfb_season', season);
+
+      if (viewingPlayoffs) query = query.gt('week', 15);
+      else query = query.eq('week', weekNum);
+
+      const { data, error } = await query.order('GameId', { ascending: true });
+      if(error) return status(error.message,true);
+      rows = data || [];
+
+      // SORT: picked desc, then has Network, then Start time asc
+      rows.sort((a,b) => {
+        if (Boolean(a.picked) !== Boolean(b.picked)) return a.picked ? -1 : 1;
+
+        const aHasNet = a['Network'] != null && String(a['Network']).trim() !== '';
+        const bHasNet = b['Network'] != null && String(b['Network']).trim() !== '';
+        if (aHasNet !== bHasNet) return aHasNet ? -1 : 1;
+
+        const at = parseCT(a['Start (CT)']); const bt = parseCT(b['Start (CT)']);
+        const atms = at ? at.getTime() : Number.POSITIVE_INFINITY;
+        const btms = bt ? bt.getTime() : Number.POSITIVE_INFINITY;
+        return atms - btms;
+      });
+
+      // snapshot for diffing edits (ONLY fields we will update)
+      original = {};
+      edited   = {};
+      for(const r of rows){
+        original[r.GameId] = {
+          line: r.line ?? null,
+          picked: !!r.picked,
+          tiebreaker: !!r.tiebreaker,
+          AwayPts: (r.AwayPts ?? null),
+          HomePts: (r.HomePts ?? null),
+          Status: (r.Status ?? '')
+        };
+        edited[r.GameId] = {
+          line: r.line ?? null,
+          picked: !!r.picked,
+          tiebreaker: !!r.tiebreaker,
+          AwayPts: (r.AwayPts ?? null),
+          HomePts: (r.HomePts ?? null),
+          Status: (r.Status ?? '')
+        };
+      }
+
+      renderGamesTable();
+
+      await loadPickableGames();
+      await loadExistingTeamPicks();
+      renderPicksPanel();
+
+      await loadPlayoffsForSeason();
+      status(`Season ${season} — ${viewingPlayoffs ? 'Playoffs' : 'Week ' + weekNum} loaded.`);
+    }
+
+    async function loadPickableGames(){
+      const season = Number(seasonSel.value);
+      const rawWeek = weekSel.value;
+      const viewingPlayoffs = (rawWeek === 'playoff');
+
+      let query = supabase
+        .from('all_games')
+        .select('GameId, Away, Home, "Start (CT)", espn_url, cfb_season, week')
+        .eq('cfb_season', season)
+        .eq('picked', true);
+
+      if (viewingPlayoffs) query = query.gt('week', 15);
+      else {
+        const week = Number(rawWeek);
+        if (!Number.isFinite(week)) { pickableGames = []; return; }
+        query = query.eq('week', week);
+      }
+
+      const { data, error } = await query.order('GameId', { ascending: true });
+      if(error){ status(error.message, true); return; }
+
+      pickableGames = data || [];
+      tempTeamPicks = {};
+    }
+
+    async function loadExistingTeamPicks(){
+      const teamId = Number(teamSel.value);
+      const rawWeek = weekSel.value;
+      const viewingPlayoffs = (rawWeek === 'playoff');
+
+      if(!Number.isFinite(teamId)){ existingTeamPicks = {}; return; }
+
+      let query = supabase
+        .from('picks')
+        .select('game_id, pick')
+        .eq('team_id', teamId);
+
+      if (viewingPlayoffs) {
+        const gameIds = pickableGames.map(g => g.GameId);
+        if (!gameIds.length) { existingTeamPicks = {}; return; }
+        query = query.in('game_id', gameIds);
+      } else {
+        const week = Number(rawWeek);
+        if (!Number.isFinite(week)){ existingTeamPicks = {}; return; }
+        query = query.eq('week', week);
+      }
+
+      const { data, error } = await query;
+      if(error){ status(error.message, true); existingTeamPicks = {}; return; }
+
+      existingTeamPicks = {};
+      (data || []).forEach(r => { existingTeamPicks[r.game_id] = r.pick || ''; });
+    }
+
+    function renderPicksPanel(){
+      picksTbody.innerHTML = '';
+      if(!pickableGames.length){
+        picksTbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-gray-300">No picked games for this selection.</td></tr>`;
+        return;
+      }
+      for(const g of pickableGames){
+        const tr = document.createElement('tr');
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+
+        const tdGame = document.createElement('td');
+        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)]';
+        tdGame.innerHTML = gameLinkText(g);
+        tr.appendChild(tdGame);
+
+        const tdPick = document.createElement('td');
+        tdPick.className = 'px-3 py-2 text-center';
+        tdPick.innerHTML = `
+          <div class="inline-flex items-center gap-4">
+            <label class="inline-flex items-center gap-2">
+              <input type="radio" name="pick-${g.GameId}" value="${escapeHtml(g.Away)}" class="accent-[var(--cfp-gold)]">
+              <span>${escapeHtml(g.Away)}</span>
+            </label>
+            <label class="inline-flex items-center gap-2">
+              <input type="radio" name="pick-${g.GameId}" value="${escapeHtml(g.Home)}" class="accent-[var(--cfp-gold)]">
+              <span>${escapeHtml(g.Home)}</span>
+            </label>
+          </div>`;
+        tr.appendChild(tdPick);
+
+        const radios = tdPick.querySelectorAll(`input[name="pick-${g.GameId}"]`);
+        radios.forEach(r => r.addEventListener('change', e => {
+          tempTeamPicks[g.GameId] = e.target.value || '';
+        }));
+
+        picksTbody.appendChild(tr);
+      }
+    }
+
+    async function saveTeamPicks(){
+      const teamId = Number(teamSel.value);
+      const rawWeek = weekSel.value;
+      const viewingPlayoffs = (rawWeek === 'playoff');
+      if(!Number.isFinite(teamId)) return;
+
+      const payload = [];
+      for (const g of pickableGames){
+        const chosen = (tempTeamPicks[g.GameId] || '').trim();
+        if (!chosen) continue;
+        const existing = (existingTeamPicks[g.GameId] || '').trim();
+        if (existing === chosen) continue;
+
+        const weekForGame = viewingPlayoffs ? Number(g.week) : Number(rawWeek);
+        if (!Number.isFinite(weekForGame)) continue;
+
+        payload.push({ team_id: teamId, week: weekForGame, game_id: g.GameId, pick: chosen });
+      }
+
+      if (payload.length === 0){
+        status('No team pick changes to save.');
+        return;
+      }
+
+      savePicksBtn.disabled = true;
+      status('Saving team picks…');
+
+      const { error } = await supabase
+        .from('picks')
+        .upsert(payload, { onConflict: 'team_id,game_id' });
+
+      savePicksBtn.disabled = false;
+
+      if(error){
+        status(`Save team picks failed: ${error.message}`, true);
+      }else{
+        for (const row of payload){ existingTeamPicks[row.game_id] = row.pick; }
+        status('Team picks saved.');
+      }
+    }
+
+    async function loadPlayoffsForSeason(){
+      const season = Number(seasonSel.value);
+      if(!Number.isFinite(season)){
+        playoffsBySeed = {};
+        renderPlayoffsTable();
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('playoffs')
+        .select('id, team_id, season, seed')
+        .eq('season', season);
+
+      if(error){
+        status(error.message, true);
+        playoffsBySeed = {};
+      } else {
+        playoffsBySeed = {};
+        (data || []).forEach(r => {
+          const s = Number(r.seed);
+          if (Number.isFinite(s)) playoffsBySeed[s] = r;
+        });
+      }
+
+      renderPlayoffsTable();
+    }
+
+    function renderPlayoffsTable(){
+      playoffsTbody.innerHTML = '';
+      const seeds = [1,2,3,4];
+
+      if (!teams.length){
+        playoffsTbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-gray-300">Load teams to manage playoff seeds.</td></tr>`;
+        return;
+      }
+
+      for (const seed of seeds){
+        const tr = document.createElement('tr');
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+
+        const tdSeed = document.createElement('td');
+        tdSeed.className = 'px-4 py-2 font-semibold text-[var(--cfp-ivory)]';
+        tdSeed.textContent = `Seed ${seed}`;
+        tr.appendChild(tdSeed);
+
+        const tdTeam = document.createElement('td');
+        tdTeam.className = 'px-3 py-2';
+
+        const sel = document.createElement('select');
+        sel.id = `playoff-seed-${seed}`;
+        sel.className = 'cfp-select rounded-none px-3 py-2 text-sm min-w-[220px]';
+
+        sel.innerHTML = `<option value="">Select team</option>` +
+          teams.map(t => `<option value="${t.team_id}">${escapeHtml(t.team_name)}</option>`).join('');
+
+        const existing = playoffsBySeed[seed];
+        if (existing && existing.team_id){
+          sel.value = String(existing.team_id);
+        }
+
+        tdTeam.appendChild(sel);
+        tr.appendChild(tdTeam);
+        playoffsTbody.appendChild(tr);
+      }
+    }
+
+    async function savePlayoffs(){
+      const season = Number(seasonSel.value);
+      if(!Number.isFinite(season)){
+        status('Select a season before saving playoffs.', true);
+        return;
+      }
+
+      const seeds = [1,2,3,4];
+      const payload = [];
+
+      for (const seed of seeds){
+        const sel = document.getElementById(`playoff-seed-${seed}`);
+        if (!sel) continue;
+        const value = sel.value;
+        if (!value) continue;
+
+        const teamId = Number(value);
+        if (!Number.isFinite(teamId)) continue;
+
+        const existing = playoffsBySeed[seed];
+        const existingTeamId = existing ? Number(existing.team_id) : null;
+        if (existing && existingTeamId === teamId) continue;
+
+        const row = { season, seed, team_id: teamId };
+        if (existing && existing.id) row.id = existing.id;
+        payload.push(row);
+      }
+
+      if (!payload.length){
+        status('No playoff changes to save.');
+        return;
+      }
+
+      savePlayoffsBtn.disabled = true;
+      status('Saving playoff teams…');
+
+      const { error } = await supabase
+        .from('playoffs')
+        .upsert(payload, { onConflict: 'id' });
+
+      savePlayoffsBtn.disabled = false;
+
+      if (error){
+        status(`Save playoff teams failed: ${error.message}`, true);
+      } else {
+        status('Playoff teams saved.');
+        await loadPlayoffsForSeason();
+      }
+    }
+
+    function renderGamesTable(){
+      gamesTbody.innerHTML = '';
+      if(!rows.length){
+        gamesTbody.innerHTML = `<tr><td colspan="10" class="px-4 py-4 text-gray-300">No games found for this selection.</td></tr>`;
+        return;
+      }
+
+      for(const g of rows){
+        const tr = document.createElement('tr');
+        tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+
+        // Game (sticky)
+        const tdGame = document.createElement('td');
+        tdGame.className = 'px-4 py-2 font-medium text-[var(--cfp-ivory)] sticky-col';
+        tdGame.innerHTML = gameLinkText(g);
+        tr.appendChild(tdGame);
+
+        // Start (CT)
+        const tdStart = document.createElement('td');
+        tdStart.className = 'px-3 py-2 text-center';
+        tdStart.textContent = niceTime(g['Start (CT)']);
+        tr.appendChild(tdStart);
+
+        // Network
+        const tdNet = document.createElement('td');
+        tdNet.className = 'px-3 py-2 text-center';
+        tdNet.textContent = g['Network'] ?? '';
+        tr.appendChild(tdNet);
+
+        // Line (editable)
+        const tdLine = document.createElement('td');
+        tdLine.className = 'px-3 py-2 text-center';
+        tdLine.innerHTML = `<input type="number" step="0.5" class="w-24 text-center rounded-none" value="${g.line ?? ''}" />`;
+        tdLine.querySelector('input').addEventListener('input', e => {
+          const v = e.target.value;
+          edited[g.GameId].line = (v === '' ? null : Number(v));
+        });
+        tr.appendChild(tdLine);
+
+        // Picked (checkbox)
+        const tdPicked = document.createElement('td');
+        tdPicked.className = 'px-3 py-2 text-center';
+        tdPicked.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.picked ? 'checked' : ''}/>`;
+        tdPicked.querySelector('input').addEventListener('change', e => {
+          edited[g.GameId].picked = !!e.target.checked;
+        });
+        tr.appendChild(tdPicked);
+
+        // Tiebreaker (checkbox)
+        const tdTB = document.createElement('td');
+        tdTB.className = 'px-3 py-2 text-center';
+        tdTB.innerHTML = `<input type="checkbox" class="accent-[var(--cfp-gold)]" ${g.tiebreaker ? 'checked' : ''}/>`;
+        tdTB.querySelector('input').addEventListener('change', e => {
+          edited[g.GameId].tiebreaker = !!e.target.checked;
+        });
+        tr.appendChild(tdTB);
+
+        // Week (display only)
+        const tdWeek = document.createElement('td');
+        tdWeek.className = 'px-3 py-2 text-center text-gray-300';
+        tdWeek.textContent = g.week ?? '';
+        tr.appendChild(tdWeek);
+
+        // AwayPts (editable)
+        const tdAwayPts = document.createElement('td');
+        tdAwayPts.className = 'px-3 py-2 text-center';
+        tdAwayPts.innerHTML = `<input type="number" step="1" class="w-20 text-center rounded-none" value="${g.AwayPts ?? ''}" />`;
+        tdAwayPts.querySelector('input').addEventListener('input', e => {
+          const v = e.target.value;
+          edited[g.GameId].AwayPts = (v === '' ? null : Number(v));
+        });
+        tr.appendChild(tdAwayPts);
+
+        // HomePts (editable)
+        const tdHomePts = document.createElement('td');
+        tdHomePts.className = 'px-3 py-2 text-center';
+        tdHomePts.innerHTML = `<input type="number" step="1" class="w-20 text-center rounded-none" value="${g.HomePts ?? ''}" />`;
+        tdHomePts.querySelector('input').addEventListener('input', e => {
+          const v = e.target.value;
+          edited[g.GameId].HomePts = (v === '' ? null : Number(v));
+        });
+        tr.appendChild(tdHomePts);
+
+        // Status (editable)
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'px-3 py-2 text-center';
+        const safeStatus = (g.Status ?? '');
+        tdStatus.innerHTML = `<input type="text" class="w-40 text-center rounded-none" value="${String(safeStatus).replaceAll('"','&quot;')}" />`;
+        tdStatus.querySelector('input').addEventListener('input', e => {
+          edited[g.GameId].Status = (e.target.value ?? '');
+        });
+        tr.appendChild(tdStatus);
+
+        gamesTbody.appendChild(tr);
+      }
+    }
+
+    function diffPayload(){
+      const changes = [];
+      for(const id of Object.keys(edited)){
+        const curr = edited[id];
+        const orig = original[id] || {};
+
+        const lineChanged   = (curr.line ?? null)        !== (orig.line ?? null);
+        const pickChanged   = Boolean(curr.picked)       !== Boolean(orig.picked);
+        const tbChanged     = Boolean(curr.tiebreaker)   !== Boolean(orig.tiebreaker);
+        const awayChanged   = (curr.AwayPts ?? null)     !== (orig.AwayPts ?? null);
+        const homeChanged   = (curr.HomePts ?? null)     !== (orig.HomePts ?? null);
+        const statusChanged = String(curr.Status ?? '')  !== String(orig.Status ?? '');
+
+        if(lineChanged || pickChanged || tbChanged || awayChanged || homeChanged || statusChanged){
+          // exclude 'week' so it is NEVER overwritten
+          changes.push({
+            GameId: Number(id),
+            line: curr.line,
+            picked: Boolean(curr.picked),
+            tiebreaker: Boolean(curr.tiebreaker),
+            AwayPts: curr.AwayPts,
+            HomePts: curr.HomePts,
+            Status: curr.Status
+          });
+        }
+      }
+      return changes;
+    }
+
+    async function saveChanges(){
+      const payload = diffPayload();
+      if(payload.length === 0){ status('No changes to save.'); return; }
+
+      saveBtn.disabled = true;
+      status('Saving…');
+
+      const { error } = await supabase
+        .from('all_games')
+        .upsert(payload, { onConflict: 'GameId' });
+
+      saveBtn.disabled = false;
+
+      if(error){
+        status(`Save failed: ${error.message}`, true);
+      }else{
+        for(const row of payload){
+          if (!original[row.GameId]) original[row.GameId] = {};
+          original[row.GameId].line = row.line;
+          original[row.GameId].picked = row.picked;
+          original[row.GameId].tiebreaker = row.tiebreaker;
+          original[row.GameId].AwayPts = row.AwayPts ?? null;
+          original[row.GameId].HomePts = row.HomePts ?? null;
+          original[row.GameId].Status = row.Status ?? '';
+        }
+        await loadWeek(); // re-apply sort if picked changed
+        status('Saved.');
+      }
+    }
+
+    (async () => {
+      const ok = await gatekeep();
+      if(!ok) return;
+
+      const okSeasons = await loadSeasons();
+      if(!okSeasons) return;
+
+      const okWeeks = await loadWeeksForSeason();
+      if(!okWeeks) return;
+
+      const okTeams = await loadTeams();
+      if(!okTeams) return;
+
+      await loadPlayoffsForSeason();
+      await loadWeek();
+
+      seasonSel.onchange = async () => {
+        const ok = await loadWeeksForSeason();
+        if(ok){
+          await loadWeek();
+          await loadPlayoffsForSeason();
+        }
+      };
+
+      weekSel.onchange = async () => {
+        await loadWeek();
+      };
+
+      teamSel.onchange = async () => {
+        await loadExistingTeamPicks();
+        tempTeamPicks = {};
+        renderPicksPanel();
+      };
+
+      saveBtn.onclick = saveChanges;
+      savePicksBtn.onclick = saveTeamPicks;
+      savePlayoffsBtn.onclick = savePlayoffs;
+
+      status('Ready.');
+    })();
+  </script>
+</body>
+</html>

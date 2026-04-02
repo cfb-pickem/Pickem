@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — Make Picks</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -10,211 +11,1084 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 
+  <link rel="stylesheet" href="./css/base.css">
+  <link rel="modulepreload" href="./js/supabaseClient.js">
+  <link rel="modulepreload" href="./js/nav.js">
+  <link rel="modulepreload" href="./js/utils.js">
+
   <style>
-    :root{
-      --cfp-black:#0B0B0B;
-      --cfp-charcoal:#111213;
-      --cfp-gold:#C99210;
-      --cfp-gold-2:#E3B23C;
-      --cfp-ivory:#F7F4ED;
-      --cfp-gray:#1F2022;
-      --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+    .badge{font-size:.78rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
+    .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
+
+    /* Pick buttons */
+    .pick-label{
+      transition: background-color .2s ease, color .2s ease, transform .15s ease, box-shadow .2s ease;
+      padding: .5rem 1rem;
+      min-height: 44px;
+      border-radius: .375rem;
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 120px;
+      text-align: center;
+      position: relative;
     }
-    body{
-      background:
-        radial-gradient(1200px 600px at 50% -10%, rgba(201,146,16,.20), transparent 60%),
-        linear-gradient(135deg, rgba(255,255,255,.03) 0 25%, transparent 25% 50%, rgba(255,255,255,.03) 50% 75%, transparent 75% 100%),
-        var(--cfp-charcoal);
-      background-size:100% 100%,24px 24px,auto;
-      color:#e7e7e7;
-      font-family:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
-      min-height:100vh;
+    @media (max-width: 640px) {
+      .pick-buttons { flex-direction: column; gap: .5rem !important; }
+      .pick-label { min-width: 0; width: 100%; justify-content: center; }
     }
-    .cfp-select{background:var(--cfp-black);color:#f1f1f1;border:1px solid rgba(231,231,231,.12)}
-    .cfp-select:focus{outline:none;box-shadow:var(--ring)}
-    .cfp-card{background:linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));border:1px solid rgba(231,231,231,.10)}
-    .gold-shadow{box-shadow:0 0 0 1px rgba(233,185,73,.35),0 0 24px rgba(233,185,73,.08) inset}
-    .stripe{background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(233,185,73,.12) 40px 48px)}
-    .ring-gold{box-shadow:var(--ring)}
+    .pick-label:hover:not(.selected) {
+      background: rgba(233,185,73,.12);
+      color: var(--cfp-ivory);
+    }
+    .pick-label input[type="radio"]{ position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
+    .pick-label.selected{
+      background: var(--cfp-gold);
+      color: var(--cfp-black);
+      font-weight: 600;
+      transform: scale(1.05);
+      box-shadow: 0 0 0 2px var(--cfp-gold-2), 0 4px 16px rgba(201,146,16,.25);
+    }
+
+    /* Locked state (used for whole grid OR per-game card) */
+    .locked .pick-label{
+      opacity:.45;
+      cursor:not-allowed;
+      transform:none !important;
+      box-shadow:none !important;
+    }
+    .locked .pick-label:hover{ background:transparent; color:inherit; }
+    .locked .pick-label.selected{
+      background: rgba(233,185,73,.15);
+      color: #888;
+      font-weight:500;
+      box-shadow:none;
+      border: 1px solid rgba(233,185,73,.2);
+    }
+
+    /* Lock overlay label */
+    .lock-badge {
+      position: absolute; top: .375rem; right: .5rem;
+      font-size: .6rem; letter-spacing: .12em; text-transform: uppercase;
+      color: #9ca3af; display: flex; align-items: center; gap: .25rem;
+    }
+    .lock-badge svg { width: .65rem; height: .65rem; fill: currentColor; }
+
+    /* Game card hover */
+    .game-card {
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .game-card:hover {
+      border-color: rgba(233,185,73,.25);
+    }
+
+    /* Save button states */
+    .btn-saving { opacity: .9; pointer-events: none; }
+    .btn-success {
+      background: linear-gradient(180deg, #2a7a4a, #1e5e38) !important;
+      color: #fff !important;
+      border-color: #58d68d !important;
+    }
+    .spin { animation: cfp-spin .7s linear infinite; transform-origin: center; }
+
+    /* Loading state */
+    .picks-loading {
+      display: flex; align-items: center; justify-content: center;
+      gap: .75rem; padding: 3rem 1rem;
+      color: #9ca3af; font-size: .875rem;
+    }
   </style>
 </head>
-<body>
-  <div class="max-w-7xl mx-auto p-4 md:p-6">
-    <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-      <ul class="flex items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
-        <li><a href="index.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Leaderboard</a></li>
-        <li><a href="picks.html" class="block px-3 py-3 text-[var(--cfp-gold-2)] border-b-2 border-[var(--cfp-gold)]">Make Picks</a></li>
-        <li><a href="cfb-genius.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">CFB Genius</a></li>
-        <li><a href="stats.html" class="block px-3 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Stats</a></li>
-      </ul>
-    </nav>
+<body data-page="picks">
+  <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
+    <div id="site-nav"></div>
 
-    <header class="cfp-card rounded-none stripe gold-shadow mb-5">
+    <header class="cfp-card stripe gold-shadow mb-5">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4 py-4 md:px-6 md:py-5">
         <div>
           <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
           <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Make Your Picks</h1>
+          <div id="team-chip" class="mt-2 hidden">
+            <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
+          </div>
         </div>
-        <div class="flex flex-wrap items-center gap-3 text-sm">
-          <label class="hidden md:block text-gray-300">Your Team</label>
-          <select id="team-select" class="cfp-select rounded-none px-3 py-2 text-sm"></select>
+        <div class="text-xs text-gray-300 flex items-center gap-2">
+          <span id="status-spinner" class="spinner spinner-sm"></span>
+          <span id="status" aria-live="polite">Loading…</span>
         </div>
       </div>
-      <div class="border-t border-[rgba(231,231,231,.08)] px-4 md:px-6 py-2 text-xs text-gray-300">
-        <span id="status">Loading…</span>
+
+      <!-- Lock / info banner -->
+      <div id="lock-banner" class="hidden border-t border-white/10 px-4 py-3 md:px-6 bg-[rgba(201,146,16,.06)]">
+        <div class="text-sm">
+          <span class="inline-flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm-3 8V6a3 3 0 016 0v3H9z"/></svg>
+            <strong id="lock-banner-title">Picks locked:</strong>
+            <span id="lock-msg" class="opacity-90"></span>
+          </span>
+        </div>
       </div>
     </header>
 
-    <div id="games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-
-    <div class="mt-6 flex items-center gap-3">
-      <button id="save" class="px-4 py-2 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">Save Picks</button>
-      <button id="clear" class="px-4 py-2 border border-white/15">Clear</button>
-      <span id="saveStatus" class="text-xs text-gray-300"></span>
+    <div id="auth-gate" class="cfp-card callout gold-shadow p-4 md:p-6 hidden">
+      <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Sign in required</h2>
+      <p class="text-sm text-gray-200">
+        Please <a href="./signin.html" class="text-[var(--cfp-gold-2)] underline">sign in</a> to make your picks.
+      </p>
     </div>
+
+    <div id="games-loading" class="picks-loading cfp-card gold-shadow">
+      <span class="spinner"></span> Loading your games…
+    </div>
+
+    <div id="games-wrap" class="hidden">
+      <!-- Normal picks -->
+      <div id="games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+      <!-- Tiebreaker picks -->
+      <section id="tiebreaker-section" class="mt-8 hidden">
+        <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Tiebreakers</h2>
+        <p class="text-xs text-gray-300 mb-3">
+          These picks are only used as tiebreakers. They lock at each game’s kickoff.
+        </p>
+        <div id="tiebreaker-games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </section>
+
+      <div class="mt-6 flex items-center gap-3">
+        <button id="save" class="px-5 py-3 bg-[var(--cfp-gold)] text-black font-semibold ring-gold inline-flex items-center gap-2 transition-all duration-200">
+          <span id="saveLabel">Save Picks</span>
+        </button>
+        <button id="clear" class="px-5 py-3 border border-white/15 hover:border-white/30 transition-colors duration-200">Clear</button>
+        <span id="saveStatus" class="text-xs text-gray-300" aria-live="polite"></span>
+      </div>
+    </div>
+    <footer class="site-footer">CFB Pick'em</footer>
   </div>
 
+  <div id="toast-container" class="toast-container"></div>
+
   <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    import initNav from './js/nav.js';
+    import { supabase } from './js/supabaseClient.js';
+    import { escapeHtml } from './js/utils.js';
 
-    const supabase = createClient(
-      'https://vopdioszofwdkwnujtiq.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw'
-    );
+    // CSS.escape polyfill (older browsers)
+    if (!window.CSS || typeof CSS.escape !== 'function') {
+      window.CSS = window.CSS || {};
+      window.CSS.escape = s => String(s).replace(/[^a-zA-Z0-9_\-]/g, c => '\\' + c.codePointAt(0).toString(16) + ' ');
+    }
 
-    const statusEl = document.getElementById('status');
-    const gamesEl  = document.getElementById('games');
-    const teamSel  = document.getElementById('team-select');
-    const saveBtn  = document.getElementById('save');
-    const clearBtn = document.getElementById('clear');
+    // ------- Toast helper -------
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = msg;
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('show'));
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 350);
+      }, 3000);
+    }
+
+    // ------- DOM -------
+    const statusEl   = document.getElementById('status');
+    const statusSpinner = document.getElementById('status-spinner');
+    const gamesLoading = document.getElementById('games-loading');
+    const authGate   = document.getElementById('auth-gate');
+    const gamesWrap  = document.getElementById('games-wrap');
+    const gamesEl    = document.getElementById('games');
+    const tiebreakerSection = document.getElementById('tiebreaker-section');
+    const tiebreakerEl = document.getElementById('tiebreaker-games');
+    const saveBtn    = document.getElementById('save');
+    const clearBtn   = document.getElementById('clear');
     const saveStatus = document.getElementById('saveStatus');
+    const teamChip   = document.getElementById('team-chip');
+    const teamNameEl = document.getElementById('team-name');
+    const lockBanner = document.getElementById('lock-banner');
+    const lockMsg    = document.getElementById('lock-msg');
+    const lockBannerTitle = document.getElementById('lock-banner-title');
 
+    // ------- State -------
+    let session = null;
+    let currentSeason = null;   // cfb_season
     let currentWeek = null;
-    let currentGames = [];
+    let regularGames = [];
+    let tiebreakerGames = [];
+    let selectedTeamId = null;
+    let selectedTeamName = '';
+    let existingPicks = new Map(); // game_id -> pick
 
-    function status(msg, err=false){
+    // Regular-season lock tracking (week-level, for normal picks)
+    let earliestKickoff = null;       // numeric comparable CT timestamp
+    let earliestKickoffStr = null;    // raw start string for display
+    let isLocked = false;
+
+    // Playoff mode
+    let isPlayoffMode = false;
+    let userInPlayoffs = false;
+
+    function getAllGames() {
+      return [...regularGames, ...tiebreakerGames];
+    }
+
+    // ------- Time helpers (force everything to CT) -------
+
+    // Parse "Start (CT)" as CT wall time; supports "YYYY-MM-DD HH:MM[:SS]" or "YYYY-MM-DDTHH:MM[:SS]"
+    function parseCTDateParts(raw) {
+      if (!raw) return null;
+      const s = String(raw).trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (!m) return null;
+      return {
+        year: Number(m[1]),
+        month: Number(m[2]),
+        day: Number(m[3]),
+        hour: Number(m[4]),
+        minute: Number(m[5]),
+        second: m[6] ? Number(m[6]) : 0
+      };
+    }
+
+    // Get current time as CT parts
+    function getNowChicagoParts() {
+      const now = new Date();
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      const parts = fmt.formatToParts(now).reduce((acc, p) => {
+        acc[p.type] = p.value;
+        return acc;
+      }, {});
+      return {
+        year: Number(parts.year),
+        month: Number(parts.month),
+        day: Number(parts.day),
+        hour: Number(parts.hour),
+        minute: Number(parts.minute),
+        second: Number(parts.second)
+      };
+    }
+
+    // Map CT parts to a comparable numeric timestamp (treat CT wall time as if UTC)
+    function ctPartsToComparableMs(parts) {
+      if (!parts) return null;
+      return Date.UTC(
+        parts.year,
+        parts.month - 1,
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second || 0
+      );
+    }
+
+    // Current CT comparable timestamp
+    function nowCTTimestamp() {
+      return ctPartsToComparableMs(getNowChicagoParts());
+    }
+
+    // Comparable CT timestamp from "Start (CT)" field
+    function ctTimestampFromStart(raw) {
+      const parts = parseCTDateParts(raw);
+      if (!parts) return null;
+      return ctPartsToComparableMs(parts);
+    }
+
+    // Nice display string for CT kickoff (does not affect locking)
+    function kickoffFmt(raw) {
+      if (!raw) return '';
+      const parts = parseCTDateParts(raw);
+      if (!parts) {
+        // Fallback if format unexpected
+        try {
+          return new Date(raw).toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+          });
+        } catch {
+          return raw;
+        }
+      }
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const mName = monthNames[parts.month - 1] || parts.month;
+      let h = parts.hour;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12;
+      if (h === 0) h = 12;
+      const min = String(parts.minute).padStart(2,'0');
+      return `${mName} ${parts.day}, ${h}:${min} ${ampm} CT`;
+    }
+
+    // Determine current CFB season using America/Chicago and Feb 1 boundary
+    function getCurrentSeasonCT(now = new Date()){
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric'
+      });
+      const parts = fmt.formatToParts(now).reduce((acc,p)=>{acc[p.type]=p.value;return acc;},{}); 
+      const y = Number(parts.year), m = Number(parts.month), d = Number(parts.day);
+      const afterFeb1 = (m > 2) || (m === 2 && d >= 1);
+      return afterFeb1 ? y : (y - 1);
+    }
+
+    // ------- Lock helpers (CT-based) -------
+
+    // Earliest kickoff among loaded games (for regular picks only, CT-based)
+    function computeEarliestKickoff(){
+      let bestTs = null;
+      let bestStr = null;
+      for (const g of regularGames) {
+        const ts = ctTimestampFromStart(g.start);
+        if (ts == null) continue;
+        if (bestTs == null || ts < bestTs) {
+          bestTs = ts;
+          bestStr = g.start;
+        }
+      }
+      earliestKickoff = bestTs;
+      earliestKickoffStr = bestStr;
+    }
+
+    function updateLockState(){
+      if (earliestKickoff == null) { 
+        isLocked = false; 
+        return; 
+      }
+      isLocked = nowCTTimestamp() >= earliestKickoff;
+    }
+
+    // Does this game (tiebreaker or playoff) still allow picks? (CT-based)
+    function isGameLocked(g){
+      if (!g.start) return false;
+      const gameTs = ctTimestampFromStart(g.start);
+      if (gameTs == null) return false;
+      return nowCTTimestamp() >= gameTs;
+    }
+
+    function hasOpenTiebreakerGame(){
+      return tiebreakerGames.some(g => !isGameLocked(g));
+    }
+
+    // ------- UI helpers -------
+
+    function setStatus(msg, err=false, loading=false){
       statusEl.className = 'text-xs ' + (err? 'text-red-300':'text-gray-300');
       statusEl.textContent = msg;
+      if (statusSpinner) statusSpinner.style.display = loading ? '' : 'none';
     }
 
-    function kickoff(ts){
-      if(!ts) return '';
-      try{ return new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
-      catch{ return ts; }
+    function applyLockUI(){
+      if (isPlayoffMode) return; // playoff mode handled separately
+
+      // Week-level lock banner still for normal picks
+      if (isLocked) {
+        lockBanner.classList.remove('hidden');
+        lockBannerTitle.textContent = 'Picks locked:';
+        const when = kickoffFmt(earliestKickoffStr);
+        lockMsg.textContent = `Week ${currentWeek} locked when the first game kicked at ${when}.`;
+      } else {
+        lockBanner.classList.add('hidden');
+        lockMsg.textContent = '';
+      }
+
+      // Lock normal game grid at week-level
+      gamesEl.classList.toggle('locked', isLocked);
+
+      // Disable only radios for regular (non-tiebreaker) games
+      const regularIds = new Set(regularGames.map(g => String(g.game_id)));
+      document.querySelectorAll('input[type="radio"]').forEach(inp => {
+        const name = inp.name || '';
+        const gameId = name.startsWith('game_') ? name.slice(5) : null;
+        if (gameId && regularIds.has(gameId)) {
+          inp.disabled = isLocked;
+        }
+      });
+
+      // Tiebreaker radios get per-game locking separately
+      applyTiebreakerLocksRegular();
+
+      // Save / clear buttons:
+      // - If week not locked -> enabled.
+      // - If week locked -> still enabled if any tiebreaker is open.
+      const canAct = !isLocked || hasOpenTiebreakerGame();
+      saveBtn.disabled = !canAct;
+      clearBtn.disabled = !canAct;
+
+      if (isLocked && !hasOpenTiebreakerGame()) {
+        setStatus('Picks are locked for this week and all tiebreakers have kicked.');
+      } else if (isLocked) {
+        setStatus('Regular picks are locked. You can still adjust tiebreakers that have not kicked.');
+      }
     }
 
-    init();
-    async function init(){
-      status('Loading current week & teams…');
+    // Per-game lock helper for tiebreakers in regular season
+    function applyTiebreakerLocksRegular(){
+      if (isPlayoffMode) return; // in playoff mode we use applyPerGameLocks
+      tiebreakerGames.forEach(g => {
+        const card = document.querySelector(`[data-game-id="${g.game_id}"]`);
+        if (!card) return;
+        const lockedNow = isGameLocked(g);
+        // Only toggle lock class for tiebreaker cards here
+        card.classList.toggle('locked', lockedNow);
+        const radios = card.querySelectorAll('input[type="radio"]');
+        radios.forEach(r => { r.disabled = lockedNow; });
+      });
+    }
 
-      const [weeksRes, teamsRes] = await Promise.all([
-        supabase.from('all_games').select('week').eq('picked', true).not('week','is',null),
-        supabase.from('teams').select('team_id, team_name').order('team_name', { ascending:true })
-      ]);
+    // Per-game lock helper (playoff mode: all games)
+    function applyPerGameLocks(){
+      if (!isPlayoffMode) return;
 
-      if(weeksRes.error){ status(weeksRes.error.message, true); return; }
-      if(teamsRes.error){ status(teamsRes.error.message, true); return; }
+      const all = getAllGames();
+      all.forEach(g => {
+        const card = document.querySelector(`[data-game-id="${g.game_id}"]`);
+        if (!card) return;
 
-      teamSel.innerHTML = (teamsRes.data||[]).map(t=>`<option value="${t.team_id}">${t.team_name}</option>`).join('');
+        const lockedForTime = isGameLocked(g);
+        const shouldLock = lockedForTime || !userInPlayoffs;
 
-      const weeks = [...new Set((weeksRes.data||[]).map(r=>r.week))].sort((a,b)=>a-b);
-      if (!weeks.length) { status('No weeks found.', true); return; }
-      currentWeek = weeks[weeks.length - 1];
+        card.classList.toggle('locked', shouldLock);
+
+        const radios = card.querySelectorAll('input[type="radio"]');
+        radios.forEach(r => { r.disabled = shouldLock; });
+
+        const lockStateEl = card.querySelector('[data-lock-state]');
+        if (lockStateEl) {
+          if (!userInPlayoffs) {
+            lockStateEl.textContent = 'VIEW ONLY';
+          } else if (lockedForTime) {
+            lockStateEl.textContent = 'LOCKED';
+          } else {
+            lockStateEl.textContent = 'OPEN';
+          }
+        }
+      });
+
+      if (isPlayoffMode) {
+        lockBanner.classList.remove('hidden');
+        lockBannerTitle.textContent = 'Playoff mode:';
+        if (!userInPlayoffs) {
+          lockMsg.textContent = 'Your team is not in the playoffs, so you may view games but cannot make picks.';
+        } else {
+          lockMsg.textContent = 'You are in the playoffs. Picks lock at each game\'s kickoff time (including tiebreakers).';
+        }
+        saveBtn.disabled = !userInPlayoffs;
+        clearBtn.disabled = !userInPlayoffs;
+      }
+    }
+
+    // Draft autosave
+    function draftKey(){
+      if (!selectedTeamId || !currentSeason) return null;
+      const suffix = isPlayoffMode ? 'playoffs' : currentWeek;
+      if (!suffix && suffix !== 0) return null;
+      return `picks_draft_${selectedTeamId}_${currentSeason}_${suffix}`;
+    }
+    function selections(){
+      const picks = [];
+      document.querySelectorAll('input[type="radio"]:checked').forEach(inp=>{
+        const gameId = Number(inp.name.replace('game_',''));
+        picks.push({ game_id: gameId, pick: inp.value });
+      });
+      return picks;
+    }
+    function saveDraft(){
+      const key = draftKey(); if (!key) return;
+      try { localStorage.setItem(key, JSON.stringify(selections())); } catch {}
+      saveStatus.textContent = 'Draft saved locally';
+      setTimeout(()=>{ if (saveStatus.textContent === 'Draft saved locally') saveStatus.textContent=''; }, 1200);
+    }
+    function loadDraft(){
+      const key = draftKey(); if (!key) return [];
+      try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+    }
+    function clearDraft(){
+      const key = draftKey(); if (!key) return;
+      try { localStorage.removeItem(key); } catch {}
+    }
+
+    // Auth UI
+    async function refreshAuthUI() {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      session = s || null;
+      if (session) {
+        authGate.classList.add('hidden');
+        gamesWrap.classList.remove('hidden');
+        if (gamesLoading) gamesLoading.classList.remove('hidden');
+      } else {
+        gamesWrap.classList.add('hidden');
+        authGate.classList.remove('hidden');
+        if (gamesLoading) gamesLoading.classList.add('hidden');
+      }
+    }
+
+    // ------- Startup -------
+    async function startup() { await initNav(); await initPage(); }
+    startup();
+
+    async function initPage(){
+      await refreshAuthUI();
+      if (!session) { setStatus('Sign in to make picks.'); if (gamesLoading) gamesLoading.classList.add('hidden'); return; }
+
+      currentSeason = getCurrentSeasonCT();
+      setStatus(`Loading your team & current season (Season ${currentSeason})…`, false, true);
+
+      // User's team (first alphabetically)
+      const { data: myTeams, error: tErr } = await supabase
+        .from('teams')
+        .select('team_id, team_name')
+        .eq('user_id', session.user.id)
+        .order('team_name', { ascending: true });
+      if (tErr) { setStatus(tErr.message, true); return; }
+      if (!myTeams?.length) {
+        setStatus('No team found for your account. Contact the commissioner to add your team.', true);
+        gamesWrap.classList.add('hidden'); return;
+      }
+
+      selectedTeamId = Number(myTeams[0].team_id);
+      selectedTeamName = myTeams[0].team_name || `Team ${selectedTeamId}`;
+      teamNameEl.textContent = selectedTeamName;
+      teamChip.classList.remove('hidden');
+
+      // Check for playoff mode
+      const { data: playoffRows, error: pErr } = await supabase
+        .from('playoffs')
+        .select('team_id')
+        .eq('season', currentSeason);
+
+      if (pErr) {
+        setStatus(pErr.message, true);
+        return;
+      }
+
+      isPlayoffMode = !!(playoffRows && playoffRows.length);
+      userInPlayoffs = !!(playoffRows || []).some(r => Number(r.team_id) === selectedTeamId);
+
+      if (isPlayoffMode) {
+        if (gamesLoading) gamesLoading.classList.add('hidden');
+        setStatus(`Playoff mode is active for Season ${currentSeason}.`);
+        await loadPlayoffGames();
+        await loadExistingPicksForVisibleGames();
+        overlayDraft();
+        applyPerGameLocks();
+
+        // Re-check per-game locks every minute (CT-based)
+        setInterval(() => {
+          applyPerGameLocks();
+        }, 60_000);
+
+        // Save draft when tab is hidden
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'hidden') saveDraft();
+        });
+
+        return;
+      }
+
+      // Regular-season behavior (no playoffs yet)
+      setStatus(`Loading current week (Season ${currentSeason})…`);
+
+      // Most recent week in THIS SEASON with picked=true
+      const { data: weekRow, error: wErr } = await supabase
+        .from('all_games')
+        .select('week')
+        .eq('picked', true)
+        .eq('cfb_season', currentSeason)
+        .not('week', 'is', null)
+        .order('week', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (wErr) { setStatus(wErr.message, true); return; }
+      if (weekRow?.week === undefined || weekRow?.week === null) {
+        setStatus(`No picked weeks found for Season ${currentSeason}.`, true);
+        return;
+      }
+      currentWeek = Number(weekRow.week);
 
       await loadGamesForWeek(currentWeek);
-      status(`Loaded week ${currentWeek}.`);
+      await loadExistingPicksForVisibleGames();
+      overlayDraft();
+
+      // Lock state (week-based) for normal picks; tiebreakers per-game
+      computeEarliestKickoff();
+      updateLockState();
+      applyLockUI();
+
+      // Re-check lock state and tiebreaker per-game locks every minute
+      setInterval(() => {
+        updateLockState();
+        applyLockUI();
+      }, 60_000);
+
+      if (gamesLoading) gamesLoading.classList.add('hidden');
+      setStatus(`Loaded week ${currentWeek} (Season ${currentSeason}).`);
+
+      // Save draft when tab is hidden
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') saveDraft();
+      });
     }
 
     async function loadGamesForWeek(week){
       currentWeek = week;
-      status(`Loading games for week ${week}…`);
+      setStatus(`Loading games for week ${week} (Season ${currentSeason})…`);
       gamesEl.innerHTML = '';
+      tiebreakerEl.innerHTML = '';
+      regularGames = [];
+      tiebreakerGames = [];
 
-      const { data, error } = await supabase
+      // Normal picked games (exclude tiebreakers)
+      const { data: regularData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", espn_url')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
         .eq('picked', true)
+        .eq('cfb_season', currentSeason)
+        .eq('week', week)
+        .or('tiebreaker.is.null,tiebreaker.eq.false');
+
+      if (regErr) { setStatus(regErr.message, true); return; }
+
+      // Tiebreaker games for this week (use tiebreaker flag instead of picked)
+      const { data: tbData, error: tbErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .eq('tiebreaker', true)
+        .eq('cfb_season', currentSeason)
         .eq('week', week);
 
-      if(error){ status(error.message, true); return; }
+      if (tbErr) {
+        setStatus(tbErr.message, true);
+        return;
+      }
 
-      currentGames = (data||[]).map(g=>({
-        game_id: g.GameId,
+      regularGames = (regularData||[]).map(g => ({
+        game_id: Number(g.GameId),
         away: g.Away,
         home: g.Home,
-        line: (typeof g.line === 'number' ? g.line : (g.line!=null ? Number(g.line) : null)),
-        espn_url: g.espn_url || g.ESPN || g.link || null,
-        start: g['Start (CT)']
+        line: (g.line == null ? null : Number(g.line)),
+        espn_url: g.espn_url || null,
+        start: g['Start (CT)'],
+        week: g.week,
+        winner: g.winner || null,
+        isTiebreaker: false
       })).sort((a,b)=>{
-        const ta = a.start ? new Date(a.start).getTime() : Infinity;
-        const tb = b.start ? new Date(b.start).getTime() : Infinity;
-        return ta - tb;
+        const ta = ctTimestampFromStart(a.start);
+        const tb = ctTimestampFromStart(b.start);
+        return (ta ?? Infinity) - (tb ?? Infinity);
       });
 
-      renderGameCards(currentGames);
+      tiebreakerGames = (tbData||[]).map(g => ({
+        game_id: Number(g.GameId),
+        away: g.Away,
+        home: g.Home,
+        line: (g.line == null ? null : Number(g.line)),
+        espn_url: g.espn_url || null,
+        start: g['Start (CT)'],
+        week: g.week,
+        winner: g.winner || null,
+        isTiebreaker: true
+      })).sort((a,b)=>{
+        const ta = ctTimestampFromStart(a.start);
+        const tb = ctTimestampFromStart(b.start);
+        return (ta ?? Infinity) - (tb ?? Infinity);
+      });
+
+      renderGameCards(regularGames);
+      renderTiebreakerCards(tiebreakerGames);
+      addPickHighlighting();
+
+      // Apply per-game locks for tiebreakers immediately
+      applyTiebreakerLocksRegular();
+    }
+
+    async function loadPlayoffGames(){
+      gamesEl.innerHTML = '';
+      tiebreakerEl.innerHTML = '';
+      regularGames = [];
+      tiebreakerGames = [];
+
+      // Playoff-eligible normal games (picked=true, no winner yet, not tiebreakers)
+      const { data: regData, error: regErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .eq('picked', true)
+        .eq('cfb_season', currentSeason)
+        .is('winner', null)
+        .or('tiebreaker.is.null,tiebreaker.eq.false');
+
+      if (regErr) {
+        setStatus(regErr.message, true);
+        return;
+      }
+
+      // Playoff tiebreaker games (tiebreaker=true, no winner yet)
+      const { data: tbData, error: tbErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .eq('tiebreaker', true)
+        .eq('cfb_season', currentSeason)
+        .is('winner', null);
+
+      if (tbErr) {
+        setStatus(tbErr.message, true);
+        return;
+      }
+
+      regularGames = (regData || []).map(g => ({
+        game_id: Number(g.GameId),
+        away: g.Away,
+        home: g.Home,
+        line: (g.line == null ? null : Number(g.line)),
+        espn_url: g.espn_url || null,
+        start: g['Start (CT)'],
+        week: g.week,
+        winner: g.winner || null,
+        isTiebreaker: false
+      })).sort((a,b)=>{
+        const ta = ctTimestampFromStart(a.start);
+        const tb = ctTimestampFromStart(b.start);
+        return (ta ?? Infinity) - (tb ?? Infinity);
+      });
+
+      tiebreakerGames = (tbData || []).map(g => ({
+        game_id: Number(g.GameId),
+        away: g.Away,
+        home: g.Home,
+        line: (g.line == null ? null : Number(g.line)),
+        espn_url: g.espn_url || null,
+        start: g['Start (CT)'],
+        week: g.week,
+        winner: g.winner || null,
+        isTiebreaker: true
+      })).sort((a,b)=>{
+        const ta = ctTimestampFromStart(a.start);
+        const tb = ctTimestampFromStart(b.start);
+        return (ta ?? Infinity) - (tb ?? Infinity);
+      });
+
+      renderGameCards(regularGames);
+      renderTiebreakerCards(tiebreakerGames);
+      addPickHighlighting();
+      applyPerGameLocks();
+
+      const totalGames = getAllGames().length;
+      setStatus(`Loaded ${totalGames} playoff-eligible games for Season ${currentSeason}.`);
+    }
+
+    async function loadExistingPicksForVisibleGames(){
+      existingPicks.clear();
+      const gameIds = getAllGames().map(g => g.game_id);
+      if (!gameIds.length) return;
+
+      let query = supabase
+        .from('picks')
+        .select('game_id, pick')
+        .eq('team_id', selectedTeamId)
+        .in('game_id', gameIds);
+
+      if (!isPlayoffMode && currentWeek != null) {
+        query = query.eq('week', currentWeek);
+      }
+
+      const { data, error } = await query;
+      if (error) return;
+
+      (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
+      prefillSelections();
     }
 
     function renderGameCards(games){
-      gamesEl.innerHTML = games.map((g)=>{
+      const cards = games.map(g => {
         const name = `game_${g.game_id}`;
-        const when = kickoff(g.start);
-        const espn = g.espn_url ? `<a href="${g.espn_url}" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>` : '';
+        const when = kickoffFmt(g.start);
+        const espnLink = (g.espn_url && /^https?:\/\//i.test(g.espn_url))
+          ? '<a href="' + escapeHtml(g.espn_url) + '" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>'
+          : '';
 
-        // line is always in terms of the HOME team
         const hasLine = g.line != null && !isNaN(g.line);
-        const fmt = (n) => (n > 0 ? `+${n}` : `${n}`);
-        const awayLabel = hasLine ? `${g.away} (${fmt(-g.line)})` : g.away;
-        const homeLabel = hasLine ? `${g.home} (${fmt(g.line)})` : g.home;
+        const fmt = (n) => (n > 0 ? ('+' + n) : String(n));
+        const awayLabel = hasLine ? (escapeHtml(g.away) + ' (' + fmt(-g.line) + ')') : escapeHtml(g.away);
+        const homeLabel = hasLine ? (escapeHtml(g.home) + ' (' + fmt(g.line) + ')') : escapeHtml(g.home);
 
-        return `
-          <div class="cfp-card gold-shadow p-4">
-            <div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-2 text-center">${g.away} @ ${g.home}</div>
-            <div class="text-xs text-gray-400 text-center mb-3">${when || 'Scheduled'}${espn ? ` ${espn}` : ''}</div>
-            <div class="flex justify-center gap-6">
-              <label class="flex items-center gap-2">
-                <input type="radio" name="${name}" value="${g.away}" class="accent-[var(--cfp-gold)]"> <span>${awayLabel}</span>
-              </label>
-              <label class="flex items-center gap-2">
-                <input type="radio" name="${name}" value="${g.home}" class="accent-[var(--cfp-gold)]"> <span>${homeLabel}</span>
-              </label>
-            </div>
-          </div>`;
-      }).join('');
+        const modeRow = isPlayoffMode
+          ? `<div class="flex justify-between text-[11px] text-gray-400 mb-2">
+               <span>Week ${g.week ?? '-'}</span>
+               <span data-lock-state class="uppercase tracking-[.12em]"></span>
+             </div>`
+          : '';
+
+        return (
+          '<div class="cfp-card gold-shadow game-card p-4" data-game-id="'+ g.game_id +'">' +
+            '<div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-1 text-center">' + escapeHtml(g.away) + ' @ ' + escapeHtml(g.home) + '</div>' +
+            '<div class="text-xs text-gray-400 text-center mb-1">' + (when || 'Scheduled') + (espnLink ? (' ' + espnLink) : '') + '</div>' +
+            modeRow +
+            '<div class="flex justify-center gap-6 mt-2 pick-buttons">' +
+              '<label class="pick-label flex items-center gap-2">' +
+                '<input type="radio" name="' + name + '" value="' + escapeHtml(g.away) + '"> ' +
+                '<span>' + awayLabel + '</span>' +
+              '</label>' +
+              '<label class="pick-label flex items-center gap-2">' +
+                '<input type="radio" name="' + name + '" value="' + escapeHtml(g.home) + '"> ' +
+                '<span>' + homeLabel + '</span>' +
+              '</label>' +
+            '</div>' +
+          '</div>'
+        );
+      });
+
+      gamesEl.innerHTML = cards.join('');
     }
 
-    function selections(){
-      const picks = [];
-      document.querySelectorAll('input[type="radio"]:checked').forEach(inp=>{
-        const gameId = inp.name.replace('game_','');
-        picks.push({ game_id: String(gameId), pick: inp.value });
+    function renderTiebreakerCards(games){
+      if (!games.length) {
+        tiebreakerSection.classList.add('hidden');
+        tiebreakerEl.innerHTML = '';
+        return;
+      }
+
+      tiebreakerSection.classList.remove('hidden');
+
+      const cards = games.map(g => {
+        const name = `game_${g.game_id}`;
+        const when = kickoffFmt(g.start);
+        const espnLink = (g.espn_url && /^https?:\/\//i.test(g.espn_url))
+          ? '<a href="' + escapeHtml(g.espn_url) + '" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>'
+          : '';
+
+        const hasLine = g.line != null && !isNaN(g.line);
+        const fmt = (n) => (n > 0 ? ('+' + n) : String(n));
+        const awayLabel = hasLine ? (escapeHtml(g.away) + ' (' + fmt(-g.line) + ')') : escapeHtml(g.away);
+        const homeLabel = hasLine ? (escapeHtml(g.home) + ' (' + fmt(g.line) + ')') : escapeHtml(g.home);
+
+        const modeRow = isPlayoffMode
+          ? `<div class="flex justify-between text-[11px] text-gray-400 mb-2">
+               <span>Week ${g.week ?? '-'}</span>
+               <span data-lock-state class="uppercase tracking-[.12em]"></span>
+             </div>`
+          : '';
+
+        return (
+          '<div class="cfp-card gold-shadow game-card p-4" data-game-id="'+ g.game_id +'">' +
+            '<div class="text-[11px] uppercase tracking-[.18em] text-[var(--cfp-gold-2)] text-center mb-1">Tiebreaker</div>' +
+            '<div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-1 text-center">' + escapeHtml(g.away) + ' @ ' + escapeHtml(g.home) + '</div>' +
+            '<div class="text-xs text-gray-400 text-center mb-1">' + (when || 'Scheduled') + (espnLink ? (' ' + espnLink) : '') + '</div>' +
+            modeRow +
+            '<div class="flex justify-center gap-6 mt-2 pick-buttons">' +
+              '<label class="pick-label flex items-center gap-2">' +
+                '<input type="radio" name="' + name + '" value="' + escapeHtml(g.away) + '"> ' +
+                '<span>' + awayLabel + '</span>' +
+              '</label>' +
+              '<label class="pick-label flex items-center gap-2">' +
+                '<input type="radio" name="' + name + '" value="' + escapeHtml(g.home) + '"> ' +
+                '<span>' + homeLabel + '</span>' +
+              '</label>' +
+            '</div>' +
+          '</div>'
+        );
       });
-      return picks;
+
+      tiebreakerEl.innerHTML = cards.join('');
+    }
+
+    function addPickHighlighting(){
+      document.querySelectorAll('.pick-label input[type="radio"]').forEach(input => {
+        input.addEventListener('change', () => {
+          const group = input.name;
+          document.querySelectorAll(`input[name="${group}"]`).forEach(r => {
+            r.parentElement.classList.remove('selected');
+          });
+          input.parentElement.classList.add('selected');
+          saveDraft(); // save draft on every change
+        });
+      });
+    }
+
+    function prefillSelections(){
+      existingPicks.forEach((pick, gameId) => {
+        const sel = 'input[name="game_' + gameId + '"][value="' + CSS.escape(pick) + '"]';
+        const input = document.querySelector(sel);
+        if (input) {
+          input.checked = true;
+          const group = input.name;
+          document.querySelectorAll(`input[name="${group}"]`).forEach(r => r.parentElement.classList.remove('selected'));
+          input.parentElement.classList.add('selected');
+        }
+      });
+    }
+
+    function overlayDraft(){
+      const draft = loadDraft();
+      if (!draft?.length) return;
+      draft.forEach(({ game_id, pick }) => {
+        const sel = `input[name="game_${game_id}"][value="${CSS.escape(pick)}"]`;
+        const input = document.querySelector(sel);
+        if (input) {
+          input.checked = true;
+          const group = input.name;
+          document.querySelectorAll(`input[name="${group}"]`).forEach(r => r.parentElement.classList.remove('selected'));
+          input.parentElement.classList.add('selected');
+        }
+      });
+    }
+
+    // ------- Save & Clear -------
+
+    function renderSaving(){
+      saveBtn.classList.add('btn-saving');
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = `
+        <svg class="w-4 h-4 spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" opacity=".25"/>
+          <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span>Saving…</span>
+      `;
+    }
+    function renderSaved(){
+      saveBtn.classList.remove('btn-saving');
+      saveBtn.classList.add('btn-success');
+      const canAct = isPlayoffMode
+        ? userInPlayoffs
+        : (!isLocked || hasOpenTiebreakerGame());
+      saveBtn.disabled = !canAct;
+      saveBtn.innerHTML = `
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Saved!</span>
+      `;
+      setTimeout(() => {
+        const canAct2 = isPlayoffMode
+          ? userInPlayoffs
+          : (!isLocked || hasOpenTiebreakerGame());
+        if (canAct2) renderSaveDefault();
+      }, 1400);
+    }
+    function renderSaveDefault(){
+      saveBtn.classList.remove('btn-saving','btn-success');
+      const canAct = isPlayoffMode
+        ? userInPlayoffs
+        : (!isLocked || hasOpenTiebreakerGame());
+      saveBtn.disabled = !canAct;
+      saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
+    }
+    function renderSaveError(){
+      saveBtn.classList.remove('btn-saving','btn-success');
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
     }
 
     async function savePicks(){
-      saveBtn.disabled = true; saveStatus.textContent = 'Saving…';
-      const week = String(currentWeek);
-      const team_id = String(teamSel.value);
-      const rows = selections().map(p => ({ week, team_id, game_id: p.game_id, pick: p.pick }));
+      if (!session) { setStatus('Please sign in to save picks.', true); return; }
+      if (!selectedTeamId) { setStatus('No team found for your account.', true); return; }
 
-      if(!rows.length){ status('Pick at least one game before saving.', true); saveBtn.disabled=false; saveStatus.textContent=''; return; }
+      if (isPlayoffMode && !userInPlayoffs) {
+        setStatus('Playoff mode: only playoff teams can save picks.', true);
+        return;
+      }
+
+      const selected = selections();
+      if (!selected.length){
+        setStatus('Pick at least one game before saving.', true);
+        return;
+      }
+
+      const rows = [];
+      const allGames = getAllGames();
+      for (const p of selected){
+        const gameIdNum = Number(p.game_id);
+        const game = allGames.find(g => g.game_id === gameIdNum);
+        if (!game) continue;
+
+        if (isPlayoffMode) {
+          // In playoffs, all picks (normal + tiebreaker) lock per-game
+          if (isGameLocked(game)) continue;
+        } else {
+          // Regular season:
+          if (!game.isTiebreaker) {
+            // Normal picks respect global week lock
+            if (isLocked) continue;
+          } else {
+            // Tiebreaker picks always lock per-game
+            if (isGameLocked(game)) continue;
+          }
+        }
+
+        rows.push({
+          team_id: Number(selectedTeamId),
+          game_id: gameIdNum,
+          pick: p.pick,
+          week: Number(game.week ?? currentWeek)
+        });
+      }
+
+      if (!rows.length) {
+        setStatus('No eligible games to save (picks may be locked).', true);
+        renderSaveError();
+        return;
+      }
+
+      setStatus('Saving…');
+      renderSaving();
 
       const { error } = await supabase
         .from('picks')
-        .upsert(rows, { onConflict: 'team_id,week,game_id' });
+        .upsert(rows, { onConflict: 'team_id,game_id', returning: 'minimal' });
 
-      saveBtn.disabled = false; saveStatus.textContent = '';
-      if(error){ status('Error saving: ' + error.message, true); }
-      else { status('Picks saved!', false); }
+      if (error) {
+        renderSaveError();
+        setStatus('Error saving: ' + error.message, true);
+        showToast('Error saving picks: ' + error.message, 'error');
+      } else {
+        setStatus('Picks saved!');
+        rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
+        clearDraft();
+        prefillSelections();
+        renderSaved();
+        showToast('Picks saved successfully!', 'success');
+      }
     }
 
     function clearSelections(){
-      document.querySelectorAll('input[type="radio"]').forEach(i=> i.checked=false);
-      status('Selections cleared.');
+      if (isPlayoffMode && !userInPlayoffs) {
+        setStatus('Playoff mode: only playoff teams can clear picks.', true);
+        return;
+      }
+
+      // In regular season: block clearing if week locked and all tiebreakers locked
+      if (!isPlayoffMode && isLocked && !hasOpenTiebreakerGame()) {
+        setStatus('Picks are locked — cannot clear.', true);
+        return;
+      }
+
+      // Only clear radios that are NOT disabled (so locked games stay as-is)
+      document.querySelectorAll('input[type="radio"]').forEach(i=> {
+        if (!i.disabled) i.checked = false;
+      });
+      document.querySelectorAll('.pick-label').forEach(l => l.classList.remove('selected'));
+      saveDraft();
+      setStatus('Selections cleared for unlocked games.');
     }
 
-    saveBtn.addEventListener('click', savePicks);
-    clearBtn.addEventListener('click', clearSelections);
+    document.getElementById('save').addEventListener('click', savePicks);
+    document.getElementById('clear').addEventListener('click', clearSelections);
+
   </script>
 </body>
 </html>
