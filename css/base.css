@@ -365,28 +365,24 @@ header.cfp-card {
 
 .mascot {
   position: absolute;
-  width: 70px;
-  height: 70px;
-  opacity: .18;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,.3));
+  width: 180px;
+  height: auto;
+  opacity: .13;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,.4));
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
   animation-direction: alternate;
+  object-fit: contain;
 }
-.mascot svg { width: 100%; height: 100%; }
 
-.mascot-1  { left: 2%;  top: 10%; animation: mascot-bob-1 6s infinite alternate; }
-.mascot-2  { right: 3%; top: 6%;  animation: mascot-bob-2 7s infinite alternate; }
-.mascot-3  { left: 5%;  top: 35%; animation: mascot-bob-1 8s infinite alternate; }
-.mascot-4  { right: 2%; top: 32%; animation: mascot-bob-2 5.5s infinite alternate; }
-.mascot-5  { left: 1%;  top: 58%; animation: mascot-bob-1 7.5s infinite alternate; }
-.mascot-6  { right: 4%; top: 55%; animation: mascot-bob-2 6.5s infinite alternate; }
-.mascot-7  { left: 3%;  top: 80%; animation: mascot-bob-1 5s infinite alternate; }
-.mascot-8  { right: 1%; top: 78%; animation: mascot-bob-2 8.5s infinite alternate; }
-.mascot-9  { left: 10%; top: 22%; animation: mascot-bob-2 9s infinite alternate; width: 55px; height: 55px; opacity: .12; }
-.mascot-10 { right: 8%; top: 48%; animation: mascot-bob-1 7s infinite alternate; width: 55px; height: 55px; opacity: .12; }
-.mascot-11 { left: 4%;  top: 46%; animation: mascot-bob-2 6s infinite alternate; width: 45px; height: 45px; opacity: .09; }
-.mascot-12 { right: 6%; top: 20%; animation: mascot-bob-1 8s infinite alternate; width: 45px; height: 45px; opacity: .09; }
+.mascot-1 { left: -2%;  top: 8%;  animation: mascot-bob-1 8s infinite alternate; width: 200px; }
+.mascot-2 { right: -2%; top: 5%;  animation: mascot-bob-2 9s infinite alternate; width: 190px; }
+.mascot-3 { left: -1%;  top: 32%; animation: mascot-bob-1 10s infinite alternate; width: 170px; }
+.mascot-4 { right: -1%; top: 30%; animation: mascot-bob-2 7s infinite alternate; width: 180px; }
+.mascot-5 { left: -2%;  top: 56%; animation: mascot-bob-1 9s infinite alternate; width: 190px; }
+.mascot-6 { right: -2%; top: 54%; animation: mascot-bob-2 8s infinite alternate; width: 175px; }
+.mascot-7 { left: 0%;   top: 78%; animation: mascot-bob-1 7s infinite alternate; width: 170px; }
+.mascot-8 { right: 0%;  top: 76%; animation: mascot-bob-2 10s infinite alternate; width: 185px; }
 
 @keyframes mascot-bob-1 {
   0%   { transform: translateY(0) rotate(-5deg); }
@@ -398,8 +394,8 @@ header.cfp-card {
 }
 
 @media (max-width: 640px) {
-  .mascot { width: 50px; height: 50px; }
-  .mascot-9, .mascot-10, .mascot-11, .mascot-12 { display: none; }
+  .mascot { width: 110px; opacity: .09; }
+  .mascot-7, .mascot-8 { display: none; }
 }
 
 /* --- Mobile optimizations --- */
