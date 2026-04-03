@@ -365,98 +365,109 @@ header.cfp-card {
 .btn-primary:active { transform: scale(.98); }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
-/* --- Jumbotron mascot layout (leaderboard) --- */
+/* --- Jumbotron header with mascots (leaderboard) --- */
 
-.featured-matchup {
-  text-align: center;
-  padding: .75rem 0 .5rem;
-}
-.featured-matchup-img {
-  height: 120px;
-  width: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 4px 12px rgba(0,0,0,.5));
-  opacity: .85;
-}
-
-.jumbotron-mascots {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-}
-
-.jumbotron-side {
-  flex: 0 0 140px;
+.jumbotron-header {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  gap: 1rem;
+  padding: 1rem 1rem .5rem;
+  background: linear-gradient(180deg, #181818, #111 40%, #0a0a0a);
+  border: 5px solid #2a2a2a;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  position: relative;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 -4px 20px rgba(0,0,0,.4);
 }
 
-.jumbotron-left { padding-right: .5rem; }
-.jumbotron-right { padding-left: .5rem; }
+/* LED strip on jumbotron header top edge */
+.jumbotron-header::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--cfp-gold) 0 4px,
+    transparent 4px 7px
+  );
+  opacity: .8;
+}
 
-.jumbotron-img {
-  width: 100%;
+/* Rivets in corners */
+.jumbotron-header::after {
+  content: "";
+  position: absolute;
+  top: 10px; left: 12px;
+  width: 8px; height: 8px;
+  background: radial-gradient(circle, #555, #333);
+  border-radius: 50%;
+  box-shadow:
+    calc(100% - 24px) 0 0 0 #444,
+    0 0 0 1px #222,
+    calc(100% - 24px) 0 0 1px #222;
+}
+
+.jumbotron-mascot {
+  width: 130px;
   height: auto;
-  max-height: 380px;
   object-fit: contain;
-  opacity: .7;
-  filter: drop-shadow(0 4px 16px rgba(0,0,0,.6));
-  transition: opacity .3s ease;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,.6));
+  flex-shrink: 0;
 }
-.jumbotron-left .jumbotron-img {
-  transform: rotate(2deg);
-}
-.jumbotron-right .jumbotron-img {
-  transform: rotate(-2deg);
-}
-.jumbotron-img:hover { opacity: .9; }
+.jumbotron-mascot-left  { transform: scaleX(1); }
+.jumbotron-mascot-right { transform: scaleX(-1); }
 
-/* Scoreboard takes remaining space */
-.jumbotron-mascots > .scoreboard-wrap,
-.jumbotron-mascots > .scroll-hint {
+.jumbotron-title {
+  text-align: center;
   flex: 1;
   min-width: 0;
 }
 
-/* Hide flanking mascots on smaller screens */
-@media (max-width: 1024px) {
-  .jumbotron-side { display: none; }
-  .jumbotron-mascots { display: block; }
+.jumbotron-title-text {
+  font-family: 'Teko', 'Oswald', sans-serif;
+  font-size: 2.2rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--cfp-ivory);
+  text-shadow:
+    0 0 20px rgba(255,107,26,.3),
+    0 2px 4px rgba(0,0,0,.5);
+  line-height: 1.1;
 }
+
+/* Connect jumbotron header to scoreboard below */
+.jumbotron-header + .scoreboard-wrap {
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
 @media (max-width: 640px) {
-  .featured-matchup-img { height: 80px; }
+  .jumbotron-mascot { width: 70px; }
+  .jumbotron-title-text { font-size: 1.3rem; letter-spacing: .04em; }
+  .jumbotron-header { padding: .75rem .5rem .25rem; gap: .5rem; }
 }
 
 /* --- Decorative mascots on non-leaderboard pages --- */
 
-.page-mascot-deco {
-  pointer-events: none;
-}
+.page-mascot-deco { pointer-events: none; }
 
 .deco-mascot {
   position: absolute;
-  width: 200px;
+  width: 180px;
   height: auto;
   object-fit: contain;
-  opacity: .12;
+  opacity: .10;
   filter: drop-shadow(0 4px 10px rgba(0,0,0,.4));
 }
-.deco-top {
-  top: 80px;
-  right: -60px;
-  transform: rotate(-8deg);
-}
-.deco-bottom {
-  bottom: 40px;
-  left: -60px;
-  transform: rotate(6deg);
-}
+.deco-top    { top: 80px;  right: -50px; transform: rotate(-8deg); }
+.deco-bottom { bottom: 40px; left: -50px; transform: rotate(6deg); }
 
-@media (max-width: 1024px) {
-  .deco-mascot { display: none; }
-}
+@media (max-width: 1024px) { .deco-mascot { display: none; } }
 
 /* --- Mobile optimizations --- */
 

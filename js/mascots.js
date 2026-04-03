@@ -1,4 +1,4 @@
-// js/mascots.js — Place mascot matchup images around the scoreboard
+// js/mascots.js — Build a jumbotron frame with mascots above the scoreboard
 
 const MASCOT_IMAGES = [
   'alabama-vs-georgia.png',
@@ -41,56 +41,39 @@ function makeImg(src, cls) {
 }
 
 export function initMascots() {
-  if (document.querySelector('.jumbotron-mascots')) return;
+  if (document.querySelector('.jumbotron-header')) return;
 
   const shuffled = shuffle(MASCOT_IMAGES);
   const scoreboard = document.getElementById('table-scroll-wrap');
 
-  // === LEADERBOARD PAGE: mascots flank the scoreboard ===
+  // === LEADERBOARD PAGE: jumbotron header with mascots + title ===
   if (scoreboard) {
-    const parent = scoreboard.parentNode;
+    const header = document.createElement('div');
+    header.className = 'jumbotron-header';
 
-    // Featured matchup banner above the scoreboard
-    const banner = document.createElement('div');
-    banner.className = 'featured-matchup';
-    banner.setAttribute('aria-hidden', 'true');
-    banner.appendChild(makeImg(shuffled[0], 'featured-matchup-img'));
-    parent.insertBefore(banner, scoreboard);
+    // Left mascot
+    header.appendChild(makeImg(shuffled[0], 'jumbotron-mascot jumbotron-mascot-left'));
 
-    // Wrap scoreboard with flanking mascots
-    const wrapper = document.createElement('div');
-    wrapper.className = 'jumbotron-mascots';
-    wrapper.setAttribute('aria-hidden', 'false');
+    // Title
+    const title = document.createElement('div');
+    title.className = 'jumbotron-title';
+    title.innerHTML = '<span class="jumbotron-title-text">CFB Pick\'em Leaderboard</span>';
+    header.appendChild(title);
 
-    const leftMascot = document.createElement('div');
-    leftMascot.className = 'jumbotron-side jumbotron-left';
-    leftMascot.appendChild(makeImg(shuffled[1], 'jumbotron-img'));
+    // Right mascot
+    header.appendChild(makeImg(shuffled[1], 'jumbotron-mascot jumbotron-mascot-right'));
 
-    const rightMascot = document.createElement('div');
-    rightMascot.className = 'jumbotron-side jumbotron-right';
-    rightMascot.appendChild(makeImg(shuffled[2], 'jumbotron-img'));
-
-    // Move scoreboard into the wrapper
-    parent.insertBefore(wrapper, scoreboard);
-    wrapper.appendChild(leftMascot);
-    wrapper.appendChild(scoreboard);
-    wrapper.appendChild(rightMascot);
-
+    scoreboard.parentNode.insertBefore(header, scoreboard);
     return;
   }
 
-  // === OTHER PAGES: a couple of decorative mascots in the margins ===
+  // === OTHER PAGES: subtle decorative mascots ===
   const main = document.querySelector('.max-w-7xl') || document.body;
   const deco = document.createElement('div');
   deco.className = 'page-mascot-deco';
   deco.setAttribute('aria-hidden', 'true');
-
-  // One near the top-right, one near the bottom-left
-  const top = makeImg(shuffled[0], 'deco-mascot deco-top');
-  const bot = makeImg(shuffled[1], 'deco-mascot deco-bottom');
-  deco.appendChild(top);
-  deco.appendChild(bot);
-
+  deco.appendChild(makeImg(shuffled[0], 'deco-mascot deco-top'));
+  deco.appendChild(makeImg(shuffled[1], 'deco-mascot deco-bottom'));
   main.style.position = 'relative';
   main.appendChild(deco);
 }
