@@ -254,24 +254,25 @@ header.cfp-card {
    ============================================ */
 
 .scoreboard-wrap {
-  background: linear-gradient(180deg, #0d0d0d, #141414 5%, #111 50%, #141414 95%, #0d0d0d);
-  border: 3px solid #333;
-  border-radius: 6px;
+  background: linear-gradient(180deg, #0a0a0a, #121212 3%, #0e0e0e 50%, #121212 97%, #0a0a0a);
+  border: 5px solid #2a2a2a;
+  border-radius: 8px;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.06),
-    inset 0 -1px 0 rgba(0,0,0,.5),
-    0 12px 48px rgba(0,0,0,.7);
+    inset 0 0 30px rgba(255,107,26,.04),
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 0 0 1px #111,
+    0 16px 56px rgba(0,0,0,.8);
   position: relative;
   overflow: hidden;
 }
 
-/* Inner bezel */
+/* Inner bezel — double frame look */
 .scoreboard-wrap::before {
   content: "";
   position: absolute;
-  inset: 4px;
-  border: 1px solid rgba(255,255,255,.05);
-  border-radius: 3px;
+  inset: 5px;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 4px;
   pointer-events: none;
   z-index: 1;
 }
@@ -281,13 +282,13 @@ header.cfp-card {
   content: "";
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 2px;
+  height: 3px;
   background: repeating-linear-gradient(
     90deg,
-    var(--cfp-gold) 0 3px,
-    transparent 3px 6px
+    var(--cfp-gold) 0 4px,
+    transparent 4px 7px
   );
-  opacity: .7;
+  opacity: .8;
   pointer-events: none;
   z-index: 2;
 }
@@ -364,46 +365,97 @@ header.cfp-card {
 .btn-primary:active { transform: scale(.98); }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
-/* --- Floating mascots --- */
+/* --- Jumbotron mascot layout (leaderboard) --- */
 
-.mascot-layer {
-  position: fixed; inset: 0;
-  pointer-events: none; z-index: 0; overflow: hidden;
+.featured-matchup {
+  text-align: center;
+  padding: .75rem 0 .5rem;
 }
-
-.mascot {
-  position: absolute;
-  width: 300px;
-  height: auto;
-  opacity: .22;
-  filter: drop-shadow(0 6px 12px rgba(0,0,0,.5));
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
+.featured-matchup-img {
+  height: 120px;
+  width: auto;
   object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,.5));
+  opacity: .85;
 }
 
-.mascot-1 { left: -4%;  top: 6%;  animation: mascot-bob-1 8s infinite alternate; width: 320px; }
-.mascot-2 { right: -4%; top: 3%;  animation: mascot-bob-2 9s infinite alternate; width: 300px; }
-.mascot-3 { left: -3%;  top: 30%; animation: mascot-bob-1 10s infinite alternate; width: 280px; }
-.mascot-4 { right: -3%; top: 28%; animation: mascot-bob-2 7s infinite alternate; width: 310px; }
-.mascot-5 { left: -4%;  top: 54%; animation: mascot-bob-1 9s infinite alternate; width: 300px; }
-.mascot-6 { right: -4%; top: 52%; animation: mascot-bob-2 8s infinite alternate; width: 290px; }
-.mascot-7 { left: -2%;  top: 76%; animation: mascot-bob-1 7s infinite alternate; width: 280px; }
-.mascot-8 { right: -2%; top: 74%; animation: mascot-bob-2 10s infinite alternate; width: 310px; }
-
-@keyframes mascot-bob-1 {
-  0%   { transform: translateY(0) rotate(-5deg); }
-  100% { transform: translateY(-14px) rotate(5deg); }
-}
-@keyframes mascot-bob-2 {
-  0%   { transform: translateY(0) rotate(3deg); }
-  100% { transform: translateY(-18px) rotate(-4deg); }
+.jumbotron-mascots {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
 }
 
+.jumbotron-side {
+  flex: 0 0 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.jumbotron-left { padding-right: .5rem; }
+.jumbotron-right { padding-left: .5rem; }
+
+.jumbotron-img {
+  width: 100%;
+  height: auto;
+  max-height: 380px;
+  object-fit: contain;
+  opacity: .7;
+  filter: drop-shadow(0 4px 16px rgba(0,0,0,.6));
+  transition: opacity .3s ease;
+}
+.jumbotron-left .jumbotron-img {
+  transform: rotate(2deg);
+}
+.jumbotron-right .jumbotron-img {
+  transform: rotate(-2deg);
+}
+.jumbotron-img:hover { opacity: .9; }
+
+/* Scoreboard takes remaining space */
+.jumbotron-mascots > .scoreboard-wrap,
+.jumbotron-mascots > .scroll-hint {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hide flanking mascots on smaller screens */
+@media (max-width: 1024px) {
+  .jumbotron-side { display: none; }
+  .jumbotron-mascots { display: block; }
+}
 @media (max-width: 640px) {
-  .mascot { width: 160px; opacity: .14; }
-  .mascot-7, .mascot-8 { display: none; }
+  .featured-matchup-img { height: 80px; }
+}
+
+/* --- Decorative mascots on non-leaderboard pages --- */
+
+.page-mascot-deco {
+  pointer-events: none;
+}
+
+.deco-mascot {
+  position: absolute;
+  width: 200px;
+  height: auto;
+  object-fit: contain;
+  opacity: .12;
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,.4));
+}
+.deco-top {
+  top: 80px;
+  right: -60px;
+  transform: rotate(-8deg);
+}
+.deco-bottom {
+  bottom: 40px;
+  left: -60px;
+  transform: rotate(6deg);
+}
+
+@media (max-width: 1024px) {
+  .deco-mascot { display: none; }
 }
 
 /* --- Mobile optimizations --- */
