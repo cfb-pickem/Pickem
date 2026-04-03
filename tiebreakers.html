@@ -34,7 +34,7 @@
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr{transition:background .15s ease, box-shadow .15s ease}
     .table tbody tr:hover{
-      background:linear-gradient(90deg, rgba(255,107,26,.10), transparent 50%);
+      background:linear-gradient(90deg, rgba(218,165,32,.10), transparent 50%);
       box-shadow:inset 4px 0 0 var(--cfp-gold);
     }
 
@@ -102,8 +102,8 @@
       </div>
     </div>
     <div class="flex items-center gap-2 mb-3 px-1 text-xs text-gray-300">
-      <span id="status-spinner" class="spinner spinner-sm"></span>
-      <span id="status">Loading…</span>
+      <span id="status-spinner" class="spinner spinner-sm" style="display:none"></span>
+      <span id="status"></span>
     </div>
 
     <!-- Tiebreaker description (changes with view) -->
@@ -332,7 +332,7 @@
       try {
         await loadSeasons();
       } catch {
-        status('No tiebreaker games found yet. Check back when games are posted.');
+        status('No tiebreaker games found yet. Check back when games are posted.', false, false);
         return;
       }
 
@@ -397,7 +397,7 @@
     }
 
     async function loadSeasons(){
-      status('Loading seasons…');
+      status('Loading seasons…', false, true);
       const { data, error } = await supabase
         .from('all_games')
         .select('cfb_season')

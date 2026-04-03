@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0B0B0B">
-  <title>CFB Pick'em — League Info & CFB Genius</title>
+  <title>CFB Pick'em — League Info</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,210 +14,108 @@
   <link rel="stylesheet" href="./css/base.css">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
-
-  <style>
-    .champion-frame{
-      background: linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));
-      border: 1px solid rgba(231,231,231,.12);
-      position: relative;
-      overflow: hidden;
-    }
-    .champion-frame::before{
-      content: "";
-      position: absolute; inset: 8px;
-      border: 1px solid rgba(233,185,73,.45);
-      border-radius: 0.5rem;
-      pointer-events: none;
-    }
-
-    .laurel{
-      position:absolute; inset:auto; left:50%; top:8px; transform:translateX(-50%);
-      width: 240px; height: 240px; opacity:.25; filter: blur(.2px);
-      background:
-        radial-gradient(closest-side, rgba(233,185,73,.9), rgba(233,185,73,0) 70%),
-        conic-gradient(from 200deg, transparent 0 15deg, rgba(233,185,73,.8) 15deg 25deg, transparent 25deg 40deg,
-                       rgba(233,185,73,.8) 40deg 50deg, transparent 50deg 65deg,
-                       rgba(233,185,73,.8) 65deg 75deg, transparent 75deg 360deg);
-      border-radius: 50%;
-      mask: radial-gradient(circle at 50% 50%, #000 34%, transparent 35%);
-    }
-  </style>
 </head>
 <body data-page="genius">
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
-    
     <div id="site-nav"></div>
 
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3 px-1">
-      <h1 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)]">League Info & CFB Genius</h1>
-    </div>
+    <!-- Rules -->
+    <div class="scoreboard-wrap mb-6">
+      <div class="px-5 md:px-6 py-4">
+        <h1 class="font-['Teko',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)] uppercase tracking-wide mb-4">League Rules</h1>
 
-    <!-- League Rules -->
-    <section class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-      <!-- Format -->
-      <div class="cfp-card gold-shadow p-5 md:p-6">
-        <div class="flex items-center gap-3 mb-4">
-          <span class="trophy-oval" aria-hidden="true"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] tracking-wide">Format</h2>
-        </div>
-        <ul class="text-sm leading-7 text-gray-200 space-y-1">
-          <li class="flex items-start gap-2"><span class="text-[var(--cfp-gold-2)] font-bold">Week 0</span> <span class="text-gray-400">—</span> 2 games</li>
-          <li class="flex items-start gap-2"><span class="text-[var(--cfp-gold-2)] font-bold">Weeks 1 +</span> <span class="text-gray-400">—</span> 4 games per week</li>
-        </ul>
-        <div class="mt-4 pt-4 border-t border-[rgba(231,231,231,.08)]">
-          <p class="text-xs text-gray-400 uppercase tracking-[.15em] mb-2">Playoffs</p>
-          <p class="text-sm text-gray-200">Top 4 teams advance. Scores reset to 0 and playoff teams pick all playoff games.</p>
-        </div>
-      </div>
-
-      <!-- Payouts -->
-      <div class="cfp-card gold-shadow p-5 md:p-6">
-        <div class="flex items-center gap-3 mb-4">
-          <span class="trophy-oval" aria-hidden="true"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] tracking-wide">Payouts</h2>
-        </div>
-        <dl class="space-y-3 text-sm">
-          <div class="flex items-center justify-between py-2 border-b border-[rgba(231,231,231,.06)]">
-            <dt class="flex items-center gap-2">
-              <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-[var(--cfp-gold)] text-black text-xs font-bold">1</span>
-              <span class="text-[var(--cfp-ivory)] font-medium">1st Place</span>
-            </dt>
-            <dd class="text-[var(--cfp-gold-2)] font-semibold">Remainder of buy-in</dd>
-          </div>
-          <div class="flex items-center justify-between py-2 border-b border-[rgba(231,231,231,.06)]">
-            <dt class="flex items-center gap-2">
-              <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-500 text-white text-xs font-bold">2</span>
-              <span class="text-[var(--cfp-ivory)] font-medium">2nd Place</span>
-            </dt>
-            <dd class="text-gray-300">Buy-in + $25</dd>
-          </div>
-          <div class="flex items-center justify-between py-2">
-            <dt class="flex items-center gap-2">
-              <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-[#8B6914] text-white text-xs font-bold">3</span>
-              <span class="text-[var(--cfp-ivory)] font-medium">3rd Place</span>
-            </dt>
-            <dd class="text-gray-300">Buy-in back</dd>
-          </div>
-        </dl>
-      </div>
-
-      <!-- Tiebreakers -->
-      <div class="cfp-card gold-shadow p-5 md:p-6">
-        <div class="flex items-center gap-3 mb-4">
-          <span class="trophy-oval" aria-hidden="true"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] tracking-wide">Tiebreakers</h2>
-        </div>
-        <p class="text-xs text-gray-400 uppercase tracking-[.15em] mb-2">Regular Season</p>
-        <ol class="list-decimal list-inside text-sm text-gray-200 space-y-1 mb-4">
-          <li>Aggregate win % of other conference championship games</li>
-          <li>Army v Navy</li>
-          <li>Celebration Bowl</li>
-          <li>Win % over last 8 regular season games</li>
-          <li>Coin flip</li>
-        </ol>
-        <p class="text-xs text-gray-400 uppercase tracking-[.15em] mb-2">Playoffs</p>
-        <ol class="list-decimal list-inside text-sm text-gray-200 space-y-1">
-          <li>Army-Navy (if not used in regular season)</li>
-          <li>Regular season points</li>
-          <li>Other bowl games if needed</li>
-        </ol>
-      </div>
-
-    </section>
-
-    <!-- CFB Genius Champion Section -->
-    <div class="mt-8 mb-2 flex items-center gap-3">
-      <span class="trophy-oval" aria-hidden="true"></span>
-      <h2 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)] tracking-wide">CFB Genius</h2>
-    </div>
-
-    <section class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
-      <div class="lg:col-span-3 champion-frame gold-shadow rounded-md">
-        <div class="laurel" aria-hidden="true"></div>
-        <img src="./Genius.jpeg" alt="Breaking Horrendous holding a golden college football trophy" class="w-full object-cover max-h-[640px]" loading="lazy" />
-        <div class="p-4 md:p-6 flex items-center justify-between border-t border-[rgba(231,231,231,.08)]">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm text-gray-200">
+          <!-- Format -->
           <div>
-            <h2 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)] tracking-wide">
-              Breaking Horrendous
-            </h2>
-            <p class="text-gray-300 text-xs md:text-sm">Reigning Champion</p>
+            <h2 class="text-[var(--cfp-gold-2)] font-semibold uppercase tracking-wider text-xs mb-2">Format</h2>
+            <ul class="space-y-1">
+              <li><strong class="text-[var(--cfp-ivory)]">Week 0:</strong> 2 games</li>
+              <li><strong class="text-[var(--cfp-ivory)]">Weeks 1+:</strong> 4 games per week</li>
+              <li class="pt-2"><strong class="text-[var(--cfp-ivory)]">Playoffs:</strong> Top 4 advance, scores reset, pick all playoff games</li>
+            </ul>
           </div>
-          <div class="flex items-center gap-3">
-            <div class="trophy-oval" aria-hidden="true"></div>
-            <span class="text-[10px] md:text-xs uppercase tracking-[.2em] text-[var(--cfp-gold-2)]">CFB Genius</span>
+
+          <!-- Payouts -->
+          <div>
+            <h2 class="text-[var(--cfp-gold-2)] font-semibold uppercase tracking-wider text-xs mb-2">Payouts</h2>
+            <ul class="space-y-1">
+              <li><strong class="text-[var(--cfp-ivory)]">1st:</strong> Remainder of buy-in</li>
+              <li><strong class="text-[var(--cfp-ivory)]">2nd:</strong> Buy-in + $25</li>
+              <li><strong class="text-[var(--cfp-ivory)]">3rd:</strong> Buy-in back</li>
+            </ul>
+          </div>
+
+          <!-- Tiebreakers -->
+          <div>
+            <h2 class="text-[var(--cfp-gold-2)] font-semibold uppercase tracking-wider text-xs mb-2">Tiebreakers</h2>
+            <p class="text-xs text-gray-400 mb-1">Regular Season</p>
+            <ol class="list-decimal list-inside space-y-0.5 mb-3">
+              <li>Conference championship game wins</li>
+              <li>Army v Navy</li>
+              <li>Celebration Bowl</li>
+              <li>Win % last 8 games</li>
+              <li>Coin flip</li>
+            </ol>
+            <p class="text-xs text-gray-400 mb-1">Playoffs</p>
+            <ol class="list-decimal list-inside space-y-0.5">
+              <li>Army-Navy (if unused)</li>
+              <li>Regular season points</li>
+              <li>Other bowl games</li>
+            </ol>
           </div>
         </div>
       </div>
+    </div>
 
-      <aside class="lg:col-span-2 space-y-4">
-        <div class="cfp-card gold-shadow p-4 md:p-6">
-          <h3 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] mb-3 tracking-wide">Accolades</h3>
-          <ul class="text-sm leading-6 list-disc list-inside text-gray-200">
-            <li>Perfect final week to secure playoff spot</li>
-            <li>Regular season champ</li>
-            <li>Is a doctor</li>
-          </ul>
-        </div>
-        <div class="cfp-card gold-shadow p-4 md:p-6">
-          <h3 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] mb-3 tracking-wide">By the Numbers</h3>
-          <dl class="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <dt class="text-gray-400">Pick Accuracy</dt>
-              <dd class="text-[var(--cfp-gold-2)] text-2xl font-bold">.583</dd>
-            </div>
-            <div>
-              <dt class="text-gray-400">Perfect Weeks</dt>
-              <dd class="text-[var(--cfp-gold-2)] text-2xl font-bold">3</dd>
-            </div>
-            <div>
-              <dt class="text-gray-400">Playoff Streak</dt>
-              <dd class="text-[var(--cfp-gold-2)] text-2xl font-bold">1</dd>
-            </div>
-            <div>
-              <dt class="text-gray-400">Years in League</dt>
-              <dd class="text-[var(--cfp-gold-2)] text-2xl font-bold">2</dd>
-            </div>
-          </dl>
-        </div>
-        <div class="cfp-card gold-shadow p-4 md:p-6">
-          <blockquote class="text-sm italic text-gray-200">“Fortune favors the bold and a well-scouted Big Noon kickoff.”</blockquote>
-          <p class="mt-2 text-xs text-gray-400">— Breaking Horrendous</p>
-        </div>
-      </aside>
-    </section>
+    <!-- Champion -->
+    <div class="scoreboard-wrap">
+      <div class="px-5 md:px-6 py-4">
+        <h2 class="font-['Teko',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)] uppercase tracking-wide mb-4">CFB Genius — Reigning Champion</h2>
 
-    <section class="mt-6 cfp-card gold-shadow">
-      <div class="px-4 md:px-6 py-4">
-        <div class="flex items-center gap-3 mb-4">
-          <span class="trophy-oval" aria-hidden="true"></span>
-          <h3 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold tracking-wide text-[var(--cfp-ivory)]">Past Champions</h3>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div class="lg:col-span-2">
+            <img src="./Genius.jpeg" alt="Breaking Horrendous" class="w-full object-cover max-h-[400px] rounded" loading="lazy" />
+          </div>
+          <div class="space-y-4">
+            <div>
+              <h3 class="font-['Oswald',_sans-serif] text-2xl font-bold text-[var(--cfp-ivory)]">Breaking Horrendous</h3>
+              <p class="text-gray-400 text-sm">2024 Champion</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <div class="text-gray-400">Accuracy</div>
+                <div class="text-[var(--cfp-gold-2)] text-2xl font-bold">.583</div>
+              </div>
+              <div>
+                <div class="text-gray-400">Perfect Weeks</div>
+                <div class="text-[var(--cfp-gold-2)] text-2xl font-bold">3</div>
+              </div>
+            </div>
+            <blockquote class="text-sm italic text-gray-300 border-l-2 border-[var(--cfp-gold)] pl-3">
+              "Fortune favors the bold and a well-scouted Big Noon kickoff."
+            </blockquote>
+          </div>
         </div>
-        <table class="min-w-full text-sm border-t border-[rgba(231,231,231,.08)]">
-          <thead class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
-            <tr>
-              <th class="px-4 py-2 text-left font-semibold">Year</th>
-              <th class="px-4 py-2 text-left font-semibold">Champion</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-              <td class="px-4 py-2">2024</td>
-              <td class="px-4 py-2 text-[var(--cfp-gold-2)] font-semibold">Breaking Horrendous</td>
-            </tr>
-            <tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-              <td class="px-4 py-2">2025</td>
-              <td class="px-4 py-2 text-gray-400 italic">TBD</td>
-            </tr>
-          </tbody>
-        </table>
+
+        <div class="mt-6 pt-4 border-t border-[rgba(255,255,255,.06)]">
+          <h3 class="text-[var(--cfp-gold-2)] font-semibold uppercase tracking-wider text-xs mb-2">Past Champions</h3>
+          <div class="text-sm text-gray-200 space-y-1">
+            <div class="flex justify-between py-1 border-b border-[rgba(255,255,255,.04)]">
+              <span>2024</span>
+              <span class="text-[var(--cfp-gold-2)] font-semibold">Breaking Horrendous</span>
+            </div>
+            <div class="flex justify-between py-1">
+              <span>2025</span>
+              <span class="text-gray-400 italic">TBD</span>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
 
   </div>
 
   <script type="module">
-    // Import the shared navigation initializer
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
 
