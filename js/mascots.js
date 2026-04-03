@@ -57,7 +57,9 @@ export function initMascots() {
     // Title
     const title = document.createElement('div');
     title.className = 'jumbotron-title';
-    title.innerHTML = '<span class="jumbotron-title-text">CFB Pick\'em Leaderboard</span>';
+    const page = document.body?.dataset?.page || '';
+    const heading = page === 'tiebreakers' ? 'CFB Pick\'em Tiebreakers' : 'CFB Pick\'em Leaderboard';
+    title.innerHTML = '<span class="jumbotron-title-text">' + heading + '</span>';
     header.appendChild(title);
 
     // Right mascot

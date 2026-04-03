@@ -363,19 +363,7 @@ header.cfp-card {
   opacity: .8;
 }
 
-/* Rivets in corners */
-.jumbotron-header::after {
-  content: "";
-  position: absolute;
-  top: 10px; left: 12px;
-  width: 8px; height: 8px;
-  background: radial-gradient(circle, #555, #333);
-  border-radius: 50%;
-  box-shadow:
-    calc(100% - 24px) 0 0 0 #444,
-    0 0 0 1px #222,
-    calc(100% - 24px) 0 0 1px #222;
-}
+/* (rivets removed) */
 
 .jumbotron-mascot {
   width: 130px;
