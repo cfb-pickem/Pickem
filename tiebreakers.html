@@ -86,6 +86,17 @@
 </head>
 
 <body data-page="tiebreakers">
+  <script>
+    window.addEventListener('error', function(e) {
+      var el = document.getElementById('js-diag');
+      if (el) el.textContent += 'ERR: ' + e.message + ' (' + (e.filename||'').split('/').pop() + ':' + e.lineno + ') ';
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var el = document.getElementById('js-diag');
+      if (el) el.textContent += 'PROMISE: ' + (e.reason && e.reason.message ? e.reason.message : e.reason) + ' ';
+    });
+  </script>
+  <div id="js-diag" style="color:#ff6b6b;font-size:13px;padding:8px;font-family:monospace;white-space:pre-wrap;"></div>
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
     <div id="site-nav"></div>
 
