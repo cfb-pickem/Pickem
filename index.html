@@ -836,8 +836,11 @@
         wrap.className = 'game-hdr';
         if (hasUrl) { wrap.href = row.espn_url.trim(); wrap.target = '_blank'; wrap.rel = 'noopener noreferrer'; wrap.style.textDecoration = 'none'; wrap.style.color = 'inherit'; }
 
+        // Line value
+        const ln = (typeof row?.line === 'number') ? row.line : (row?.line != null ? Number(row.line) : null);
+        const lineTxt = (ln != null && !isNaN(ln)) ? (ln > 0 ? `(+${ln})` : `(${ln})`) : '';
+
         // Away side
-        if (awayLogo) { const img = document.createElement('img'); img.src = awayLogo; img.className = 'game-hdr-logo'; img.alt = away; wrap.appendChild(img); }
         const awayTeam = document.createElement('div');
         awayTeam.className = 'game-hdr-team';
         const awayAbbrEl = document.createElement('div');
@@ -848,6 +851,7 @@
         awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–';
         awayTeam.appendChild(awayAbbrEl);
         awayTeam.appendChild(awayScoreEl);
+        if (lineTxt && ln < 0) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = lineTxt; awayTeam.appendChild(l); }
         wrap.appendChild(awayTeam);
 
         // Center status
@@ -874,14 +878,6 @@
           t.textContent = formatTimeCentral(row && row['Start (CT)']) || 'TBD';
           center.appendChild(t);
         }
-        // Line/spread
-        const ln = (typeof row?.line === 'number') ? row.line : (row?.line != null ? Number(row.line) : null);
-        if (ln != null && !isNaN(ln)) {
-          const lineEl = document.createElement('div');
-          lineEl.className = 'game-hdr-line';
-          lineEl.textContent = ln > 0 ? `+${ln}` : String(ln);
-          center.appendChild(lineEl);
-        }
         wrap.appendChild(center);
 
         // Home side
@@ -895,8 +891,8 @@
         homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–';
         homeTeam.appendChild(homeAbbrEl);
         homeTeam.appendChild(homeScoreEl);
+        if (lineTxt && ln >= 0) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = lineTxt; homeTeam.appendChild(l); }
         wrap.appendChild(homeTeam);
-        if (homeLogo) { const img = document.createElement('img'); img.src = homeLogo; img.className = 'game-hdr-logo'; img.alt = home; wrap.appendChild(img); }
 
         th.appendChild(wrap);
 
