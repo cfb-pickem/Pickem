@@ -11,8 +11,8 @@ h1 {
 :root {
   --cfp-black: #0a1208;
   --cfp-charcoal: #0f1a0e;
-  --cfp-gold: #ff6b1a;
-  --cfp-gold-2: #ffad42;
+  --cfp-gold: #DAA520;
+  --cfp-gold-2: #F0C75E;
   --cfp-ivory: #f5f0e0;
   --cfp-gray: #1a2818;
   --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 8px rgba(255,107,26,.3);
