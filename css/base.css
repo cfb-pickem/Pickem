@@ -490,13 +490,4 @@ header.cfp-card {
 
 /* --- Horizontal scroll indicator for tables --- */
 
-.scroll-hint { position: relative; }
-.scroll-hint::after {
-  content: "";
-  position: absolute;
-  top: 0; bottom: 0; right: 0; width: 32px;
-  background: linear-gradient(90deg, transparent, rgba(13,13,13,.9));
-  pointer-events: none; z-index: 30;
-  opacity: 1; transition: opacity .3s ease;
-}
-.scroll-hint.scrolled-end::after { opacity: 0; }
+/* (scroll-hint shadow removed — caused artifacts on mobile scroll) */
