@@ -29,9 +29,9 @@ html {
 body {
   background:
     /* Stadium floodlights — warm glow from above */
-    radial-gradient(ellipse 1400px 500px at 50% -5%, rgba(255,160,60,.16), transparent 70%),
-    radial-gradient(circle at 15% -5%, rgba(255,107,26,.10), transparent 50%),
-    radial-gradient(circle at 85% -5%, rgba(255,107,26,.10), transparent 50%),
+    radial-gradient(ellipse 1400px 500px at 50% -5%, rgba(255,160,60,.24), transparent 70%),
+    radial-gradient(circle at 15% -5%, rgba(255,107,26,.14), transparent 50%),
+    radial-gradient(circle at 85% -5%, rgba(255,107,26,.14), transparent 50%),
     /* Subtle vertical turf grain */
     repeating-linear-gradient(
       90deg,
@@ -292,10 +292,10 @@ header.cfp-card {
   z-index: 2;
 }
 
-/* Scoreboard header row — slightly lighter so it separates */
+/* Scoreboard header row */
 .scoreboard-header {
-  background: linear-gradient(180deg, #1c1c1c, #141414) !important;
-  border-bottom: 2px solid #333;
+  background: linear-gradient(180deg, #1e1e1e, #141414) !important;
+  border-bottom: 3px solid #444;
 }
 
 .scoreboard-header th {
@@ -303,10 +303,18 @@ header.cfp-card {
   font-size: .8rem;
   letter-spacing: .06em;
   text-transform: uppercase;
-  color: #ccc;
-  padding-top: .65rem;
-  padding-bottom: .65rem;
+  color: #ddd;
+  padding-top: .75rem;
+  padding-bottom: .75rem;
+  border-right: 1px solid rgba(255,255,255,.06);
 }
+.scoreboard-header th:last-child { border-right: none; }
+
+/* Column dividers in table body */
+.table tbody td {
+  border-right: 1px solid rgba(255,255,255,.04);
+}
+.table tbody td:last-child { border-right: none; }
 
 /* --- Table text readability --- */
 
@@ -315,13 +323,13 @@ header.cfp-card {
   color: #e8e8e8;
 }
 
-/* Points column: bright white, large, bold — the score */
+/* Points column: jumbotron score — THE number */
 .table tbody td:nth-child(2) {
   font-family: 'Teko', 'Oswald', sans-serif;
-  font-size: 1.3em;
+  font-size: 1.6em;
   font-weight: 700;
   color: #ffffff;
-  text-shadow: 0 0 10px rgba(255,255,255,.15);
+  text-shadow: 0 0 14px rgba(255,255,255,.3);
 }
 
 /* Alternating rows — very subtle on the dark scoreboard */
@@ -365,24 +373,24 @@ header.cfp-card {
 
 .mascot {
   position: absolute;
-  width: 180px;
+  width: 300px;
   height: auto;
-  opacity: .13;
-  filter: drop-shadow(0 4px 8px rgba(0,0,0,.4));
+  opacity: .22;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,.5));
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
   animation-direction: alternate;
   object-fit: contain;
 }
 
-.mascot-1 { left: -2%;  top: 8%;  animation: mascot-bob-1 8s infinite alternate; width: 200px; }
-.mascot-2 { right: -2%; top: 5%;  animation: mascot-bob-2 9s infinite alternate; width: 190px; }
-.mascot-3 { left: -1%;  top: 32%; animation: mascot-bob-1 10s infinite alternate; width: 170px; }
-.mascot-4 { right: -1%; top: 30%; animation: mascot-bob-2 7s infinite alternate; width: 180px; }
-.mascot-5 { left: -2%;  top: 56%; animation: mascot-bob-1 9s infinite alternate; width: 190px; }
-.mascot-6 { right: -2%; top: 54%; animation: mascot-bob-2 8s infinite alternate; width: 175px; }
-.mascot-7 { left: 0%;   top: 78%; animation: mascot-bob-1 7s infinite alternate; width: 170px; }
-.mascot-8 { right: 0%;  top: 76%; animation: mascot-bob-2 10s infinite alternate; width: 185px; }
+.mascot-1 { left: -4%;  top: 6%;  animation: mascot-bob-1 8s infinite alternate; width: 320px; }
+.mascot-2 { right: -4%; top: 3%;  animation: mascot-bob-2 9s infinite alternate; width: 300px; }
+.mascot-3 { left: -3%;  top: 30%; animation: mascot-bob-1 10s infinite alternate; width: 280px; }
+.mascot-4 { right: -3%; top: 28%; animation: mascot-bob-2 7s infinite alternate; width: 310px; }
+.mascot-5 { left: -4%;  top: 54%; animation: mascot-bob-1 9s infinite alternate; width: 300px; }
+.mascot-6 { right: -4%; top: 52%; animation: mascot-bob-2 8s infinite alternate; width: 290px; }
+.mascot-7 { left: -2%;  top: 76%; animation: mascot-bob-1 7s infinite alternate; width: 280px; }
+.mascot-8 { right: -2%; top: 74%; animation: mascot-bob-2 10s infinite alternate; width: 310px; }
 
 @keyframes mascot-bob-1 {
   0%   { transform: translateY(0) rotate(-5deg); }
@@ -394,7 +402,7 @@ header.cfp-card {
 }
 
 @media (max-width: 640px) {
-  .mascot { width: 110px; opacity: .09; }
+  .mascot { width: 160px; opacity: .14; }
   .mascot-7, .mascot-8 { display: none; }
 }
 
