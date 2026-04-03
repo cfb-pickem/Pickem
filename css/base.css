@@ -412,7 +412,29 @@ header.cfp-card {
 }
 .table tbody td:last-child { border-right: none; }
 
-/* --- Table text readability --- */
+/* --- Table text — jumbotron style --- */
+
+/* "Team" and "Points" column headers */
+.table thead th.sticky-col-1,
+.table thead th:nth-child(2) {
+  font-family: 'Teko', 'Oswald', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--cfp-gold-2);
+  text-shadow: 0 0 10px rgba(240,199,94,.4), 0 0 20px rgba(240,199,94,.15);
+}
+
+/* Team names in the first column */
+.table tbody td.sticky-col-1 {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--cfp-ivory);
+  text-shadow: 0 0 8px rgba(245,240,224,.25);
+}
 
 /* ALL table text: white/cream, readable */
 .table tbody td {
@@ -425,7 +447,7 @@ header.cfp-card {
   font-size: 1.6em;
   font-weight: 700;
   color: #ffffff;
-  text-shadow: 0 0 14px rgba(255,255,255,.3);
+  text-shadow: 0 0 14px rgba(255,255,255,.4), 0 0 28px rgba(255,255,255,.15);
 }
 
 /* Alternating rows — very subtle on the dark scoreboard */
