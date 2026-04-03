@@ -346,8 +346,10 @@ header.cfp-card {
   justify-content: center;
   gap: 1rem;
   padding: 1rem 1rem .5rem;
-  background: linear-gradient(180deg, #181818, #111 40%, #0a0a0a);
-  border: 5px solid #2a2a2a;
+  background: linear-gradient(180deg, rgba(24,24,24,.75), rgba(17,17,17,.7) 40%, rgba(10,10,10,.75));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 2px solid rgba(255,255,255,.1);
   border-bottom: none;
   border-radius: 8px 8px 0 0;
   position: relative;
