@@ -122,29 +122,17 @@
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
     <div id="site-nav"></div>
 
-    <header class="cfp-card stripe gold-shadow mb-4">
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between px-4 py-4 md:px-6 md:py-5 gap-3">
-        <div class="flex items-center gap-3 md:gap-4">
-          <span class="trophy-oval" aria-hidden="true"></span>
-          <div>
-            <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-            <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">
-              Season Stats
-            </h1>
-          </div>
-        </div>
-
-        <!-- Season filter -->
-        <div class="flex items-center gap-3 text-xs md:text-sm md:self-end">
-          <label class="text-gray-300 tracking-[.18em] uppercase">Season</label>
-          <select id="season-select" class="cfp-select rounded-none px-3 py-2 min-w-[120px]"></select>
-        </div>
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3 px-1">
+      <h1 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)]">Season Stats</h1>
+      <div class="flex items-center gap-2 text-sm">
+        <label class="text-gray-300 tracking-[.18em] uppercase">Season</label>
+        <select id="season-select" class="cfp-select rounded-none px-3 py-2 min-w-[120px]"></select>
       </div>
-      <div class="px-4 md:px-6 pb-3 text-xs text-gray-300 flex items-center gap-2">
-        <span id="status-spinner" class="spinner spinner-sm"></span>
-        <span id="status">Loading…</span>
-      </div>
-    </header>
+    </div>
+    <div class="flex items-center gap-2 mb-3 px-1 text-xs text-gray-300">
+      <span id="status-spinner" class="spinner spinner-sm"></span>
+      <span id="status">Loading…</span>
+    </div>
 
     <!-- RIBBONS ROW -->
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

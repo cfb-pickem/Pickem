@@ -106,32 +106,27 @@
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
     <div id="site-nav"></div>
 
-    <header class="cfp-card stripe gold-shadow mb-5">
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-4 py-4 md:px-6 md:py-5">
-        <div>
-          <p class="text-[11px] tracking-[.25em] text-gray-300 uppercase">College Football Pick'em</p>
-          <h1 class="font-['Oswald',_sans-serif] text-3xl md:text-4xl font-bold text-[var(--cfp-ivory)] leading-tight">Make Your Picks</h1>
-          <div id="team-chip" class="mt-2 hidden">
-            <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
-          </div>
-        </div>
-        <div class="text-xs text-gray-300 flex items-center gap-2">
-          <span id="status-spinner" class="spinner spinner-sm"></span>
-          <span id="status" aria-live="polite">Loading…</span>
-        </div>
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3 px-1">
+      <h1 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)]">Make Your Picks</h1>
+      <div id="team-chip" class="hidden">
+        <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
       </div>
+    </div>
+    <div class="flex items-center gap-2 mb-3 px-1 text-xs text-gray-300">
+      <span id="status-spinner" class="spinner spinner-sm"></span>
+      <span id="status" aria-live="polite">Loading…</span>
+    </div>
 
-      <!-- Lock / info banner -->
-      <div id="lock-banner" class="hidden border-t border-white/10 px-4 py-3 md:px-6 bg-[rgba(201,146,16,.06)]">
-        <div class="text-sm">
-          <span class="inline-flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm-3 8V6a3 3 0 016 0v3H9z"/></svg>
-            <strong id="lock-banner-title">Picks locked:</strong>
-            <span id="lock-msg" class="opacity-90"></span>
-          </span>
-        </div>
+    <!-- Lock / info banner -->
+    <div id="lock-banner" class="hidden scoreboard-wrap mb-3 px-4 py-3 md:px-6 bg-[rgba(201,146,16,.06)]">
+      <div class="text-sm">
+        <span class="inline-flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm-3 8V6a3 3 0 016 0v3H9z"/></svg>
+          <strong id="lock-banner-title">Picks locked:</strong>
+          <span id="lock-msg" class="opacity-90"></span>
+        </span>
       </div>
-    </header>
+    </div>
 
     <div id="auth-gate" class="cfp-card callout gold-shadow p-4 md:p-6 hidden">
       <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Sign in required</h2>
