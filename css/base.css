@@ -33,7 +33,7 @@ body {
     /* Stadium photo */
     url('../stadium-bg.png');
   background-size: cover;
-  background-position: center top;
+  background-position: center center;
   background-attachment: fixed;
   background-repeat: no-repeat;
   background-color: var(--cfp-charcoal);
@@ -479,6 +479,14 @@ header.cfp-card {
   .cfp-input  { min-height: 44px; padding-top: .625rem; padding-bottom: .625rem; }
   .toast-container { right: .75rem; left: .75rem; bottom: .75rem; }
   .toast { font-size: .8rem; padding: .625rem 1rem; }
+}
+
+/* iOS doesn't support background-attachment: fixed */
+@media (max-width: 768px) {
+  body {
+    background-attachment: scroll;
+    background-position: center center;
+  }
 }
 
 /* --- Horizontal scroll indicator for tables --- */
