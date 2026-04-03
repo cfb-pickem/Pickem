@@ -253,16 +253,7 @@ header.cfp-card {
   overflow: hidden;
 }
 
-/* Inner bezel — double frame look */
-.scoreboard-wrap::before {
-  content: "";
-  position: absolute;
-  inset: 5px;
-  border: 1px solid rgba(255,255,255,.06);
-  border-radius: 4px;
-  pointer-events: none;
-  z-index: 1;
-}
+/* (inner bezel removed — caused line artifact on mobile scroll) */
 
 /* (LED strip removed) */
 
