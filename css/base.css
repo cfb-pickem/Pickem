@@ -264,21 +264,7 @@ header.cfp-card {
   z-index: 1;
 }
 
-/* Orange LED strip along top */
-.scoreboard-wrap::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--cfp-gold) 0 4px,
-    transparent 4px 7px
-  );
-  opacity: .8;
-  pointer-events: none;
-  z-index: 2;
-}
+/* (LED strip removed) */
 
 /* Scoreboard header row */
 .scoreboard-header {
