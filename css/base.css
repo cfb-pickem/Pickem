@@ -244,6 +244,8 @@ header.cfp-card {
   justify-content: center;
   gap: 2px;
   padding: 2px 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 .game-hdr-logo {
   width: 32px; height: 32px;
@@ -340,11 +342,13 @@ header.cfp-card {
 }
 
 @media (max-width: 640px) {
-  .game-hdr { gap: 1px; }
+  .game-hdr { gap: 1px; flex-wrap: nowrap; white-space: nowrap; }
   .game-hdr-logo { width: 22px; height: 22px; }
-  .game-hdr-score { font-size: 1.5rem; }
+  .game-hdr-score { font-size: 1.2rem; }
   .game-hdr-abbr { font-size: .4rem; }
-  .game-hdr-period, .game-hdr-clock, .game-hdr-final, .game-hdr-time { font-size: .4rem; }
+  .game-hdr-line { font-size: .35rem; }
+  .game-hdr-period, .game-hdr-clock, .game-hdr-final, .game-hdr-time { font-size: .35rem; }
+  .game-hdr-team { min-width: auto; }
 }
 
 /* ============================================
