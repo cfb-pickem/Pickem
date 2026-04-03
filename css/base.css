@@ -236,6 +236,92 @@ header.cfp-card {
   50%      { opacity: .25; transform: scale(1.12); }
 }
 
+/* --- Game header (mini scoreboard in column headers) --- */
+
+.game-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 130px;
+  padding: 2px 0;
+}
+.game-hdr-logo {
+  width: 22px; height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 4px rgba(0,0,0,.4));
+}
+.game-hdr-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.game-hdr-abbr {
+  font-size: .55rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #aaa;
+  line-height: 1;
+}
+.game-hdr-score {
+  font-family: 'Teko', 'Oswald', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  min-width: 26px;
+  text-align: center;
+  border-radius: 2px;
+  color: #fff;
+  background: #2a2a2a;
+}
+.game-hdr-score.score-win  { background: rgba(34,180,85,.5); color: #5eff8a; }
+.game-hdr-score.score-loss { background: rgba(100,100,100,.3); color: #ccc; }
+.game-hdr-score.score-lead { background: rgba(218,165,32,.35); color: var(--cfp-gold-2); }
+.game-hdr-score.score-trail { background: rgba(100,100,100,.3); color: #ccc; }
+
+.game-hdr-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 0 3px;
+  min-width: 36px;
+}
+.game-hdr-period {
+  font-size: .5rem;
+  text-transform: uppercase;
+  color: #aaa;
+  line-height: 1;
+  letter-spacing: .06em;
+}
+.game-hdr-clock {
+  font-size: .5rem;
+  color: #aaa;
+  line-height: 1;
+}
+.game-hdr-final {
+  font-size: .55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #999;
+  line-height: 1.2;
+}
+.game-hdr-time {
+  font-size: .55rem;
+  color: #aaa;
+  line-height: 1.2;
+}
+
+@media (max-width: 640px) {
+  .game-hdr { min-width: 100px; gap: 2px; }
+  .game-hdr-logo { width: 16px; height: 16px; }
+  .game-hdr-score { font-size: .95rem; padding: 1px 3px; min-width: 20px; }
+  .game-hdr-abbr { font-size: .45rem; }
+}
+
 /* ============================================
    SCOREBOARD — ESPN-style dark panel
    ============================================ */

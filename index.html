@@ -786,6 +786,23 @@
       return logoByTeam[pick] || null;
     }
 
+    function scoreClasses(status, aPts, hPts, side){
+      const base = 'game-hdr-score';
+      if (status === 'final') {
+        const a = Number(aPts), h = Number(hPts);
+        if (isNaN(a) || isNaN(h)) return base;
+        if (side === 'away') return base + (a >= h ? ' score-win' : ' score-loss');
+        return base + (h >= a ? ' score-win' : ' score-loss');
+      }
+      if (status === 'in_progress') {
+        const a = Number(aPts), h = Number(hPts);
+        if (isNaN(a) || isNaN(h)) return base;
+        if (side === 'away') return base + (a >= h ? ' score-lead' : ' score-trail');
+        return base + (h >= a ? ' score-lead' : ' score-trail');
+      }
+      return base;
+    }
+
     function renderHeader(gameNameMap, gameRows){
       theadRow.innerHTML = '';
 
@@ -801,60 +818,81 @@
 
       gameIds.forEach(id=>{
         const th = document.createElement('th');
-        th.className = 'px-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] whitespace-nowrap align-middle font-[Oswald] tracking-wide';
+        th.className = 'px-1 py-2 text-center bg-[var(--cfp-black)] align-middle';
 
         const row = (gameRows||[]).find(g=>g.GameId===id);
+        const away = row?.Away || '';
+        const home = row?.Home || '';
+        const awayAbbr = abbrByTeam[away] || away.substring(0,4).toUpperCase();
+        const homeAbbr = abbrByTeam[home] || home.substring(0,4).toUpperCase();
+        const awayLogo = logoByTeam[away] || '';
+        const homeLogo = logoByTeam[home] || '';
+        const aPts = row?.AwayPts ?? '';
+        const hPts = row?.HomePts ?? '';
+        const status = row?.Status || '';
 
         const hasUrl = !!(row?.espn_url && /^https?:\/\//i.test(row.espn_url));
-        const title = document.createElement(hasUrl ? 'a' : 'div');
-        title.className = 'mb-1';
-        title.textContent = gameNameMap[id] || `Game ${id}`;
-        if (hasUrl) {
-          title.href = row.espn_url.trim();
-          title.target = '_blank';
-          title.rel = 'noopener noreferrer';
-          title.className = 'mb-1 text-[var(--cfp-ivory)] hover:underline underline-offset-2';
-        }
-        th.appendChild(title);
+        const wrap = document.createElement(hasUrl ? 'a' : 'div');
+        wrap.className = 'game-hdr';
+        if (hasUrl) { wrap.href = row.espn_url.trim(); wrap.target = '_blank'; wrap.rel = 'noopener noreferrer'; wrap.style.textDecoration = 'none'; wrap.style.color = 'inherit'; }
 
-        const networkLine = document.createElement('div');
-        networkLine.className = 'network-line';
+        // Away side
+        if (awayLogo) { const img = document.createElement('img'); img.src = awayLogo; img.className = 'game-hdr-logo'; img.alt = away; wrap.appendChild(img); }
+        const awayTeam = document.createElement('div');
+        awayTeam.className = 'game-hdr-team';
+        const awayAbbrEl = document.createElement('div');
+        awayAbbrEl.className = 'game-hdr-abbr';
+        awayAbbrEl.textContent = awayAbbr;
+        const awayScoreEl = document.createElement('div');
+        awayScoreEl.className = scoreClasses(status, aPts, hPts, 'away');
+        awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–';
+        awayTeam.appendChild(awayAbbrEl);
+        awayTeam.appendChild(awayScoreEl);
+        wrap.appendChild(awayTeam);
 
-        const badge = document.createElement('div');
-        badge.className = 'badge badge-sched inline-fix';
-
-        if(row?.Status === 'final'){
-          networkLine.style.display = 'none';
-          const a = row.AwayPts ?? '';
-          const h = row.HomePts ?? '';
-          badge.textContent = `Final ${a}–${h}`;
-          badge.className = 'badge badge-final inline-fix';
-        } else if(row?.Status === 'in_progress'){
-          if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
-          else { networkLine.style.display='none'; }
-
+        // Center status
+        const center = document.createElement('div');
+        center.className = 'game-hdr-center';
+        if (status === 'final') {
+          const f = document.createElement('div');
+          f.className = 'game-hdr-final';
+          f.textContent = 'FINAL';
+          center.appendChild(f);
+        } else if (status === 'in_progress') {
           const p = row?.Period || 1;
-          const clk = row?.Clock || '';
-          const a = row?.AwayPts ?? '';
-          const h = row?.HomePts ?? '';
-          const score = (a!=='' && h!=='') ? `${a}–${h}` : '';
-          badge.textContent = `${p >= 5 ? 'OT' : 'Q'+(p||1)} ${clk} ${score}`.trim();
-          badge.className = 'badge badge-live inline-fix';
+          const per = document.createElement('div');
+          per.className = 'game-hdr-period';
+          per.textContent = p >= 5 ? 'OT' : p + 'TH';
+          const clk = document.createElement('div');
+          clk.className = 'game-hdr-clock';
+          clk.textContent = row?.Clock || '';
+          center.appendChild(per);
+          center.appendChild(clk);
         } else {
-          if (row?.Network) { networkLine.textContent = row.Network; networkLine.style.display=''; }
-          else { networkLine.style.display='none'; }
-          const t = formatTimeCentral(row && row['Start (CT)']);
-          badge.textContent = t || 'Scheduled';
-          badge.className = 'badge badge-sched inline-fix';
+          const t = document.createElement('div');
+          t.className = 'game-hdr-time';
+          t.textContent = formatTimeCentral(row && row['Start (CT)']) || 'TBD';
+          center.appendChild(t);
         }
+        wrap.appendChild(center);
 
-        const statusWrap = document.createElement('div');
-        statusWrap.className = 'flex items-center justify-center gap-1 w-full text-center whitespace-nowrap';
-        statusWrap.appendChild(networkLine);
-        statusWrap.appendChild(badge);
-        th.appendChild(statusWrap);
+        // Home side
+        const homeTeam = document.createElement('div');
+        homeTeam.className = 'game-hdr-team';
+        const homeAbbrEl = document.createElement('div');
+        homeAbbrEl.className = 'game-hdr-abbr';
+        homeAbbrEl.textContent = homeAbbr;
+        const homeScoreEl = document.createElement('div');
+        homeScoreEl.className = scoreClasses(status, aPts, hPts, 'home');
+        homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–';
+        homeTeam.appendChild(homeAbbrEl);
+        homeTeam.appendChild(homeScoreEl);
+        wrap.appendChild(homeTeam);
+        if (homeLogo) { const img = document.createElement('img'); img.src = homeLogo; img.className = 'game-hdr-logo'; img.alt = home; wrap.appendChild(img); }
 
-        headerStatusEls.set(String(id), { badgeEl: badge, networkEl: networkLine });
+        th.appendChild(wrap);
+
+        headerStatusEls.set(String(id), { awayScoreEl, homeScoreEl, centerEl: center, awayName: away, homeName: home });
         theadRow.appendChild(th);
       });
     }
@@ -1007,34 +1045,26 @@
         const entry = headerStatusEls.get(String(r.GameId));
         if(!entry) return;
 
-        const { badgeEl, networkEl } = entry;
+        const { awayScoreEl, homeScoreEl, centerEl } = entry;
+        const aPts = r.AwayPts ?? '';
+        const hPts = r.HomePts ?? '';
 
-        if(r.Status === 'final'){
-          if (networkEl) networkEl.style.display = 'none';
-          const a = r.AwayPts ?? '';
-          const h = r.HomePts ?? '';
-          badgeEl.textContent = `Final ${a}–${h}`;
-          badgeEl.className = 'badge badge-final inline-fix';
-        }else if(r.Status === 'in_progress'){
-          if (networkEl) {
-            if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
-            else { networkEl.style.display = 'none'; }
+        // Update scores
+        if (awayScoreEl) { awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–'; awayScoreEl.className = scoreClasses(r.Status, aPts, hPts, 'away'); }
+        if (homeScoreEl) { homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–'; homeScoreEl.className = scoreClasses(r.Status, aPts, hPts, 'home'); }
+
+        // Update center status
+        if (centerEl) {
+          centerEl.innerHTML = '';
+          if (r.Status === 'final') {
+            const f = document.createElement('div'); f.className = 'game-hdr-final'; f.textContent = 'FINAL'; centerEl.appendChild(f);
+          } else if (r.Status === 'in_progress') {
+            const p = r.Period || 1;
+            const per = document.createElement('div'); per.className = 'game-hdr-period'; per.textContent = p >= 5 ? 'OT' : p + 'TH'; centerEl.appendChild(per);
+            const clk = document.createElement('div'); clk.className = 'game-hdr-clock'; clk.textContent = r.Clock || ''; centerEl.appendChild(clk);
+          } else {
+            const t = document.createElement('div'); t.className = 'game-hdr-time'; t.textContent = formatTimeCentral(r['Start (CT)']) || 'TBD'; centerEl.appendChild(t);
           }
-          const p = r.Period || 1;
-          const clk = r.Clock || '';
-          const a = r.AwayPts ?? '';
-          const h = r.HomePts ?? '';
-          const score = (a!=='' && h!=='') ? `${a}–${h}` : '';
-          badgeEl.textContent = `${p >= 5 ? 'OT' : 'Q'+(p||1)} ${clk} ${score}`.trim();
-          badgeEl.className = 'badge badge-live inline-fix';
-        }else{
-          if (networkEl) {
-            if (r.Network) { networkEl.textContent = r.Network; networkEl.style.display = ''; }
-            else { networkEl.style.display = 'none'; }
-          }
-          const t = formatTimeCentral(r['Start (CT)']);
-          badgeEl.textContent = t || 'Scheduled';
-          badgeEl.className = 'badge badge-sched inline-fix';
         }
 
         const prevWinner = winnerMap[r.GameId] ?? null;
