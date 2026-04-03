@@ -677,6 +677,14 @@
           t.textContent = formatTimeCentral(row && row['Start (CT)']) || 'TBD';
           center.appendChild(t);
         }
+        // Line/spread
+        const ln = (typeof row?.line === 'number') ? row.line : (row?.line != null ? Number(row.line) : null);
+        if (ln != null && !isNaN(ln)) {
+          const lineEl = document.createElement('div');
+          lineEl.className = 'game-hdr-line';
+          lineEl.textContent = ln > 0 ? `+${ln}` : String(ln);
+          center.appendChild(lineEl);
+        }
         wrap.appendChild(center);
 
         // Home side

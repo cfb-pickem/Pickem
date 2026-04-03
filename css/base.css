@@ -236,90 +236,115 @@ header.cfp-card {
   50%      { opacity: .25; transform: scale(1.12); }
 }
 
-/* --- Game header (mini scoreboard in column headers) --- */
+/* --- Game header (jumbotron-style column headers) --- */
 
 .game-hdr {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  min-width: 130px;
+  gap: 2px;
   padding: 2px 0;
 }
 .game-hdr-logo {
-  width: 22px; height: 22px;
+  width: 32px; height: 32px;
   object-fit: contain;
   flex-shrink: 0;
-  filter: drop-shadow(0 0 4px rgba(0,0,0,.4));
+  filter: drop-shadow(0 0 6px rgba(0,0,0,.5));
 }
 .game-hdr-team {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 0;
+  min-width: 24px;
 }
 .game-hdr-abbr {
-  font-size: .55rem;
-  letter-spacing: .08em;
+  font-family: 'Oswald', sans-serif;
+  font-size: .5rem;
+  font-weight: 600;
+  letter-spacing: .1em;
   text-transform: uppercase;
-  color: #aaa;
+  color: var(--cfp-gold-2);
   line-height: 1;
 }
 .game-hdr-score {
   font-family: 'Teko', 'Oswald', sans-serif;
-  font-size: 1.15rem;
+  font-size: 1.4rem;
   font-weight: 700;
   line-height: 1;
-  padding: 2px 5px;
-  min-width: 26px;
+  min-width: 20px;
   text-align: center;
-  border-radius: 2px;
+  background: none;
   color: #fff;
-  background: #2a2a2a;
+  text-shadow: 0 0 8px rgba(255,255,255,.3);
 }
-.game-hdr-score.score-win  { background: rgba(34,180,85,.5); color: #5eff8a; }
-.game-hdr-score.score-loss { background: rgba(100,100,100,.3); color: #ccc; }
-.game-hdr-score.score-lead { background: rgba(218,165,32,.35); color: var(--cfp-gold-2); }
-.game-hdr-score.score-trail { background: rgba(100,100,100,.3); color: #ccc; }
+.game-hdr-score.score-win {
+  color: #5eff8a;
+  text-shadow: 0 0 10px rgba(94,255,138,.5), 0 0 20px rgba(94,255,138,.2);
+}
+.game-hdr-score.score-loss {
+  color: #888;
+  text-shadow: none;
+}
+.game-hdr-score.score-lead {
+  color: var(--cfp-gold-2);
+  text-shadow: 0 0 10px rgba(240,199,94,.5), 0 0 20px rgba(240,199,94,.2);
+}
+.game-hdr-score.score-trail {
+  color: #888;
+  text-shadow: none;
+}
 
 .game-hdr-center {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
-  padding: 0 3px;
-  min-width: 36px;
+  padding: 0 2px;
+  min-width: 28px;
 }
 .game-hdr-period {
-  font-size: .5rem;
+  font-family: 'Oswald', sans-serif;
+  font-size: .45rem;
+  font-weight: 600;
   text-transform: uppercase;
-  color: #aaa;
+  color: var(--cfp-gold-2);
   line-height: 1;
   letter-spacing: .06em;
 }
 .game-hdr-clock {
-  font-size: .5rem;
-  color: #aaa;
-  line-height: 1;
+  font-size: .45rem;
+  color: #ccc;
+  line-height: 1.1;
 }
 .game-hdr-final {
-  font-size: .55rem;
+  font-family: 'Oswald', sans-serif;
+  font-size: .5rem;
   font-weight: 700;
   text-transform: uppercase;
-  color: #999;
+  color: #bbb;
   line-height: 1.2;
+  letter-spacing: .06em;
 }
 .game-hdr-time {
-  font-size: .55rem;
+  font-size: .5rem;
   color: #aaa;
   line-height: 1.2;
+}
+.game-hdr-line {
+  font-size: .4rem;
+  color: #777;
+  line-height: 1;
+  margin-top: 1px;
+  letter-spacing: .04em;
 }
 
 @media (max-width: 640px) {
-  .game-hdr { min-width: 100px; gap: 2px; }
-  .game-hdr-logo { width: 16px; height: 16px; }
-  .game-hdr-score { font-size: .95rem; padding: 1px 3px; min-width: 20px; }
-  .game-hdr-abbr { font-size: .45rem; }
+  .game-hdr { gap: 1px; }
+  .game-hdr-logo { width: 22px; height: 22px; }
+  .game-hdr-score { font-size: 1.1rem; }
+  .game-hdr-abbr { font-size: .4rem; }
+  .game-hdr-period, .game-hdr-clock, .game-hdr-final, .game-hdr-time { font-size: .4rem; }
 }
 
 /* ============================================
