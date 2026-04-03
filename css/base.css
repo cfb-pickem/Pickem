@@ -301,9 +301,11 @@ header.cfp-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
-  padding: 0 2px;
-  min-width: 28px;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 6px;
+  min-width: 32px;
+  align-self: stretch;
 }
 .game-hdr-period {
   font-family: 'Oswald', sans-serif;
@@ -337,7 +339,7 @@ header.cfp-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
+  gap: 1px;
 }
 .game-hdr-side-top {
   display: flex;
@@ -350,7 +352,7 @@ header.cfp-card {
   font-weight: 600;
   color: #999;
   line-height: 1;
-  margin-top: 2px;
+  margin-top: 0;
   letter-spacing: .04em;
   text-align: center;
   width: 100%;
@@ -362,8 +364,8 @@ header.cfp-card {
   .game-hdr-side-top .game-hdr-logo { display: none; }
   .game-hdr-score { font-size: 1.2rem; }
   .game-hdr-abbr { font-size: .6rem; }
-  .game-hdr-line { font-size: .5rem; margin-top: 3px; }
-  .game-hdr-center { padding: 0 4px; min-width: 32px; }
+  .game-hdr-line { font-size: .5rem; margin-top: 1px; }
+  .game-hdr-center { padding: 0 5px; min-width: 30px; }
   .game-hdr-period, .game-hdr-final { font-size: .45rem; }
   .game-hdr-clock, .game-hdr-time { font-size: .45rem; margin-top: 1px; }
   .game-hdr-team { min-width: auto; }
