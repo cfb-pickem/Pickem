@@ -2,7 +2,6 @@
 
 const MASCOT_IMAGES = [
   'alabama-vs-georgia.png',
-  'army-vs-navy.png',
   'auburn-vs-alabama.png',
   'colorado-vs-arizonastate.png',
   'florida-vs-fsu.png',
