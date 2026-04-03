@@ -333,16 +333,25 @@
       }
     }
 
+    const diag = document.getElementById('js-diag');
+    function diagLog(msg){ if(diag) diag.textContent += msg + '\n'; console.log('[TB]', msg); }
+
     async function startup(){
-      await initNav();
+      diagLog('1. startup called');
+      try { await initNav(); diagLog('2. initNav done'); } catch(e){ diagLog('2. initNav FAILED: '+e.message); }
       initMascots();
+      diagLog('3. initMascots done');
       await loadCurrentUserTeam();
+      diagLog('4. loadCurrentUserTeam done');
 
       await initAssets();
+      diagLog('5. initAssets done');
 
       try {
         await loadSeasons();
-      } catch {
+        diagLog('6. loadSeasons done');
+      } catch(e) {
+        diagLog('6. loadSeasons FAILED: '+(e.message||e));
         status('No tiebreaker games found yet. Check back when games are posted.', false, false);
         return;
       }
