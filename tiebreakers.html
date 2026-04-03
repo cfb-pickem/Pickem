@@ -644,7 +644,11 @@
         const lineTxt = (ln != null && !isNaN(ln)) ? (ln > 0 ? `(+${ln})` : `(${ln})`) : '';
 
         // Away side
-        if (awayLogo) { const img = document.createElement('img'); img.src = awayLogo; img.className = 'game-hdr-logo'; img.alt = away; wrap.appendChild(img); }
+        const awaySide = document.createElement('div');
+        awaySide.className = 'game-hdr-side';
+        const awaySideTop = document.createElement('div');
+        awaySideTop.className = 'game-hdr-side-top';
+        if (awayLogo) { const img = document.createElement('img'); img.src = awayLogo; img.className = 'game-hdr-logo'; img.alt = away; awaySideTop.appendChild(img); }
         const awayTeam = document.createElement('div');
         awayTeam.className = 'game-hdr-team';
         const awayAbbrEl = document.createElement('div');
@@ -655,8 +659,10 @@
         awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–';
         awayTeam.appendChild(awayAbbrEl);
         awayTeam.appendChild(awayScoreEl);
-        if (ln != null && !isNaN(ln)) { const awayLn = -ln; const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${awayLn > 0 ? '+' : ''}${awayLn})`; awayTeam.appendChild(l); }
-        wrap.appendChild(awayTeam);
+        awaySideTop.appendChild(awayTeam);
+        awaySide.appendChild(awaySideTop);
+        if (ln != null && !isNaN(ln)) { const awayLn = -ln; const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${awayLn > 0 ? '+' : ''}${awayLn})`; awaySide.appendChild(l); }
+        wrap.appendChild(awaySide);
 
         // Center status
         const center = document.createElement('div');
@@ -685,6 +691,10 @@
         wrap.appendChild(center);
 
         // Home side
+        const homeSide = document.createElement('div');
+        homeSide.className = 'game-hdr-side';
+        const homeSideTop = document.createElement('div');
+        homeSideTop.className = 'game-hdr-side-top';
         const homeTeam = document.createElement('div');
         homeTeam.className = 'game-hdr-team';
         const homeAbbrEl = document.createElement('div');
@@ -695,9 +705,11 @@
         homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–';
         homeTeam.appendChild(homeAbbrEl);
         homeTeam.appendChild(homeScoreEl);
-        if (ln != null && !isNaN(ln)) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${ln > 0 ? '+' : ''}${ln})`; homeTeam.appendChild(l); }
-        wrap.appendChild(homeTeam);
-        if (homeLogo) { const img = document.createElement('img'); img.src = homeLogo; img.className = 'game-hdr-logo'; img.alt = home; wrap.appendChild(img); }
+        homeSideTop.appendChild(homeTeam);
+        if (homeLogo) { const img = document.createElement('img'); img.src = homeLogo; img.className = 'game-hdr-logo'; img.alt = home; homeSideTop.appendChild(img); }
+        homeSide.appendChild(homeSideTop);
+        if (ln != null && !isNaN(ln)) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${ln > 0 ? '+' : ''}${ln})`; homeSide.appendChild(l); }
+        wrap.appendChild(homeSide);
 
         th.appendChild(wrap);
 
