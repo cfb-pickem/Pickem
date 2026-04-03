@@ -654,7 +654,7 @@
         awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–';
         awayTeam.appendChild(awayAbbrEl);
         awayTeam.appendChild(awayScoreEl);
-        if (lineTxt && ln < 0) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = lineTxt; awayTeam.appendChild(l); }
+        if (ln != null && !isNaN(ln)) { const awayLn = -ln; const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${awayLn > 0 ? '+' : ''}${awayLn})`; awayTeam.appendChild(l); }
         wrap.appendChild(awayTeam);
 
         // Center status
@@ -694,7 +694,7 @@
         homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–';
         homeTeam.appendChild(homeAbbrEl);
         homeTeam.appendChild(homeScoreEl);
-        if (lineTxt && ln >= 0) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = lineTxt; homeTeam.appendChild(l); }
+        if (ln != null && !isNaN(ln)) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${ln > 0 ? '+' : ''}${ln})`; homeTeam.appendChild(l); }
         wrap.appendChild(homeTeam);
 
         th.appendChild(wrap);
