@@ -242,13 +242,13 @@ header.cfp-card {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 2px 0;
+  gap: 4px;
+  padding: 2px 6px;
   flex-wrap: nowrap;
   white-space: nowrap;
 }
 .game-hdr-logo {
-  width: 32px; height: 32px;
+  width: 28px; height: 28px;
   object-fit: contain;
   flex-shrink: 0;
   filter: drop-shadow(0 0 6px rgba(0,0,0,.5));
@@ -342,8 +342,8 @@ header.cfp-card {
 }
 
 @media (max-width: 640px) {
-  .game-hdr { gap: 1px; flex-wrap: nowrap; white-space: nowrap; }
-  .game-hdr-logo { width: 22px; height: 22px; }
+  .game-hdr { gap: 2px; padding: 2px 4px; }
+  .game-hdr-logo { display: none; }
   .game-hdr-score { font-size: 1.2rem; }
   .game-hdr-abbr { font-size: .4rem; }
   .game-hdr-line { font-size: .35rem; }

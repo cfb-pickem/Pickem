@@ -644,6 +644,7 @@
         const lineTxt = (ln != null && !isNaN(ln)) ? (ln > 0 ? `(+${ln})` : `(${ln})`) : '';
 
         // Away side
+        if (awayLogo) { const img = document.createElement('img'); img.src = awayLogo; img.className = 'game-hdr-logo'; img.alt = away; wrap.appendChild(img); }
         const awayTeam = document.createElement('div');
         awayTeam.className = 'game-hdr-team';
         const awayAbbrEl = document.createElement('div');
@@ -696,6 +697,7 @@
         homeTeam.appendChild(homeScoreEl);
         if (ln != null && !isNaN(ln)) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${ln > 0 ? '+' : ''}${ln})`; homeTeam.appendChild(l); }
         wrap.appendChild(homeTeam);
+        if (homeLogo) { const img = document.createElement('img'); img.src = homeLogo; img.className = 'game-hdr-logo'; img.alt = home; wrap.appendChild(img); }
 
         th.appendChild(wrap);
 
