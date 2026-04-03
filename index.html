@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=3">
+  <link rel="stylesheet" href="./css/base.css?v=4">
   <link rel="stylesheet" href="./css/theme-halloween.css">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css">
   <link rel="stylesheet" href="./css/theme-christmas.css">
@@ -169,7 +169,7 @@
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
-    import { sameTeam, escapeHtml, buildPickMap } from './js/utils.js';
+    import { sameTeam, escapeHtml, buildPickMap, getTeamColor } from './js/utils.js';
 
     // DOM
     const seasonSelect = document.getElementById('season-select');
@@ -851,6 +851,8 @@
         const awayAbbrEl = document.createElement('div');
         awayAbbrEl.className = 'game-hdr-abbr';
         awayAbbrEl.textContent = awayAbbr;
+        const awayColor = getTeamColor(away);
+        if (awayColor) awayAbbrEl.style.color = awayColor;
         const awayScoreEl = document.createElement('div');
         awayScoreEl.className = scoreClasses(status, aPts, hPts, 'away');
         awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–';
@@ -897,6 +899,8 @@
         const homeAbbrEl = document.createElement('div');
         homeAbbrEl.className = 'game-hdr-abbr';
         homeAbbrEl.textContent = homeAbbr;
+        const homeColor = getTeamColor(home);
+        if (homeColor) homeAbbrEl.style.color = homeColor;
         const homeScoreEl = document.createElement('div');
         homeScoreEl.className = scoreClasses(status, aPts, hPts, 'home');
         homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–';
