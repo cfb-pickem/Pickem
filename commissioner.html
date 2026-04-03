@@ -162,7 +162,6 @@
   <script type="module">
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
-    initMascots();
     import { supabase } from './js/supabaseClient.js';
     import { escapeHtml } from './js/utils.js';
 
@@ -208,6 +207,7 @@
 
     async function gatekeep(){
       await initNav();
+      initMascots();
 
       const { data: { user }, error } = await supabase.auth.getUser();
       if(error){ status(error.message,true); return false; }

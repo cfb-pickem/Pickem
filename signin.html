@@ -109,10 +109,10 @@
   <script type="module">
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
-    initMascots();
     import { supabase } from './js/supabaseClient.js';
 
     await initNav();
+    initMascots();
 
     // Build absolute base to this folder (works on GitHub Pages or local)
     const BASE = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');

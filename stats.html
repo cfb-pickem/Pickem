@@ -275,7 +275,6 @@
   <script type="module">
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
-    initMascots();
     import { supabase } from './js/supabaseClient.js';
     import { sameTeam, escapeHtml } from './js/utils.js';
 
@@ -664,6 +663,7 @@
 
     async function startup(){
       await initNav();
+      initMascots();
       const ok = await loadSeasons();
       if(!ok) return;
 

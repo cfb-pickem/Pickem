@@ -230,10 +230,9 @@
     // Import the shared navigation initializer
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
-    initMascots();
 
-    // Run the navigation initializer
-    initNav();
+    await initNav();
+    initMascots();
   </script>
 </body>
 </html>

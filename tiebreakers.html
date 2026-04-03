@@ -152,7 +152,6 @@
   <script type=”module”>
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
-    initMascots();
     import { supabase } from './js/supabaseClient.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
     import { sameTeam, buildPickMap } from './js/utils.js';
@@ -334,10 +333,17 @@
 
     async function startup(){
       await initNav();
+      initMascots();
       await loadCurrentUserTeam();
 
       await initAssets();
-      await loadSeasons();
+
+      try {
+        await loadSeasons();
+      } catch {
+        status('No tiebreaker games found yet. Check back when games are posted.');
+        return;
+      }
 
       // Season hint
       let hintedSeason = getCached(STORAGE_KEYS.lastSeasonTB);
