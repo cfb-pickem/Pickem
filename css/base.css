@@ -28,28 +28,15 @@ html {
 
 body {
   background:
-    /* Stadium floodlights — warm glow from above */
-    radial-gradient(ellipse 1400px 500px at 50% -5%, rgba(255,160,60,.24), transparent 70%),
-    radial-gradient(circle at 15% -5%, rgba(255,107,26,.14), transparent 50%),
-    radial-gradient(circle at 85% -5%, rgba(255,107,26,.14), transparent 50%),
-    /* Subtle vertical turf grain */
-    repeating-linear-gradient(
-      90deg,
-      rgba(255,255,255,.012) 0px,
-      rgba(255,255,255,.012) 2px,
-      transparent 2px,
-      transparent 4px
-    ),
-    /* Faint yard-line hints */
-    repeating-linear-gradient(
-      180deg,
-      transparent 0px,
-      transparent 198px,
-      rgba(255,255,255,.025) 198px,
-      rgba(255,255,255,.025) 200px
-    ),
-    var(--cfp-charcoal);
-  background-size: 100% 100%, 100% 100%, 100% 100%, 4px 4px, 100% 200px, auto;
+    /* Dark overlay so text stays readable over the photo */
+    linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.35) 30%, rgba(0,0,0,.5) 100%),
+    /* Stadium photo */
+    url('../stadium-bg.png');
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-color: var(--cfp-charcoal);
   color: #e7e7e7;
   font-family: 'Roboto', system-ui, -apple-system, Segoe UI, Arial, sans-serif;
   min-height: 100vh;
@@ -450,6 +437,43 @@ header.cfp-card {
   .jumbotron-mascot { width: 70px; }
   .jumbotron-title-text { font-size: 1.3rem; letter-spacing: .04em; }
   .jumbotron-header { padding: .75rem .5rem .25rem; gap: .5rem; }
+}
+
+/* --- Tagline bar --- */
+
+.tagline-bar {
+  background: linear-gradient(90deg, #1a1a1a, #222 20%, #222 80%, #1a1a1a);
+  border: 2px solid #333;
+  border-top: 3px solid var(--cfp-gold);
+  padding: .6rem 1.5rem;
+  text-align: center;
+  margin-top: .75rem;
+  margin-bottom: .75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.tagline-bar-text {
+  font-family: 'Teko', 'Oswald', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--cfp-ivory);
+  text-shadow: 0 1px 3px rgba(0,0,0,.5);
+}
+
+.tagline-bar-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .tagline-bar-text { font-size: .8rem; letter-spacing: .06em; }
+  .tagline-bar-icon { width: 20px; height: 20px; }
 }
 
 /* --- Decorative mascots on non-leaderboard pages --- */

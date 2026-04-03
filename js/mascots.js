@@ -64,6 +64,15 @@ export function initMascots() {
     header.appendChild(makeImg(shuffled[1], 'jumbotron-mascot jumbotron-mascot-right'));
 
     scoreboard.parentNode.insertBefore(header, scoreboard);
+
+    // Tagline bar between header and scoreboard
+    const tagline = document.createElement('div');
+    tagline.className = 'tagline-bar';
+    tagline.innerHTML =
+      '<span class="trophy-oval tagline-bar-icon" aria-hidden="true"></span>' +
+      '<span class="tagline-bar-text">College Football. Your Picks. Real Competition.</span>' +
+      '<span class="trophy-oval tagline-bar-icon" aria-hidden="true"></span>';
+    scoreboard.parentNode.insertBefore(tagline, scoreboard);
     return;
   }
 
