@@ -616,7 +616,7 @@
 
       const thPts = document.createElement('th');
       thPts.className = 'pl-2 pr-3 py-3 text-center font-semibold text-[var(--cfp-ivory)] bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
-      thPts.textContent = 'TB Points';
+      thPts.textContent = isPhone ? 'PTS' : 'TB Points';
       theadRow.appendChild(thPts);
 
       gameIds.forEach(id=>{
