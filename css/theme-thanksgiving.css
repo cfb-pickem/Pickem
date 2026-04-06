@@ -1,450 +1,309 @@
 /* ============================================================
-   THANKSGIVING THEME — over-the-top harvest feast mode
+   THANKSGIVING THEME — warm harvest night under stadium lights
    Applied when <body data-theme="thanksgiving"> is active.
    ============================================================ */
 
 body[data-theme="thanksgiving"] {
-  /* Harvest palette */
-  --cfp-black:#1a120b;        /* roasted coffee brown */
-  --cfp-charcoal:#120c07;     /* deep turkey skin */
-  --cfp-gold:#f2a71b;         /* pumpkin pie filling */
-  --cfp-gold-2:#f7c35c;       /* cornbread crust */
-  --cfp-ivory:#fff7e6;        /* mashed potatoes */
-  --cfp-gray:#3a2517;         /* gravy */
-  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 0 2px var(--cfp-gold);
+  --cfp-black:#110a04;
+  --cfp-charcoal:#0e0802;
+  --cfp-gold:#e8950a;
+  --cfp-gold-2:#f5be3e;
+  --cfp-ivory:#faf0dc;
+  --cfp-gray:#2c1a0c;
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 8px rgba(232,149,10,.3);
 
-  color:#fdf5ea;
+  color:#f5ead5;
 
-  /* Feast table background: warm gradients + subtle plaid */
   background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(242,167,27,.3), transparent 60%),
-    radial-gradient(900px 600px at 0% 0%, rgba(178,93,29,.25), transparent 60%),
-    radial-gradient(900px 600px at 100% 0%, rgba(139,69,19,.3), transparent 60%),
-    linear-gradient(135deg,
-      rgba(255,255,255,.06) 0 25%,
-      transparent 25% 50%,
-      rgba(255,255,255,.04) 50% 75%,
-      transparent 75% 100%
+    /* warm amber glow from top like stadium lights */
+    radial-gradient(ellipse 900px 400px at 50% -5%, rgba(200,120,20,.3), transparent 100%),
+    /* rich brown warmth from corners */
+    radial-gradient(circle at 0% 0%, rgba(120,60,10,.2), transparent 55%),
+    radial-gradient(circle at 100% 0%, rgba(100,50,5,.2), transparent 55%),
+    /* wood grain texture */
+    linear-gradient(90deg,
+      rgba(255,255,255,.02) 0 1px, transparent 1px 6px,
+      rgba(255,255,255,.015) 6px 7px, transparent 7px 14px
     ),
-    linear-gradient(180deg,#120c07,#3a2517);
-  background-size:100% 100%,100% 100%,100% 100%,24px 24px,auto;
-
-  position:relative;
-  overflow-x:hidden;
+    linear-gradient(180deg, #0e0802, #1a0e04, #2c1a0c);
+  background-size:100%,100%,100%,14px 14px,auto;
+  background-attachment: fixed;
 }
 
 /* ============================================================
-   Glowing oven / steam overlay
+   Warm overhead glow — like a dining room chandelier
    ============================================================ */
 
-/* Soft oven glow across screen */
-body[data-theme="thanksgiving"]::before{
+body[data-theme="thanksgiving"]::before {
   content:"";
-  position:fixed;
-  inset:0;
+  position:fixed; inset:0;
   pointer-events:none;
   background:
-    radial-gradient(circle at 20% 0%, rgba(255,248,220,.35), transparent 55%),
-    radial-gradient(circle at 80% 0%, rgba(255,214,150,.25), transparent 60%);
-  mix-blend-mode:screen;
-  opacity:.5;
-  z-index:1;
-}
-
-/* Faint rising steam from bottom (like the table is hot) */
-body[data-theme="thanksgiving"]::after{
-  content:"";
-  position:fixed;
-  left:0;
-  right:0;
-  bottom:0;
-  height:30vh;
-  pointer-events:none;
-  background:radial-gradient(circle at 50% 100%, rgba(255,255,255,.24), transparent 60%);
-  opacity:.45;
-  filter:blur(4px);
-  z-index:1;
+    radial-gradient(circle 300px at 50% 0%, rgba(255,200,100,.12), transparent);
+  z-index:0;
 }
 
 /* ============================================================
-   Header / cards / selects
+   Cards — rich wood with amber top border
    ============================================================ */
 
-body[data-theme="thanksgiving"] .cfp-card{
+body[data-theme="thanksgiving"] .cfp-card {
   background:
-    linear-gradient(180deg,rgba(255,247,230,.05),transparent 40%),
-    radial-gradient(circle at 0 0,rgba(255,255,255,.09),transparent 55%),
-    radial-gradient(circle at 100% 0,rgba(255,255,255,.06),transparent 50%),
-    linear-gradient(180deg,var(--cfp-black),var(--cfp-gray));
-  border:1px solid rgba(255,247,230,.16);
+    linear-gradient(180deg, rgba(200,120,20,.05), transparent 40%),
+    linear-gradient(180deg, #110a04, #2c1a0c);
+  border:1px solid rgba(200,140,40,.15);
+  border-top:3px solid rgba(232,149,10,.7);
   box-shadow:
-    0 0 0 1px rgba(247,195,92,.4),
-    0 0 26px rgba(247,195,92,.22) inset,
-    0 18px 40px rgba(0,0,0,.6);
+    0 0 20px rgba(200,120,20,.06) inset,
+    0 0 0 1px rgba(200,140,40,.08),
+    0 12px 40px rgba(0,0,0,.6);
 }
 
-/* Header card gets extra harvest border + glow */
-body[data-theme="thanksgiving"] header.cfp-card{
-  position:relative;
-  overflow:hidden;
-  border-width:3px 0 0 0;
-  border-style:solid;
-  border-image-slice:1;
-  border-image-source:repeating-linear-gradient(
-    90deg,
-    #f2a71b 0 18px,
-    #c55a11 18px 36px,
-    #8b4513 36px 54px,
-    #f9dec9 54px 72px
+body[data-theme="thanksgiving"] .cfp-card::after {
+  background: linear-gradient(90deg, transparent, rgba(232,149,10,.35), transparent);
+}
+
+/* ============================================================
+   Scoreboard — warm dark wood tones
+   ============================================================ */
+
+body[data-theme="thanksgiving"] .scoreboard-wrap {
+  background: linear-gradient(180deg, #0d0700, #140c04 3%, #0d0700 50%, #140c04 97%, #0a0500);
+  border-color: #3d2810;
+  box-shadow:
+    inset 0 0 30px rgba(200,120,20,.04),
+    inset 0 1px 0 rgba(255,180,60,.06),
+    0 0 0 1px #1a0e04,
+    0 16px 56px rgba(0,0,0,.8);
+}
+
+body[data-theme="thanksgiving"] .scoreboard-header {
+  background: linear-gradient(180deg, #201008, #140c04) !important;
+  border-bottom: 3px solid #4a2810;
+}
+
+/* ============================================================
+   Jumbotron header — harvest
+   ============================================================ */
+
+body[data-theme="thanksgiving"] .jumbotron-header {
+  background: linear-gradient(180deg, rgba(44,26,12,.85), rgba(17,10,4,.8));
+  border-color: rgba(200,140,40,.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255,180,60,.08),
+    0 -4px 20px rgba(0,0,0,.4);
+}
+
+body[data-theme="thanksgiving"] .jumbotron-header::before {
+  background: repeating-linear-gradient(90deg,
+    #e8950a 0 4px, #a0580a 4px 8px, #7a3a08 8px 12px, transparent 12px 15px
   );
+  opacity: .6;
 }
 
-/* Subtle shine overlay across header */
-body[data-theme="thanksgiving"] header.cfp-card::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-  background:
-    radial-gradient(circle at 0 0,rgba(255,255,255,.18),transparent 60%),
-    radial-gradient(circle at 100% 0,rgba(255,255,255,.14),transparent 60%);
-  opacity:.4;
-}
-
-/* Tiny "feast" ribbon at bottom of header */
-body[data-theme="thanksgiving"] header.cfp-card::after{
-  content:"🦃 Feast Week • One point per correct pick 🥧";
-  position:absolute;
-  left:50%;
-  bottom:4px;
-  transform:translateX(-50%);
-  font-size:10px;
-  letter-spacing:.16em;
-  text-transform:uppercase;
-  color:#ffe6b8;
-  white-space:nowrap;
-  pointer-events:none;
-  opacity:.85;
-}
-
-/* Harvest-select styling */
-body[data-theme="thanksgiving"] .cfp-select{
-  background:linear-gradient(135deg,#3b2515,#231207);
-  color:#fdf3dc;
-  border:1px solid rgba(255,248,220,.35);
-  box-shadow:0 0 0 1px rgba(0,0,0,.7);
-}
-body[data-theme="thanksgiving"] .cfp-select:focus{
-  outline:none;
-  box-shadow:var(--ring),0 0 0 1px rgba(0,0,0,.85);
-}
-
-/* Stripe re-skin as table runner */
-body[data-theme="thanksgiving"] .stripe{
-  background:
-    repeating-linear-gradient(45deg,
-      rgba(242,167,27,.08) 0 10px,
-      rgba(92,46,16,.24) 10px 20px
-    );
+body[data-theme="thanksgiving"] .jumbotron-title-text {
+  color: #f5be3e;
+  text-shadow:
+    0 0 18px rgba(232,149,10,.4),
+    0 0 36px rgba(200,120,20,.15),
+    0 2px 4px rgba(0,0,0,.7);
 }
 
 /* ============================================================
-   Trophy becomes stuffing-filled turkey platter
+   Game header scores — warm amber glow
    ============================================================ */
 
-body[data-theme="thanksgiving"] .trophy-oval{
-  width:42px;
-  height:42px;
-  border-radius:999px;
-  position:relative;
-  background:
-    radial-gradient(circle at 30% 30%, #ffe8b3, #f2a71b 45%, #8b4513 80%);
-  box-shadow:
-    0 0 0 2px rgba(255,248,220,.7),
-    0 0 18px rgba(0,0,0,.7);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  overflow:hidden;
+body[data-theme="thanksgiving"] .game-hdr-score {
+  text-shadow: 0 0 8px rgba(255,200,100,.2);
 }
-
-body[data-theme="thanksgiving"] .trophy-oval::before{
-  content:"🦃";
-  font-size:1.7rem;
-  transform:translateY(1px);
+body[data-theme="thanksgiving"] .game-hdr-score.score-win {
+  color: #80e8a0;
+  text-shadow: 0 0 10px rgba(128,232,160,.4);
+}
+body[data-theme="thanksgiving"] .game-hdr-score.score-lead {
+  color: #f5be3e;
+  text-shadow: 0 0 10px rgba(245,190,62,.5);
+}
+body[data-theme="thanksgiving"] .game-hdr-abbr {
+  color: #c8a060;
 }
 
 /* ============================================================
-   Network line / table / header
+   Table text & headers
    ============================================================ */
 
-body[data-theme="thanksgiving"] .network-line{
-  display:inline-flex;
-  align-items:center;
-  font-size:10px;
-  line-height:1;
-  letter-spacing:.15em;
-  text-transform:uppercase;
-  color:#fec89a;
-  margin:0;
+body[data-theme="thanksgiving"] .table thead th.sticky-col-1,
+body[data-theme="thanksgiving"] .table thead th:nth-child(2) {
+  color: #f5be3e;
+  text-shadow: 0 0 10px rgba(232,149,10,.3);
 }
 
-body[data-theme="thanksgiving"] .table-sticky th{
-  position:sticky;
-  top:0;
-  background-color:var(--cfp-black);
-  z-index:10;
+body[data-theme="thanksgiving"] .table tbody td.sticky-col-1 {
+  color: #f0e0c0;
+  text-shadow: 0 0 5px rgba(240,220,180,.15);
+}
+
+body[data-theme="thanksgiving"] .table tbody td:nth-child(2) {
+  color: #fff;
+  text-shadow: none;
 }
 
 body[data-theme="thanksgiving"] .table th,
-body[data-theme="thanksgiving"] .table td{
-  border-color:rgba(255,247,230,.12);
-}
-
-body[data-theme="thanksgiving"] .table tbody tr:hover{
-  background:linear-gradient(90deg,rgba(242,167,27,.2),rgba(114,54,23,.35));
-}
-
-/* Sticky first col = head of the table */
-body[data-theme="thanksgiving"] .sticky-col-1{
-  position:sticky;
-  left:0;
-  z-index:25;
-  background:linear-gradient(90deg,var(--cfp-black),#351d0f);
-  box-shadow:2px 0 0 rgba(231,231,231,.12) inset;
-}
-
-body[data-theme="thanksgiving"] thead th.sticky-col-1{ z-index:50; }
-
-/* Highlight user's row as VIP seat at the table */
-body[data-theme="thanksgiving"] tr[data-me="true"]{
-  background:
-    linear-gradient(90deg,rgba(247,195,92,.55),rgba(242,167,27,.18));
-}
-body[data-theme="thanksgiving"] tr[data-me="true"] .sticky-col-1{
-  font-weight:700;
-  text-shadow:0 0 8px rgba(0,0,0,.9);
-  box-shadow:2px 0 0 rgba(247,195,92,.95) inset;
-}
-body[data-theme="thanksgiving"] tr[data-me="true"] .sticky-col-1::before{
-  content:"🍗";
-  margin-right:.4rem;
-}
-body[data-theme="thanksgiving"] tr[data-me="true"]:hover{
-  background:
-    linear-gradient(90deg, rgba(247,195,92,.7), rgba(179,94,34,.5));
+body[data-theme="thanksgiving"] .table td {
+  border-color: rgba(200,140,40,.1);
 }
 
 /* ============================================================
-   Badges = Live / Final / Scheduled
+   Table hover — warm amber sweep
    ============================================================ */
 
-body[data-theme="thanksgiving"] .badge{
-  font-size:.72rem;
-  line-height:1rem;
-  display:inline-flex;
-  align-items:center;
-  gap:.375rem;
-  padding:.125rem .55rem;
-  border-radius:999px;
-  border:1px solid rgba(0,0,0,.6);
-  box-shadow:0 1px 4px rgba(0,0,0,.5);
-}
-
-body[data-theme="thanksgiving"] .badge-live{
-  background:radial-gradient(circle at 20% 20%,#ffe6a7,#f2a71b);
-  color:#3b2515;
-  border-color:rgba(148,81,30,.8);
-}
-body[data-theme="thanksgiving"] .badge-live::before{
-  content:"🔥";
-  font-size:.9rem;
-}
-
-body[data-theme="thanksgiving"] .badge-final{
-  background:linear-gradient(135deg,#7b341e,#c05621);
-  color:#fff7e6;
-  border-color:rgba(255,212,168,.9);
-}
-body[data-theme="thanksgiving"] .badge-final::before{
-  content:"✅";
-  font-size:.85rem;
-}
-
-body[data-theme="thanksgiving"] .badge-sched{
-  background:linear-gradient(135deg,#2b211b,#4a3420);
-  color:#f5e6c8;
-  border:1px solid rgba(245,230,200,.25);
-}
-body[data-theme="thanksgiving"] .badge-sched::before{
-  content:"⏳";
-  font-size:.8rem;
+body[data-theme="thanksgiving"] .table tbody tr:hover {
+  background: linear-gradient(90deg, rgba(200,120,20,.15), transparent 55%);
+  box-shadow: inset 4px 0 0 #e8950a;
 }
 
 /* ============================================================
-   Pick cells (win / loss / empty)
+   Badges
    ============================================================ */
 
-body[data-theme="thanksgiving"] .pick-win{
-  background:linear-gradient(135deg,rgba(128,179,71,.38),rgba(88,129,50,.5));
-  color:#e3f6c7;
-  box-shadow:0 0 12px rgba(89,139,43,.5) inset;
-}
-body[data-theme="thanksgiving"] .pick-win::after{
-  content:"🥧";
-  position:absolute;
-  inset:auto auto 4px 4px;
-  font-size:.75rem;
-  opacity:.9;
+body[data-theme="thanksgiving"] .badge-live {
+  background: #e8950a;
+  color: #1a0e04;
+  box-shadow: 0 0 10px rgba(232,149,10,.5);
 }
 
-body[data-theme="thanksgiving"] .pick-loss{
-  background:linear-gradient(135deg,rgba(185,63,63,.38),rgba(142,38,38,.5));
-  color:#ffd5d5;
-  box-shadow:0 0 12px rgba(110,22,22,.6) inset;
-  position:relative;
-}
-body[data-theme="thanksgiving"] .pick-loss::after{
-  content:"🦃❌";
-  position:absolute;
-  bottom:2px;
-  right:4px;
-  font-size:.72rem;
-  opacity:.9;
+body[data-theme="thanksgiving"] .badge-final {
+  background: linear-gradient(135deg, #4a2810, #301808);
+  color: #d4b080;
+  border: 1px solid rgba(200,140,40,.3);
 }
 
-body[data-theme="thanksgiving"] .pick-empty{
-  color:#f3e1c2;
-  opacity:.8;
-  font-style:italic;
-}
-
-/* Ensure absolute decorations have anchor */
-body[data-theme="thanksgiving"] .pick-win,
-body[data-theme="thanksgiving"] .pick-loss{
-  position:relative;
+body[data-theme="thanksgiving"] .badge-sched {
+  background: #1a0e04;
+  color: #c0a070;
+  border: 1px solid rgba(200,140,40,.15);
 }
 
 /* ============================================================
-   Logos = slightly toasted / glowing
+   Pick cells — earthy greens and warm reds
    ============================================================ */
 
-body[data-theme="thanksgiving"] .logo{
-  height:32px;
-  width:32px;
-  object-fit:contain;
-  margin-left:auto;
-  margin-right:auto;
+body[data-theme="thanksgiving"] .pick-win {
+  background: rgba(80,160,50,.22);
+  color: #a0e880;
+}
+
+body[data-theme="thanksgiving"] .pick-loss {
+  background: rgba(180,50,30,.2);
+  color: #f0a090;
+}
+
+body[data-theme="thanksgiving"] .pick-empty {
+  color: #9a8060;
+}
+
+/* ============================================================
+   Sticky column
+   ============================================================ */
+
+body[data-theme="thanksgiving"] .sticky-col-1 {
+  background: linear-gradient(90deg, #110a04, #2c1a0c);
+  box-shadow: 2px 0 0 rgba(200,140,40,.15) inset;
+}
+
+body[data-theme="thanksgiving"] tr[data-me="true"] {
+  background: linear-gradient(90deg, rgba(232,149,10,.2), rgba(160,88,10,.1), transparent 70%);
+}
+body[data-theme="thanksgiving"] tr[data-me="true"] .sticky-col-1 {
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(232,149,10,.5);
+  box-shadow: 2px 0 0 rgba(232,149,10,.7) inset;
+}
+body[data-theme="thanksgiving"] tr[data-me="true"]:hover {
+  background: linear-gradient(90deg, rgba(232,149,10,.28), rgba(160,88,10,.15), transparent 70%);
+}
+
+/* ============================================================
+   Weekly Submissions
+   ============================================================ */
+
+body[data-theme="thanksgiving"] .ws-label {
+  color: #e8c080;
+  border-bottom: 1px solid rgba(200,140,40,.18);
+}
+
+body[data-theme="thanksgiving"] #ws-made .badge {
+  background: linear-gradient(135deg, #8a4a18, #b86820);
+  color: #faf0dc;
+}
+
+body[data-theme="thanksgiving"] #ws-not .badge {
+  background: #2c1a0c;
+  color: #c0a070;
+  border: 1px solid rgba(200,140,40,.2);
+}
+
+/* ============================================================
+   Playoff divider
+   ============================================================ */
+
+body[data-theme="thanksgiving"] .playoff-divider td {
+  padding: .3rem 0;
+  background: linear-gradient(90deg, rgba(200,120,20,.12), rgba(160,80,10,.08));
+  border-top: 2px solid rgba(232,149,10,.6);
+  border-bottom: 1px dashed rgba(200,140,40,.25);
+  color: #f5be3e;
+}
+
+/* ============================================================
+   Logos — warm sepia tint
+   ============================================================ */
+
+body[data-theme="thanksgiving"] .logo {
   filter:
-    drop-shadow(0 0 3px rgba(0,0,0,.7))
-    sepia(.18)
-    saturate(1.2);
+    drop-shadow(0 0 4px rgba(200,120,20,.3))
+    sepia(.1) saturate(1.1);
 }
 
 /* ============================================================
-   Playoff divider = pie crust
+   Trophy icon — autumn tones
    ============================================================ */
 
-body[data-theme="thanksgiving"] .playoff-divider td{
-  padding:.25rem 0;
-  background:linear-gradient(90deg,rgba(242,167,27,.28),rgba(255,247,230,.12));
-  border-top:2px dashed rgba(247,195,92,.95);
-  color:var(--cfp-ivory);
-  text-align:center;
-  letter-spacing:.16em;
-  font-size:.75rem;
-  text-transform:uppercase;
-  position:relative;
+body[data-theme="thanksgiving"] .trophy-oval {
+  width: 30px; height: 18px;
+  background: radial-gradient(ellipse at 50% 40%, #f5c060, #e8950a 60%, #7a3a08);
+  border: 2px solid #c07010;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(232,149,10,.4);
 }
-body[data-theme="thanksgiving"] .playoff-divider td::before{
-  content:"🥧";
-  position:absolute;
-  left:8px;
-  top:50%;
-  transform:translateY(-50%);
+body[data-theme="thanksgiving"] .trophy-oval::before {
+  content: "";
+  background: rgba(250,220,160,.5);
+  width: 1.5px;
 }
-body[data-theme="thanksgiving"] .playoff-divider td::after{
-  content:"🥧";
-  position:absolute;
-  right:8px;
-  top:50%;
-  transform:translateY(-50%);
+body[data-theme="thanksgiving"] .trophy-oval::after {
+  border-top-color: rgba(250,220,160,.5);
+  box-shadow: 0 -3px 0 0 rgba(250,220,160,.5), 0 3px 0 0 rgba(250,220,160,.5);
 }
 
 /* ============================================================
-   Weekly Submissions labels & chips
+   Nav & selects
    ============================================================ */
 
-body[data-theme="thanksgiving"] .ws-label{
-  font-size:.72rem;
-  letter-spacing:.18em;
-  text-transform:uppercase;
-  color:#ffe8c2;
-  border-bottom:1px solid rgba(231,231,231,.12);
-  padding-bottom:.25rem;
-  margin-bottom:.5rem;
-  display:flex;
-  align-items:center;
-  gap:.5rem;
-}
-body[data-theme="thanksgiving"] .ws-label::before{
-  content:"🍽️";
-  font-size:1rem;
+body[data-theme="thanksgiving"] #site-nav nav {
+  border-color: rgba(200,140,40,.12);
 }
 
-/* Chips in "made" / "not yet" */
-body[data-theme="thanksgiving"] #ws-made .badge{
-  background:linear-gradient(135deg,#824026,#c56a30);
-  color:var(--cfp-ivory);
-  border-color:rgba(250,220,160,.45);
-}
-body[data-theme="thanksgiving"] #ws-not .badge{
-  background:linear-gradient(135deg,#3a2517,#1f130b);
-  color:#ffe2b8;
-  border-color:rgba(255,232,188,.35);
+body[data-theme="thanksgiving"] .cfp-select {
+  background: #2c1a0c;
+  border-color: rgba(200,140,40,.2);
+  color: #f0e0c0;
 }
 
 /* ============================================================
-   Main table card = platter 
+   Responsive
    ============================================================ */
 
-/* Target the card that wraps the big table layout */
-body[data-theme="thanksgiving"] .cfp-card.scroll-shadows{
-  position:relative;
-  /* let Tailwind's overflow-auto do its job; don't kill scrolling */
-  overflow:auto;
-}
-
-/* Remove the floating emoji and keep a very subtle glow only */
-body[data-theme="thanksgiving"] .cfp-card.scroll-shadows::after{
-  content:"";                 /* no 🥔 */
-  position:absolute;
-  bottom:0;
-  left:0;
-  right:0;
-  height:18px;
-  pointer-events:none;        /* don't block touch scroll */
-  background:linear-gradient(
-    to top,
-    rgba(247,195,92,.25),
-    transparent
-  );
-  opacity:.7;
-  /* no animation anymore */
-}
-
-/* ============================================================
-   Responsive tweaks
-   ============================================================ */
-
-@media (max-width: 640px){
-  body[data-theme="thanksgiving"] .logo{height:24px;width:24px;}
-  body[data-theme="thanksgiving"] th,
-  body[data-theme="thanksgiving"] td{
-    padding-top:.4rem !important;
-    padding-bottom:.4rem !important;
-  }
-  body[data-theme="thanksgiving"] thead th{ font-size:.8rem; }
-  body[data-theme="thanksgiving"] .badge{ font-size:.65rem; padding:.08rem .45rem; }
-  body[data-theme="thanksgiving"] .table tbody td{ font-size:.84rem; }
+@media (max-width: 640px) {
+  body[data-theme="thanksgiving"] .logo { height:24px; width:24px; }
 }

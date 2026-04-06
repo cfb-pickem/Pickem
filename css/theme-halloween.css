@@ -1,269 +1,294 @@
-body[data-theme="halloween"] {
-  --cfp-black:#07020f;        /* deep spooky void */
-  --cfp-charcoal:#0b0216;     /* witch cauldron purple */
-  --cfp-gold:#ff7518;         /* pumpkin neon orange */
-  --cfp-gold-2:#ffb347;       /* candle wax orange */
-  --cfp-ivory:#fff8e6;        /* bone-white */
-  --cfp-gray:#1d0724;         /* creepy plum */
-  --ring: 0 0 10px var(--cfp-gold), 0 0 20px #ff3c00 inset;
-
-  color:#fdf9ff;
-
-  /* Haunted background: fog + gradients + subtle “webby” lines */
-  background:
-    radial-gradient(circle at 50% 10%, rgba(255,102,0,.18), transparent 70%),
-    radial-gradient(circle at 0% 0%, rgba(174,0,255,.2), transparent 70%),
-    radial-gradient(circle at 100% 0%, rgba(255,0,80,.2), transparent 70%),
-    /* faint criss-cross “web” lines */
-    linear-gradient(135deg,
-      rgba(255,255,255,.04) 0 25%,
-      transparent 25% 50%,
-      rgba(255,255,255,.03) 50% 75%,
-      transparent 75% 100%
-    ),
-    linear-gradient(135deg, #0b0216, #12011f, #1c0331);
-  background-size:100% 100%,100% 100%,100% 100%,24px 24px,auto;
-
-  position:relative;
-  overflow-x:hidden;
-}
-
-
 /* ============================================================
-   Floating ghosts, bats, spiders
+   HALLOWEEN THEME — haunted stadium under a blood moon
+   Applied when <body data-theme="halloween"> is active.
    ============================================================ */
 
-body[data-theme="halloween"] .spooky-float {
-  position:fixed;
-  top:-60px;
-  font-size:32px;
-  pointer-events:none;
-  opacity:.25;
-  animation:floaty 18s linear infinite;
-  filter: drop-shadow(0 0 8px rgba(255, 136, 0, 0.5));
-}
+body[data-theme="halloween"] {
+  --cfp-black:#08010d;
+  --cfp-charcoal:#0d0318;
+  --cfp-gold:#ff6a00;
+  --cfp-gold-2:#ff9d3d;
+  --cfp-ivory:#f0e8d8;
+  --cfp-gray:#190826;
+  --ring: 0 0 8px #ff4500 inset, 0 0 16px rgba(255,69,0,.3);
 
-body[data-theme="halloween"] .spooky-float:nth-child(2) { left:15%; animation-duration:22s; animation-delay:2s; }
-body[data-theme="halloween"] .spooky-float:nth-child(3) { left:35%; animation-duration:19s; animation-delay:4s; }
-body[data-theme="halloween"] .spooky-float:nth-child(4) { left:55%; animation-duration:24s; animation-delay:1s; }
-body[data-theme="halloween"] .spooky-float:nth-child(5) { left:75%; animation-duration:20s; animation-delay:6s; }
-body[data-theme="halloween"] .spooky-float:nth-child(6) { left:90%; animation-duration:23s; animation-delay:3s; }
+  color:#ede4f0;
 
-@keyframes floaty {
-  0%   { transform:translateY(0) rotate(0deg); }
-  50%  { transform:translateY(60vh) rotate(25deg); }
-  100% { transform:translateY(120vh) rotate(-30deg); }
+  background:
+    /* blood-moon glow top center */
+    radial-gradient(ellipse 600px 350px at 50% -5%, rgba(180,20,0,.35), transparent 100%),
+    /* purple fog from corners */
+    radial-gradient(circle at 0% 20%, rgba(88,0,160,.25), transparent 60%),
+    radial-gradient(circle at 100% 30%, rgba(120,0,90,.2), transparent 60%),
+    /* subtle cobweb crosshatch */
+    linear-gradient(45deg,
+      rgba(255,255,255,.02) 0 25%, transparent 25% 50%,
+      rgba(255,255,255,.015) 50% 75%, transparent 75% 100%
+    ),
+    linear-gradient(180deg, #08010d, #0d0318, #120320);
+  background-size:100%,100%,100%,20px 20px,auto;
+  background-attachment: fixed;
 }
 
 /* ============================================================
-   Header / Card styling — dark magic green + cursed orange
+   Blood moon glow overlay
+   ============================================================ */
+
+body[data-theme="halloween"]::before {
+  content:"";
+  position:fixed; inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle 200px at 50% 0%, rgba(200,30,0,.2), transparent),
+    radial-gradient(circle 80px at 50% 2%, rgba(255,120,0,.15), transparent);
+  z-index:0;
+}
+
+/* ============================================================
+   Cards — dark with eerie orange edge glow
    ============================================================ */
 
 body[data-theme="halloween"] .cfp-card {
   background:
-    linear-gradient(180deg, rgba(255,102,0,.03), transparent 40%),
-    linear-gradient(180deg, #0b0216, #1d0724);
-  border:1px solid rgba(255, 102, 0, .2);
+    linear-gradient(180deg, rgba(255,80,0,.04), transparent 50%),
+    linear-gradient(180deg, #0a0214, #190826);
+  border:1px solid rgba(255,100,0,.15);
+  border-top:3px solid rgba(255,80,0,.6);
   box-shadow:
-    0 0 20px rgba(255,136,0,.15),
-    0 0 60px rgba(142,45,197,.15) inset;
+    0 0 30px rgba(255,80,0,.08) inset,
+    0 0 0 1px rgba(255,80,0,.1),
+    0 12px 40px rgba(0,0,0,.7);
 }
 
-/* Cobweb border */
-body[data-theme="halloween"] .cobweb-border {
-  border-image-slice:1;
-  border-style:solid;
-  border-width:4px 0 0 0;
-  border-image-source:repeating-linear-gradient(
-    90deg,
-    #ff7518 0 18px,
-    #d7263d 18px 36px,
-    #4b0082 36px 54px,
-    #ffb347 54px 72px
-  );
+body[data-theme="halloween"] .cfp-card::after {
+  background: linear-gradient(90deg, transparent, rgba(255,100,0,.4), transparent);
 }
 
 /* ============================================================
-   Trophy becomes a demonic pumpkin lantern
+   Scoreboard — darker, more sinister
    ============================================================ */
 
-body[data-theme="halloween"] .trophy-oval{
-  width:42px;
-  height:42px;
-  background:
-    radial-gradient(circle at 50% 30%, #ffbf80, #ff7518 50%, #33001a 85%);
-  border-radius:999px;
+body[data-theme="halloween"] .scoreboard-wrap {
+  background: linear-gradient(180deg, #0a0010, #0e0318 3%, #0a0010 50%, #0e0318 97%, #060010);
+  border-color: #3a1050;
   box-shadow:
-    0 0 20px rgba(255,136,0,.5),
-    0 0 10px rgba(255,80,0,.8) inset;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  position:relative;
-  overflow:hidden;
+    inset 0 0 40px rgba(255,80,0,.04),
+    inset 0 1px 0 rgba(255,120,0,.08),
+    0 0 0 1px #1a0030,
+    0 16px 56px rgba(0,0,0,.8);
 }
 
-body[data-theme="halloween"] .trophy-oval::before{
-  content:"👻";
-  font-size:1.6rem;
-  transform:translateY(1px);
+body[data-theme="halloween"] .scoreboard-header {
+  background: linear-gradient(180deg, #1a0828, #0e0318) !important;
+  border-bottom: 3px solid #4a1560;
 }
 
 /* ============================================================
-   Table hover effects — neon horror
+   Jumbotron header — haunted
+   ============================================================ */
+
+body[data-theme="halloween"] .jumbotron-header {
+  background: linear-gradient(180deg, rgba(30,8,40,.8), rgba(15,3,24,.75));
+  border-color: rgba(255,100,0,.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255,100,0,.1),
+    0 -4px 20px rgba(0,0,0,.5);
+}
+
+body[data-theme="halloween"] .jumbotron-header::before {
+  background: repeating-linear-gradient(90deg,
+    #ff6a00 0 4px, #8b00ff 4px 8px, #ff0044 8px 12px, transparent 12px 15px
+  );
+  opacity: .7;
+}
+
+body[data-theme="halloween"] .jumbotron-title-text {
+  color: #ff9d3d;
+  text-shadow:
+    0 0 20px rgba(255,100,0,.5),
+    0 0 40px rgba(255,50,0,.2),
+    0 2px 4px rgba(0,0,0,.8);
+}
+
+/* ============================================================
+   Game header scores — eerie orange glow
+   ============================================================ */
+
+body[data-theme="halloween"] .game-hdr-score {
+  text-shadow: 0 0 10px rgba(255,100,0,.3);
+}
+body[data-theme="halloween"] .game-hdr-score.score-win {
+  color: #5eff8a;
+  text-shadow: 0 0 10px rgba(94,255,138,.5), 0 0 25px rgba(0,255,100,.15);
+}
+body[data-theme="halloween"] .game-hdr-score.score-lead {
+  color: #ff9d3d;
+  text-shadow: 0 0 10px rgba(255,120,0,.6), 0 0 25px rgba(255,80,0,.2);
+}
+body[data-theme="halloween"] .game-hdr-abbr {
+  color: #c080e0;
+}
+
+/* ============================================================
+   Table text & headers — purple/orange theme
+   ============================================================ */
+
+body[data-theme="halloween"] .table thead th.sticky-col-1,
+body[data-theme="halloween"] .table thead th:nth-child(2) {
+  color: #ff9d3d;
+  text-shadow: 0 0 10px rgba(255,100,0,.4);
+}
+
+body[data-theme="halloween"] .table tbody td.sticky-col-1 {
+  color: #e8d8f0;
+  text-shadow: 0 0 6px rgba(200,128,224,.2);
+}
+
+body[data-theme="halloween"] .table tbody td:nth-child(2) {
+  color: #fff;
+  text-shadow: none;
+}
+
+/* ============================================================
+   Table hover — neon horror sweep
    ============================================================ */
 
 body[data-theme="halloween"] .table tbody tr:hover {
-  background:linear-gradient(90deg, rgba(255,102,0,.2), rgba(98,0,255,.2));
-  box-shadow:0 0 14px rgba(255,136,0,.35);
+  background: linear-gradient(90deg, rgba(255,80,0,.15), rgba(128,0,255,.1), transparent 60%);
+  box-shadow: inset 4px 0 0 #ff6a00;
 }
 
 /* ============================================================
-   Badges (Live / Final / Scheduled)
+   Badges — Live / Final / Scheduled
    ============================================================ */
 
 body[data-theme="halloween"] .badge-live {
-  background:radial-gradient(circle at 20% 20%, #ff7518, #d7263d);
-  color:#1a0014;
-  border:1px solid rgba(255,102,0,.5);
-  box-shadow:0 0 10px rgba(255,136,0,.7);
+  background: #ff6a00;
+  color: #1a0014;
+  box-shadow: 0 0 12px rgba(255,106,0,.6);
 }
 
 body[data-theme="halloween"] .badge-final {
-  background:linear-gradient(135deg, #4b0082, #180126);
-  color:#ffb8ff;
-  border:1px solid rgba(255,204,255,.3);
-  box-shadow:0 0 10px rgba(128,0,255,.4);
+  background: linear-gradient(135deg, #3a0060, #200038);
+  color: #d4a0ff;
+  border: 1px solid rgba(180,100,255,.3);
 }
 
 body[data-theme="halloween"] .badge-sched {
-  background:linear-gradient(135deg, #1d0724, #320c40);
-  color:#ffa87a;
-  border:1px solid rgba(255,136,0,.25);
+  background: #1a0828;
+  color: #c090d0;
+  border: 1px solid rgba(180,100,255,.15);
 }
 
 /* ============================================================
-   Pick cells (win/loss)
+   Pick cells — poison green wins, blood red losses
    ============================================================ */
 
 body[data-theme="halloween"] .pick-win {
-  background:linear-gradient(135deg, rgba(71,255,141,.25), rgba(19,189,91,.3));
-  color:#d9ffe7;
-  box-shadow:0 0 10px rgba(0,255,162,.5) inset;
+  background: rgba(0,200,80,.2);
+  color: #80ffb0;
 }
 
 body[data-theme="halloween"] .pick-loss {
-  background:linear-gradient(135deg, rgba(255,0,89,.25), rgba(140,0,19,.35));
-  color:#ffd7e1;
-  box-shadow:0 0 10px rgba(255,0,80,.45) inset;
+  background: rgba(200,0,40,.2);
+  color: #ff9090;
 }
 
 body[data-theme="halloween"] .pick-empty {
-  color:#C794EB;
-  opacity:.85;
+  color: #8060a0;
 }
 
 /* ============================================================
-   Sticky first column — haunted glow
+   Sticky column — dark purple edge
    ============================================================ */
 
-body[data-theme="halloween"] .sticky-col-1{
-  background:linear-gradient(90deg, #07020f, #1d0724);
-  box-shadow:2px 0 0 rgba(255,136,0,.3) inset;
+body[data-theme="halloween"] .sticky-col-1 {
+  background: linear-gradient(90deg, #08010d, #190826);
+  box-shadow: 2px 0 0 rgba(255,100,0,.2) inset;
 }
 
-body[data-theme="halloween"] tr[data-me="true"]{
-  background:
-    linear-gradient(90deg, rgba(255,102,0,.30), rgba(98,0,255,.25));
+body[data-theme="halloween"] tr[data-me="true"] {
+  background: linear-gradient(90deg, rgba(255,80,0,.2), rgba(100,0,180,.15), transparent 70%);
 }
-
-body[data-theme="halloween"] tr[data-me="true"] .sticky-col-1{
-  font-weight:700;
-  text-shadow:0 0 10px rgba(255,136,0,.9);
-  box-shadow:2px 0 0 rgba(255,102,0,.9) inset;
-}
-
-body[data-theme="halloween"] tr[data-me="true"] .sticky-col-1::before{
-  content:"🧙‍♂️";
-  margin-right:.4rem;
+body[data-theme="halloween"] tr[data-me="true"] .sticky-col-1 {
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(255,100,0,.7);
+  box-shadow: 2px 0 0 rgba(255,100,0,.8) inset;
 }
 
 /* ============================================================
-   Weekly Submissions — spooky labels & chips
+   Weekly Submissions
    ============================================================ */
 
-body[data-theme="halloween"] .ws-label{
-  font-size:.72rem;
-  letter-spacing:.16em;
-  text-transform:uppercase;
-  color:#ffb347;
-  border-bottom:1px solid rgba(255,136,0,.28);
-  padding-bottom:.25rem;
-  margin-bottom:.5rem;
-  display:flex;
-  align-items:center;
-  gap:.5rem;
+body[data-theme="halloween"] .ws-label {
+  color: #ff9d3d;
+  border-bottom: 1px solid rgba(255,100,0,.2);
 }
 
-body[data-theme="halloween"] .ws-label .icon{
-  font-size:1.2rem;
-}
-
-/* Complete / Not complete chips */
 body[data-theme="halloween"] #ws-made .badge {
-  background:linear-gradient(135deg,#ff7518,#d7263d);
-  color:#1a0014;
-  border:1px solid rgba(255,204,130,.4);
-  box-shadow:0 0 6px rgba(255,136,0,.7);
+  background: linear-gradient(135deg, #ff6a00, #cc3300);
+  color: #1a0014;
 }
 
 body[data-theme="halloween"] #ws-not .badge {
-  background:linear-gradient(135deg,#1d0724,#0e0412);
-  color:#ffb347;
-  border:1px solid rgba(255,102,0,.2);
+  background: #1a0828;
+  color: #c090d0;
+  border: 1px solid rgba(180,100,255,.2);
 }
 
 /* ============================================================
-   Playoff Divider — DRIPPING BLOOD EFFECT
+   Playoff divider
    ============================================================ */
 
-body[data-theme="halloween"] .playoff-divider td{
-  padding:.25rem 0;
-  background:linear-gradient(90deg,rgba(255,0,89,.12),rgba(255,102,0,.15));
-  border-top:3px solid #ff002b;
-  border-bottom:3px solid #8b0014;
-  color:#ffb347;
-  text-align:center;
-  letter-spacing:.2em;
-  font-size:.75rem;
-  text-transform:uppercase;
-  position:relative;
-  overflow:hidden;
-}
-
-body[data-theme="halloween"] .playoff-divider td::before{
-  content:"🩸";
-  position:absolute;
-  left:8px;
-  top:50%;
-  transform:translateY(-50%);
-}
-
-body[data-theme="halloween"] .playoff-divider td::after{
-  content:"🩸";
-  position:absolute;
-  right:8px;
-  top:50%;
-  transform:translateY(-50%);
+body[data-theme="halloween"] .playoff-divider td {
+  padding: .3rem 0;
+  background: linear-gradient(90deg, rgba(255,0,60,.1), rgba(128,0,200,.1));
+  border-top: 2px solid #ff0044;
+  border-bottom: 1px solid rgba(128,0,200,.3);
+  color: #ff9d3d;
 }
 
 /* ============================================================
-   Logo glow
+   Logos — eerie orange rim glow
    ============================================================ */
 
 body[data-theme="halloween"] .logo {
   filter:
-    drop-shadow(0 0 6px rgba(255,102,0,.6))
-    drop-shadow(0 0 4px rgba(98,0,255,.35))
-    saturate(1.3);
+    drop-shadow(0 0 5px rgba(255,80,0,.4))
+    drop-shadow(0 0 2px rgba(128,0,200,.3));
+}
+
+/* ============================================================
+   Trophy icon — jack-o-lantern
+   ============================================================ */
+
+body[data-theme="halloween"] .trophy-oval {
+  width: 30px; height: 18px;
+  background: radial-gradient(ellipse at 50% 40%, #ffbf60, #ff6a00 60%, #cc3300);
+  border: 2px solid #ff8c00;
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(255,100,0,.5), 0 0 4px rgba(255,60,0,.8) inset;
+}
+body[data-theme="halloween"] .trophy-oval::before {
+  content: "";
+  background: rgba(255,200,100,.6);
+  width: 1.5px;
+}
+body[data-theme="halloween"] .trophy-oval::after {
+  border-top-color: rgba(255,200,100,.6);
+  box-shadow: 0 -3px 0 0 rgba(255,200,100,.6), 0 3px 0 0 rgba(255,200,100,.6);
+}
+
+/* ============================================================
+   Nav — spooky purple tint
+   ============================================================ */
+
+body[data-theme="halloween"] #site-nav nav {
+  border-color: rgba(255,100,0,.15);
+}
+
+body[data-theme="halloween"] .cfp-select {
+  background: #1a0828;
+  border-color: rgba(255,100,0,.2);
+  color: #e8d8f0;
 }
