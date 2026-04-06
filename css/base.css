@@ -452,7 +452,7 @@ header.cfp-card {
   font-size: 1.6em;
   font-weight: 700;
   color: #ffffff;
-  text-shadow: 0 0 14px rgba(255,255,255,.4), 0 0 28px rgba(255,255,255,.15);
+  text-shadow: none;
 }
 
 /* Alternating rows — very subtle on the dark scoreboard */
