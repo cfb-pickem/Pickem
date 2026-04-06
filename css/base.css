@@ -365,7 +365,7 @@ header.cfp-card {
   .game-hdr-score { font-size: 1.2rem; }
   .game-hdr-abbr { font-size: .6rem; }
   .game-hdr-line { font-size: .5rem; margin-top: 0; }
-  .game-hdr-center { padding: 0 8px; min-width: 36px; }
+  .game-hdr-center { padding: 6px 5px; min-width: 30px; }
   .game-hdr-period, .game-hdr-final { font-size: .5rem; }
   .game-hdr-clock, .game-hdr-time { font-size: .45rem; margin-top: 2px; }
   .game-hdr-team { min-width: auto; }
