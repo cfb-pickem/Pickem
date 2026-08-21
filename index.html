@@ -298,6 +298,12 @@
       if (leaderboardTable) leaderboardTable.style.display = '';
     }
 
+    // The Made Picks / Not Yet panel is meaningless when no games are picked.
+    function setWeeklySubmissionsVisible(visible){
+      const el = document.getElementById('weekly-submissions');
+      if (el) el.style.display = visible ? '' : 'none';
+    }
+
     // Always format using Central Time
     function formatTimeCentral(ts){
       if (!ts) return '';
@@ -409,6 +415,8 @@
         await loadPlayoffWeek();
       } else if (currentWeek != null) {
         await loadWeek(currentWeek);
+      } else {
+        await loadTeamsOnly();
       }
 
       seasonSelect.onchange = async () => {
@@ -441,10 +449,7 @@
           await computeSeasonWinsThroughWeek(currentWeek);
           await loadWeek(currentWeek);
         } else {
-          winsByTeamRegular = Object.create(null);
-          tbody.innerHTML = '';
-          theadRow.innerHTML = '';
-          status('No weeks for this season.', true);
+          await loadTeamsOnly();
         }
       };
 
@@ -635,6 +640,48 @@
     }
 
     // Week loaders
+    // No games have been picked for this season yet — pre-season, or the
+    // commissioner hasn't selected games. Show the full roster with a zeroed
+    // scoreboard rather than leaving the loading skeleton up forever.
+    async function loadTeamsOnly(){
+      status(`Loading Season ${currentSeason}…`, false, true);
+      isPlayoffView = false;
+      stopLiveTicker();
+      headerStatusEls.clear();
+
+      lastGames   = [];
+      gameIds     = [];
+      winnerMap   = {};
+      lineMap     = {};
+      weekStartTs = null;
+      gameStartTs = {};
+      showPicks   = true;
+      winsByTeamRegular = Object.create(null);
+      updateSeasonalTheme(currentSeason, []);
+
+      const { data: teamRows, error: tErr } = await supabase
+        .from('teams')
+        .select('team_id, team_name')
+        .order('team_name', { ascending: true });
+      if (tErr) return status(tErr.message, true);
+
+      const teams = (teamRows || []).slice()
+        .sort((a, b) => (a.team_name || '').localeCompare(b.team_name || ''));
+
+      lastTeams   = teams;
+      lastPickMap = {};
+
+      // gameIds is empty, so these render a plain Team + Points table.
+      renderHeader({}, []);
+      renderTable(teams, {}, {}, true, winsByTeamRegular, false);
+      setWeeklySubmissionsVisible(false);
+      showTable();
+
+      status(teams.length
+        ? `Season ${currentSeason} — no games picked yet. Showing all ${teams.length} teams.`
+        : `Season ${currentSeason} — no teams have been created yet.`);
+    }
+
     async function loadWeek(week){
       status(`Loading S${currentSeason} • Week ${week}…`);
       isPlayoffView = false;
@@ -762,11 +809,28 @@
         .order('seed', { ascending: true });
       if (poErr) return status(poErr.message, true);
 
-      const playoffTeams = (playoffRows || []).map(r => ({
+      let playoffTeams = (playoffRows || []).map(r => ({
         team_id: r.team_id,
         team_name: r.teams?.team_name || `Team ${r.team_id}`,
         seed: r.seed
       }));
+
+      // No seeds configured for this season: fall back to the full roster so the
+      // table isn't rendered with game columns and no rows.
+      let seedsMissing = false;
+      if (!playoffTeams.length) {
+        seedsMissing = true;
+        const { data: allTeams, error: atErr } = await supabase
+          .from('teams')
+          .select('team_id, team_name')
+          .order('team_name', { ascending: true });
+        if (atErr) return status(atErr.message, true);
+        playoffTeams = (allTeams || []).map(t => ({
+          team_id: t.team_id,
+          team_name: t.team_name,
+          seed: null
+        }));
+      }
 
       const { data: pickRows, error: pErr } = await supabase
         .from('picks')
@@ -797,7 +861,9 @@
       showTable();
 
       startLiveTicker();
-      status(`Season ${currentSeason} • Playoff`);
+      status(seedsMissing
+        ? `Season ${currentSeason} • Playoff — no seeds set, showing all teams.`
+        : `Season ${currentSeason} • Playoff`);
     }
 
     function getLogoForPickExact(pick){
@@ -1037,6 +1103,7 @@
     }
 
     function renderWeeklySubmissions(teams, pickMap){
+      setWeeklySubmissionsVisible(true);
       const made = [];
       const notYet = [];
 
