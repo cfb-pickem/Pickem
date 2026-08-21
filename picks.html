@@ -168,7 +168,7 @@
       <section id="tiebreaker-section" class="mt-8 hidden">
         <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Tiebreakers</h2>
         <p class="text-xs text-gray-300 mb-3">
-          These picks are only used as tiebreakers. They lock at each game’s kickoff.
+          These picks are only used as tiebreakers. Like every other pick, they lock when the week’s first game kicks off.
         </p>
         <div id="tiebreaker-games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
       </section>
@@ -191,6 +191,7 @@
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
     import { escapeHtml } from './js/utils.js';
+    import { ctToEpochMs, isWeekLocked, isGameLocked as gameLocked } from './js/kickoff.js';
 
     // CSS.escape polyfill (older browsers)
     if (!window.CSS || typeof CSS.escape !== 'function') {
@@ -272,56 +273,11 @@
     }
 
     // Get current time as CT parts
-    function getNowChicagoParts() {
-      const now = new Date();
-      const fmt = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Chicago',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      });
-      const parts = fmt.formatToParts(now).reduce((acc, p) => {
-        acc[p.type] = p.value;
-        return acc;
-      }, {});
-      return {
-        year: Number(parts.year),
-        month: Number(parts.month),
-        day: Number(parts.day),
-        hour: Number(parts.hour),
-        minute: Number(parts.minute),
-        second: Number(parts.second)
-      };
-    }
-
-    // Map CT parts to a comparable numeric timestamp (treat CT wall time as if UTC)
-    function ctPartsToComparableMs(parts) {
-      if (!parts) return null;
-      return Date.UTC(
-        parts.year,
-        parts.month - 1,
-        parts.day,
-        parts.hour,
-        parts.minute,
-        parts.second || 0
-      );
-    }
-
-    // Current CT comparable timestamp
-    function nowCTTimestamp() {
-      return ctPartsToComparableMs(getNowChicagoParts());
-    }
-
-    // Comparable CT timestamp from "Start (CT)" field
-    function ctTimestampFromStart(raw) {
-      const parts = parseCTDateParts(raw);
-      if (!parts) return null;
-      return ctPartsToComparableMs(parts);
-    }
+    // Kickoff maths lives in js/kickoff.js so the picks page and the leaderboard
+    // can never disagree about when a week starts. These are thin aliases kept
+    // so the call sites below read the same as before.
+    const ctTimestampFromStart = ctToEpochMs;
+    const nowCTTimestamp = () => Date.now();
 
     // Nice display string for CT kickoff (does not affect locking)
     function kickoffFmt(raw) {
@@ -366,11 +322,17 @@
 
     // ------- Lock helpers (CT-based) -------
 
-    // Earliest kickoff among loaded games (for regular picks only, CT-based)
+    // Every game in the week, tiebreakers included. A Thursday tiebreaker starts
+    // the week just as surely as a Saturday noon game.
+    function allWeekGames(){
+      return regularGames.concat(tiebreakerGames);
+    }
+
+    // Earliest kickoff across the whole week (CT-correct, true epoch ms).
     function computeEarliestKickoff(){
       let bestTs = null;
       let bestStr = null;
-      for (const g of regularGames) {
+      for (const g of allWeekGames()) {
         const ts = ctTimestampFromStart(g.start);
         if (ts == null) continue;
         if (bestTs == null || ts < bestTs) {
@@ -382,24 +344,15 @@
       earliestKickoffStr = bestStr;
     }
 
+    // Regular season: the whole week locks the moment its first game kicks.
     function updateLockState(){
-      if (earliestKickoff == null) { 
-        isLocked = false; 
-        return; 
-      }
-      isLocked = nowCTTimestamp() >= earliestKickoff;
+      isLocked = isWeekLocked(allWeekGames());
     }
 
-    // Does this game (tiebreaker or playoff) still allow picks? (CT-based)
+    // Per-game lock. Only used in playoff mode, where each game locks at its own
+    // kickoff; in the regular season everything follows the week gate above.
     function isGameLocked(g){
-      if (!g.start) return false;
-      const gameTs = ctTimestampFromStart(g.start);
-      if (gameTs == null) return false;
-      return nowCTTimestamp() >= gameTs;
-    }
-
-    function hasOpenTiebreakerGame(){
-      return tiebreakerGames.some(g => !isGameLocked(g));
+      return gameLocked(g);
     }
 
     // ------- UI helpers -------
@@ -443,28 +396,27 @@
       // Save / clear buttons:
       // - If week not locked -> enabled.
       // - If week locked -> still enabled if any tiebreaker is open.
-      const canAct = !isLocked || hasOpenTiebreakerGame();
+      const canAct = !isLocked;
       saveBtn.disabled = !canAct;
       clearBtn.disabled = !canAct;
 
-      if (isLocked && !hasOpenTiebreakerGame()) {
-        setStatus('Picks are locked for this week and all tiebreakers have kicked.');
-      } else if (isLocked) {
-        setStatus('Regular picks are locked. You can still adjust tiebreakers that have not kicked.');
+      if (isLocked) {
+        setStatus('Picks are locked — this week’s first game has kicked off.');
       }
     }
 
     // Per-game lock helper for tiebreakers in regular season
     function applyTiebreakerLocksRegular(){
       if (isPlayoffMode) return; // in playoff mode we use applyPerGameLocks
+      // Regular season: tiebreakers follow the same week gate as everything
+      // else. Letting them stay open past the first kickoff would mean editing
+      // a pick after the leaderboard had already revealed everyone else's.
       tiebreakerGames.forEach(g => {
         const card = document.querySelector(`[data-game-id="${g.game_id}"]`);
         if (!card) return;
-        const lockedNow = isGameLocked(g);
-        // Only toggle lock class for tiebreaker cards here
-        card.classList.toggle('locked', lockedNow);
+        card.classList.toggle('locked', isLocked);
         const radios = card.querySelectorAll('input[type="radio"]');
-        radios.forEach(r => { r.disabled = lockedNow; });
+        radios.forEach(r => { r.disabled = isLocked; });
       });
     }
 
@@ -986,7 +938,7 @@
       saveBtn.classList.add('btn-success');
       const canAct = isPlayoffMode
         ? userInPlayoffs
-        : (!isLocked || hasOpenTiebreakerGame());
+        : !isLocked;
       saveBtn.disabled = !canAct;
       saveBtn.innerHTML = `
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -997,7 +949,7 @@
       setTimeout(() => {
         const canAct2 = isPlayoffMode
           ? userInPlayoffs
-          : (!isLocked || hasOpenTiebreakerGame());
+          : !isLocked;
         if (canAct2) renderSaveDefault();
       }, 1400);
     }
@@ -1005,7 +957,7 @@
       saveBtn.classList.remove('btn-saving','btn-success');
       const canAct = isPlayoffMode
         ? userInPlayoffs
-        : (!isLocked || hasOpenTiebreakerGame());
+        : !isLocked;
       saveBtn.disabled = !canAct;
       saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
     }
@@ -1032,23 +984,22 @@
 
       const rows = [];
       const allGames = getAllGames();
+      // Evaluated once per save, against the clock right now.
+      const weekLockedNow = !isPlayoffMode && isWeekLocked(allWeekGames());
       for (const p of selected){
         const gameIdNum = Number(p.game_id);
         const game = allGames.find(g => g.game_id === gameIdNum);
         if (!game) continue;
 
         if (isPlayoffMode) {
-          // In playoffs, all picks (normal + tiebreaker) lock per-game
+          // Playoffs: each game locks at its own kickoff.
           if (isGameLocked(game)) continue;
         } else {
-          // Regular season:
-          if (!game.isTiebreaker) {
-            // Normal picks respect global week lock
-            if (isLocked) continue;
-          } else {
-            // Tiebreaker picks always lock per-game
-            if (isGameLocked(game)) continue;
-          }
+          // Regular season: one week gate for every pick, tiebreakers included.
+          // Recomputed here rather than reading the cached isLocked flag, which
+          // is only refreshed once a minute and could be up to 60s stale on a
+          // page that has been sitting open across kickoff.
+          if (weekLockedNow) continue;
         }
 
         rows.push({
@@ -1093,7 +1044,7 @@
       }
 
       // In regular season: block clearing if week locked and all tiebreakers locked
-      if (!isPlayoffMode && isLocked && !hasOpenTiebreakerGame()) {
+      if (!isPlayoffMode && isLocked) {
         setStatus('Picks are locked — cannot clear.', true);
         return;
       }

@@ -378,7 +378,11 @@
         if(!g || g.GameId == null) continue;
 
         const start = parseCT(g['Start (CT)']);
-        const w = g.week ?? null;
+        // Normalise the week to a Number once, here, so every downstream Set
+        // (completeWeeks / startedWeeks / allWeeksWithPicks) and every lookup
+        // agree on type. `== null` rather than `??`/truthiness so week 0 - a
+        // real week in this league - survives.
+        const w = (g.week == null ? null : Number(g.week));
 
         gameMeta[g.GameId] = {
           week: w,
@@ -445,7 +449,7 @@
       for(const p of (picks||[])){
         const meta = gameMeta[p.game_id];
         if(!meta) continue;
-        const week   = meta.week;
+        const week   = (meta.week == null ? null : Number(meta.week));
         const winner = meta.winner;
 
         const twKey = `${p.team_id}|${week}`;
@@ -520,12 +524,16 @@
       }
 
       // ------- Weeks with picked games (for Missed Weeks calc) -------
+      // "Missed week" = a week of this season that had picked games and has
+      // already kicked off, in which this team submitted no picks at all.
+      // Note: week 0 is a real week in this league, so every guard here tests
+      // `!= null` rather than truthiness, and weeks are normalised to Numbers
+      // so a string "0" from the API can never miss a Set lookup.
       const allWeeksWithPicks = new Set(
         [...pickedByWeek.entries()]
-          .filter(([_, agg]) => agg.totalPicked > 0)
-          .map(([w]) => w)
+          .filter(([w, agg]) => w != null && agg.totalPicked > 0 && startedWeeks.has(w))
+          .map(([w]) => Number(w))
       );
-      const totalWeeksWithPicks = allWeeksWithPicks.size;
 
       // ------- Total Season Win % (all decided picks this season) -------
       const seasonStats = new Map(); // team_id -> { wins, total }
@@ -542,10 +550,16 @@
         const pct = total ? wins / total : 0;
         const pctStr = pct.toFixed(3).slice(1); // .459 format
 
-        const weeksPlayed = teamWeeks.has(team_id) ? teamWeeks.get(team_id).size : 0;
-        const missedWeeks = totalWeeksWithPicks > 0
-          ? Math.max(0, totalWeeksWithPicks - weeksPlayed)
-          : 0;
+        // Set difference, not a size subtraction: a team can only "play" weeks
+        // that are in allWeeksWithPicks today, but counting sizes would quietly
+        // under-report the moment that stops being true (e.g. a pick row that
+        // survives its game being un-picked). Ask the real question instead:
+        // which weeks with picked games have no pick row for this team?
+        const played = teamWeeks.get(team_id) || new Set();
+        let missedWeeks = 0;
+        for(const w of allWeeksWithPicks){
+          if(!played.has(w)) missedWeeks++;
+        }
 
         return {
           team: teamName.get(team_id) || `Team ${team_id}`,
