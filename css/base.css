@@ -9,12 +9,20 @@ h1 {
 }
 
 :root {
-  --cfp-black: #0a1208;
-  --cfp-charcoal: #0f1a0e;
+  /* Neutral, very slightly cool blacks. These used to carry a green tint
+     (#0a1208 / #0f1a0e) which, next to the gold and the orange team colours,
+     read as Halloween rather than scoreboard. */
+  --cfp-black: #0a0b0d;
+  --cfp-charcoal: #101114;
   --cfp-gold: #DAA520;
   --cfp-gold-2: #F0C75E;
   --cfp-ivory: #f5f0e0;
-  --cfp-gray: #1a2818;
+  --cfp-gray: #1a1c21;
+
+  /* Scoreboard LED palette */
+  --led-amber: #FFC02E;
+  --led-white: #F4F6F8;
+  --led-dim:   #6b6f76;
   --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 8px rgba(218,165,32,.3);
 }
 
@@ -284,6 +292,9 @@ header.cfp-card {
   color: var(--cfp-gold-2);
   line-height: 1;
 }
+/* Scores read as scoreboard LEDs: tabular figures so digits stay in column,
+   a tight bloom rather than a wide coloured halo, amber for the side that's
+   ahead and dimmed grey for the side that isn't. */
 .game-hdr-score {
   font-family: 'Teko', 'Oswald', sans-serif;
   font-size: 1.9rem;
@@ -292,23 +303,19 @@ header.cfp-card {
   min-width: 24px;
   text-align: center;
   background: none;
-  color: #fff;
-  text-shadow: 0 0 8px rgba(255,255,255,.3);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--led-white);
+  text-shadow: 0 0 6px rgba(244,246,248,.35);
 }
-.game-hdr-score.score-win {
-  color: #5eff8a;
-  text-shadow: 0 0 10px rgba(94,255,138,.5), 0 0 20px rgba(94,255,138,.2);
-}
-.game-hdr-score.score-loss {
-  color: #888;
-  text-shadow: none;
-}
+.game-hdr-score.score-win,
 .game-hdr-score.score-lead {
-  color: var(--cfp-gold-2);
-  text-shadow: 0 0 10px rgba(240,199,94,.5), 0 0 20px rgba(240,199,94,.2);
+  color: var(--led-amber);
+  text-shadow: 0 0 5px rgba(255,192,46,.65), 0 0 14px rgba(255,192,46,.25);
 }
+.game-hdr-score.score-loss,
 .game-hdr-score.score-trail {
-  color: #888;
+  color: var(--led-dim);
   text-shadow: none;
 }
 
@@ -327,7 +334,7 @@ header.cfp-card {
   font-size: .45rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--cfp-gold-2);
+  color: var(--led-amber);
   line-height: 1;
   letter-spacing: .06em;
 }
@@ -365,7 +372,8 @@ header.cfp-card {
   font-family: 'Oswald', sans-serif;
   font-size: .6rem;
   font-weight: 600;
-  color: #999;
+  font-variant-numeric: tabular-nums;
+  color: #9aa0a8;
   line-height: 1;
   margin-top: 0;
   letter-spacing: .04em;
@@ -402,6 +410,28 @@ header.cfp-card {
     0 16px 56px rgba(0,0,0,.8);
   position: relative;
   overflow: hidden;
+}
+
+/* Faint horizontal scanlines, the way a real LED board reads up close.
+   Sits behind content and never intercepts taps. */
+.scoreboard-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255,255,255,.018) 0px,
+    rgba(255,255,255,.018) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+.scoreboard-wrap > * { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scoreboard-wrap::before { display: none; }
 }
 
 /* (inner bezel removed — caused line artifact on mobile scroll) */
@@ -632,6 +662,25 @@ header.cfp-card {
 .deco-bottom { bottom: 40px; left: -50px; transform: rotate(6deg); }
 
 @media (max-width: 1024px) { .deco-mascot { display: none; } }
+
+/* --- Scoreboard points column ------------------------------------------
+   The Points cell sits immediately after the sticky Team column on both the
+   leaderboard and the tiebreakers table. Styled here rather than in the render
+   code so both pages pick it up. Tabular figures keep the digits in column. */
+.table tbody td.sticky-col-1 + td {
+  font-family: 'Teko', 'Oswald', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--led-amber);
+  text-shadow: 0 0 6px rgba(255,192,46,.30);
+}
+
+@media (max-width: 640px) {
+  .table tbody td.sticky-col-1 + td { font-size: 1.3rem; }
+}
 
 /* --- Mobile input sizing & touch targets --------------------------------
    Compound selectors throughout: css/tailwind.css loads after this file, so a
