@@ -2,10 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co https://esm.sh; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — League Info</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+
+  <meta name="description" content="Rules, scoring, tiebreaker order, and the reigning CFB Genius champion."/>
+  <meta name="robots" content="index,follow"/>
+  <link rel="canonical" href="https://cfb-pickem.github.io/Pickem/cfb-genius.html"/>
+
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml"/>
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png"/>
+
+  <meta property="og:type" content="website"/>
+  <meta property="og:site_name" content="CFB Pick'em"/>
+  <meta property="og:title" content="League Info — CFB Pick'em"/>
+  <meta property="og:description" content="Rules, scoring, tiebreaker order, and the reigning CFB Genius champion."/>
+  <meta property="og:url" content="https://cfb-pickem.github.io/Pickem/cfb-genius.html"/>
+  <meta property="og:image" content="https://cfb-pickem.github.io/Pickem/og-image.jpg"/>
+  <meta property="og:image:width" content="1200"/>
+  <meta property="og:image:height" content="630"/>
+  <meta name="twitter:card" content="summary_large_image"/>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,6 +31,8 @@
   <link rel="stylesheet" href="./css/base.css">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
+  <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
+  <link rel="stylesheet" href="./css/tailwind.css">
 </head>
 <body data-page="genius">
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
@@ -74,7 +93,7 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
           <div class="lg:col-span-2">
-            <img src="./Genius.jpeg" alt="Breaking Horrendous" class="w-full object-cover max-h-[400px] rounded" loading="lazy" />
+            <img src="./genius.webp" alt="Breaking Horrendous hoisting the CFB Genius trophy" class="w-full max-w-sm mx-auto rounded" width="800" height="1067" loading="lazy" />
           </div>
           <div class="space-y-4">
             <div>

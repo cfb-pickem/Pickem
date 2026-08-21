@@ -2,10 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co https://esm.sh; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — Tiebreakers</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+
+  <meta name="description" content="Tiebreaker picks and results for the CFB Pick'em league."/>
+  <meta name="robots" content="index,follow"/>
+  <link rel="canonical" href="https://cfb-pickem.github.io/Pickem/tiebreakers.html"/>
+
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml"/>
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png"/>
+
+  <meta property="og:type" content="website"/>
+  <meta property="og:site_name" content="CFB Pick'em"/>
+  <meta property="og:title" content="Tiebreakers — CFB Pick'em"/>
+  <meta property="og:description" content="Tiebreaker picks and results for the CFB Pick'em league."/>
+  <meta property="og:url" content="https://cfb-pickem.github.io/Pickem/tiebreakers.html"/>
+  <meta property="og:image" content="https://cfb-pickem.github.io/Pickem/og-image.jpg"/>
+  <meta property="og:image:width" content="1200"/>
+  <meta property="og:image:height" content="630"/>
+  <meta name="twitter:card" content="summary_large_image"/>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -83,6 +100,8 @@
         linear-gradient(90deg, rgba(233,185,73,.24), transparent 65%);
     }
   </style>
+  <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
+  <link rel="stylesheet" href="./css/tailwind.css">
 </head>
 
 <body data-page="tiebreakers">
@@ -795,13 +814,31 @@
     }
 
     // Live ticker (for header badges + winners + reveal at kickoff)
+    // Polling is suspended while the tab is hidden so a forgotten background tab
+    // doesn't keep hitting Supabase every 30s; it refreshes immediately on return.
+    let liveTickerWanted = false;
+
     async function startLiveTicker(){
+      liveTickerWanted = true;
       await refreshBadgesFromAllGames();
-      liveTimer = setInterval(refreshBadgesFromAllGames, LIVE_INTERVAL_MS);
+      resumeLiveTicker();
     }
     function stopLiveTicker(){
+      liveTickerWanted = false;
       if(liveTimer){ clearInterval(liveTimer); liveTimer = null; }
     }
+    function resumeLiveTicker(){
+      if(!liveTickerWanted || liveTimer || document.hidden) return;
+      liveTimer = setInterval(refreshBadgesFromAllGames, LIVE_INTERVAL_MS);
+    }
+    document.addEventListener('visibilitychange', () => {
+      if(document.hidden){
+        if(liveTimer){ clearInterval(liveTimer); liveTimer = null; }
+      } else if(liveTickerWanted){
+        refreshBadgesFromAllGames();
+        resumeLiveTicker();
+      }
+    });
 
     async function refreshBadgesFromAllGames(){
       if(!gameIds || !gameIds.length) return;

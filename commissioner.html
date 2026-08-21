@@ -2,10 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co https://esm.sh; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — Select Games</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+
+  <meta name="description" content="Commissioner tools for managing games, lines, scores, and playoff seeds."/>
+  <meta name="robots" content="noindex,nofollow"/>
+  <link rel="canonical" href="https://cfb-pickem.github.io/Pickem/commissioner.html"/>
+
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml"/>
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png"/>
+
+  <meta property="og:type" content="website"/>
+  <meta property="og:site_name" content="CFB Pick'em"/>
+  <meta property="og:title" content="Commissioner — CFB Pick'em"/>
+  <meta property="og:description" content="Commissioner tools for managing games, lines, scores, and playoff seeds."/>
+  <meta property="og:url" content="https://cfb-pickem.github.io/Pickem/commissioner.html"/>
+  <meta property="og:image" content="https://cfb-pickem.github.io/Pickem/og-image.jpg"/>
+  <meta property="og:image:width" content="1200"/>
+  <meta property="og:image:height" content="630"/>
+  <meta name="twitter:card" content="summary_large_image"/>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -47,6 +64,8 @@
       background: rgba(31,32,34,.98);
     }
   </style>
+  <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
+  <link rel="stylesheet" href="./css/tailwind.css">
 </head>
 
 <body data-page="select-games">

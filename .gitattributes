@@ -1,0 +1,13 @@
+# Normalize to LF in the repository so the CSS build check produces byte-identical
+# output on Windows and on the Ubuntu CI runner.
+* text=auto eol=lf
+
+# Generated — keep it out of diffs/blame noise.
+css/tailwind.css linguist-generated=true
+
+# Binary assets
+*.webp  binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary

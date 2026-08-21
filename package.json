@@ -1,0 +1,13 @@
+{
+  "name": "cfb-pickem",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CFB Pick'em — static site served from GitHub Pages",
+  "scripts": {
+    "css": "tailwindcss -i ./css/tailwind.src.css -o ./css/tailwind.css --minify",
+    "css:watch": "tailwindcss -i ./css/tailwind.src.css -o ./css/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}

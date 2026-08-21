@@ -1,0 +1,39 @@
+name: CSS build check
+
+# css/tailwind.css is committed and served directly by GitHub Pages, so it must
+# always match what `npm run css` produces from the current HTML/JS. This job
+# fails the build if someone adds a Tailwind class without rebuilding.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  css-up-to-date:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Rebuild Tailwind CSS
+        run: npm run css
+
+      - name: Verify committed CSS matches the rebuild
+        run: |
+          if ! git diff --quiet -- css/tailwind.css; then
+            echo "::error::css/tailwind.css is out of date. Run 'npm run css' and commit the result."
+            git diff --stat -- css/tailwind.css
+            exit 1
+          fi
+          echo "css/tailwind.css is up to date."

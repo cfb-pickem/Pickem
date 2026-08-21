@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /Pickem/picks.html
+Disallow: /Pickem/commissioner.html
+Disallow: /Pickem/signin.html
+Disallow: /Pickem/claim-team.html
+Disallow: /Pickem/reset.html
+
+Sitemap: https://cfb-pickem.github.io/Pickem/sitemap.xml

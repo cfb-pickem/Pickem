@@ -12,7 +12,6 @@ Desktop.ini
 
 # Node (if ever added)
 node_modules/
-package-lock.json
 
 # Environment
 .env
