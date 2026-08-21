@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co https://esm.sh; base-uri 'self'; form-action 'self'; object-src 'none'"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — Tiebreakers</title>
@@ -24,6 +24,7 @@
   <meta property="og:image:height" content="630"/>
   <meta name="twitter:card" content="summary_large_image"/>
 
+  <link rel="preconnect" href="https://vopdioszofwdkwnujtiq.supabase.co" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,6 +33,7 @@
   <link rel="stylesheet" href="./css/theme-halloween.css">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css">
   <link rel="stylesheet" href="./css/theme-christmas.css">
+  <link rel="modulepreload" href="./js/vendor/supabase.js">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
   <link rel="modulepreload" href="./js/utils.js">

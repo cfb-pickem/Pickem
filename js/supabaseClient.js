@@ -1,5 +1,8 @@
 // /js/supabaseClient.js
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// supabase-js is bundled locally (js/vendor/supabase.js, built by `npm run vendor`)
+// rather than loaded from esm.sh. The CDN version resolved into a 17-request
+// serial dependency chain that delayed the first database query by ~1.3s.
+import { createClient } from './vendor/supabase.js';
 
 export const supabase = createClient(
   'https://vopdioszofwdkwnujtiq.supabase.co',

@@ -205,6 +205,21 @@ body {
 
 /* --- Animations --- */
 
+/* --- Cross-page transitions ---------------------------------------------
+   Removes the white flash between pages in browsers that support it. The new
+   page keeps its own .fade-in entrance, so only the outgoing page is animated
+   here - running both would double-fade the content. No-op elsewhere. */
+@view-transition { navigation: auto; }
+
+::view-transition-old(root) { animation: cfp-vt-out .18s ease-in both; }
+::view-transition-new(root) { animation: none; }
+@keyframes cfp-vt-out { to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none; }
+}
+
 .fade-in { animation: cfp-fade-in .35s ease-out both; }
 @keyframes cfp-fade-in {
   from { opacity: 0; transform: translateY(6px); }

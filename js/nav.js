@@ -1,5 +1,6 @@
 // /js/nav.js
 import { supabase } from './supabaseClient.js';
+import { initPrefetch } from './prefetch.js';
 
 const LINKS = [
   { href: './index.html',        key: 'leaderboard',  label: 'Leaderboard' },
@@ -160,6 +161,9 @@ export default async function initNav(){
     const onAuthOnlyPage = LINKS.some(l => l.authOnly && l.key === current);
     if (onAuthOnlyPage) window.location.href = './index.html';
   }
+
+  // Links exist now, so hover/tap prefetching can be wired up.
+  initPrefetch();
 
   if (!didSubscribe) {
     didSubscribe = true;

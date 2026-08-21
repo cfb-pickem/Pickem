@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co https://esm.sh; base-uri 'self'; form-action 'self'; object-src 'none'"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — Leaderboard</title>
@@ -24,6 +24,34 @@
   <meta property="og:image:height" content="630"/>
   <meta name="twitter:card" content="summary_large_image"/>
 
+  <link rel="preconnect" href="https://vopdioszofwdkwnujtiq.supabase.co" crossorigin>
+  <!-- Fired before the stylesheets, because a classic script is blocked until every
+       preceding stylesheet has loaded - including the Google Fonts one. Sitting
+       here, these queries leave at ~30ms instead of ~1.5s. -->
+  <script>
+        // Start the season-independent queries NOW, over plain fetch, rather than
+    // waiting for the Supabase bundle to download and parse. The module below
+    // consumes these promises if they're present and falls back to a normal
+    // supabase call if any of them failed.
+    (function () {
+      try {
+        var URL_BASE = 'https://vopdioszofwdkwnujtiq.supabase.co/rest/v1/';
+        var KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcGRpb3N6b2Z3ZGt3bnVqdGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODI2MjksImV4cCI6MjA3NzE1ODYyOX0.cD2nNYMEUUOHWQlQC0-lxGZ3s1HVQhWEX_FmgzSsZYw';
+        var h = { apikey: KEY, Authorization: 'Bearer ' + KEY };
+        var get = function (q) {
+          return fetch(URL_BASE + q, { headers: h })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; });
+        };
+        window.__cfbPreload = {
+          seasons: get('all_games?select=cfb_season&cfb_season=not.is.null'),
+          teams:   get('teams?select=team_id,team_name&order=team_name.asc'),
+          logos:   get('logos?select=Team,LogoURL,Abbrev'),
+        };
+      } catch (e) { /* no preload - the module does it the normal way */ }
+    })();
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,6 +60,7 @@
   <link rel="stylesheet" href="./css/theme-halloween.css">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css">
   <link rel="stylesheet" href="./css/theme-christmas.css">
+  <link rel="modulepreload" href="./js/vendor/supabase.js">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
   <link rel="modulepreload" href="./js/utils.js">
@@ -183,6 +212,42 @@
 
   </div>
 
+  <!-- Instant paint. A classic (non-module) script so it runs the moment the
+       parser reaches it - before the module graph, and therefore before the
+       Supabase bundle, is fetched. Returning visitors see real standings in the
+       first frame instead of a skeleton. Written by saveSnapshot() below. -->
+  <script id="instant-paint">
+    (function () {
+      try {
+        var raw = localStorage.getItem('cfb_snapshot_v1');
+        if (!raw) return;
+        var snap = JSON.parse(raw);
+        if (!snap || snap.v !== 2 || !snap.bodyHtml) return;
+        if (Date.now() - (snap.savedAt || 0) > 7 * 24 * 60 * 60 * 1000) return;
+
+        var head = document.getElementById('thead-row');
+        var body = document.getElementById('tbody');
+        var table = document.getElementById('leaderboard-table');
+        var skel = document.getElementById('table-loading');
+        if (!head || !body || !table) return;
+
+        head.innerHTML = snap.headHtml || '';
+        body.innerHTML = snap.bodyHtml;
+        if (skel) skel.style.display = 'none';
+        table.style.display = '';
+
+        var ws = document.getElementById('weekly-submissions');
+        if (ws && !snap.wsVisible) ws.style.display = 'none';
+
+        var st = document.getElementById('status');
+        if (st) st.textContent = (snap.statusText || 'Standings') + ' · refreshing…';
+
+        window.__cfbPaintedFromCache = true;
+      } catch (e) { /* corrupt or unavailable storage - fall through to normal load */ }
+    })();
+
+  </script>
+
   <script type="module">
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
@@ -283,6 +348,30 @@
       }catch{}
     }
 
+    // ---- Instant paint: last-known standings ----------------------------------
+    // saveSnapshot() stores the *rendered* table HTML. A tiny classic script in the
+    // body (see #instant-paint) injects it before this module - and therefore
+    // before the Supabase bundle - is even fetched, so a returning visitor sees
+    // real standings in the first frame. Live data overwrites it moments later.
+    //
+    // The stored HTML is our own serialised DOM, built with textContent, so team
+    // names are already escaped.
+    const SNAPSHOT_KEY = 'cfb_snapshot_v1';
+    const paintedFromCache = !!window.__cfbPaintedFromCache;
+
+    function saveSnapshot(){
+      try{
+        localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({
+          v: 2,
+          savedAt: Date.now(),
+          headHtml: theadRow.innerHTML,
+          bodyHtml: tbody.innerHTML,
+          wsVisible: gameIds.length > 0,
+          statusText: statusEl ? statusEl.textContent : '',
+        }));
+      }catch{ /* quota or private mode - caching is best-effort */ }
+    }
+
     const statusSpinner = document.getElementById('status-spinner');
     const tableLoading  = document.getElementById('table-loading');
     const leaderboardTable = document.getElementById('leaderboard-table');
@@ -366,9 +455,16 @@
 
     // Startup
     async function startup() {
-      await initNav();
       initMascots();
-      await loadCurrentUserTeam();
+
+
+      // initNav(), loadCurrentUserTeam() and init() (logos/abbreviations) are
+      // independent of each other and of the season. Awaiting them one at a time
+      // cost four sequential round trips before the first row could render, so
+      // they're kicked off together and joined once the week is known.
+      const navReady    = initNav().catch(e => console.warn('nav init failed:', e));
+      const userReady   = loadCurrentUserTeam().catch(e => console.warn('user team load failed:', e));
+      const assetsReady = init().catch(e => console.warn('asset load failed:', e));
 
       await loadSeasons();
       const hintedSeason = getCached(STORAGE_KEYS.lastSeason);
@@ -400,7 +496,8 @@
         isPlayoffView = false;
       }
 
-      await init();
+      // Rendering needs the current user's team (row highlight) and the logo map.
+      await Promise.all([navReady, userReady, assetsReady]);
 
       // ✅ Compute points based on selected view
       if (isPlayoffView) {
@@ -474,12 +571,17 @@
 
     // Loaders
     async function loadSeasons(){
-      status('Loading seasons…', false, true);
-      const { data, error } = await supabase
-        .from('all_games')
-        .select('cfb_season')
-        .not('cfb_season', 'is', null);
-      if(error){ status(error.message, true); throw error; }
+      if(!paintedFromCache) status('Loading seasons…', false, true);
+
+      let data = await (window.__cfbPreload?.seasons ?? Promise.resolve(null));
+      if(!data){
+        const res = await supabase
+          .from('all_games')
+          .select('cfb_season')
+          .not('cfb_season', 'is', null);
+        if(res.error){ status(res.error.message, true); throw res.error; }
+        data = res.data;
+      }
       seasons = [...new Set((data||[]).map(r => Number(r.cfb_season)).filter(Number.isFinite))].sort((a,b)=>a-b);
       if(!seasons.length) { status('No seasons found.'); throw new Error('no seasons'); }
       seasonSelect.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -527,16 +629,19 @@
     }
 
     async function init(){
-      status('Loading assets…');
+      if(!paintedFromCache) status('Loading assets…');
 
       const logoCached = getCachedMap(STORAGE_KEYS.logos, STORAGE_KEYS.logosTTL);
       const abbrCached = getCachedMap(STORAGE_KEYS.abbrev, STORAGE_KEYS.abbrevTTL);
       if (logoCached) logoByTeam = logoCached;
       if (abbrCached) abbrByTeam = abbrCached;
 
-      const { data: logoRows, error: lErr } = await supabase
-        .from('logos')
-        .select('Team, LogoURL, Abbrev');
+      let logoRows = await (window.__cfbPreload?.logos ?? Promise.resolve(null));
+      let lErr = null;
+      if(!logoRows){
+        const res = await supabase.from('logos').select('Team, LogoURL, Abbrev');
+        logoRows = res.data; lErr = res.error;
+      }
 
       if(!lErr) {
         const mergedLogos = { ...(logoCached || {}) };
@@ -659,11 +764,15 @@
       winsByTeamRegular = Object.create(null);
       updateSeasonalTheme(currentSeason, []);
 
-      const { data: teamRows, error: tErr } = await supabase
-        .from('teams')
-        .select('team_id, team_name')
-        .order('team_name', { ascending: true });
-      if (tErr) return status(tErr.message, true);
+      let teamRows = await (window.__cfbPreload?.teams ?? Promise.resolve(null));
+      if(!teamRows){
+        const res = await supabase
+          .from('teams')
+          .select('team_id, team_name')
+          .order('team_name', { ascending: true });
+        if (res.error) return status(res.error.message, true);
+        teamRows = res.data;
+      }
 
       const teams = (teamRows || []).slice()
         .sort((a, b) => (a.team_name || '').localeCompare(b.team_name || ''));
@@ -680,6 +789,7 @@
       status(teams.length
         ? `Season ${currentSeason} — no games picked yet. Showing all ${teams.length} teams.`
         : `Season ${currentSeason} — no teams have been created yet.`);
+      saveSnapshot();
     }
 
     async function loadWeek(week){
@@ -722,11 +832,15 @@
         lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
       });
 
-      const { data: teamRows, error: tErr } = await supabase
-        .from('teams')
-        .select('team_id, team_name')
-        .order('team_name', { ascending: true });
-      if(tErr) return status(tErr.message, true);
+      let teamRows = await (window.__cfbPreload?.teams ?? Promise.resolve(null));
+      if(!teamRows){
+        const res = await supabase
+          .from('teams')
+          .select('team_id, team_name')
+          .order('team_name', { ascending: true });
+        if(res.error) return status(res.error.message, true);
+        teamRows = res.data;
+      }
 
       const { data: pickRows, error: pErr } = await supabase
         .from('picks')
@@ -754,6 +868,7 @@
       renderWeeklySubmissions(teamsSorted, pickMap);
       showTable();
 
+      saveSnapshot();
       startLiveTicker();
       if (!showPicks && weekStartTs) {
         status(`Picks hidden until kickoff at ${formatTimeCentral(weekStartTs)} CT • Season ${currentSeason} • Week ${week}`);
@@ -860,6 +975,7 @@
       renderWeeklySubmissions(teamsSorted, pickMap);
       showTable();
 
+      saveSnapshot();
       startLiveTicker();
       status(seedsMissing
         ? `Season ${currentSeason} • Playoff — no seeds set, showing all teams.`
