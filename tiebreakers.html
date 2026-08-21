@@ -208,7 +208,12 @@
     let isPlayoffView = false;
 
     let liveTimer = null;
-    const LIVE_INTERVAL_MS = 30000;
+    // Adaptive score polling. A fixed 30s tick was both too slow while games are
+    // actually in progress and pure waste the rest of the year. The ESPN job
+    // refreshes the database once a minute, so LIVE_MS is the useful floor.
+    const LIVE_MS_ACTIVE = 15000;  // something is in progress
+    const LIVE_MS_IDLE   = 90000;  // everything final / nothing kicked off yet
+    let liveIntervalMs = LIVE_MS_IDLE;
 
     const headerStatusEls = new Map(); // game_id -> { badgeEl, networkEl }
 
@@ -832,9 +837,27 @@
       liveTickerWanted = false;
       if(liveTimer){ clearInterval(liveTimer); liveTimer = null; }
     }
+    // Anything not yet final and already past kickoff counts as in progress.
+    // Restarts the interval only when the cadence actually changes.
+    function applyLiveCadence(rows){
+      const now = Date.now();
+      const anyLive = (rows || []).some(r => {
+        const st = String(r?.Status ?? '').toLowerCase();
+        if (st === 'final') return false;
+        if (st === 'in' || st === 'live' || r?.Period) return true;
+        const ts = kickoffMs(r);
+        return ts != null && now >= ts;
+      });
+
+      const next = anyLive ? LIVE_MS_ACTIVE : LIVE_MS_IDLE;
+      if (next === liveIntervalMs) return;
+      liveIntervalMs = next;
+      if (liveTimer){ clearInterval(liveTimer); liveTimer = null; resumeLiveTicker(); }
+    }
+
     function resumeLiveTicker(){
       if(!liveTickerWanted || liveTimer || document.hidden) return;
-      liveTimer = setInterval(refreshBadgesFromAllGames, LIVE_INTERVAL_MS);
+      liveTimer = setInterval(refreshBadgesFromAllGames, liveIntervalMs);
     }
     document.addEventListener('visibilitychange', () => {
       if(document.hidden){
@@ -857,6 +880,9 @@
         console.warn('all_games refresh error:', error.message);
         return;
       }
+
+      // Speed up while any game is running, slow right down when none is.
+      applyLiveCadence(rows);
 
       let winnerChanged = false;
 
