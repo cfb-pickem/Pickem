@@ -789,15 +789,38 @@
       saveBtn.disabled = true;
       status('Saving…');
 
-      const { error } = await supabase
-        .from('all_games')
-        .upsert(payload, { onConflict: 'GameId' });
+      // UPDATE, never upsert. An upsert INSERTS when the GameId isn't found, and
+      // this payload carries only the handful of columns shown in the table - so a
+      // game that disappeared between page load and save (the hourly
+      // cleanup_unpicked_games() job deletes past unpicked games) would be
+      // recreated as a shell row with NULL Away/Home/Start/season. Such a row is
+      // then invisible to every page filter AND unreachable by the cleanup job,
+      // so it sticks around forever. A plain UPDATE simply affects zero rows.
+      let error = null;
+      let missing = 0;
+
+      for (const row of payload) {
+        const { GameId, ...fields } = row;
+        const { data, error: e } = await supabase
+          .from('all_games')
+          .update(fields)
+          .eq('GameId', GameId)
+          .select('GameId');
+        if (e) { error = e; break; }
+        if (!data || data.length === 0) missing++;
+      }
 
       saveBtn.disabled = false;
 
       if(error){
         status(`Save failed: ${error.message}`, true);
+      }else if(missing === payload.length){
+        status(`Nothing saved — ${missing} game${missing===1?'':'s'} no longer exist. Reload and try again.`, true);
+        await loadWeek();
       }else{
+        if(missing){
+          status(`Saved, but ${missing} game${missing===1?'':'s'} no longer exist and were skipped.`, true);
+        }
         for(const row of payload){
           if (!original[row.GameId]) original[row.GameId] = {};
           original[row.GameId].line = row.line;
@@ -808,7 +831,8 @@
           original[row.GameId].Status = row.Status ?? '';
         }
         await loadWeek(); // re-apply sort if picked changed
-        status('Saved.');
+        // Don't clobber the partial-save warning set above.
+        if(!missing) status('Saved.');
       }
     }
 
