@@ -71,7 +71,7 @@ export default async function initNav(){
         <div class="flex items-center gap-2 pr-3">
           ${signedIn
             ? `<button id="nav-signout-mobile" class="px-3 py-2 text-xs text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>`
-            : `<a href="./signin.html" class="px-3 py-2 text-xs text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>`
+            : `<a href="./signin.html" class="px-3 py-2 text-xs text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign Up / Sign In</a>`
           }
         </div>
       </div>
@@ -89,7 +89,7 @@ export default async function initNav(){
       <ul class="hidden md:flex flex-wrap items-center gap-2 border-b border-[rgba(231,231,231,.08)]">
         ${items}
         <li class="ml-auto ${signedIn ? 'hidden' : ''}" id="nav-signin">
-          <a href="./signin.html" class="block px-4 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign in</a>
+          <a href="./signin.html" class="block px-4 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign Up / Sign In</a>
         </li>
         <li class="ml-auto ${signedIn ? '' : 'hidden'}" id="nav-signout">
           <button id="sign-out-btn" class="block px-4 py-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>

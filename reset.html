@@ -87,19 +87,44 @@
       statusEl.textContent = msg;
     }
 
+    // supabase-js has detectSessionInUrl on by default, so arriving here from a
+    // reset email it exchanges the code and establishes the recovery session by
+    // itself. That happens asynchronously, so wait for PASSWORD_RECOVERY (or an
+    // existing session) rather than racing it.
+    //
+    // The previous code called exchangeCodeForSession(window.location.hash) as a
+    // fallback, which is the wrong argument - that function wants an auth code,
+    // not the URL fragment - so it always failed with a 400 and showed the error
+    // message even on a perfectly good link.
     async function init(){
-      // Ensure Supabase recovery session is applied
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if(!session){
-        // Try to recover from the URL hash (#access_token, etc)
-        const { error: recoverError } = await supabase.auth.exchangeCodeForSession(window.location.hash);
-        if(recoverError){
-          setStatus('Session could not be restored. Please re-open the password reset link.', 'error');
-          form.style.display = 'none';
-          return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) { showForm(); return; }
+
+      let settled = false;
+      const stop = supabase.auth.onAuthStateChange((event, newSession) => {
+        if (settled) return;
+        if (newSession || event === 'PASSWORD_RECOVERY') {
+          settled = true;
+          showForm();
         }
-      }
+      });
+
+      // If nothing has arrived shortly after load, the link is stale or was
+      // already used.
+      setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { stop?.data?.subscription?.unsubscribe?.(); } catch {}
+        setStatus('This reset link has expired or was already used. Request a new one from the sign-in page.', 'error');
+        form.style.display = 'none';
+      }, 4000);
     }
+
+    function showForm(){
+      form.style.display = '';
+      setStatus('Choose a new password.');
+    }
+
     init();
 
     form.addEventListener('submit', async (e)=>{

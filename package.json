@@ -2,7 +2,7 @@
   "name": "cfb-pickem",
   "version": "1.0.0",
   "private": true,
-  "description": "CFB Pick'em \u2014 static site served from GitHub Pages",
+  "description": "CFB Pick'em — static site served from GitHub Pages",
   "scripts": {
     "css": "tailwindcss -i ./css/tailwind.src.css -o ./css/tailwind.css --minify",
     "css:watch": "tailwindcss -i ./css/tailwind.src.css -o ./css/tailwind.css --watch",
@@ -12,6 +12,7 @@
   "devDependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "esbuild": "^0.28.2",
+    "supabase": "^2.115.0",
     "tailwindcss": "3.4.17"
   }
 }

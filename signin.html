@@ -49,7 +49,7 @@
     .link{color:var(--cfp-gold-2);text-decoration:underline;transition:opacity .15s ease}
     .link:hover{opacity:.8}
 
-    #password-form, #magic-form {
+    #signin-form, #signup-form, #magic-form {
       transition: opacity .2s ease;
     }
   </style>
@@ -66,23 +66,25 @@
         <!-- Brand mark -->
         <div class="flex items-center justify-center gap-3 mb-5">
           <span class="trophy-oval" aria-hidden="true"></span>
-          <h1 class="font-['Oswald',_sans-serif] text-3xl font-bold text-[var(--cfp-ivory)] leading-tight">
-            Sign In
+          <h1 class="font-['Oswald',_sans-serif] text-xl sm:text-3xl font-bold text-[var(--cfp-ivory)] leading-tight whitespace-nowrap">
+            Sign Up or Sign In
           </h1>
           <span class="trophy-oval" aria-hidden="true"></span>
         </div>
-        <p class="text-sm text-gray-300 mb-6 text-center">
-          Sign in with your password. If you only used magic links before, create a password first.
+        <p id="intro" class="text-sm text-gray-300 mb-6 text-center">
+          Welcome back — sign in to make your picks.
         </p>
 
         <!-- Tabs -->
-        <div class="flex gap-2 mb-6">
-          <button id="tab-password" class="tab-btn active rounded" type="button">Password</button>
-          <button id="tab-magic" class="tab-btn rounded" type="button">Magic Link</button>
+        <div class="flex gap-2 mb-6" role="tablist" aria-label="Sign in or create an account">
+          <button id="tab-signin" class="tab-btn active rounded" type="button"
+                  role="tab" aria-selected="true" aria-controls="signin-form">Sign In</button>
+          <button id="tab-signup" class="tab-btn rounded" type="button"
+                  role="tab" aria-selected="false" aria-controls="signup-form">Create Account</button>
         </div>
 
-        <!-- PASSWORD FORM -->
-        <form id="password-form" class="space-y-4">
+        <!-- SIGN IN -->
+        <form id="signin-form" class="space-y-4" role="tabpanel" aria-labelledby="tab-signin">
           <div>
             <label for="email_pw" class="block text-sm font-medium text-gray-300">Email</label>
             <input type="email" id="email_pw" required autocomplete="email"
@@ -100,12 +102,36 @@
             Sign In
           </button>
           <div class="text-xs text-gray-400 text-center space-y-1">
-            <p><a href="#" id="send-reset" class="link">Create/Reset password</a></p>
-            <p>Prefer email links? <a href="#" id="switch-to-magic" class="link">Use Magic Link</a></p>
+            <p><a href="#" id="send-reset" class="link">Forgot your password?</a></p>
+            <p><a href="#" id="switch-to-magic" class="link">Email me a sign-in link instead</a></p>
           </div>
         </form>
 
-        <!-- MAGIC LINK FORM -->
+        <!-- CREATE ACCOUNT -->
+        <form id="signup-form" class="space-y-4 hidden" role="tabpanel" aria-labelledby="tab-signup">
+          <div>
+            <label for="email_signup" class="block text-sm font-medium text-gray-300">Email</label>
+            <input type="email" id="email_signup" required autocomplete="email"
+                   class="cfp-input mt-1 block w-full px-3 py-3 rounded-none text-sm"
+                   placeholder="you@email.com">
+          </div>
+          <div>
+            <label for="password_signup" class="block text-sm font-medium text-gray-300">Choose a password</label>
+            <input type="password" id="password_signup" required autocomplete="new-password" minlength="6"
+                   class="cfp-input mt-1 block w-full px-3 py-3 rounded-none text-sm"
+                   placeholder="At least 6 characters">
+          </div>
+          <button type="submit" id="signup-submit"
+                  class="w-full px-4 py-3 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">
+            Create Account
+          </button>
+          <div class="text-xs text-gray-400 text-center space-y-1">
+            <p>We’ll email you a confirmation link before your first sign-in.</p>
+            <p><a href="#" id="switch-to-signin" class="link">Already have an account? Sign in</a></p>
+          </div>
+        </form>
+
+        <!-- MAGIC LINK -->
         <form id="magic-form" class="space-y-4 hidden">
           <div>
             <label for="email_magic" class="block text-sm font-medium text-gray-300">Email</label>
@@ -115,10 +141,10 @@
           </div>
           <button type="submit" id="magic-submit"
                   class="w-full px-4 py-3 bg-[var(--cfp-gold)] text-black font-semibold ring-gold">
-            Send Magic Link
+            Send Sign-In Link
           </button>
           <p class="text-xs text-gray-400 text-center">
-            Back to <a href="#" id="switch-to-password" class="link">Password</a>.
+            No password needed. <a href="#" id="switch-to-password" class="link">Back to sign in</a>
           </p>
         </form>
 
@@ -139,23 +165,28 @@
     const BASE = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
 
     // DOM
-    const tabPassword = document.getElementById('tab-password');
-    const tabMagic    = document.getElementById('tab-magic');
-    const pwForm      = document.getElementById('password-form');
+    const tabSignIn   = document.getElementById('tab-signin');
+    const tabSignUp   = document.getElementById('tab-signup');
+    const signinForm  = document.getElementById('signin-form');
+    const signupForm  = document.getElementById('signup-form');
     const magicForm   = document.getElementById('magic-form');
     const pwSubmit    = document.getElementById('pw-submit');
+    const signupBtn   = document.getElementById('signup-submit');
     const magicSubmit = document.getElementById('magic-submit');
     const statusEl    = document.getElementById('status');
+    const introEl     = document.getElementById('intro');
     const emailPw     = document.getElementById('email_pw');
+    const emailSignup = document.getElementById('email_signup');
     const emailMagic  = document.getElementById('email_magic');
-    const switchToMagic = document.getElementById('switch-to-magic');
+    const switchToMagic  = document.getElementById('switch-to-magic');
+    const switchToSignIn = document.getElementById('switch-to-signin');
     const switchToPassword = document.getElementById('switch-to-password');
     const sendReset   = document.getElementById('send-reset');
 
     // Prefill last email if we have one
     const LAST_EMAIL_KEY = 'cfb_last_email_v1';
     const last = localStorage.getItem(LAST_EMAIL_KEY);
-    if (last) { emailPw.value = last; emailMagic.value = last; }
+    if (last) { emailPw.value = last; emailSignup.value = last; emailMagic.value = last; }
 
     function setStatus(msg, type = 'info'){
       const clsBase = 'mt-4 text-sm text-center ';
@@ -166,21 +197,45 @@
       statusEl.textContent = msg || '';
     }
 
-    function setActiveTab(which){
-      const usePassword = (which === 'password');
-      tabPassword.classList.toggle('active', usePassword);
-      tabMagic.classList.toggle('active', !usePassword);
-      pwForm.classList.toggle('hidden', !usePassword);
-      magicForm.classList.toggle('hidden', usePassword);
+    const INTRO = {
+      signin: 'Welcome back — sign in to make your picks.',
+      signup: 'New to the league? Create an account to get started.',
+      magic:  'We’ll email you a link that signs you in — no password needed.',
+    };
+
+    // which pane is showing: 'signin' | 'signup' | 'magic'
+    function setMode(mode){
+      const isSignIn = mode === 'signin';
+      const isSignUp = mode === 'signup';
+      const isMagic  = mode === 'magic';
+
+      signinForm.classList.toggle('hidden', !isSignIn);
+      signupForm.classList.toggle('hidden', !isSignUp);
+      magicForm .classList.toggle('hidden', !isMagic);
+
+      // The magic-link pane is reached from a link, not a tab. Keep Sign In
+      // highlighted while it's open so the tab row doesn't look unselected.
+      tabSignIn.classList.toggle('active', isSignIn || isMagic);
+      tabSignUp.classList.toggle('active', isSignUp);
+      tabSignIn.setAttribute('aria-selected', String(isSignIn || isMagic));
+      tabSignUp.setAttribute('aria-selected', String(isSignUp));
+
+      introEl.textContent = INTRO[mode];
       setStatus('');
-      (usePassword ? emailPw : emailMagic).focus();
+
+      const focusEl = isSignIn ? emailPw : isSignUp ? emailSignup : emailMagic;
+      if (focusEl && !focusEl.value) focusEl.focus();
     }
 
-    tabPassword.addEventListener('click', () => setActiveTab('password'));
-    tabMagic.addEventListener('click', () => setActiveTab('magic'));
-    switchToMagic.addEventListener('click', (e) => { e.preventDefault(); setActiveTab('magic'); });
-    switchToPassword.addEventListener('click', (e) => { e.preventDefault(); setActiveTab('password'); });
-    setActiveTab('password');
+    tabSignIn.addEventListener('click', () => setMode('signin'));
+    tabSignUp.addEventListener('click', () => setMode('signup'));
+    switchToMagic  .addEventListener('click', e => { e.preventDefault(); setMode('magic');  });
+    switchToSignIn .addEventListener('click', e => { e.preventDefault(); setMode('signin'); });
+    switchToPassword.addEventListener('click', e => { e.preventDefault(); setMode('signin'); });
+
+    // ?mode=signup deep-links straight to the create-account pane.
+    const wantsSignup = new URLSearchParams(location.search).get('mode') === 'signup';
+    setMode(wantsSignup ? 'signup' : 'signin');
 
     // ---------- EXACT LOGIC YOU WANT ----------
     // Check ONLY the `teams` table for a row where user_id = auth.uid()
@@ -227,8 +282,8 @@
       if (session?.user) await redirectPostAuth(session.user);
     });
 
-    // ---------- PASSWORD SIGN-IN ----------
-    pwForm.addEventListener('submit', async (e) => {
+    // ---------- SIGN IN ----------
+    signinForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       setStatus('');
       pwSubmit.disabled = true;
@@ -240,22 +295,20 @@
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-          const msg = (error?.message || '').toLowerCase();
-          if (msg.includes('invalid_grant') || msg.includes('invalid') || msg.includes('password')) {
-            setStatus('Incorrect email or password. If you never set a password, click "Create/Reset password" below.', 'error');
-          } else if (msg.includes('email') && msg.includes('confirm')) {
-            setStatus('Please confirm your email before signing in (check your inbox).', 'error');
+          const msg = (error.message || '').toLowerCase();
+          if (msg.includes('not confirmed')) {
+            setStatus('Almost there — open the confirmation email we sent you, then sign in.', 'error');
+          } else if (msg.includes('invalid login') || msg.includes('invalid') || msg.includes('credentials')) {
+            setStatus('Incorrect email or password. New here? Use Create Account above.', 'error');
           } else {
             setStatus(error.message || 'Sign-in failed.', 'error');
           }
-          pwSubmit.disabled = false;
-          pwSubmit.textContent = 'Sign In';
           return;
         }
         localStorage.setItem(LAST_EMAIL_KEY, email);
         setStatus('Signed in! Redirecting…', 'success');
         await redirectPostAuth(data.user);
-      } catch (err) {
+      } catch {
         setStatus('Unexpected error signing in.', 'error');
       } finally {
         pwSubmit.disabled = false;
@@ -263,13 +316,78 @@
       }
     });
 
-    // ---------- CREATE/RESET PASSWORD ----------
+    // ---------- CREATE ACCOUNT ----------
+    signupForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setStatus('');
+      signupBtn.disabled = true;
+      signupBtn.textContent = 'Creating…';
+
+      const email = emailSignup.value.trim();
+      const password = document.getElementById('password_signup').value;
+
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          // Confirmation link lands here; redirectPostAuth then sends them on to
+          // claim a team (or straight to the leaderboard if they already have one).
+          options: { emailRedirectTo: BASE + 'signin.html' }
+        });
+
+        if (error) {
+          const msg = (error.message || '').toLowerCase();
+          if (msg.includes('already registered') || msg.includes('already been registered')) {
+            setMode('signin');           // note: setMode() clears the status line,
+            emailPw.value = email;       // so the message goes after it
+            setStatus('That email already has an account — sign in instead.', 'error');
+          } else if (msg.includes('password')) {
+            setStatus(error.message, 'error');
+          } else {
+            setStatus(error.message || 'Could not create your account.', 'error');
+          }
+          return;
+        }
+
+        localStorage.setItem(LAST_EMAIL_KEY, email);
+
+        // Supabase does not error on a duplicate signup (that would let anyone
+        // test which emails are registered). It returns a user with an empty
+        // identities array instead, so that is what we check.
+        const looksExisting = data?.user && Array.isArray(data.user.identities)
+          && data.user.identities.length === 0;
+        if (looksExisting) {
+          setMode('signin');
+          emailPw.value = email;
+          setStatus('That email already has an account. Sign in below, or use "Forgot your password?".', 'error');
+          return;
+        }
+
+        if (data?.session) {
+          // Email confirmation is switched off for this project.
+          setStatus('Account created! Redirecting…', 'success');
+          await redirectPostAuth(data.user);
+          return;
+        }
+
+        setStatus('Account created. Check ' + email + ' for a confirmation link, then come back and sign in.', 'success');
+        signupForm.reset();
+      } catch {
+        setStatus('Unexpected error creating your account.', 'error');
+      } finally {
+        signupBtn.disabled = false;
+        signupBtn.textContent = 'Create Account';
+      }
+    });
+
+    // ---------- FORGOT PASSWORD ----------
     sendReset.addEventListener('click', async (e) => {
       e.preventDefault();
       setStatus('');
       const email = (emailPw.value || emailMagic.value || '').trim();
       if (!email) {
-        setStatus('Enter your email first, then click Create/Reset.', 'error');
+        setStatus('Enter your email above first, then click again.', 'error');
+        emailPw.focus();
         return;
       }
       try {
@@ -277,12 +395,14 @@
           redirectTo: BASE + 'reset.html'
         });
         if (error) {
-          setStatus(error.message || 'Could not send reset email.', 'error');
+          setStatus(error.message || 'Could not send the reset email.', 'error');
           return;
         }
-        setStatus('Password reset email sent. Check your inbox and follow the link to set a password.', 'success');
+        // Deliberately worded so it reads the same whether or not the address is
+        // registered - otherwise this form would reveal who has an account.
+        setStatus('If ' + email + ' has an account, a reset link is on its way. No account yet? Use Create Account above.', 'success');
       } catch {
-        setStatus('Unexpected error sending reset email.', 'error');
+        setStatus('Unexpected error sending the reset email.', 'error');
       }
     });
 
@@ -296,23 +416,21 @@
       const email = emailMagic.value.trim();
 
       try {
-        // Send magic link that returns to this page so redirectPostAuth can run
         const { error } = await supabase.auth.signInWithOtp({
           email,
           options: { emailRedirectTo: BASE + 'signin.html' }
         });
         if (error) {
-          setStatus(error.message || 'Could not send magic link.', 'error');
+          setStatus(error.message || 'Could not send the sign-in link.', 'error');
         } else {
           localStorage.setItem(LAST_EMAIL_KEY, email);
-          setStatus('Check your email for a magic link!', 'success');
-          magicForm.reset();
+          setStatus('Check ' + email + ' for your sign-in link.', 'success');
         }
       } catch {
-        setStatus('Unexpected error sending magic link.', 'error');
+        setStatus('Unexpected error sending the sign-in link.', 'error');
       } finally {
         magicSubmit.disabled = false;
-        magicSubmit.textContent = 'Send Magic Link';
+        magicSubmit.textContent = 'Send Sign-In Link';
       }
     });
   </script>

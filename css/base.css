@@ -648,7 +648,16 @@ header.cfp-card {
 
 /* --- Decorative mascots on non-leaderboard pages --- */
 
-.page-mascot-deco { pointer-events: none; }
+/* The deco mascots sit at right:-50px / left:-50px so they peek in from the
+   page edges. Without a clipping parent they extend past the viewport and give
+   the whole page a horizontal scrollbar on desktop (they're hidden <=1024px,
+   which is why this only showed up on wide screens). */
+.page-mascot-deco {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
 
 .deco-mascot {
   position: absolute;
