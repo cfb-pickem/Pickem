@@ -4,6 +4,20 @@
   <meta charset="utf-8"/>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <!-- Cross-document view transitions reject with AbortError whenever a
+       navigation interrupts one. It fires from browser internals ~57ms in -
+       long before the ES-module graph (and the Supabase bundle behind it) has
+       executed - so a listener registered from a module is far too late to
+       catch it. Must be a classic script, and it must be here in <head>. -->
+  <script>
+    addEventListener('unhandledrejection', function (e) {
+      var r = e && e.reason;
+      if (r && r.name === 'AbortError' && /transition/i.test(r.message || '')) {
+        e.preventDefault();
+      }
+    });
+  </script>
+
   <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — Leaderboard</title>
 
@@ -303,6 +317,13 @@
 
     let showPicks = true;
 
+    // Season and week live in shared module state, and both dropdowns kick off
+    // async loads. Changing one mid-flight used to let a stale handler resume
+    // and query with the other's value - producing
+    // `week=eq.null` and a raw Postgres error on screen. Every load takes a
+    // ticket; a load whose ticket is no longer current stops silently.
+    let loadSeq = 0;
+
     const phoneMQ = window.matchMedia('(max-width: 640px)');
     let isPhone = phoneMQ.matches;
     phoneMQ.addEventListener?.('change', (e) => {
@@ -533,6 +554,7 @@
       }
 
       seasonSelect.onchange = async () => {
+        ++loadSeq;                       // abandon anything already in flight
         currentSeason = Number(seasonSelect.value);
         setCached(STORAGE_KEYS.lastSeason, currentSeason);
 
@@ -567,7 +589,9 @@
       };
 
       weekSelect.onchange = async ()=> {
+        ++loadSeq;                       // abandon anything already in flight
         const val = weekSelect.value;
+        if (val === '') return;          // week picker was cleared by a season change
         if (val === 'playoff') {
           currentWeek = 'playoff';
           isPlayoffView = true;
@@ -811,6 +835,9 @@
     }
 
     async function loadWeek(week){
+      // Number(null) is 0, which is finite - so this has to test for null first.
+      if (week == null || !Number.isFinite(Number(week))) return;
+      const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Week ${week}…`);
       isPlayoffView = false;
       stopLiveTicker();
@@ -822,7 +849,8 @@
         .eq('cfb_season', currentSeason)
         .eq('picked', true)
         .eq('week', week);
-      if(gErr) return status(gErr.message, true);
+      if(gErr) return status('Could not load games for this week.', true);
+      if(mySeq !== loadSeq) return;   // a newer selection won
 
       const games = (gamesRaw || []).slice().sort((a, b) => {
         const ta = kickoffMs(a) ?? Infinity;
@@ -866,7 +894,8 @@
         .from('picks')
         .select('team_id, game_id, pick')
         .in('game_id', gameIds);
-      if(pErr) return status(pErr.message, true);
+      if(pErr) return status('Could not load picks.', true);
+      if(mySeq !== loadSeq) return;
 
       const pickMap = buildPickMap(pickRows);
 
@@ -898,6 +927,7 @@
     }
 
     async function loadPlayoffWeek(){
+      const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Playoff…`);
       isPlayoffView = true;
       stopLiveTicker();
@@ -909,7 +939,8 @@
         .eq('cfb_season', currentSeason)
         .eq('picked', true)
         .gt('week', 15);
-      if(gErr) return status(gErr.message, true);
+      if(gErr) return status('Could not load games for this week.', true);
+      if(mySeq !== loadSeq) return;   // a newer selection won
 
       const games = (gamesRaw || []).slice().sort((a, b) => {
         const ta = kickoffMs(a) ?? Infinity;
@@ -942,7 +973,8 @@
         .select('team_id, seed, teams ( team_name )')
         .eq('season', currentSeason)
         .order('seed', { ascending: true });
-      if (poErr) return status(poErr.message, true);
+      if (poErr) return status('Could not load playoff seeds.', true);
+      if(mySeq !== loadSeq) return;
 
       let playoffTeams = (playoffRows || []).map(r => ({
         team_id: r.team_id,
@@ -959,7 +991,7 @@
           .from('teams')
           .select('team_id, team_name')
           .order('team_name', { ascending: true });
-        if (atErr) return status(atErr.message, true);
+        if (atErr) return status('Could not load teams.', true);
         playoffTeams = (allTeams || []).map(t => ({
           team_id: t.team_id,
           team_name: t.team_name,
@@ -971,7 +1003,8 @@
         .from('picks')
         .select('team_id, game_id, pick')
         .in('game_id', gameIds);
-      if(pErr) return status(pErr.message, true);
+      if(pErr) return status('Could not load picks.', true);
+      if(mySeq !== loadSeq) return;
 
       const pickMap = buildPickMap(pickRows);
 
@@ -1385,10 +1418,18 @@
 
       if (needRerender) {
         const pointsMap = getPointsMapForCurrentView();
+        // Must match loadPlayoffWeek()'s ordering exactly. This re-sort runs from
+        // the live ticker, which fires immediately on load - so dropping the seed
+        // tiebreak here meant the seed-1 team was pushed below a tied seed-2 team
+        // before the user ever saw the correct order.
         lastTeams.sort((a,b)=>{
           const pa = getPoints(pointsMap, a.team_id);
           const pb = getPoints(pointsMap, b.team_id);
           if (pb !== pa) return pb - pa;
+          if (isPlayoffView) {
+            const sa = a.seed ?? Infinity, sb = b.seed ?? Infinity;
+            if (sa !== sb) return sa - sb;
+          }
           return a.team_name.localeCompare(b.team_name);
         });
 

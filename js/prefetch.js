@@ -31,18 +31,6 @@ function prefetch(a) {
   document.head.appendChild(link);
 }
 
-// Cross-document view transitions reject with AbortError when a navigation is
-// interrupted - e.g. claim-team.html redirecting a signed-out visitor to signin
-// while the inbound transition is still running. Harmless, browser-generated,
-// and not something page code can catch, so it's swallowed here rather than
-// left to surface as an uncaught error.
-addEventListener('unhandledrejection', (e) => {
-  const r = e.reason;
-  if (r && r.name === 'AbortError' && /transition/i.test(r.message || '')) {
-    e.preventDefault();
-  }
-});
-
 export function initPrefetch() {
   // Respect data saver / reduced data preferences.
   const conn = navigator.connection;

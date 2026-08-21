@@ -4,6 +4,20 @@
   <meta charset="utf-8"/>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <!-- Cross-document view transitions reject with AbortError whenever a
+       navigation interrupts one. It fires from browser internals ~57ms in -
+       long before the ES-module graph (and the Supabase bundle behind it) has
+       executed - so a listener registered from a module is far too late to
+       catch it. Must be a classic script, and it must be here in <head>. -->
+  <script>
+    addEventListener('unhandledrejection', function (e) {
+      var r = e && e.reason;
+      if (r && r.name === 'AbortError' && /transition/i.test(r.message || '')) {
+        e.preventDefault();
+      }
+    });
+  </script>
+
   <meta name="theme-color" content="#0B0B0B">
   <title>Claim or Create Team — CFB Pick'em</title>
 

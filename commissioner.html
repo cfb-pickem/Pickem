@@ -4,6 +4,20 @@
   <meta charset="utf-8"/>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <!-- Cross-document view transitions reject with AbortError whenever a
+       navigation interrupts one. It fires from browser internals ~57ms in -
+       long before the ES-module graph (and the Supabase bundle behind it) has
+       executed - so a listener registered from a module is far too late to
+       catch it. Must be a classic script, and it must be here in <head>. -->
+  <script>
+    addEventListener('unhandledrejection', function (e) {
+      var r = e && e.reason;
+      if (r && r.name === 'AbortError' && /transition/i.test(r.message || '')) {
+        e.preventDefault();
+      }
+    });
+  </script>
+
   <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — Select Games</title>
 
@@ -221,9 +235,18 @@
       await initNav();
       initMascots();
 
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if(error){ status(error.message,true); return false; }
-      if(!user){ status('Please sign in to continue.', true); lockAll(); return false; }
+      // supabase-js returns AuthSessionMissingError in `error` (not user: null)
+      // when nobody is signed in, so the old `if(error)` branch returned before
+      // lockAll() ever ran - leaving every Save button enabled on a page that
+      // showed a raw library error string. Treat "no session" as signed out.
+      const { data: { user } = {}, error } = await supabase.auth.getUser();
+      const noSession = !user || (error && /session|missing|jwt/i.test(error.message || ''));
+      if(noSession){
+        status('Please sign in as the commissioner to continue.', true);
+        lockAll();
+        return false;
+      }
+      if(error){ status('Could not verify your account. Try signing in again.', true); lockAll(); return false; }
 
       const { data, error: tErr } = await supabase
         .from('teams')
@@ -244,6 +267,8 @@
       savePicksBtn.disabled = true;
       teamSel.disabled = true;
       if (savePlayoffsBtn) savePlayoffsBtn.disabled = true;
+      // Belt and braces: nothing on this page should be operable when locked.
+      document.querySelectorAll('button, select, input').forEach(el => { el.disabled = true; });
     }
 
     async function loadSeasons(){
