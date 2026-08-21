@@ -16,3 +16,11 @@ node_modules/
 # Environment
 .env
 .env.*
+
+# Supabase CLI (never commit these - the repo is public)
+supabase/.temp/
+supabase/.branches/
+supabase/config.toml
+.supabase/
+*.dump
+*.sql.gz
