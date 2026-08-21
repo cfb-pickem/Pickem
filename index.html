@@ -610,6 +610,43 @@
     startup();
 
     // Loaders
+    // ---- Season data cache --------------------------------------------------
+    // Loading the leaderboard used to take five serial round trips: the week
+    // list, then the decided games, then their picks, then this week's games,
+    // then its picks. Each costs ~130ms of network for ~0.2ms of database work,
+    // and every one of them is a slice of the same two sets. So both are fetched
+    // once per season and sliced locally: five round trips become two.
+    let seasonCache = { season: null, games: null, picks: null };
+
+    async function loadSeasonData(season){
+      if (seasonCache.season === season && seasonCache.games) return seasonCache;
+
+      const { data: games, error: gErr } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker')
+        .eq('cfb_season', season)
+        .eq('picked', true);
+      if (gErr){ status('Could not load the season schedule.', true); return null; }
+
+      const ids = (games || []).map(g => g.GameId);
+      let picks = [];
+      if (ids.length){
+        const { data: p, error: pErr } = await supabase
+          .from('picks').select('team_id, game_id, pick').in('game_id', ids);
+        if (pErr){ status('Could not load picks.', true); return null; }
+        picks = p || [];
+      }
+
+      seasonCache = { season, games: games || [], picks };
+      return seasonCache;
+    }
+
+    // Picks for a given set of games, from the cache.
+    function picksForGames(ids){
+      const want = new Set(ids.map(Number));
+      return (seasonCache.picks || []).filter(p => want.has(Number(p.game_id)));
+    }
+
     async function loadSeasons(){
       if(!paintedFromCache) status('Loading seasons…', false, true);
 
@@ -630,17 +667,11 @@
     // UPDATED: returns maxPickedWeek
     async function loadWeeksForSeason(season){
       status(`Loading weeks for ${season}…`);
-      const { data, error } = await supabase
-        .from('all_games')
-        .select('week')
-        .eq('cfb_season', season)
-        .eq('picked', true)
-        .not('week', 'is', null)
-        .order('week', { ascending: true });
+      const cache = await loadSeasonData(season);
+      if (!cache) throw new Error('season load failed');
 
-      if(error){ status(error.message, true); throw error; }
-
-      const uniqueWeeks = [...new Set((data || []).map(r => Number(r.week)).filter(Number.isFinite))].sort((a,b)=>a-b);
+      const uniqueWeeks = [...new Set(cache.games
+        .map(r => Number(r.week)).filter(Number.isFinite))].sort((a,b)=>a-b);
 
       if (!uniqueWeeks.length){
         weeks = [];
@@ -709,19 +740,14 @@
         return;
       }
 
-      const { data: decidedGames, error: dgErr } = await supabase
-        .from('all_games')
-        .select('GameId, winner, week')
-        .eq('cfb_season', currentSeason)
-        .eq('picked', true)
-        .lte('week', throughWeek)
-        .lte('week', 15)
-        .not('winner', 'is', null)
-        .or('tiebreaker.is.null,tiebreaker.eq.false');
+      const cache = await loadSeasonData(currentSeason);
+      if (!cache) return;
 
-      if(dgErr){ status(dgErr.message, true); return; }
+      const decidedGames = cache.games.filter(g =>
+        Number(g.week) <= throughWeek && Number(g.week) <= 15 &&
+        g.winner != null && g.tiebreaker !== true);
 
-      const gameIdsSeason = (decidedGames || []).map(g => g.GameId);
+      const gameIdsSeason = decidedGames.map(g => g.GameId);
       const winnerByGame = Object.create(null);
       (decidedGames||[]).forEach(g=>{ winnerByGame[g.GameId] = g.winner; });
 
@@ -730,12 +756,7 @@
         return;
       }
 
-      const { data: allPicks, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick')
-        .in('game_id', gameIdsSeason);
-
-      if(pErr){ status(pErr.message, true); return; }
+      const allPicks = picksForGames(gameIdsSeason);
 
       const map = Object.create(null);
       (allPicks||[]).forEach(p=>{
@@ -843,14 +864,10 @@
       stopLiveTicker();
       headerStatusEls.clear();
 
-      const { data: gamesRaw, error: gErr } = await supabase
-        .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season')
-        .eq('cfb_season', currentSeason)
-        .eq('picked', true)
-        .eq('week', week);
-      if(gErr) return status('Could not load games for this week.', true);
+      const cache = await loadSeasonData(currentSeason);
+      if(!cache) return;
       if(mySeq !== loadSeq) return;   // a newer selection won
+      const gamesRaw = cache.games.filter(g => Number(g.week) === Number(week));
 
       const games = (gamesRaw || []).slice().sort((a, b) => {
         const ta = kickoffMs(a) ?? Infinity;
@@ -890,12 +907,7 @@
         teamRows = res.data;
       }
 
-      const { data: pickRows, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick')
-        .in('game_id', gameIds);
-      if(pErr) return status('Could not load picks.', true);
-      if(mySeq !== loadSeq) return;
+      const pickRows = picksForGames(gameIds);
 
       const pickMap = buildPickMap(pickRows);
 
@@ -933,14 +945,10 @@
       stopLiveTicker();
       headerStatusEls.clear();
 
-      const { data: gamesRaw, error: gErr } = await supabase
-        .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season')
-        .eq('cfb_season', currentSeason)
-        .eq('picked', true)
-        .gt('week', 15);
-      if(gErr) return status('Could not load games for this week.', true);
-      if(mySeq !== loadSeq) return;   // a newer selection won
+      const cache = await loadSeasonData(currentSeason);
+      if(!cache) return;
+      if(mySeq !== loadSeq) return;
+      const gamesRaw = cache.games.filter(g => Number(g.week) > 15);
 
       const games = (gamesRaw || []).slice().sort((a, b) => {
         const ta = kickoffMs(a) ?? Infinity;
@@ -999,12 +1007,7 @@
         }));
       }
 
-      const { data: pickRows, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick')
-        .in('game_id', gameIds);
-      if(pErr) return status('Could not load picks.', true);
-      if(mySeq !== loadSeq) return;
+      const pickRows = picksForGames(gameIds);
 
       const pickMap = buildPickMap(pickRows);
 
@@ -1383,6 +1386,11 @@
             const t = document.createElement('div'); t.className = 'game-hdr-time'; t.textContent = formatTimeCentral(r['Start (CT)']) || 'TBD'; centerEl.appendChild(t);
           }
         }
+
+        // Fold the fresh row back into the season cache, otherwise the points
+        // recompute below would read stale winners.
+        const cached = (seasonCache.games || []).find(g => Number(g.GameId) === Number(r.GameId));
+        if (cached) Object.assign(cached, r);
 
         const prevWinner = winnerMap[r.GameId] ?? null;
         const currWinner = r.winner ?? null;
