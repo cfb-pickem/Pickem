@@ -95,6 +95,11 @@
       font-size:.65rem;
     }
 
+    /* 10px pills are hard to read at arm's length on a phone. */
+    @media (max-width: 767px) {
+      .badge-pill, .dog-header-badge { font-size: .72rem; letter-spacing: .12em; }
+    }
+
     .badge-pill{
       border-radius:999px;
       padding:.15rem .5rem;
@@ -147,7 +152,7 @@
       <h1 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)]">Season Stats</h1>
       <div class="flex items-center gap-2 text-sm">
         <label class="text-gray-300 tracking-[.18em] uppercase">Season</label>
-        <select id="season-select" class="cfp-select rounded-none px-3 py-2 min-w-[120px]"></select>
+        <select id="season-select" aria-label="Season" class="cfp-select rounded-none px-3 py-2 min-w-[120px]"></select>
       </div>
     </div>
     <div class="flex items-center gap-2 mb-3 px-1 text-xs text-gray-300">
@@ -313,25 +318,32 @@
 
     async function loadSeasons(){
       setStatus('Loading seasons…', false, true);
-      const { data, error } = await supabase
-        .from('all_games')
-        .select('cfb_season')
-        .not('cfb_season', 'is', null);
-      if(error){
+      const [allRes, pickedRes] = await Promise.all([
+        supabase.from('all_games').select('cfb_season').not('cfb_season', 'is', null),
+        supabase.from('all_games').select('cfb_season').eq('picked', true).not('cfb_season', 'is', null),
+      ]);
+      if(allRes.error){
         setStatus('Error loading seasons', true);
         return false;
       }
-      const seasons = [...new Set((data||[])
+      const uniq = rows => [...new Set((rows||[])
         .map(r => Number(r.cfb_season))
         .filter(n => Number.isFinite(n)))]
         .sort((a,b)=>a-b);
 
+      const seasons = uniq(allRes.data);
       if(!seasons.length){
         setStatus('No seasons found', true);
         return false;
       }
       seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
-      seasonSel.value = String(seasons[seasons.length-1]); // latest
+
+      // Default to the newest season that actually has picked games. In the
+      // pre-season the newest season has a full schedule but nothing picked, so
+      // defaulting to it blindly lands everyone on a page of empty cards.
+      const withData = pickedRes.error ? [] : uniq(pickedRes.data);
+      const preferred = withData.length ? withData[withData.length-1] : seasons[seasons.length-1];
+      seasonSel.value = String(preferred);
       return true;
     }
 

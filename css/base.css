@@ -378,11 +378,11 @@ header.cfp-card {
   .game-hdr-logo { display: none; }
   .game-hdr-side-top .game-hdr-logo { display: none; }
   .game-hdr-score { font-size: 1.2rem; }
-  .game-hdr-abbr { font-size: .6rem; }
-  .game-hdr-line { font-size: .5rem; margin-top: 0; }
+  .game-hdr-abbr { font-size: .68rem; }
+  .game-hdr-line { font-size: .58rem; margin-top: 0; }
   .game-hdr-center { padding: 6px 5px; min-width: 30px; }
-  .game-hdr-period, .game-hdr-final { font-size: .5rem; }
-  .game-hdr-clock, .game-hdr-time { font-size: .45rem; margin-top: 2px; }
+  .game-hdr-period, .game-hdr-final { font-size: .58rem; }
+  .game-hdr-clock, .game-hdr-time { font-size: .55rem; margin-top: 2px; }
   .game-hdr-team { min-width: auto; }
   .game-hdr-side { gap: 0; }
 }
@@ -632,6 +632,49 @@ header.cfp-card {
 .deco-bottom { bottom: 40px; left: -50px; transform: rotate(6deg); }
 
 @media (max-width: 1024px) { .deco-mascot { display: none; } }
+
+/* --- Mobile input sizing & touch targets --------------------------------
+   Compound selectors throughout: css/tailwind.css loads after this file, so a
+   bare element selector would lose to .text-sm / .text-xs on specificity. */
+
+@media (max-width: 767px) {
+  /* iOS Safari zooms the whole page in when you focus a control whose computed
+     font-size is under 16px - and it never zooms back out. 16px is the
+     documented threshold, so every text-entry control clears it on phones. */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  input[type="tel"],
+  input.cfp-input,
+  select.cfp-select,
+  select[id],
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Apple and Google both put the minimum comfortable touch target near 44px.
+     min-height alone doesn't affect inline elements, hence the inline-flex on
+     anchors. */
+  button { min-height: 44px; }
+
+  a.link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  #site-nav a,
+  #site-nav button {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* 10px legend chips were too small to read at arm's length. */
+  .badge { font-size: .72rem; }
+}
 
 /* --- Mobile optimizations --- */
 

@@ -76,7 +76,7 @@
       th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; padding-left: .25rem !important; padding-right: .25rem !important; }
       thead th { font-size: .8rem; }
       .network-line{ font-size:9px; letter-spacing:.12em; }
-      .badge { font-size: .65rem; padding: .1rem .4rem; }
+      .badge { font-size: .72rem; padding: .15rem .45rem; }
       .table tbody td { font-size: .85rem; }
       thead th > :first-child{
         white-space: nowrap;
@@ -114,9 +114,9 @@
       <h1 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)]">Tiebreakers</h1>
       <div class="flex items-center gap-2 text-sm">
         <label class="hidden md:block text-gray-300">Season</label>
-        <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
+        <select id="season-select" aria-label="Season" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[110px]"></select>
         <label class="hidden md:block text-gray-300">View</label>
-        <select id="view-select" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[140px]">
+        <select id="view-select" aria-label="View" class="cfp-select rounded-none px-3 py-2 text-sm min-w-[140px]">
           <option value="regular">Regular Season</option>
           <option value="playoff">Playoff</option>
         </select>

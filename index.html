@@ -115,7 +115,7 @@
       th, td { padding-top: .4rem !important; padding-bottom: .4rem !important; padding-left: .25rem !important; padding-right: .25rem !important; }
       thead th { font-size: .8rem; }
       .network-line{ font-size:9px; letter-spacing:.12em; }
-      .badge { font-size: .65rem; padding: .1rem .4rem; }
+      .badge { font-size: .72rem; padding: .15rem .45rem; }
       .table tbody td { font-size: .85rem; }
       thead th > :first-child{
         white-space: nowrap;
@@ -161,10 +161,10 @@
         <span id="status">Loading…</span>
       </div>
       <div class="flex items-center gap-2 text-sm">
-        <label class="hidden md:block text-gray-300">Season</label>
-        <select id="season-select" class="cfp-select rounded-none px-3 py-2 text-sm w-24 md:min-w-[110px]"></select>
-        <label class="hidden md:block text-gray-300">Week</label>
-        <select id="week-select" class="cfp-select rounded-none px-3 py-2 text-sm w-24 md:min-w-[100px]"></select>
+        <label for="season-select" class="hidden md:block text-gray-300">Season</label>
+        <select id="season-select" aria-label="Season" class="cfp-select rounded-none px-3 py-2 text-sm w-24 md:min-w-[110px]"></select>
+        <label id="week-label" for="week-select" class="hidden md:block text-gray-300">Week</label>
+        <select id="week-select" aria-label="Week" class="cfp-select rounded-none px-3 py-2 text-sm w-24 md:min-w-[100px]"></select>
       </div>
     </div>
 
@@ -387,6 +387,14 @@
       if (leaderboardTable) leaderboardTable.style.display = '';
     }
 
+    // Hide the Week control (and its label) when the season has no weeks yet.
+    function setWeekPickerVisible(visible){
+      const sel = document.getElementById('week-select');
+      const lbl = document.getElementById('week-label');
+      if (sel) sel.style.display = visible ? '' : 'none';
+      if (lbl) lbl.style.display = visible ? '' : 'none';
+    }
+
     // The Made Picks / Not Yet panel is meaningless when no games are picked.
     function setWeeklySubmissionsVisible(visible){
       const el = document.getElementById('weekly-submissions');
@@ -606,7 +614,8 @@
         weeks = [];
         weekSelect.innerHTML = '';
         hasPlayoffOption = false;
-        status('No weeks for this season.', true);
+        // An empty dropdown just reads as broken - hide it until there are weeks.
+        setWeekPickerVisible(false);
         return null;
       }
 
@@ -625,6 +634,7 @@
       }
 
       weekSelect.innerHTML = html;
+      setWeekPickerVisible(true);
       return maxPickedWeek;
     }
 
