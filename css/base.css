@@ -308,7 +308,14 @@ header.cfp-card {
   color: var(--led-white);
   text-shadow: 0 0 6px rgba(244,246,248,.35);
 }
-.game-hdr-score.score-win,
+/* Winner: glowing green, as it was. The Halloween problem was the green-tinted
+   BLACK behind it, not the green score itself - that's now neutral, so the green
+   reads as a scoreboard win light instead of half a costume. */
+.game-hdr-score.score-win {
+  color: #5eff8a;
+  text-shadow: 0 0 6px rgba(94,255,138,.65), 0 0 18px rgba(94,255,138,.28);
+}
+/* Live leader stays amber so "currently ahead" and "won" don't look the same. */
 .game-hdr-score.score-lead {
   color: var(--led-amber);
   text-shadow: 0 0 5px rgba(255,192,46,.65), 0 0 14px rgba(255,192,46,.25);

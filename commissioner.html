@@ -158,9 +158,17 @@
     <section class="cfp-card overflow-auto">
       <div class="px-4 py-3 border-b border-[rgba(231,231,231,.08)] text-sm text-gray-300 flex items-center justify-between">
         <strong class="text-[var(--cfp-ivory)]">Manage Weekly Picks</strong>
-        <button id="save-btn" class="bg-[var(--cfp-gold)] text-black font-semibold px-4 py-2 text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
-          Save Weekly Picks
-        </button>
+        <div class="flex items-center gap-2 flex-wrap">
+          <label for="games-sort" class="text-xs text-gray-400">Sort</label>
+          <select id="games-sort" aria-label="Sort games"
+                  class="cfp-select rounded-none px-3 py-2 text-sm">
+            <option value="best">Best games first</option>
+            <option value="time">Kickoff time</option>
+          </select>
+          <button id="save-btn" class="bg-[var(--cfp-gold)] text-black font-semibold px-4 py-2 text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+            Save Weekly Picks
+          </button>
+        </div>
       </div>
 
       <table class="table min-w-full text-sm">
@@ -189,7 +197,7 @@
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
-    import { escapeHtml } from './js/utils.js';
+    import { escapeHtml, TEAM_COLORS } from './js/utils.js';
 
     const seasonSel = document.getElementById('season-select');
     const weekSel   = document.getElementById('week-select');
@@ -339,6 +347,61 @@
       return true;
     }
 
+    // ---- "Best games first" ranking -----------------------------------------
+    // There is no rankings table, so this scores the three signals that ARE in
+    // the data and correlate with a game being worth picking.
+
+    // Broadcast tier. A national network is the clearest proxy for a marquee
+    // game; anything on a "+" streaming tier is almost always a body-bag game.
+    const NETWORK_TIER = {
+      'ABC': 40, 'CBS': 40, 'FOX': 40, 'NBC': 40,
+      'ESPN': 35, 'TNT': 26,
+      'ESPN2': 22, 'FS1': 22, 'BTN': 22, 'SEC Network': 22, 'ACC Network': 22,
+      'CBSSN': 18, 'USA Net': 18, 'CW': 18, 'Peacock': 18, 'ESPNU': 14,
+    };
+
+    function networkScore(net){
+      const n = String(net || '').trim();
+      if (!n) return 0;
+      if (NETWORK_TIER[n] != null) return NETWORK_TIER[n];
+      if (n.endsWith('+')) return 3;      // ESPN+, SECN+, MW+ ...
+      return 10;                          // some other cable channel
+    }
+
+    // Both sides FBS. TEAM_COLORS is the FBS list the rest of the site uses
+    // (131 teams), so a name missing from it is an FCS visitor.
+    function isFbs(name){ return !!TEAM_COLORS[String(name || '').trim()]; }
+
+    function gameScore(g){
+      let score = networkScore(g['Network']);
+
+      // A close spread is the strongest single signal of a good game. A pick'em
+      // is worth the most; by ~28 points it contributes nothing.
+      const ln = g.line == null ? null : Number(g.line);
+      if (ln != null && !Number.isNaN(ln)) score += Math.max(0, 28 - Math.abs(ln));
+
+      // Mismatches drag everything down regardless of who is televising them.
+      const both = isFbs(g['Away']) && isFbs(g['Home']);
+      if (both) score += 25; else score -= 15;
+
+      return score;
+    }
+
+    function sortRows(){
+      const mode = (document.getElementById('games-sort') || {}).value || 'best';
+      rows.sort((a,b) => {
+        // Already-picked games stay pinned at the top in both modes.
+        if (Boolean(a.picked) !== Boolean(b.picked)) return a.picked ? -1 : 1;
+
+        if (mode === 'best'){
+          const d = gameScore(b) - gameScore(a);
+          if (d) return d;
+        }
+        const at = parseCT(a['Start (CT)']); const bt = parseCT(b['Start (CT)']);
+        return (at ? at.getTime() : Infinity) - (bt ? bt.getTime() : Infinity);
+      });
+    }
+
     function niceTime(ts){
       if(!ts) return '';
       try{
@@ -385,19 +448,7 @@
       if(error) return status(error.message,true);
       rows = data || [];
 
-      // SORT: picked desc, then has Network, then Start time asc
-      rows.sort((a,b) => {
-        if (Boolean(a.picked) !== Boolean(b.picked)) return a.picked ? -1 : 1;
-
-        const aHasNet = a['Network'] != null && String(a['Network']).trim() !== '';
-        const bHasNet = b['Network'] != null && String(b['Network']).trim() !== '';
-        if (aHasNet !== bHasNet) return aHasNet ? -1 : 1;
-
-        const at = parseCT(a['Start (CT)']); const bt = parseCT(b['Start (CT)']);
-        const atms = at ? at.getTime() : Number.POSITIVE_INFINITY;
-        const btms = bt ? bt.getTime() : Number.POSITIVE_INFINITY;
-        return atms - btms;
-      });
+      sortRows();
 
       // snapshot for diffing edits (ONLY fields we will update)
       original = {};
@@ -888,6 +939,11 @@
       weekSel.onchange = async () => {
         await loadWeek();
       };
+
+      // Re-order in place. No refetch, and unsaved edits survive because they
+      // live in `edited` keyed by GameId, not in row order.
+      const gamesSort = document.getElementById('games-sort');
+      if (gamesSort) gamesSort.onchange = () => { sortRows(); renderGamesTable(); };
 
       teamSel.onchange = async () => {
         await loadExistingTeamPicks();
