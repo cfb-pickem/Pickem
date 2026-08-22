@@ -926,7 +926,7 @@
       const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap, showPicks, pointsMap, false);
-      renderWeeklySubmissions(teamsSorted, pickMap);
+      await renderWeeklySubmissions(teamsSorted, pickMap);
       showTable();
 
       saveSnapshot();
@@ -1028,7 +1028,7 @@
       const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap, true, pointsMap, true);
-      renderWeeklySubmissions(teamsSorted, pickMap);
+      await renderWeeklySubmissions(teamsSorted, pickMap);
       showTable();
 
       saveSnapshot();
@@ -1275,19 +1275,41 @@
       });
     }
 
-    function renderWeeklySubmissions(teams, pickMap){
+    // Who has submitted this week.
+    //
+    // This can no longer be worked out from pickMap: the database now hides other
+    // teams' picks until the week locks, which is the whole point - so before
+    // kickoff pickMap legitimately contains only your own. submission_status() is
+    // a SECURITY DEFINER function that answers "has this team submitted?" with a
+    // boolean and never returns a pick value, so the panel keeps working without
+    // reopening the hole.
+    async function renderWeeklySubmissions(teams, pickMap){
       setWeeklySubmissionsVisible(true);
       const made = [];
       const notYet = [];
 
-      teams.forEach(t=>{
-        const picks = pickMap[t.team_id] || {};
-        const hasCompleteSubmission = gameIds.length === 0 ? false : gameIds.every(id=>{
-          const p = picks[id];
-          return p && String(p).trim() !== '';
+      let status = null;
+      if (!isPlayoffView && Number.isFinite(Number(currentWeek))) {
+        const { data, error } = await supabase.rpc('submission_status', {
+          p_season: currentSeason, p_week: Number(currentWeek)
         });
-        (hasCompleteSubmission ? made : notYet).push(t.team_name);
-      });
+        if (!error && Array.isArray(data)) status = data;
+      }
+
+      if (status) {
+        const byId = new Map(status.map(r => [Number(r.team_id), r.submitted]));
+        teams.forEach(t => (byId.get(Number(t.team_id)) ? made : notYet).push(t.team_name));
+      } else {
+        // Playoff view, or the RPC failed: fall back to what we can see locally.
+        teams.forEach(t=>{
+          const picks = pickMap[t.team_id] || {};
+          const hasCompleteSubmission = gameIds.length === 0 ? false : gameIds.every(id=>{
+            const p = picks[id];
+            return p && String(p).trim() !== '';
+          });
+          (hasCompleteSubmission ? made : notYet).push(t.team_name);
+        });
+      }
 
       wsMade.innerHTML = made.map(name =>
         `<span class="badge badge-sched inline-fix rounded-full">${escapeHtml(name)}</span>`
@@ -1442,7 +1464,7 @@
         });
 
         renderTable(lastTeams, lastPickMap, winnerMap, showPicks, pointsMap, isPlayoffView);
-        renderWeeklySubmissions(lastTeams, lastPickMap);
+        await renderWeeklySubmissions(lastTeams, lastPickMap);
       }
     }
 
