@@ -560,7 +560,7 @@
 
       const [{ data: picks, error: pErr }, { data: teams, error: tErr }] = await Promise.all([
         supabase.from('picks').select('team_id, game_id, pick').in('game_id', gameIds),
-        supabase.from('teams').select('team_id, team_name')
+        supabase.from('teams').select('team_id, team_name, active')
       ]);
       if(pErr){
         console.error(pErr);
@@ -571,7 +571,11 @@
         return setStatus('Error loading teams', true);
       }
 
-      const teamName = new Map((teams||[]).map(t => [t.team_id, t.team_name]));
+      // Only teams still playing, plus anyone who played THIS season - so a
+      // player who sits out keeps every past season's stats intact.
+      const playedThisSeason = new Set((picks||[]).map(p => Number(p.team_id)));
+      const seasonTeams = (teams||[]).filter(t => t.active !== false || playedThisSeason.has(Number(t.team_id)));
+      const teamName = new Map(seasonTeams.map(t => [t.team_id, t.team_name]));
 
       // ------- Build per-week and decided maps for THIS season -------
       const byTeamWeek    = new Map(); // "teamId|week" -> rows[]

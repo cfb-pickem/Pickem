@@ -59,7 +59,7 @@
         };
         window.__cfbPreload = {
           seasons: get('all_games?select=cfb_season&cfb_season=not.is.null'),
-          teams:   get('teams?select=team_id,team_name&order=team_name.asc'),
+          teams:   get('teams?select=team_id,team_name,active&order=team_name.asc'),
           logos:   get('logos?select=Team,LogoURL,Abbrev'),
         };
       } catch (e) { /* no preload - the module does it the normal way */ }
@@ -805,6 +805,14 @@
       return seasonCache;
     }
 
+    // A team belongs on a season's board if it's still playing, OR if it played
+    // that season. That way someone sitting out drops off the current
+    // leaderboard without vanishing from the years they did play.
+    function teamsForSeason(rows){
+      const played = new Set((seasonCache.picks || []).map(p => Number(p.team_id)));
+      return (rows || []).filter(t => t.active !== false || played.has(Number(t.team_id)));
+    }
+
     // Picks for a given set of games, from the cache.
     function picksForGames(ids){
       const want = new Set(ids.map(Number));
@@ -995,13 +1003,14 @@
       if(!teamRows){
         const res = await supabase
           .from('teams')
-          .select('team_id, team_name')
+          .select('team_id, team_name, active')
           .order('team_name', { ascending: true });
         if (res.error) return status(res.error.message, true);
         teamRows = res.data;
       }
 
-      const teams = (teamRows || []).slice()
+      // No picked games this season, so nobody can have played it: active only.
+      const teams = (teamRows || []).filter(t => t.active !== false)
         .sort((a, b) => (a.team_name || '').localeCompare(b.team_name || ''));
 
       lastTeams   = teams;
@@ -1065,7 +1074,7 @@
       if(!teamRows){
         const res = await supabase
           .from('teams')
-          .select('team_id, team_name')
+          .select('team_id, team_name, active')
           .order('team_name', { ascending: true });
         if(res.error) return status(res.error.message, true);
         teamRows = res.data;
@@ -1077,7 +1086,7 @@
 
       // ✅ Points for non-playoff view already computed through currentWeek
       const pointsMap = winsByTeamRegular;
-      const teamsSorted = [...(teamRows || [])].sort((a,b)=>{
+      const teamsSorted = [...teamsForSeason(teamRows)].sort((a,b)=>{
         const pa = getPoints(pointsMap, a.team_id);
         const pb = getPoints(pointsMap, b.team_id);
         if(pb !== pa) return pb - pa;
@@ -1162,10 +1171,10 @@
         seedsMissing = true;
         const { data: allTeams, error: atErr } = await supabase
           .from('teams')
-          .select('team_id, team_name')
+          .select('team_id, team_name, active')
           .order('team_name', { ascending: true });
         if (atErr) return status('Could not load teams.', true);
-        playoffTeams = (allTeams || []).map(t => ({
+        playoffTeams = teamsForSeason(allTeams).map(t => ({
           team_id: t.team_id,
           team_name: t.team_name,
           seed: null

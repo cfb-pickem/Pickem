@@ -585,7 +585,7 @@
       } else {
         const { data: teamRows, error: tErr } = await supabase
           .from('teams')
-          .select('team_id, team_name')
+          .select('team_id, team_name, active')
           .order('team_name', { ascending: true });
 
         if(tErr){ status(tErr.message, true); return; }
@@ -593,14 +593,22 @@
       }
 
       let pickMap = {};
+      let seasonPickRows = [];
       if (gameIds.length){
         const { data: pickRows, error: pErr } = await supabase
           .from('picks')
           .select('team_id, game_id, pick')
           .in('game_id', gameIds);
         if(pErr){ status(pErr.message, true); return; }
+        seasonPickRows = pickRows || [];
         pickMap = buildPickMap(pickRows);
       }
+
+      // Still playing, or played this season - so someone sitting out drops off
+      // the current board but stays on the seasons they did play. Done here
+      // rather than at the fetch above, because it needs the picks.
+      const playedThisSeason = new Set(seasonPickRows.map(p => Number(p.team_id)));
+      teams = teams.filter(t => t.active !== false || playedThisSeason.has(Number(t.team_id)));
 
       lastPickMap = pickMap;
 

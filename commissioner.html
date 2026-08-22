@@ -339,11 +339,16 @@
     async function loadTeams(){
       const { data, error } = await supabase
         .from('teams')
-        .select('team_id, team_name')
+        .select('team_id, team_name, active')
         .order('team_name', { ascending: true });
       if(error){ status(error.message, true); return false; }
-      teams = data || [];
-      teamSel.innerHTML = teams.map(t => `<option value="${t.team_id}">${escapeHtml(t.team_name)}</option>`).join('');
+      // Inactive teams stay selectable - the commissioner may still need to fix a
+      // past week - but they're labelled so it's obvious who is sitting out.
+      teams = (data || []).slice().sort((a,b) =>
+        (a.active === false) - (b.active === false) ||
+        String(a.team_name||'').localeCompare(String(b.team_name||'')));
+      teamSel.innerHTML = teams.map(t =>
+        `<option value="${t.team_id}">${escapeHtml(t.team_name)}${t.active === false ? ' (inactive)' : ''}</option>`).join('');
       if(teams.length) teamSel.value = String(teams[0].team_id);
       return true;
     }
