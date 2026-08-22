@@ -114,6 +114,66 @@
       .badge-pill, .dog-header-badge { font-size: .72rem; letter-spacing: .12em; }
     }
 
+    .tier-pill{
+      font-family:'Oswald',sans-serif; font-size:.62rem; letter-spacing:.14em;
+      text-transform:uppercase; padding:.15rem .5rem; color:#0b0b0b;
+    }
+    .tier-big  { background:var(--led-amber); }
+    .tier-sicko{ background:#9b7bd4; }
+    .tier-blurb{ font-size:.74rem; color:#8b9099; margin:-.15rem 0 .6rem; }
+    .hero-card { border-top:2px solid rgba(255,192,46,.45); }
+    .sicko-card{ border-top:2px solid rgba(155,123,212,.5); }
+
+    .tier-row{
+      display:flex; align-items:center; gap:.6rem;
+      padding:.45rem 0; border-bottom:1px solid rgba(231,231,231,.06);
+    }
+    .tier-row:last-child{ border-bottom:none; }
+    .tier-rank{
+      font-family:'Teko','Oswald',sans-serif; font-weight:700; font-size:1.1rem;
+      width:1.6rem; text-align:right; color:#6b7079; flex:none;
+      font-variant-numeric:tabular-nums;
+    }
+    .tier-team{ flex:1; min-width:0; font-weight:600; color:var(--cfp-ivory);
+                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.9rem; }
+    .tier-rec{
+      font-family:'Teko','Oswald',sans-serif; font-weight:700; font-size:1.25rem;
+      font-variant-numeric:tabular-nums; color:var(--cfp-ivory); flex:none;
+    }
+    .tier-pct{
+      font-family:'Teko','Oswald',sans-serif; font-weight:700; font-size:1.35rem;
+      font-variant-numeric:tabular-nums; width:3.4rem; text-align:right; flex:none;
+    }
+    .hero-card  .tier-row:first-child .tier-pct{ color:var(--led-amber); text-shadow:0 0 6px rgba(255,192,46,.35); }
+    .sicko-card .tier-row:first-child .tier-pct{ color:#c4a6f5; text-shadow:0 0 6px rgba(155,123,212,.4); }
+    .tier-crown{ font-size:.85rem; flex:none; }
+
+    .awards-week{
+      font-family:'Oswald',sans-serif; font-size:.68rem; letter-spacing:.14em;
+      text-transform:uppercase; color:#0b0b0b; background:var(--cfp-gold);
+      padding:.15rem .5rem;
+    }
+    .awards-grid{ display:grid; grid-template-columns:1fr; gap:.75rem; }
+    @media (min-width:640px){ .awards-grid{ grid-template-columns:1fr 1fr; } }
+    .award{
+      background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+      border:1px solid rgba(231,231,231,.10);
+      border-left:3px solid var(--cfp-gold);
+      padding:.7rem .85rem;
+    }
+    .award-name{
+      display:flex; align-items:center; gap:.4rem;
+      font-family:'Oswald',sans-serif; font-size:.68rem; letter-spacing:.14em;
+      text-transform:uppercase; color:#9aa0a8; margin-bottom:.25rem;
+    }
+    .award-winner{
+      font-family:'Teko','Oswald',sans-serif; font-weight:700; font-size:1.45rem;
+      line-height:1.05; color:var(--cfp-ivory);
+    }
+    .award-detail{ font-size:.76rem; color:#9aa0a8; margin-top:.15rem; }
+    .award.is-bad{ border-left-color:#d6555c; }
+    .award.is-bad .award-winner{ color:#e08d93; }
+
     .badge-pill{
       border-radius:999px;
       padding:.15rem .5rem;
@@ -175,7 +235,40 @@
     </div>
 
     <!-- RIBBONS ROW -->
-    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Weekly Awards -->
+    <section class="cfp-card mb-5 overflow-hidden">
+      <div class="stat-head px-4 md:px-6 py-3 flex items-center gap-2 flex-wrap">
+        <span class="stat-ball" aria-hidden="true"></span>
+        <h2 class="stat-title">Weekly Awards</h2>
+        <span id="awards-week" class="awards-week"></span>
+      </div>
+      <div id="awards-body" class="awards-grid px-4 md:px-6 py-4"></div>
+    </section>
+
+    <!-- Big Game Heroes / Sickos -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+      <section class="cfp-card overflow-hidden hero-card">
+        <div class="stat-head px-4 md:px-6 py-3 flex items-center gap-2 flex-wrap">
+          <span class="stat-ball" aria-hidden="true"></span>
+          <h2 class="stat-title">Big Game Heroes</h2>
+          <span class="tier-pill tier-big">Top 10 games</span>
+        </div>
+        <p class="tier-blurb px-4 md:px-6">Record on the ten best games we picked all season.</p>
+        <div id="hero-body" class="px-4 md:px-6 pb-4"></div>
+      </section>
+
+      <section class="cfp-card overflow-hidden sicko-card">
+        <div class="stat-head px-4 md:px-6 py-3 flex items-center gap-2 flex-wrap">
+          <span class="stat-ball" aria-hidden="true"></span>
+          <h2 class="stat-title">Sickos</h2>
+          <span class="tier-pill tier-sicko">Bottom 10 games</span>
+        </div>
+        <p class="tier-blurb px-4 md:px-6">Record on the ten worst games we picked all season. Nobody should know these teams.</p>
+        <div id="sicko-body" class="px-4 md:px-6 pb-4"></div>
+      </section>
+    </div>
+
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       <!-- Perfect Week Club -->
       <div class="ribbon gold-shadow rounded-none">
         <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
@@ -305,6 +398,7 @@
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
     import { sameTeam, escapeHtml } from './js/utils.js';
+    import { gameScore } from './js/gameScore.js';
 
     const statusEl      = document.getElementById('status');
     const seasonSel     = document.getElementById('season-select');
@@ -334,7 +428,7 @@
       setStatus('Loading seasons…', false, true);
       const [allRes, pickedRes] = await Promise.all([
         supabase.from('all_games').select('cfb_season').not('cfb_season', 'is', null),
-        supabase.from('all_games').select('cfb_season').eq('picked', true).not('cfb_season', 'is', null),
+        supabase.from('all_games').select('cfb_season').eq('picked', true).not('winner', 'is', null).not('cfb_season', 'is', null),
       ]);
       if(allRes.error){
         setStatus('Error loading seasons', true);
@@ -352,9 +446,10 @@
       }
       seasonSel.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join('');
 
-      // Default to the newest season that actually has picked games. In the
-      // pre-season the newest season has a full schedule but nothing picked, so
-      // defaulting to it blindly lands everyone on a page of empty cards.
+      // Default to the newest season that actually has DECIDED games. Picked
+      // alone isn't enough: the moment the commissioner sets a pre-season slate,
+      // that season has picked games but no results, and every card on this page
+      // would render empty.
       const withData = pickedRes.error ? [] : uniq(pickedRes.data);
       const preferred = withData.length ? withData[withData.length-1] : seasons[seasons.length-1];
       seasonSel.value = String(preferred);
@@ -373,7 +468,7 @@
       // Pull only picked games for the chosen season
       const { data: allGames, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, week, winner, picked, Away, Home, line, "Start (CT)", cfb_season')
+        .select('GameId, week, winner, picked, Away, Home, line, "Network", "Start (CT)", cfb_season')
         .eq('picked', true)
         .eq('cfb_season', season)
         .lt('week', 16);   // only use weeks < 16
@@ -404,6 +499,7 @@
           away: g.Away || null,
           home: g.Home || null,
           line: (g.line==null ? null : Number(g.line)),
+          network: g['Network'] ?? null,
           start
         };
         gameIds.push(g.GameId);
@@ -481,6 +577,175 @@
           byTeamDecided.get(p.team_id).push({ ...p, week, winner });
         }
       }
+
+      // ------- Big Game Heroes / Sickos ---------------------------------------
+      // Rank every picked game of the season with the shared gameScore() - the
+      // same yardstick the commissioner's "best games first" sort uses - then
+      // take the top ten and the bottom ten and see who actually called them.
+      (function renderTiers(){
+        const scored = Object.entries(gameMeta)
+          .map(([gid, m]) => ({ gid: Number(gid), score: gameScore(m), ...m }))
+          .filter(g => g.winner != null)          // only decided games can be scored against
+          .sort((a,b) => b.score - a.score);
+
+        // 10% of the decided games rather than a fixed 10. In week 1 there are
+        // only a handful of decided games, so a fixed ten would make the two
+        // boards the SAME games - every player would appear on both. Floored at
+        // 3 so it's still a board rather than a single game, and capped at half
+        // the slate so the top and bottom sets can never overlap.
+        const total = scored.length;
+        const half  = Math.floor(total / 2);
+        const N     = Math.min(Math.max(3, Math.round(total * 0.10)), half);
+
+        const bigIds   = new Set(scored.slice(0, N).map(g => g.gid));
+        const sickoIds = new Set(scored.slice(-N).map(g => g.gid));
+
+        // Say what the sample actually is, so ".625 on 3 games" isn't mistaken
+        // for a season-long number.
+        const bigPill   = document.querySelector('.tier-big');
+        const sickoPill = document.querySelector('.tier-sicko');
+        if (N > 0) {
+          if (bigPill)   bigPill.textContent   = `Top 10% · ${N} game${N === 1 ? '' : 's'}`;
+          if (sickoPill) sickoPill.textContent = `Bottom 10% · ${N} game${N === 1 ? '' : 's'}`;
+        }
+
+        function board(ids){
+          const rec = new Map();  // team_id -> {w,l}
+          for(const p of (picks||[])){
+            if(!ids.has(Number(p.game_id))) continue;
+            const m = gameMeta[p.game_id];
+            if(!m || m.winner == null) continue;
+            if(!rec.has(p.team_id)) rec.set(p.team_id, { w:0, l:0 });
+            rec.get(p.team_id)[ sameTeam(p.pick, m.winner) ? 'w' : 'l' ]++;
+          }
+          return [...rec.entries()]
+            .map(([id, r]) => ({ id, ...r, n: r.w + r.l, pct: (r.w + r.l) ? r.w / (r.w + r.l) : 0 }))
+            .filter(r => r.n > 0)
+            .sort((a,b) => b.pct - a.pct || b.w - a.w
+                        || (teamName.get(a.id)||'').localeCompare(teamName.get(b.id)||''));
+        }
+
+        function paint(el, rows, emptyMsg){
+          if(!el) return;
+          if(!rows.length){ el.innerHTML = '<p class="text-sm text-gray-300">' + emptyMsg + '</p>'; return; }
+          el.innerHTML = rows.map((r, i) =>
+            '<div class="tier-row">'
+            + '<span class="tier-rank">' + (i + 1) + '</span>'
+            + '<span class="tier-team">' + escapeHtml(teamName.get(r.id) || ('Team ' + r.id)) + '</span>'
+            + (i === 0 ? '<span class="tier-crown" aria-hidden="true">\u{1F3C6}</span>' : '')
+            + '<span class="tier-rec">' + r.w + '-' + r.l + '</span>'
+            + '<span class="tier-pct">' + (r.n ? (r.w / r.n).toFixed(3).slice(1) : '\u2014') + '</span>'
+            + '</div>').join('');
+        }
+
+        const msg = (total < 2 || N < 1)
+          ? 'Not enough decided games yet this season.'
+          : 'No picks on these games yet.';
+        if (N < 1) {
+          document.getElementById('hero-body').innerHTML  = '<p class="text-sm text-gray-300">' + msg + '</p>';
+          document.getElementById('sicko-body').innerHTML = '<p class="text-sm text-gray-300">' + msg + '</p>';
+          return;
+        }
+        paint(document.getElementById('hero-body'),  board(bigIds),   msg);
+        paint(document.getElementById('sicko-body'), board(sickoIds), msg);
+      })();
+
+      // ------- Weekly Awards -------------------------------------------------
+      // All derived from data already loaded above - no extra queries. Scored on
+      // the most recent COMPLETE week (every picked game has a winner), because
+      // a half-finished week produces nonsense superlatives.
+      (function renderAwards(){
+        const awardsBody = document.getElementById('awards-body');
+        const awardsWeek = document.getElementById('awards-week');
+        if(!awardsBody) return;
+
+        const done = [...completeWeeks].filter(w => w != null).sort((a,b)=>a-b);
+        const wk = done.length ? done[done.length-1] : null;
+        if(wk == null){
+          awardsWeek.textContent = '';
+          awardsBody.innerHTML = '<p class="text-sm text-gray-300">No completed week yet this season.</p>';
+          return;
+        }
+        awardsWeek.textContent = 'Week ' + wk;
+
+        // Every pick made in that week, grouped by game and by team.
+        const rowsThisWeek = [];
+        for(const [key, rows] of byTeamWeek.entries()){
+          if(Number(key.split('|')[1]) !== wk) continue;
+          for(const r of rows) rowsThisWeek.push(r);
+        }
+        if(!rowsThisWeek.length){
+          awardsBody.innerHTML = '<p class="text-sm text-gray-300">No picks recorded for week ' + wk + '.</p>';
+          return;
+        }
+
+        const byGame = new Map();   // game_id -> {right:[], wrong:[]}
+        const byTeam = new Map();   // team_id -> {w:0,l:0}
+        for(const r of rowsThisWeek){
+          if(r.winner == null) continue;
+          const hit = sameTeam(r.pick, r.winner);
+          if(!byGame.has(r.game_id)) byGame.set(r.game_id, { right:[], wrong:[] });
+          byGame.get(r.game_id)[hit ? 'right' : 'wrong'].push(r.team_id);
+          if(!byTeam.has(r.team_id)) byTeam.set(r.team_id, { w:0, l:0 });
+          byTeam.get(r.team_id)[hit ? 'w' : 'l']++;
+        }
+
+        const nameOf = id => teamName.get(id) || ('Team ' + id);
+        const gameLabel = gid => {
+          const m = gameMeta[gid];
+          return m ? `${m.away} @ ${m.home}` : ('Game ' + gid);
+        };
+        const list = ids => ids.map(nameOf).sort().join(', ');
+
+        const cards = [];
+        const add = (label, winner, detail, bad) => cards.push(
+          `<div class="award${bad ? ' is-bad' : ''}">
+             <div class="award-name">${escapeHtml(label)}</div>
+             <div class="award-winner">${escapeHtml(winner)}</div>
+             <div class="award-detail">${escapeHtml(detail)}</div>
+           </div>`);
+
+        // Best and worst record of the week.
+        const recs = [...byTeam.entries()].map(([id,r]) => ({ id, ...r }));
+        if(recs.length){
+          const best = Math.max(...recs.map(r=>r.w));
+          const worst = Math.min(...recs.map(r=>r.w));
+          const bestTeams  = recs.filter(r=>r.w===best);
+          add('Week Winner', list(bestTeams.map(r=>r.id)),
+              `${best}-${bestTeams[0].l}` + (bestTeams.length>1 ? ` — ${bestTeams.length}-way tie` : ''));
+          if(worst !== best){
+            const worstTeams = recs.filter(r=>r.w===worst);
+            add('The Cellar', list(worstTeams.map(r=>r.id)),
+                `${worst}-${worstTeams[0].l}`, true);
+          }
+        }
+
+        // The game everyone was right about, and the one that burned everyone.
+        const games = [...byGame.entries()];
+        if(games.length){
+          const lock = games.slice().sort((a,b)=> b[1].right.length - a[1].right.length)[0];
+          if(lock[1].right.length){
+            add('Lock of the Week', gameLabel(lock[0]),
+                `${lock[1].right.length} of ${lock[1].right.length + lock[1].wrong.length} had it`);
+          }
+          const trap = games.slice().sort((a,b)=> b[1].wrong.length - a[1].wrong.length)[0];
+          if(trap[1].wrong.length){
+            add('Trap Game', gameLabel(trap[0]),
+                `${trap[1].wrong.length} of ${trap[1].right.length + trap[1].wrong.length} got burned`, true);
+          }
+          // Exactly one person on the right side of it.
+          const lone = games.filter(([,v]) => v.right.length === 1 && v.wrong.length >= 2)
+                            .sort((a,b)=> b[1].wrong.length - a[1].wrong.length)[0];
+          if(lone){
+            add('Lone Wolf', nameOf(lone[1].right[0]),
+                `only one on ${gameLabel(lone[0])}`);
+          }
+        }
+
+        awardsBody.innerHTML = cards.length
+          ? cards.join('')
+          : '<p class="text-sm text-gray-300">Not enough decided picks for awards yet.</p>';
+      })();
 
       // ------- Perfect Week tally (completed weeks only) -------
       const perfectTally = new Map(); // team_id -> count
