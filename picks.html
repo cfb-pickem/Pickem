@@ -21,7 +21,7 @@
   <meta name="theme-color" content="#0B0B0B">
   <title>CFB Pick'em — Make Picks</title>
 
-  <meta name="description" content="Submit your college football picks for the week. Picks lock at the first kickoff."/>
+  <meta name="description" content="Submit your college football picks for the week. Picks lock at the scheduled start of the week's first game."/>
   <meta name="robots" content="noindex,nofollow"/>
   <link rel="canonical" href="https://cfb-pickem.github.io/Pickem/picks.html"/>
 
@@ -31,7 +31,7 @@
   <meta property="og:type" content="website"/>
   <meta property="og:site_name" content="CFB Pick'em"/>
   <meta property="og:title" content="Make Your Picks — CFB Pick'em"/>
-  <meta property="og:description" content="Submit your college football picks for the week. Picks lock at the first kickoff."/>
+  <meta property="og:description" content="Submit your college football picks for the week. Picks lock at the scheduled start of the week's first game."/>
   <meta property="og:url" content="https://cfb-pickem.github.io/Pickem/picks.html"/>
   <meta property="og:image" content="https://cfb-pickem.github.io/Pickem/og-image.jpg"/>
   <meta property="og:image:width" content="1200"/>
@@ -53,38 +53,95 @@
     .badge{font-size:.78rem;line-height:1rem;display:inline-flex;align-items:center;gap:.375rem;padding:.25rem .5rem;background:#2b2c2e;color:#d1d5db;border:1px solid rgba(209,213,219,.12)}
     .callout{background:rgba(233,185,73,.08);border:1px solid rgba(233,185,73,.35)}
 
-    /* Pick buttons */
+    /* --- Game cards: a matchup, not a paragraph -------------------------- */
+    .pick-game{ padding:.75rem .8rem .85rem; }
+    .pick-game-head{
+      display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+      font-size:.68rem; letter-spacing:.1em; text-transform:uppercase;
+      color:#8b9099; margin-bottom:.6rem;
+    }
+    .pick-espn{ color:var(--cfp-gold-2); white-space:nowrap; }
+    .pick-espn:hover{ text-decoration:underline; }
+    .pick-lockstate{ color:#8b9099; }
+
+    .pick-sides{
+      display:grid; grid-template-columns:1fr auto 1fr; align-items:stretch; gap:.5rem;
+    }
+    .pick-at{
+      align-self:center; font-family:'Teko','Oswald',sans-serif; font-size:1.1rem;
+      color:#5d626a; font-weight:700;
+    }
+
+    /* Each side is one big target: logo, name, spread. --tc is the team colour. */
+    .pick-side{
+      position:relative; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; gap:.3rem;
+      min-height:118px; padding:.7rem .5rem;
+      border:1px solid rgba(231,231,231,.12);
+      background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.01));
+      cursor:pointer; text-align:center;
+      transition:border-color .18s ease, background .18s ease, transform .12s ease;
+    }
+    .pick-side:hover:not(.selected){ border-color:color-mix(in srgb, var(--tc) 55%, transparent); }
+    .pick-logo{
+      width:46px; height:46px; object-fit:contain; flex:none;
+      filter:drop-shadow(0 2px 6px rgba(0,0,0,.55));
+    }
+    .pick-logo-fallback{
+      width:46px; height:46px; border-radius:50%;
+      background:radial-gradient(circle at 35% 30%, var(--tc), rgba(0,0,0,.55));
+      opacity:.75;
+    }
+    .pick-side-name{
+      font-family:'Oswald',sans-serif; font-size:.82rem; font-weight:600;
+      line-height:1.15; color:var(--cfp-ivory);
+    }
+    .pick-spread{
+      font-family:'Teko','Oswald',sans-serif; font-weight:700; font-size:1.15rem;
+      line-height:1; font-variant-numeric:tabular-nums; color:#9aa0a8;
+    }
+    .pick-check{
+      position:absolute; top:.35rem; right:.45rem;
+      font-size:.8rem; color:var(--tc); opacity:0; transform:scale(.6);
+      transition:opacity .18s ease, transform .18s ease;
+    }
+
+    /* Selected: the team's own colour takes over the card. */
+    .pick-side.selected{
+      border-color:var(--tc);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--tc) 26%, transparent), transparent 75%),
+        rgba(255,255,255,.02);
+      box-shadow:0 0 0 1px var(--tc) inset, 0 6px 18px -6px color-mix(in srgb, var(--tc) 70%, transparent);
+    }
+    .pick-side.selected .pick-side-name{ color:#fff; }
+    .pick-side.selected .pick-spread{ color:#e7e7e7; }
+    .pick-side.selected .pick-check{ opacity:1; transform:scale(1); }
+
+    .locked .pick-side{ opacity:.5; cursor:not-allowed; }
+    .locked .pick-side.selected{ opacity:.72; box-shadow:0 0 0 1px var(--tc) inset; }
+
+    @media (max-width:380px){
+      .pick-side{ min-height:104px; }
+      .pick-logo, .pick-logo-fallback{ width:38px; height:38px; }
+    }
+    @media (prefers-reduced-motion: reduce){
+      .pick-side, .pick-check{ transition:none; }
+    }
+
+    /* Pick buttons.
+       These used to be gold text pills. The gold `.selected` fill fought the new
+       team-coloured cards - same specificity, and it came later in the file, so
+       it won and every selection looked identical regardless of team. Only the
+       still-relevant bits are kept: hiding the radio, and the tap affordance. */
     .pick-label{
-      transition: background-color .2s ease, color .2s ease, transform .15s ease, box-shadow .2s ease;
-      padding: .5rem 1rem;
-      min-height: 44px;
-      border-radius: .375rem;
       cursor: pointer;
       user-select: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 120px;
-      text-align: center;
       position: relative;
-    }
-    @media (max-width: 640px) {
-      .pick-buttons { flex-direction: column; gap: .5rem !important; }
-      .pick-label { min-width: 0; width: 100%; justify-content: center; }
-    }
-    .pick-label:hover:not(.selected) {
-      background: rgba(218,165,32,.10);
-      color: var(--cfp-ivory);
+      -webkit-tap-highlight-color: transparent;
     }
     .pick-label input[type="radio"]{ position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
-    .pick-label.selected{
-      background: var(--cfp-gold);
-      color: var(--cfp-black);
-      font-weight: 600;
-      transform: scale(1.05);
-      box-shadow: 0 0 0 2px var(--cfp-gold-2), 0 4px 16px rgba(218,165,32,.25);
-      animation: pick-snap .3s ease-out;
-    }
+    .pick-label.selected{ animation: pick-snap .3s ease-out; }
 
     /* Locked state (used for whole grid OR per-game card) */
     .locked .pick-label{
@@ -182,7 +239,7 @@
       <section id="tiebreaker-section" class="mt-8 hidden">
         <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl text-[var(--cfp-ivory)] mb-2">Tiebreakers</h2>
         <p class="text-xs text-gray-300 mb-3">
-          These picks are only used as tiebreakers. Like every other pick, they lock when the week’s first game kicks off.
+          These picks are only used as tiebreakers. Like every other pick, they lock at the scheduled start of the week’s first game.
         </p>
         <div id="tiebreaker-games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
       </section>
@@ -204,7 +261,7 @@
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
-    import { escapeHtml } from './js/utils.js';
+    import { escapeHtml, getTeamColor } from './js/utils.js';
     import { ctToEpochMs, isWeekLocked, isGameLocked as gameLocked } from './js/kickoff.js';
 
     // CSS.escape polyfill (older browsers)
@@ -385,7 +442,7 @@
         lockBanner.classList.remove('hidden');
         lockBannerTitle.textContent = 'Picks locked:';
         const when = kickoffFmt(earliestKickoffStr);
-        lockMsg.textContent = `Week ${currentWeek} locked when the first game kicked at ${when}.`;
+        lockMsg.textContent = `Week ${currentWeek} locked at the scheduled start of its first game, ${when}.`;
       } else {
         lockBanner.classList.add('hidden');
         lockMsg.textContent = '';
@@ -415,7 +472,7 @@
       clearBtn.disabled = !canAct;
 
       if (isLocked) {
-        setStatus('Picks are locked — this week’s first game has kicked off.');
+        setStatus('Picks are locked — this week’s first game has reached its scheduled start.');
       }
     }
 
@@ -469,7 +526,7 @@
         if (!userInPlayoffs) {
           lockMsg.textContent = 'Your team is not in the playoffs, so you may view games but cannot make picks.';
         } else {
-          lockMsg.textContent = 'You are in the playoffs. Picks lock at each game\'s kickoff time (including tiebreakers).';
+          lockMsg.textContent = 'You are in the playoffs. Picks lock at each game\'s scheduled start (including tiebreakers).';
         }
         saveBtn.disabled = !userInPlayoffs;
         clearBtn.disabled = !userInPlayoffs;
@@ -483,6 +540,78 @@
       if (!suffix && suffix !== 0) return null;
       return `picks_draft_${selectedTeamId}_${currentSeason}_${suffix}`;
     }
+    // Logos were never loaded on this page - it was all plain text. Cached for a
+    // week so it costs one request the first time and nothing after.
+    let logoByTeam = {};
+    const LOGO_KEY = 'cfb_logos_v1', LOGO_TTL_KEY = 'cfb_logos_ttl_v1';
+
+    async function loadLogos(){
+      try{
+        const ttl = Number(localStorage.getItem(LOGO_TTL_KEY) || 0);
+        const raw = localStorage.getItem(LOGO_KEY);
+        if (raw && Date.now() < ttl){ logoByTeam = JSON.parse(raw) || {}; return; }
+      }catch{}
+
+      const { data, error } = await supabase.from('logos').select('Team, LogoURL');
+      if (error || !data) return;
+      const map = {};
+      for (const r of data) if (r?.Team && r.LogoURL) map[r.Team] = r.LogoURL;
+      logoByTeam = map;
+      try{
+        localStorage.setItem(LOGO_KEY, JSON.stringify(map));
+        localStorage.setItem(LOGO_TTL_KEY, String(Date.now() + 7*24*60*60*1000));
+      }catch{}
+    }
+
+    // One card builder for both the regular slate and the tiebreakers - they were
+    // two identical copies of the same template.
+    function gameCardHtml(g, { playoffMode }){
+      const name = `game_${g.game_id}`;
+      const when = kickoffFmt(g.start);
+      const hasLine = g.line != null && !isNaN(g.line);
+      const fmt = n => (n > 0 ? '+' + n : String(n));
+
+      const side = (team, spread) => {
+        const colour = getTeamColor(team) || 'var(--cfp-gold)';
+        const logo = logoByTeam[team];
+        return (
+          '<label class="pick-label pick-side" style="--tc:' + escapeHtml(colour) + '">' +
+            '<input type="radio" name="' + name + '" value="' + escapeHtml(team) + '">' +
+            (logo
+              ? '<img class="pick-logo" src="' + escapeHtml(logo) + '" alt="" loading="lazy" draggable="false">'
+              : '<span class="pick-logo pick-logo-fallback" aria-hidden="true"></span>') +
+            '<span class="pick-side-name">' + escapeHtml(team) + '</span>' +
+            (spread !== null ? '<span class="pick-spread">' + escapeHtml(spread) + '</span>' : '') +
+            '<span class="pick-check" aria-hidden="true">✓</span>' +
+          '</label>'
+        );
+      };
+
+      const meta = [
+        when || 'Scheduled',
+        g.network ? escapeHtml(g.network) : null,
+        playoffMode && g.week != null ? ('Week ' + g.week) : null,
+      ].filter(Boolean).join(' · ');
+
+      const espnLink = (g.espn_url && /^https?:\/\//i.test(g.espn_url))
+        ? '<a href="' + escapeHtml(g.espn_url) + '" target="_blank" rel="noopener" class="pick-espn">Matchup&nbsp;↗</a>'
+        : '';
+
+      return (
+        '<div class="cfp-card game-card pick-game" data-game-id="' + g.game_id + '">' +
+          '<div class="pick-game-head">' +
+            '<span class="pick-game-meta">' + meta + '</span>' +
+            (playoffMode ? '<span data-lock-state class="pick-lockstate"></span>' : espnLink) +
+          '</div>' +
+          '<div class="pick-buttons pick-sides">' +
+            side(g.away, hasLine ? fmt(-g.line) : null) +
+            '<span class="pick-at" aria-hidden="true">@</span>' +
+            side(g.home, hasLine ? fmt(g.line)  : null) +
+          '</div>' +
+        '</div>'
+      );
+    }
+
     function selections(){
       const picks = [];
       document.querySelectorAll('input[type="radio"]:checked').forEach(inp=>{
@@ -532,6 +661,11 @@
       currentSeason = getCurrentSeasonCT();
       setStatus(`Loading your team & current season (Season ${currentSeason})…`, false, true);
 
+      // Kick the logo fetch off now; it's cached for a week, and the cards can't
+      // render without it. Failure is non-fatal - cards fall back to a coloured
+      // disc rather than showing nothing.
+      const logosReady = loadLogos().catch(() => {});
+
       // User's team (first alphabetically)
       const { data: myTeams, error: tErr } = await supabase
         .from('teams')
@@ -568,6 +702,7 @@
       if (isPlayoffMode) {
         if (gamesLoading) gamesLoading.classList.add('hidden');
         setStatus(`Playoff mode is active for Season ${currentSeason}.`);
+        await logosReady;
         await loadPlayoffGames();
         await loadExistingPicksForVisibleGames();
         overlayDraft();
@@ -608,6 +743,7 @@
       }
       currentWeek = Number(weekRow.week);
 
+      await logosReady;
       await loadGamesForWeek(currentWeek);
       await loadExistingPicksForVisibleGames();
       overlayDraft();
@@ -643,7 +779,7 @@
       // Normal picked games (exclude tiebreakers)
       const { data: regularData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker')
         .eq('picked', true)
         .eq('cfb_season', currentSeason)
         .eq('week', week)
@@ -654,7 +790,7 @@
       // Tiebreaker games for this week (use tiebreaker flag instead of picked)
       const { data: tbData, error: tbErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker')
         .eq('tiebreaker', true)
         .eq('cfb_season', currentSeason)
         .eq('week', week);
@@ -671,6 +807,7 @@
         line: (g.line == null ? null : Number(g.line)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
+        network: g['Network'] || null,
         week: g.week,
         winner: g.winner || null,
         isTiebreaker: false
@@ -687,6 +824,7 @@
         line: (g.line == null ? null : Number(g.line)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
+        network: g['Network'] || null,
         week: g.week,
         winner: g.winner || null,
         isTiebreaker: true
@@ -713,7 +851,7 @@
       // Playoff-eligible normal games (picked=true, no winner yet, not tiebreakers)
       const { data: regData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker')
         .eq('picked', true)
         .eq('cfb_season', currentSeason)
         .is('winner', null)
@@ -727,7 +865,7 @@
       // Playoff tiebreaker games (tiebreaker=true, no winner yet)
       const { data: tbData, error: tbErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", espn_url, week, winner, tiebreaker')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker')
         .eq('tiebreaker', true)
         .eq('cfb_season', currentSeason)
         .is('winner', null);
@@ -744,6 +882,7 @@
         line: (g.line == null ? null : Number(g.line)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
+        network: g['Network'] || null,
         week: g.week,
         winner: g.winner || null,
         isTiebreaker: false
@@ -760,6 +899,7 @@
         line: (g.line == null ? null : Number(g.line)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
+        network: g['Network'] || null,
         week: g.week,
         winner: g.winner || null,
         isTiebreaker: true
@@ -801,43 +941,7 @@
     }
 
     function renderGameCards(games){
-      const cards = games.map(g => {
-        const name = `game_${g.game_id}`;
-        const when = kickoffFmt(g.start);
-        const espnLink = (g.espn_url && /^https?:\/\//i.test(g.espn_url))
-          ? '<a href="' + escapeHtml(g.espn_url) + '" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>'
-          : '';
-
-        const hasLine = g.line != null && !isNaN(g.line);
-        const fmt = (n) => (n > 0 ? ('+' + n) : String(n));
-        const awayLabel = hasLine ? (escapeHtml(g.away) + ' (' + fmt(-g.line) + ')') : escapeHtml(g.away);
-        const homeLabel = hasLine ? (escapeHtml(g.home) + ' (' + fmt(g.line) + ')') : escapeHtml(g.home);
-
-        const modeRow = isPlayoffMode
-          ? `<div class="flex justify-between text-[11px] text-gray-400 mb-2">
-               <span>Week ${g.week ?? '-'}</span>
-               <span data-lock-state class="uppercase tracking-[.12em]"></span>
-             </div>`
-          : '';
-
-        return (
-          '<div class="cfp-card gold-shadow game-card p-4" data-game-id="'+ g.game_id +'">' +
-            '<div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-1 text-center">' + escapeHtml(g.away) + ' @ ' + escapeHtml(g.home) + '</div>' +
-            '<div class="text-xs text-gray-400 text-center mb-1">' + (when || 'Scheduled') + (espnLink ? (' ' + espnLink) : '') + '</div>' +
-            modeRow +
-            '<div class="flex justify-center gap-6 mt-2 pick-buttons">' +
-              '<label class="pick-label flex items-center gap-2">' +
-                '<input type="radio" name="' + name + '" value="' + escapeHtml(g.away) + '"> ' +
-                '<span>' + awayLabel + '</span>' +
-              '</label>' +
-              '<label class="pick-label flex items-center gap-2">' +
-                '<input type="radio" name="' + name + '" value="' + escapeHtml(g.home) + '"> ' +
-                '<span>' + homeLabel + '</span>' +
-              '</label>' +
-            '</div>' +
-          '</div>'
-        );
-      });
+      const cards = games.map(g => gameCardHtml(g, { playoffMode: isPlayoffMode }));
 
       gamesEl.innerHTML = cards.join('');
     }
@@ -851,44 +955,7 @@
 
       tiebreakerSection.classList.remove('hidden');
 
-      const cards = games.map(g => {
-        const name = `game_${g.game_id}`;
-        const when = kickoffFmt(g.start);
-        const espnLink = (g.espn_url && /^https?:\/\//i.test(g.espn_url))
-          ? '<a href="' + escapeHtml(g.espn_url) + '" target="_blank" rel="noopener" class="text-[var(--cfp-gold-2)] hover:underline ml-2">Matchup Details</a>'
-          : '';
-
-        const hasLine = g.line != null && !isNaN(g.line);
-        const fmt = (n) => (n > 0 ? ('+' + n) : String(n));
-        const awayLabel = hasLine ? (escapeHtml(g.away) + ' (' + fmt(-g.line) + ')') : escapeHtml(g.away);
-        const homeLabel = hasLine ? (escapeHtml(g.home) + ' (' + fmt(g.line) + ')') : escapeHtml(g.home);
-
-        const modeRow = isPlayoffMode
-          ? `<div class="flex justify-between text-[11px] text-gray-400 mb-2">
-               <span>Week ${g.week ?? '-'}</span>
-               <span data-lock-state class="uppercase tracking-[.12em]"></span>
-             </div>`
-          : '';
-
-        return (
-          '<div class="cfp-card gold-shadow game-card p-4" data-game-id="'+ g.game_id +'">' +
-            '<div class="text-[11px] uppercase tracking-[.18em] text-[var(--cfp-gold-2)] text-center mb-1">Tiebreaker</div>' +
-            '<div class="text-lg font-semibold text-[var(--cfp-ivory)] mb-1 text-center">' + escapeHtml(g.away) + ' @ ' + escapeHtml(g.home) + '</div>' +
-            '<div class="text-xs text-gray-400 text-center mb-1">' + (when || 'Scheduled') + (espnLink ? (' ' + espnLink) : '') + '</div>' +
-            modeRow +
-            '<div class="flex justify-center gap-6 mt-2 pick-buttons">' +
-              '<label class="pick-label flex items-center gap-2">' +
-                '<input type="radio" name="' + name + '" value="' + escapeHtml(g.away) + '"> ' +
-                '<span>' + awayLabel + '</span>' +
-              '</label>' +
-              '<label class="pick-label flex items-center gap-2">' +
-                '<input type="radio" name="' + name + '" value="' + escapeHtml(g.home) + '"> ' +
-                '<span>' + homeLabel + '</span>' +
-              '</label>' +
-            '</div>' +
-          '</div>'
-        );
-      });
+      const cards = games.map(g => gameCardHtml(g, { playoffMode: isPlayoffMode }));
 
       tiebreakerEl.innerHTML = cards.join('');
     }
