@@ -110,6 +110,113 @@
 
     /* Pinned to the viewport's left edge of the scroll container, so the label
        stays readable however far the table is scrolled sideways. */
+    /* --- Pick reveal ------------------------------------------------------ */
+    .reveal-banner{
+      display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
+      margin-bottom:.6rem; padding:.55rem .9rem;
+      background:linear-gradient(180deg, rgba(255,192,46,.10), rgba(255,192,46,.04));
+      border:1px solid rgba(255,192,46,.30);
+      border-left:3px solid var(--led-amber);
+    }
+    .reveal-dot{
+      width:.5rem; height:.5rem; border-radius:50%;
+      background:var(--led-amber); box-shadow:0 0 8px rgba(255,192,46,.9);
+      animation:reveal-pulse 1.6s ease-in-out infinite; flex:none;
+    }
+    @keyframes reveal-pulse{0%,100%{opacity:1}50%{opacity:.25}}
+    .reveal-label{
+      font-family:'Oswald',sans-serif; font-size:.7rem; letter-spacing:.16em;
+      text-transform:uppercase; color:#cfd3d8;
+    }
+    .reveal-clock{
+      font-family:'Teko','Oswald',sans-serif; font-weight:700; font-size:1.7rem;
+      line-height:1; font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1;
+      color:var(--led-amber); text-shadow:0 0 6px rgba(255,192,46,.45);
+    }
+    .reveal-sub{ font-size:.7rem; color:#9aa0a8; }
+
+    /* Week 0 only. The season opener gets its own treatment - a gold marquee with
+       a light sweeping across it, the way a board looks before the first game of
+       the year. Deliberately louder than any other week; it only happens once. */
+    .reveal-eyebrow{
+      font-family:'Teko','Oswald',sans-serif; font-weight:700;
+      font-size:1.05rem; line-height:1; letter-spacing:.18em; text-transform:uppercase;
+      color:#0b0b0b; background:var(--cfp-gold);
+      padding:.2rem .55rem; flex:none;
+    }
+    .reveal-banner.is-opener{
+      position:relative; overflow:hidden;
+      background:linear-gradient(180deg, rgba(218,165,32,.20), rgba(218,165,32,.06));
+      border-color:rgba(240,199,94,.55); border-left-width:5px;
+      border-left-color:var(--cfp-gold);
+      padding-top:.7rem; padding-bottom:.7rem;
+    }
+    .reveal-banner.is-opener .reveal-clock{ font-size:2.3rem; }
+    .reveal-banner.is-opener::after{
+      content:""; position:absolute; top:0; bottom:0; left:-40%; width:40%;
+      pointer-events:none;
+      background:linear-gradient(90deg, transparent, rgba(255,225,150,.28), transparent);
+      animation:opener-sweep 3.2s ease-in-out infinite;
+    }
+    @keyframes opener-sweep{
+      0%   { left:-40%; }
+      60%  { left:100%; }
+      100% { left:100%; }
+    }
+    @media (prefers-reduced-motion: reduce){
+      .reveal-banner.is-opener::after{ animation:none; opacity:0; }
+    }
+
+    /* Under an hour it warms up; under five minutes it goes red and starts
+       breathing, so a glance tells you how close you are. */
+    .reveal-banner.is-urgent{
+      background:linear-gradient(180deg, rgba(255,140,40,.14), rgba(255,140,40,.05));
+      border-color:rgba(255,140,40,.45); border-left-color:#ff9a2e;
+    }
+    .reveal-banner.is-urgent .reveal-clock{ color:#ff9a2e; text-shadow:0 0 8px rgba(255,154,46,.5); }
+    .reveal-banner.is-urgent .reveal-dot{ background:#ff9a2e; box-shadow:0 0 8px rgba(255,154,46,.9); }
+
+    .reveal-banner.is-imminent{
+      background:linear-gradient(180deg, rgba(255,70,70,.16), rgba(255,70,70,.06));
+      border-color:rgba(255,70,70,.5); border-left-color:#ff5757;
+    }
+    .reveal-banner.is-imminent .reveal-clock{
+      color:#ff6b6b; text-shadow:0 0 10px rgba(255,107,107,.6);
+      font-size:2.1rem; animation:reveal-throb 1s ease-in-out infinite;
+    }
+    .reveal-banner.is-imminent .reveal-dot{ background:#ff5757; box-shadow:0 0 10px rgba(255,87,87,1); }
+    @keyframes reveal-throb{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+
+    /* The board surges when the picks land, like a panel repainting. */
+    @keyframes jumbo-surge{
+      0%   { filter:brightness(1); }
+      12%  { filter:brightness(2.4); }
+      28%  { filter:brightness(1.05); }
+      42%  { filter:brightness(1.8); }
+      100% { filter:brightness(1); }
+    }
+    .jumbotron-header.jumbo-flash{ animation:jumbo-surge .9s ease-out 1; }
+    @media (prefers-reduced-motion: reduce){
+      .jumbotron-header.jumbo-flash{ animation:none; }
+      .reveal-banner.is-imminent .reveal-clock{ animation:none; }
+    }
+
+    /* The flip. Staggered per column so it ripples across the board rather than
+       every cell popping at once. */
+    @keyframes cfp-flip-in{
+      0%   { transform:rotateX(-90deg); opacity:0; }
+      60%  { transform:rotateX(12deg);  opacity:1; }
+      100% { transform:rotateX(0);      opacity:1; }
+    }
+    td.pick-revealing{
+      animation:cfp-flip-in .5s cubic-bezier(.2,.75,.3,1) both;
+      transform-origin:center top; backface-visibility:hidden;
+    }
+    @media (prefers-reduced-motion: reduce){
+      td.pick-revealing{ animation:none; }
+      .reveal-dot{ animation:none; }
+    }
+
     .playoff-divider-label{
       position:sticky; left:0;
       display:inline-block;
@@ -191,6 +298,16 @@
         <label id="week-label" for="week-select" class="hidden md:block text-gray-300">Week</label>
         <select id="week-select" aria-label="Week" class="cfp-select rounded-none px-3 py-2 text-sm w-[112px] md:min-w-[100px]"></select>
       </div>
+    </div>
+
+    <!-- Counts down to the first kickoff of the week, then flips every pick over
+         at once. Hidden whenever the week is already open. -->
+    <div id="reveal-banner" class="reveal-banner hidden" role="status" aria-live="polite">
+      <span class="reveal-dot" aria-hidden="true"></span>
+      <span class="reveal-eyebrow" id="reveal-eyebrow" hidden>Season Opener</span>
+      <span class="reveal-label">Picks reveal in</span>
+      <span id="reveal-clock" class="reveal-clock">--:--</span>
+      <span class="reveal-sub" id="reveal-sub"></span>
     </div>
 
     <div class="scoreboard-wrap overflow-auto scroll-hint" id="table-scroll-wrap">
@@ -277,7 +394,7 @@
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
-    import { kickoffMs, isWeekLocked, isGameLocked } from './js/kickoff.js';
+    import { kickoffMs, isWeekLocked, isGameLocked, earliestKickoffMs } from './js/kickoff.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
     import { sameTeam, escapeHtml, buildPickMap, getTeamColor } from './js/utils.js';
 
@@ -940,6 +1057,7 @@
 
       saveSnapshot();
       startLiveTicker();
+      startRevealCountdown();
       if (!showPicks && weekStartTs) {
         status(`Picks hidden until kickoff at ${formatTimeCentral(weekStartTs)} CT • Season ${currentSeason} • Week ${week}`);
       } else {
@@ -1335,6 +1453,119 @@
       ).join('') || `<span class="text-gray-400">—</span>`;
     }
 
+    // ---- Pick reveal ---------------------------------------------------------
+    // The moment the first game kicks is the best beat of the week, and it used
+    // to just... happen. Now it counts down, escalates, and flips the whole board
+    // over at once.
+    const revealBanner = document.getElementById('reveal-banner');
+    const revealClock  = document.getElementById('reveal-clock');
+    const revealSub    = document.getElementById('reveal-sub');
+    let revealTimer = null;
+    let pendingRevealAnimation = false;
+
+    function firstGameLabel(){
+      const ts = earliestKickoffMs(lastGames);
+      if (ts == null) return '';
+      let first = null;
+      for (const g of lastGames){
+        if (kickoffMs(g) === ts) { first = g; break; }
+      }
+      if (!first) return '';
+      return `${first.Away} @ ${first.Home} • ${formatTimeCentral(ts)} CT`;
+    }
+
+    function stopRevealCountdown(){
+      if (revealTimer){ clearInterval(revealTimer); revealTimer = null; }
+      revealBanner?.classList.add('hidden');
+      revealBanner?.classList.remove('is-urgent','is-imminent');
+    }
+
+    function tickRevealCountdown(){
+      if (!revealBanner) return;
+      const ts = earliestKickoffMs(lastGames);
+      if (ts == null || showPicks || isPlayoffView){ stopRevealCountdown(); return; }
+
+      let ms = ts - Date.now();
+      if (ms <= 0){ stopRevealCountdown(); revealNow(); return; }
+
+      const s   = Math.floor(ms / 1000);
+      const d   = Math.floor(s / 86400);
+      const h   = Math.floor((s % 86400) / 3600);
+      const m   = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      const p2  = n => String(n).padStart(2, '0');
+
+      revealClock.textContent =
+        d > 0 ? `${d}d ${p2(h)}:${p2(m)}`
+      : h > 0 ? `${h}:${p2(m)}:${p2(sec)}`
+      :         `${p2(m)}:${p2(sec)}`;
+
+      // Escalate as it closes in.
+      const isOpener = Number(currentWeek) === 0;
+      const label = revealBanner.querySelector('.reveal-label');
+      const eyebrow = document.getElementById('reveal-eyebrow');
+
+      revealBanner.classList.toggle('is-opener',   isOpener);
+      revealBanner.classList.toggle('is-urgent',   ms <= 60 * 60 * 1000);
+      revealBanner.classList.toggle('is-imminent', ms <= 5  * 60 * 1000);
+      if (eyebrow) eyebrow.hidden = !isOpener;
+
+      if (label){
+        label.textContent =
+            ms <= 5 * 60 * 1000  ? (isOpener ? 'Football is back in' : 'Locking now')
+          : ms <= 60 * 60 * 1000 ? (isOpener ? 'First kick in'       : 'Picks lock in')
+          : isOpener             ? 'Season kicks off in'
+          :                        'Picks reveal in';
+      }
+
+      // The opener always shows what it's counting down to; a normal week only
+      // bothers inside the last hour.
+      revealSub.textContent = (isOpener || ms <= 60 * 60 * 1000) ? firstGameLabel() : '';
+    }
+
+    function startRevealCountdown(){
+      stopRevealCountdown();
+      if (!revealBanner || showPicks || isPlayoffView) return;
+      if (earliestKickoffMs(lastGames) == null) return;
+      revealBanner.classList.remove('hidden');
+      tickRevealCountdown();
+      revealTimer = setInterval(tickRevealCountdown, 1000);
+    }
+
+    // Kickoff hit while someone is watching: flip the board over.
+    function revealNow(){
+      if (showPicks) return;
+      showPicks = true;
+      pendingRevealAnimation = true;
+      const pointsMap = getPointsMapForCurrentView();
+      renderTable(lastTeams, lastPickMap, winnerMap, showPicks, pointsMap, isPlayoffView);
+      playRevealAnimation();
+      status(`Kickoff! Picks are in for Season ${currentSeason} • Week ${currentWeek}.`);
+    }
+
+    // Ripple the flip across columns so the board turns over left to right,
+    // the way a real one repaints.
+    function playRevealAnimation(){
+      if (!pendingRevealAnimation) return;
+      pendingRevealAnimation = false;
+
+      document.getElementById('jumbo-flashable')?.classList.remove('jumbo-flash');
+      const jumbo = document.querySelector('.jumbotron-header');
+      if (jumbo){
+        jumbo.classList.remove('jumbo-flash');
+        void jumbo.offsetWidth;          // restart the animation
+        jumbo.classList.add('jumbo-flash');
+      }
+
+      tbody.querySelectorAll('tr').forEach(tr => {
+        [...tr.children].forEach((td, col) => {
+          if (col < 2) return;           // team + points columns don't flip
+          td.classList.add('pick-revealing');
+          td.style.animationDelay = ((col - 2) * 55) + 'ms';
+        });
+      });
+    }
+
     // Live ticker
     // Polling is suspended while the tab is hidden so a forgotten background tab
     // doesn't keep hitting Supabase every 30s; it refreshes immediately on return.
@@ -1442,8 +1673,9 @@
       // Regular weeks: global reveal when earliest kickoff hits
       if (!isPlayoffView && !showPicks && isWeekLocked(lastGames)) {
         showPicks = true;
-        const label = `Week ${currentWeek}`;
-        status(`Kickoff! Showing picks for Season ${currentSeason} • ${label}.`);
+        pendingRevealAnimation = true;
+        stopRevealCountdown();
+        status(`Kickoff! Picks are in for Season ${currentSeason} • Week ${currentWeek}.`);
         needRerender = true;
       }
 
@@ -1479,6 +1711,7 @@
         });
 
         renderTable(lastTeams, lastPickMap, winnerMap, showPicks, pointsMap, isPlayoffView);
+        playRevealAnimation();
         await renderWeeklySubmissions(lastTeams, lastPickMap);
       }
     }
