@@ -605,6 +605,26 @@ header.cfp-card {
 }
 
 /* Connect jumbotron header to scoreboard below */
+/* The panel is meant to read as an LED board, so give it actual pixels. A real
+   jumbotron is a grid of discrete emitters; without this the band is just a
+   black rectangle. Sits above the background, below the content, and never
+   intercepts taps. */
+.jumbotron-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 8px 8px 0 0;
+  background-image: radial-gradient(circle, rgba(255,255,255,.07) 22%, transparent 23%);
+  background-size: 4px 4px;
+}
+.jumbotron-header > * { position: relative; z-index: 1; }
+
+@media (max-width: 640px) {
+  /* Coarser pitch on a phone - a 4px grid at 3x DPR turns into mush. */
+  .jumbotron-header::after { background-size: 3px 3px; }
+}
+
 .jumbotron-header + .scoreboard-wrap {
   border-top: none;
   border-radius: 0 0 8px 8px;
