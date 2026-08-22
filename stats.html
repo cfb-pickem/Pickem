@@ -114,6 +114,26 @@
       .badge-pill, .dog-header-badge { font-size: .72rem; letter-spacing: .12em; }
     }
 
+    /* --- One header system for every card on this page --------------------
+       These three were used by the newer cards but never actually defined, so
+       they fell back to browser defaults while the older cards carried inline
+       Oswald classes - which is why the page read as three different designs
+       stitched together. Defined once here; every section now uses them. */
+    .stat-head{
+      display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
+      border-bottom:1px solid rgba(231,231,231,.08);
+      background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,0));
+    }
+    .stat-title{
+      font-family:'Oswald', sans-serif;
+      font-size:1.15rem; font-weight:600; line-height:1.15;
+      color:var(--cfp-ivory); letter-spacing:.01em; margin:0;
+    }
+    @media (min-width:768px){ .stat-title{ font-size:1.35rem; } }
+    .stat-sub{
+      width:100%; margin:.15rem 0 0; font-size:.72rem; color:#8b9099;
+    }
+
     .tier-pill{
       font-family:'Oswald',sans-serif; font-size:.62rem; letter-spacing:.14em;
       text-transform:uppercase; padding:.15rem .5rem; color:#0b0b0b;
@@ -238,7 +258,7 @@
         <!-- Weekly Awards -->
     <section class="cfp-card mb-5 overflow-hidden">
       <div class="stat-head px-4 md:px-6 py-3 flex items-center gap-2 flex-wrap">
-        <span class="stat-ball" aria-hidden="true"></span>
+        <span class="trophy-oval" aria-hidden="true"></span>
         <h2 class="stat-title">Weekly Awards</h2>
         <span id="awards-week" class="awards-week"></span>
       </div>
@@ -249,53 +269,53 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
       <section class="cfp-card overflow-hidden hero-card">
         <div class="stat-head px-4 md:px-6 py-3 flex items-center gap-2 flex-wrap">
-          <span class="stat-ball" aria-hidden="true"></span>
+          <span class="trophy-oval" aria-hidden="true"></span>
           <h2 class="stat-title">Big Game Heroes</h2>
           <span class="tier-pill tier-big">Top 10 games</span>
         </div>
-        <p class="tier-blurb px-4 md:px-6">Record on the ten best games we picked all season.</p>
+        <p class="tier-blurb px-4 md:px-6">Who actually calls the games worth watching.</p>
         <div id="hero-body" class="px-4 md:px-6 pb-4"></div>
       </section>
 
       <section class="cfp-card overflow-hidden sicko-card">
         <div class="stat-head px-4 md:px-6 py-3 flex items-center gap-2 flex-wrap">
-          <span class="stat-ball" aria-hidden="true"></span>
+          <span class="trophy-oval" aria-hidden="true"></span>
           <h2 class="stat-title">Sickos</h2>
           <span class="tier-pill tier-sicko">Bottom 10 games</span>
         </div>
-        <p class="tier-blurb px-4 md:px-6">Record on the ten worst games we picked all season. Nobody should know these teams.</p>
+        <p class="tier-blurb px-4 md:px-6">Who thrives in the games nobody should be watching.</p>
         <div id="sicko-body" class="px-4 md:px-6 pb-4"></div>
       </section>
     </div>
 
-<section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
       <!-- Perfect Week Club -->
       <div class="ribbon gold-shadow rounded-none">
-        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
+        <div class="stat-head relative px-4 md:px-6 py-3 z-10">
           <span class="trophy-oval" aria-hidden="true"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Perfect Week Club</h2>
+          <h2 class="stat-title">Perfect Week Club</h2>
         </div>
         <div id="perfect-ribbon" class="relative flex items-center gap-2 overflow-x-auto px-4 md:px-6 py-3 z-10"></div>
       </div>
 
       <!-- Winless Week Club -->
       <div class="ribbon gold-shadow rounded-none">
-        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
+        <div class="stat-head relative px-4 md:px-6 py-3 z-10">
           <span class="trophy-oval" aria-hidden="true"></span>
-          <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Winless Week Club</h2>
+          <h2 class="stat-title">Winless Week Club</h2>
         </div>
         <div id="zero-ribbon" class="relative flex flex-wrap items-center gap-2 px-4 md:px-6 py-3 z-10"></div>
       </div>
     </section>
 
     <!-- SEASON-WIDE TABLES: Win % + Top Dawg -->
-    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
       <!-- LEFT: Total Season Win % -->
       <div class="cfp-card gold-shadow">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+        <div class="stat-head px-4 md:px-6 py-3">
           <span class="trophy-oval" aria-hidden="true"></span>
           <div>
-            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">
+            <h2 class="stat-title">
               Total Season Win %
             </h2>
           </div>
@@ -317,10 +337,10 @@
 
       <!-- RIGHT: Top Dawg – Underdog Outright Wins -->
       <div class="cfp-card gold-shadow dog-card">
-        <div class="relative px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3 z-10">
+        <div class="stat-head relative px-4 md:px-6 py-3 z-10">
           <span class="trophy-oval" aria-hidden="true"></span>
           <div>
-            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)] flex items-center gap-2">
+            <h2 class="stat-title">
               Top Dawg 🐶
             </h2>
             <p class="mt-1 text-[10px] text-gray-300">
@@ -349,10 +369,10 @@
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Win % in Last 8 Picks -->
       <div class="cfp-card gold-shadow">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+        <div class="stat-head px-4 md:px-6 py-3">
           <span class="trophy-oval" aria-hidden="true"></span>
           <div>
-            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Win % in Last 8 Picks</h2>
+            <h2 class="stat-title">Win % in Last 8 Picks</h2>
           </div>
         </div>
         <div class="overflow-auto">
@@ -371,10 +391,10 @@
 
       <!-- Favorite Pick % -->
       <div class="cfp-card gold-shadow">
-        <div class="px-4 md:px-6 py-3 border-b border-[rgba(231,231,231,.08)] flex items-center gap-3">
+        <div class="stat-head px-4 md:px-6 py-3">
           <span class="trophy-oval" aria-hidden="true"></span>
           <div>
-            <h2 class="font-['Oswald',_sans-serif] text-xl md:text-2xl font-semibold text-[var(--cfp-ivory)]">Favorite Pick %</h2>
+            <h2 class="stat-title">Favorite Pick %</h2>
           </div>
         </div>
         <div class="overflow-auto">
@@ -705,20 +725,9 @@
              <div class="award-detail">${escapeHtml(detail)}</div>
            </div>`);
 
-        // Best and worst record of the week.
-        const recs = [...byTeam.entries()].map(([id,r]) => ({ id, ...r }));
-        if(recs.length){
-          const best = Math.max(...recs.map(r=>r.w));
-          const worst = Math.min(...recs.map(r=>r.w));
-          const bestTeams  = recs.filter(r=>r.w===best);
-          add('Week Winner', list(bestTeams.map(r=>r.id)),
-              `${best}-${bestTeams[0].l}` + (bestTeams.length>1 ? ` — ${bestTeams.length}-way tie` : ''));
-          if(worst !== best){
-            const worstTeams = recs.filter(r=>r.w===worst);
-            add('The Cellar', list(worstTeams.map(r=>r.id)),
-                `${worst}-${worstTeams[0].l}`, true);
-          }
-        }
+        // Week Winner / The Cellar removed - the leaderboard already says who won
+        // the week, so they were restating it. These awards are for the things
+        // the standings DON'T tell you.
 
         // The game everyone was right about, and the one that burned everyone.
         const games = [...byGame.entries()];

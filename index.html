@@ -111,58 +111,88 @@
     /* Pinned to the viewport's left edge of the scroll container, so the label
        stays readable however far the table is scrolled sideways. */
     /* --- Pick reveal ------------------------------------------------------ */
+    /* A centred stack rather than a row: the clock is the point, so it gets to be
+       the biggest thing on screen, and centring means one layout works at 390px
+       and 1400px without the pieces wrapping into each other. */
     .reveal-banner{
-      display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
-      margin-bottom:.6rem; padding:.55rem .9rem;
-      background:linear-gradient(180deg, rgba(255,192,46,.10), rgba(255,192,46,.04));
-      border:1px solid rgba(255,192,46,.30);
-      border-left:3px solid var(--led-amber);
+      position:relative; overflow:hidden;
+      margin-bottom:.75rem; padding:.85rem 1rem 1rem;
+      text-align:center;
+      background:
+        radial-gradient(120% 140% at 50% 0%, rgba(255,192,46,.13), transparent 70%),
+        linear-gradient(180deg, rgba(20,20,22,.9), rgba(12,12,14,.9));
+      border:1px solid rgba(255,192,46,.28);
+      border-top:2px solid var(--led-amber);
+    }
+    /* Same LED pitch as the jumbotron, so it reads as part of the same board. */
+    .reveal-banner::before{
+      content:""; position:absolute; inset:0; pointer-events:none;
+      background-image:radial-gradient(circle, rgba(255,255,255,.05) 22%, transparent 23%);
+      background-size:4px 4px;
+    }
+    .reveal-banner > *{ position:relative; z-index:1; }
+
+    .reveal-top{
+      display:flex; align-items:center; justify-content:center;
+      gap:.5rem; flex-wrap:wrap; margin-bottom:.15rem;
     }
     .reveal-dot{
-      width:.5rem; height:.5rem; border-radius:50%;
+      width:.45rem; height:.45rem; border-radius:50%; flex:none;
       background:var(--led-amber); box-shadow:0 0 8px rgba(255,192,46,.9);
-      animation:reveal-pulse 1.6s ease-in-out infinite; flex:none;
+      animation:reveal-pulse 1.6s ease-in-out infinite;
     }
-    @keyframes reveal-pulse{0%,100%{opacity:1}50%{opacity:.25}}
+    @keyframes reveal-pulse{0%,100%{opacity:1}50%{opacity:.2}}
     .reveal-label{
-      font-family:'Oswald',sans-serif; font-size:.7rem; letter-spacing:.16em;
-      text-transform:uppercase; color:#cfd3d8;
+      font-family:'Oswald',sans-serif; font-size:.68rem; letter-spacing:.2em;
+      text-transform:uppercase; color:#c8ccd2;
     }
     .reveal-clock{
-      font-family:'Teko','Oswald',sans-serif; font-weight:700; font-size:1.7rem;
-      line-height:1; font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1;
-      color:var(--led-amber); text-shadow:0 0 6px rgba(255,192,46,.45);
+      font-family:'Teko','Oswald',sans-serif; font-weight:700;
+      font-size:clamp(2.9rem, 13vw, 4.25rem); line-height:.92;
+      letter-spacing:.01em;
+      font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1;
+      color:var(--led-amber);
+      text-shadow:0 0 10px rgba(255,192,46,.45), 0 0 30px rgba(255,192,46,.18);
     }
-    .reveal-sub{ font-size:.7rem; color:#9aa0a8; }
+    .reveal-clock .cd-n{ margin-left:.18em; }
+    .reveal-clock .cd-n:first-child{ margin-left:0; }
+    .reveal-clock .cd-u{
+      font-size:.42em; font-weight:600; letter-spacing:.04em;
+      opacity:.62; margin-left:.06em; vertical-align:baseline;
+    }
+
+    .reveal-clock.is-long{ font-size:clamp(2rem, 9.5vw, 3.1rem); letter-spacing:0; }
+    .reveal-banner.is-opener .reveal-clock.is-long{ font-size:clamp(2.15rem, 10.5vw, 3.5rem); }
+
+    .reveal-sub{
+      font-size:.76rem; color:#9aa0a8; margin-top:.2rem;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .reveal-sub:empty{ display:none; }
 
     /* Week 0 only. The season opener gets its own treatment - a gold marquee with
-       a light sweeping across it, the way a board looks before the first game of
-       the year. Deliberately louder than any other week; it only happens once. */
+       a light sweeping across it. Deliberately louder than any other week; it
+       only happens once a year. */
     .reveal-eyebrow{
       font-family:'Teko','Oswald',sans-serif; font-weight:700;
-      font-size:1.05rem; line-height:1; letter-spacing:.18em; text-transform:uppercase;
+      font-size:1rem; line-height:1; letter-spacing:.2em; text-transform:uppercase;
       color:#0b0b0b; background:var(--cfp-gold);
-      padding:.2rem .55rem; flex:none;
+      padding:.18rem .6rem; flex:none;
     }
     .reveal-banner.is-opener{
-      position:relative; overflow:hidden;
-      background:linear-gradient(180deg, rgba(218,165,32,.20), rgba(218,165,32,.06));
-      border-color:rgba(240,199,94,.55); border-left-width:5px;
-      border-left-color:var(--cfp-gold);
-      padding-top:.7rem; padding-bottom:.7rem;
+      border-color:rgba(240,199,94,.5); border-top-width:3px;
+      background:
+        radial-gradient(120% 150% at 50% 0%, rgba(218,165,32,.22), transparent 72%),
+        linear-gradient(180deg, rgba(24,20,10,.92), rgba(13,11,8,.92));
     }
-    .reveal-banner.is-opener .reveal-clock{ font-size:2.3rem; }
+    .reveal-banner.is-opener .reveal-clock{ font-size:clamp(3.2rem, 15vw, 5rem); }
     .reveal-banner.is-opener::after{
-      content:""; position:absolute; top:0; bottom:0; left:-40%; width:40%;
-      pointer-events:none;
-      background:linear-gradient(90deg, transparent, rgba(255,225,150,.28), transparent);
-      animation:opener-sweep 3.2s ease-in-out infinite;
+      content:""; position:absolute; top:0; bottom:0; left:-45%; width:45%;
+      pointer-events:none; z-index:0;
+      background:linear-gradient(90deg, transparent, rgba(255,225,150,.22), transparent);
+      animation:opener-sweep 3.4s ease-in-out infinite;
     }
-    @keyframes opener-sweep{
-      0%   { left:-40%; }
-      60%  { left:100%; }
-      100% { left:100%; }
-    }
+    @keyframes opener-sweep{ 0%{left:-45%} 62%{left:100%} 100%{left:100%} }
     @media (prefers-reduced-motion: reduce){
       .reveal-banner.is-opener::after{ animation:none; opacity:0; }
     }
@@ -170,22 +200,28 @@
     /* Under an hour it warms up; under five minutes it goes red and starts
        breathing, so a glance tells you how close you are. */
     .reveal-banner.is-urgent{
-      background:linear-gradient(180deg, rgba(255,140,40,.14), rgba(255,140,40,.05));
-      border-color:rgba(255,140,40,.45); border-left-color:#ff9a2e;
+      background:
+        radial-gradient(120% 140% at 50% 0%, rgba(255,140,40,.16), transparent 70%),
+        linear-gradient(180deg, rgba(22,18,16,.9), rgba(13,11,10,.9));
+      border-color:rgba(255,140,40,.4); border-top-color:#ff9a2e;
     }
-    .reveal-banner.is-urgent .reveal-clock{ color:#ff9a2e; text-shadow:0 0 8px rgba(255,154,46,.5); }
+    .reveal-banner.is-urgent .reveal-clock{
+      color:#ff9a2e; text-shadow:0 0 10px rgba(255,154,46,.5), 0 0 30px rgba(255,154,46,.2);
+    }
     .reveal-banner.is-urgent .reveal-dot{ background:#ff9a2e; box-shadow:0 0 8px rgba(255,154,46,.9); }
 
     .reveal-banner.is-imminent{
-      background:linear-gradient(180deg, rgba(255,70,70,.16), rgba(255,70,70,.06));
-      border-color:rgba(255,70,70,.5); border-left-color:#ff5757;
+      background:
+        radial-gradient(120% 140% at 50% 0%, rgba(255,70,70,.18), transparent 70%),
+        linear-gradient(180deg, rgba(24,14,14,.92), rgba(14,10,10,.92));
+      border-color:rgba(255,70,70,.45); border-top-color:#ff5757;
     }
     .reveal-banner.is-imminent .reveal-clock{
-      color:#ff6b6b; text-shadow:0 0 10px rgba(255,107,107,.6);
-      font-size:2.1rem; animation:reveal-throb 1s ease-in-out infinite;
+      color:#ff6b6b; text-shadow:0 0 12px rgba(255,107,107,.6), 0 0 34px rgba(255,107,107,.25);
+      animation:reveal-throb 1s ease-in-out infinite;
     }
     .reveal-banner.is-imminent .reveal-dot{ background:#ff5757; box-shadow:0 0 10px rgba(255,87,87,1); }
-    @keyframes reveal-throb{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+    @keyframes reveal-throb{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
 
     /* The board surges when the picks land, like a panel repainting. */
     @keyframes jumbo-surge{
@@ -303,11 +339,13 @@
     <!-- Counts down to the first kickoff of the week, then flips every pick over
          at once. Hidden whenever the week is already open. -->
     <div id="reveal-banner" class="reveal-banner hidden" role="status" aria-live="polite">
-      <span class="reveal-dot" aria-hidden="true"></span>
-      <span class="reveal-eyebrow" id="reveal-eyebrow" hidden>Season Opener</span>
-      <span class="reveal-label">Picks reveal in</span>
-      <span id="reveal-clock" class="reveal-clock">--:--</span>
-      <span class="reveal-sub" id="reveal-sub"></span>
+      <div class="reveal-top">
+        <span class="reveal-dot" aria-hidden="true"></span>
+        <span class="reveal-eyebrow" id="reveal-eyebrow" hidden>Season Opener</span>
+        <span class="reveal-label">Picks reveal in</span>
+      </div>
+      <div class="reveal-clock" id="reveal-clock">--:--</div>
+      <div class="reveal-sub" id="reveal-sub"></div>
     </div>
 
     <div class="scoreboard-wrap overflow-auto scroll-hint" id="table-scroll-wrap">
@@ -1495,10 +1533,18 @@
       const sec = s % 60;
       const p2  = n => String(n).padStart(2, '0');
 
-      revealClock.textContent =
-        d > 0 ? `${d}d ${p2(h)}:${p2(m)}`
-      : h > 0 ? `${h}:${p2(m)}:${p2(sec)}`
-      :         `${p2(m)}:${p2(sec)}`;
+      // Labelled units, and always down to seconds - without a moving seconds
+      // digit the clock looks frozen when you're days out, which kills the whole
+      // point. Units are rendered smaller than the numbers so the digits stay
+      // the loud part. Numbers only, so innerHTML is safe here.
+      const part = (v, u) => `<span class="cd-n">${v}</span><span class="cd-u">${u}</span>`;
+      let html, units;
+      if (d > 0)      { html = part(d,'d') + part(p2(h),'h') + part(p2(m),'m') + part(p2(sec),'s'); units = 4; }
+      else if (h > 0) { html = part(h,'h')  + part(p2(m),'m') + part(p2(sec),'s');                  units = 3; }
+      else if (m > 0) { html = part(m,'m')  + part(p2(sec),'s');                                    units = 2; }
+      else            { html = part(sec,'s');                                                       units = 1; }
+      revealClock.innerHTML = html;
+      revealClock.classList.toggle('is-long', units >= 4);
 
       // Escalate as it closes in.
       const isOpener = Number(currentWeek) === 0;
