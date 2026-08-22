@@ -74,7 +74,21 @@ function detectSeasonalTheme(seasonYear, games) {
   return null;
 }
 
+// Only the leaderboard and tiebreakers have the game list needed to work out
+// whether a holiday window is actually live. The result is remembered so every
+// other page can dress itself the same way without refetching games - otherwise
+// the season would stop at the edge of two pages.
+const THEME_KEY = "cfb_theme_v1";
+
 export function updateSeasonalTheme(seasonYear, games) {
-  const themeId = detectSeasonalTheme(seasonYear, games);
-  document.body.dataset.theme = themeId || "default";
+  const themeId = detectSeasonalTheme(seasonYear, games) || "default";
+  document.body.dataset.theme = themeId;
+  // Also on <html>, matching what the pre-paint applier on other pages sets.
+  if (themeId === "default") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", themeId);
+  try {
+    localStorage.setItem(THEME_KEY, themeId);
+  } catch {
+    /* private mode - the theme just won't carry to other pages */
+  }
 }

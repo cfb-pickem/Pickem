@@ -23,6 +23,18 @@ h1 {
   --led-amber: #FFC02E;
   --led-white: #F4F6F8;
   --led-dim:   #6b6f76;
+  --led-win:   #5eff8a;                 /* the winning score */
+  --led-win-glow: rgba(94,255,138,.65);
+
+  /* The physical board: panel face, bezel, and the pitch of its LED grid.
+     Tokenised so a seasonal theme can restyle the scoreboard itself rather than
+     only the page around it. */
+  --panel-face-1: #0a0a0a;
+  --panel-face-2: #121212;
+  --panel-face-3: #0e0e0e;
+  --panel-bezel:  #2a2a2a;
+  --panel-dot:    rgba(255,255,255,.07);
+
   --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 8px rgba(218,165,32,.3);
 }
 
@@ -312,8 +324,8 @@ header.cfp-card {
    BLACK behind it, not the green score itself - that's now neutral, so the green
    reads as a scoreboard win light instead of half a costume. */
 .game-hdr-score.score-win {
-  color: #5eff8a;
-  text-shadow: 0 0 6px rgba(94,255,138,.65), 0 0 18px rgba(94,255,138,.28);
+  color: var(--led-win);
+  text-shadow: 0 0 6px var(--led-win-glow), 0 0 18px color-mix(in srgb, var(--led-win) 28%, transparent);
 }
 /* Live leader stays amber so "currently ahead" and "won" don't look the same. */
 .game-hdr-score.score-lead {
@@ -407,8 +419,8 @@ header.cfp-card {
    ============================================ */
 
 .scoreboard-wrap {
-  background: linear-gradient(180deg, #0a0a0a, #121212 3%, #0e0e0e 50%, #121212 97%, #0a0a0a);
-  border: 5px solid #2a2a2a;
+  background: linear-gradient(180deg, var(--panel-face-1), var(--panel-face-2) 3%, var(--panel-face-3) 50%, var(--panel-face-2) 97%, var(--panel-face-1));
+  border: 5px solid var(--panel-bezel);
   border-radius: 8px;
   box-shadow:
     inset 0 0 30px rgba(218,165,32,.04),
@@ -615,7 +627,7 @@ header.cfp-card {
   inset: 0;
   pointer-events: none;
   border-radius: 8px 8px 0 0;
-  background-image: radial-gradient(circle, rgba(255,255,255,.07) 22%, transparent 23%);
+  background-image: radial-gradient(circle, var(--panel-dot) 22%, transparent 23%);
   background-size: 4px 4px;
 }
 .jumbotron-header > * { position: relative; z-index: 1; }

@@ -1,309 +1,83 @@
 /* ============================================================
-   THANKSGIVING THEME — warm harvest night under stadium lights
-   Applied when <body data-theme="thanksgiving"> is active.
+   THANKSGIVING — a late-November afternoon game
+   Active when <body data-theme="thanksgiving">.
+
+   Token-first, same reasoning as the Halloween file: overriding individual
+   components meant every later addition stayed unthemed. The mood here is the
+   opposite of Halloween - not spooky, just warm. Low autumn sun, harvest golds,
+   burnt orange and deep brown. It should feel like 3:30pm with the light going.
    ============================================================ */
 
+[data-theme="thanksgiving"] body,
 body[data-theme="thanksgiving"] {
-  --cfp-black:#110a04;
-  --cfp-charcoal:#0e0802;
-  --cfp-gold:#e8950a;
-  --cfp-gold-2:#f5be3e;
-  --cfp-ivory:#faf0dc;
-  --cfp-gray:#2c1a0c;
-  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 8px rgba(232,149,10,.3);
+  /* Warm near-blacks - brown-tinted rather than neutral. */
+  --cfp-black:    #100a06;
+  --cfp-charcoal: #171009;
+  --cfp-gray:     #22170d;
 
-  color:#f5ead5;
+  /* Chrome: harvest gold and burnt orange. */
+  --cfp-gold:   #d98324;
+  --cfp-gold-2: #f0b357;
+  --cfp-ivory:  #f7edd9;
+
+  /* Warmer board. The winning score stays green - it's the one signal that
+     shouldn't shift with the season - but warms towards olive so it sits in
+     the palette instead of glowing out of it. */
+  --led-amber:    #f0a838;
+  --led-white:    #f7eeda;
+  --led-dim:      #7a6249;
+  --led-win:      #9ede55;
+  --led-win-glow: rgba(158,222,85,.6);
+
+  --panel-face-1: #0d0805;
+  --panel-face-2: #181009;
+  --panel-face-3: #120c07;
+  --panel-bezel:  #3a2717;
+  --panel-dot:    rgba(240,168,56,.08);
+
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 9px rgba(217,131,36,.32);
+
+  color: #f2e7d4;
 
   background:
-    /* warm amber glow from top like stadium lights */
-    radial-gradient(ellipse 900px 400px at 50% -5%, rgba(200,120,20,.3), transparent 100%),
-    /* rich brown warmth from corners */
-    radial-gradient(circle at 0% 0%, rgba(120,60,10,.2), transparent 55%),
-    radial-gradient(circle at 100% 0%, rgba(100,50,5,.2), transparent 55%),
-    /* wood grain texture */
-    linear-gradient(90deg,
-      rgba(255,255,255,.02) 0 1px, transparent 1px 6px,
-      rgba(255,255,255,.015) 6px 7px, transparent 7px 14px
-    ),
-    linear-gradient(180deg, #0e0802, #1a0e04, #2c1a0c);
-  background-size:100%,100%,100%,14px 14px,auto;
+    /* low sun raking in from the west */
+    radial-gradient(ellipse 820px 420px at 88% 6%, rgba(226,138,42,.30), transparent 68%),
+    radial-gradient(ellipse 620px 340px at 6% 22%, rgba(140,62,20,.20), transparent 66%),
+    /* dusk settling at the bottom */
+    radial-gradient(ellipse 140% 44% at 50% 104%, rgba(58,24,8,.42), transparent 72%),
+    linear-gradient(180deg, #100a06, #17100a 48%, #1d1309);
   background-attachment: fixed;
 }
 
-/* ============================================================
-   Warm overhead glow — like a dining room chandelier
-   ============================================================ */
-
+/* Warm haze over everything, heaviest where the sun is. */
+[data-theme="thanksgiving"] body::before,
 body[data-theme="thanksgiving"]::before {
-  content:"";
-  position:fixed; inset:0;
-  pointer-events:none;
-  background:
-    radial-gradient(circle 300px at 50% 0%, rgba(255,200,100,.12), transparent);
-  z-index:0;
-}
-
-/* ============================================================
-   Cards — rich wood with amber top border
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .cfp-card {
-  background:
-    linear-gradient(180deg, rgba(200,120,20,.05), transparent 40%),
-    linear-gradient(180deg, #110a04, #2c1a0c);
-  border:1px solid rgba(200,140,40,.15);
-  border-top:3px solid rgba(232,149,10,.7);
-  box-shadow:
-    0 0 20px rgba(200,120,20,.06) inset,
-    0 0 0 1px rgba(200,140,40,.08),
-    0 12px 40px rgba(0,0,0,.6);
-}
-
-body[data-theme="thanksgiving"] .cfp-card::after {
-  background: linear-gradient(90deg, transparent, rgba(232,149,10,.35), transparent);
-}
-
-/* ============================================================
-   Scoreboard — warm dark wood tones
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .scoreboard-wrap {
-  background: linear-gradient(180deg, #0d0700, #140c04 3%, #0d0700 50%, #140c04 97%, #0a0500);
-  border-color: #3d2810;
-  box-shadow:
-    inset 0 0 30px rgba(200,120,20,.04),
-    inset 0 1px 0 rgba(255,180,60,.06),
-    0 0 0 1px #1a0e04,
-    0 16px 56px rgba(0,0,0,.8);
-}
-
-body[data-theme="thanksgiving"] .scoreboard-header {
-  background: linear-gradient(180deg, #201008, #140c04) !important;
-  border-bottom: 3px solid #4a2810;
-}
-
-/* ============================================================
-   Jumbotron header — harvest
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .jumbotron-header {
-  background: linear-gradient(180deg, rgba(44,26,12,.85), rgba(17,10,4,.8));
-  border-color: rgba(200,140,40,.2);
-  box-shadow:
-    inset 0 1px 0 rgba(255,180,60,.08),
-    0 -4px 20px rgba(0,0,0,.4);
-}
-
-body[data-theme="thanksgiving"] .jumbotron-header::before {
-  background: repeating-linear-gradient(90deg,
-    #e8950a 0 4px, #a0580a 4px 8px, #7a3a08 8px 12px, transparent 12px 15px
-  );
-  opacity: .6;
-}
-
-body[data-theme="thanksgiving"] .jumbotron-title-text {
-  color: #f5be3e;
-  text-shadow:
-    0 0 18px rgba(232,149,10,.4),
-    0 0 36px rgba(200,120,20,.15),
-    0 2px 4px rgba(0,0,0,.7);
-}
-
-/* ============================================================
-   Game header scores — warm amber glow
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .game-hdr-score {
-  text-shadow: 0 0 8px rgba(255,200,100,.2);
-}
-body[data-theme="thanksgiving"] .game-hdr-score.score-win {
-  color: #80e8a0;
-  text-shadow: 0 0 10px rgba(128,232,160,.4);
-}
-body[data-theme="thanksgiving"] .game-hdr-score.score-lead {
-  color: #f5be3e;
-  text-shadow: 0 0 10px rgba(245,190,62,.5);
-}
-body[data-theme="thanksgiving"] .game-hdr-abbr {
-  color: #c8a060;
-}
-
-/* ============================================================
-   Table text & headers
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .table thead th.sticky-col-1,
-body[data-theme="thanksgiving"] .table thead th:nth-child(2) {
-  color: #f5be3e;
-  text-shadow: 0 0 10px rgba(232,149,10,.3);
-}
-
-body[data-theme="thanksgiving"] .table tbody td.sticky-col-1 {
-  color: #f0e0c0;
-  text-shadow: 0 0 5px rgba(240,220,180,.15);
-}
-
-body[data-theme="thanksgiving"] .table tbody td:nth-child(2) {
-  color: #fff;
-  text-shadow: none;
-}
-
-body[data-theme="thanksgiving"] .table th,
-body[data-theme="thanksgiving"] .table td {
-  border-color: rgba(200,140,40,.1);
-}
-
-/* ============================================================
-   Table hover — warm amber sweep
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .table tbody tr:hover {
-  background: linear-gradient(90deg, rgba(200,120,20,.15), transparent 55%);
-  box-shadow: inset 4px 0 0 #e8950a;
-}
-
-/* ============================================================
-   Badges
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .badge-live {
-  background: #e8950a;
-  color: #1a0e04;
-  box-shadow: 0 0 10px rgba(232,149,10,.5);
-}
-
-body[data-theme="thanksgiving"] .badge-final {
-  background: linear-gradient(135deg, #4a2810, #301808);
-  color: #d4b080;
-  border: 1px solid rgba(200,140,40,.3);
-}
-
-body[data-theme="thanksgiving"] .badge-sched {
-  background: #1a0e04;
-  color: #c0a070;
-  border: 1px solid rgba(200,140,40,.15);
-}
-
-/* ============================================================
-   Pick cells — earthy greens and warm reds
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .pick-win {
-  background: rgba(80,160,50,.22);
-  color: #a0e880;
-}
-
-body[data-theme="thanksgiving"] .pick-loss {
-  background: rgba(180,50,30,.2);
-  color: #f0a090;
-}
-
-body[data-theme="thanksgiving"] .pick-empty {
-  color: #9a8060;
-}
-
-/* ============================================================
-   Sticky column
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .sticky-col-1 {
-  background: linear-gradient(90deg, #110a04, #2c1a0c);
-  box-shadow: 2px 0 0 rgba(200,140,40,.15) inset;
-}
-
-body[data-theme="thanksgiving"] tr[data-me="true"] {
-  background: linear-gradient(90deg, rgba(232,149,10,.2), rgba(160,88,10,.1), transparent 70%);
-}
-body[data-theme="thanksgiving"] tr[data-me="true"] .sticky-col-1 {
-  font-weight: 700;
-  text-shadow: 0 0 6px rgba(232,149,10,.5);
-  box-shadow: 2px 0 0 rgba(232,149,10,.7) inset;
-}
-body[data-theme="thanksgiving"] tr[data-me="true"]:hover {
-  background: linear-gradient(90deg, rgba(232,149,10,.28), rgba(160,88,10,.15), transparent 70%);
-}
-
-/* ============================================================
-   Weekly Submissions
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .ws-label {
-  color: #e8c080;
-  border-bottom: 1px solid rgba(200,140,40,.18);
-}
-
-body[data-theme="thanksgiving"] #ws-made .badge {
-  background: linear-gradient(135deg, #8a4a18, #b86820);
-  color: #faf0dc;
-}
-
-body[data-theme="thanksgiving"] #ws-not .badge {
-  background: #2c1a0c;
-  color: #c0a070;
-  border: 1px solid rgba(200,140,40,.2);
-}
-
-/* ============================================================
-   Playoff divider
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .playoff-divider td {
-  padding: .3rem 0;
-  background: linear-gradient(90deg, rgba(200,120,20,.12), rgba(160,80,10,.08));
-  border-top: 2px solid rgba(232,149,10,.6);
-  border-bottom: 1px dashed rgba(200,140,40,.25);
-  color: #f5be3e;
-}
-
-/* ============================================================
-   Logos — warm sepia tint
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .logo {
-  filter:
-    drop-shadow(0 0 4px rgba(200,120,20,.3))
-    sepia(.1) saturate(1.1);
-}
-
-/* ============================================================
-   Trophy icon — autumn tones
-   ============================================================ */
-
-body[data-theme="thanksgiving"] .trophy-oval {
-  width: 30px; height: 18px;
-  background: radial-gradient(ellipse at 50% 40%, #f5c060, #e8950a 60%, #7a3a08);
-  border: 2px solid #c07010;
-  border-radius: 50%;
-  box-shadow: 0 0 10px rgba(232,149,10,.4);
-}
-body[data-theme="thanksgiving"] .trophy-oval::before {
   content: "";
-  background: rgba(250,220,160,.5);
-  width: 1.5px;
-}
-body[data-theme="thanksgiving"] .trophy-oval::after {
-  border-top-color: rgba(250,220,160,.5);
-  box-shadow: 0 -3px 0 0 rgba(250,220,160,.5), 0 3px 0 0 rgba(250,220,160,.5);
-}
-
-/* ============================================================
-   Nav & selects
-   ============================================================ */
-
-body[data-theme="thanksgiving"] #site-nav nav {
-  border-color: rgba(200,140,40,.12);
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 320px at 88% 4%, rgba(255,176,74,.16), transparent 72%),
+    linear-gradient(180deg, rgba(255,190,110,.045), transparent 34%);
 }
 
-body[data-theme="thanksgiving"] .cfp-select {
-  background: #2c1a0c;
-  border-color: rgba(200,140,40,.2);
-  color: #f0e0c0;
+/* Board looks lit by the same low sun. */
+[data-theme="thanksgiving"] .scoreboard-wrap {
+  box-shadow:
+    inset 0 0 34px rgba(217,131,36,.08),
+    inset 0 1px 0 rgba(255,255,255,.07),
+    0 0 0 1px #241708,
+    0 16px 56px rgba(0,0,0,.8),
+    0 0 22px rgba(200,110,30,.10);
 }
 
-/* ============================================================
-   Responsive
-   ============================================================ */
-
-@media (max-width: 640px) {
-  body[data-theme="thanksgiving"] .logo { height:24px; width:24px; }
+/* Cell shading moves to autumn: russet for a loss, olive for a win. */
+[data-theme="thanksgiving"] .pick-win {
+  background: rgba(110,140,40,.20);
+  box-shadow: inset 3px 0 0 rgba(158,222,85,.8);
+  color: #cfe89a;
+}
+[data-theme="thanksgiving"] .pick-loss {
+  background: rgba(128,48,20,.22);
+  box-shadow: inset 3px 0 0 rgba(214,110,60,.75);
+  color: #eaa985;
 }

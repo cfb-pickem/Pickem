@@ -1,294 +1,95 @@
 /* ============================================================
-   HALLOWEEN THEME — haunted stadium under a blood moon
-   Applied when <body data-theme="halloween"> is active.
+   HALLOWEEN — a night game under a blood moon
+   Active when <body data-theme="halloween">.
+
+   Rewritten to be token-first. The previous version overrode ~30 individual
+   components, which meant anything built afterwards (the LED scores, the
+   jumbotron dot matrix, the countdown banner, the points column, the pick cards,
+   the stats boards) stayed stubbornly default and the page came out half-dressed.
+   Redefining the design tokens themes all of it at once, and keeps working for
+   whatever gets built next. Everything below the token block is atmosphere that
+   genuinely can't be expressed as a token.
    ============================================================ */
 
+[data-theme="halloween"] body,
 body[data-theme="halloween"] {
-  --cfp-black:#08010d;
-  --cfp-charcoal:#0d0318;
-  --cfp-gold:#ff6a00;
-  --cfp-gold-2:#ff9d3d;
-  --cfp-ivory:#f0e8d8;
-  --cfp-gray:#190826;
-  --ring: 0 0 8px #ff4500 inset, 0 0 16px rgba(255,69,0,.3);
+  /* Blacks go violet, not grey - the board should feel lit by something wrong. */
+  --cfp-black:    #0a0410;
+  --cfp-charcoal: #120a1e;
+  --cfp-gray:     #1b1029;
 
-  color:#ede4f0;
+  /* Chrome: ember orange rather than stadium gold. */
+  --cfp-gold:   #ff7518;          /* pumpkin */
+  --cfp-gold-2: #ffa94d;
+  --cfp-ivory:  #f6ecdd;
+
+  /* The board's own LEDs. Amber -> ember, and the winning score goes toxic
+     green, which reads as Halloween without touching the win/loss language. */
+  --led-amber:    #ff8c1a;
+  --led-white:    #f2e9dc;
+  --led-dim:      #6b5878;
+  --led-win:      #7dff5a;
+  --led-win-glow: rgba(125,255,90,.6);
+
+  --panel-face-1: #090412;
+  --panel-face-2: #150a22;
+  --panel-face-3: #10071b;
+  --panel-bezel:  #2e1a3d;
+  --panel-dot:    rgba(255,140,26,.09);
+
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 10px rgba(255,117,24,.35);
+
+  color: #ece2f2;
 
   background:
-    /* blood-moon glow top center */
-    radial-gradient(ellipse 600px 350px at 50% -5%, rgba(180,20,0,.35), transparent 100%),
-    /* purple fog from corners */
-    radial-gradient(circle at 0% 20%, rgba(88,0,160,.25), transparent 60%),
-    radial-gradient(circle at 100% 30%, rgba(120,0,90,.2), transparent 60%),
-    /* subtle cobweb crosshatch */
-    linear-gradient(45deg,
-      rgba(255,255,255,.02) 0 25%, transparent 25% 50%,
-      rgba(255,255,255,.015) 50% 75%, transparent 75% 100%
-    ),
-    linear-gradient(180deg, #08010d, #0d0318, #120320);
-  background-size:100%,100%,100%,20px 20px,auto;
+    radial-gradient(ellipse 700px 380px at 50% -6%, rgba(190,26,0,.40), transparent 70%),
+    radial-gradient(circle at 3% 18%,  rgba(96,0,168,.26), transparent 58%),
+    radial-gradient(circle at 97% 28%, rgba(128,0,96,.22), transparent 58%),
+    linear-gradient(180deg, #0a0410, #120a1e 45%, #170b26);
   background-attachment: fixed;
 }
 
-/* ============================================================
-   Blood moon glow overlay
-   ============================================================ */
-
+/* The moon itself, and a low fog that never moves. Fixed so it sits behind the
+   page rather than scrolling with it. */
+[data-theme="halloween"] body::before,
 body[data-theme="halloween"]::before {
-  content:"";
-  position:fixed; inset:0;
-  pointer-events:none;
-  background:
-    radial-gradient(circle 200px at 50% 0%, rgba(200,30,0,.2), transparent),
-    radial-gradient(circle 80px at 50% 2%, rgba(255,120,0,.15), transparent);
-  z-index:0;
-}
-
-/* ============================================================
-   Cards — dark with eerie orange edge glow
-   ============================================================ */
-
-body[data-theme="halloween"] .cfp-card {
-  background:
-    linear-gradient(180deg, rgba(255,80,0,.04), transparent 50%),
-    linear-gradient(180deg, #0a0214, #190826);
-  border:1px solid rgba(255,100,0,.15);
-  border-top:3px solid rgba(255,80,0,.6);
-  box-shadow:
-    0 0 30px rgba(255,80,0,.08) inset,
-    0 0 0 1px rgba(255,80,0,.1),
-    0 12px 40px rgba(0,0,0,.7);
-}
-
-body[data-theme="halloween"] .cfp-card::after {
-  background: linear-gradient(90deg, transparent, rgba(255,100,0,.4), transparent);
-}
-
-/* ============================================================
-   Scoreboard — darker, more sinister
-   ============================================================ */
-
-body[data-theme="halloween"] .scoreboard-wrap {
-  background: linear-gradient(180deg, #0a0010, #0e0318 3%, #0a0010 50%, #0e0318 97%, #060010);
-  border-color: #3a1050;
-  box-shadow:
-    inset 0 0 40px rgba(255,80,0,.04),
-    inset 0 1px 0 rgba(255,120,0,.08),
-    0 0 0 1px #1a0030,
-    0 16px 56px rgba(0,0,0,.8);
-}
-
-body[data-theme="halloween"] .scoreboard-header {
-  background: linear-gradient(180deg, #1a0828, #0e0318) !important;
-  border-bottom: 3px solid #4a1560;
-}
-
-/* ============================================================
-   Jumbotron header — haunted
-   ============================================================ */
-
-body[data-theme="halloween"] .jumbotron-header {
-  background: linear-gradient(180deg, rgba(30,8,40,.8), rgba(15,3,24,.75));
-  border-color: rgba(255,100,0,.2);
-  box-shadow:
-    inset 0 1px 0 rgba(255,100,0,.1),
-    0 -4px 20px rgba(0,0,0,.5);
-}
-
-body[data-theme="halloween"] .jumbotron-header::before {
-  background: repeating-linear-gradient(90deg,
-    #ff6a00 0 4px, #8b00ff 4px 8px, #ff0044 8px 12px, transparent 12px 15px
-  );
-  opacity: .7;
-}
-
-body[data-theme="halloween"] .jumbotron-title-text {
-  color: #ff9d3d;
-  text-shadow:
-    0 0 20px rgba(255,100,0,.5),
-    0 0 40px rgba(255,50,0,.2),
-    0 2px 4px rgba(0,0,0,.8);
-}
-
-/* ============================================================
-   Game header scores — eerie orange glow
-   ============================================================ */
-
-body[data-theme="halloween"] .game-hdr-score {
-  text-shadow: 0 0 10px rgba(255,100,0,.3);
-}
-body[data-theme="halloween"] .game-hdr-score.score-win {
-  color: #5eff8a;
-  text-shadow: 0 0 10px rgba(94,255,138,.5), 0 0 25px rgba(0,255,100,.15);
-}
-body[data-theme="halloween"] .game-hdr-score.score-lead {
-  color: #ff9d3d;
-  text-shadow: 0 0 10px rgba(255,120,0,.6), 0 0 25px rgba(255,80,0,.2);
-}
-body[data-theme="halloween"] .game-hdr-abbr {
-  color: #c080e0;
-}
-
-/* ============================================================
-   Table text & headers — purple/orange theme
-   ============================================================ */
-
-body[data-theme="halloween"] .table thead th.sticky-col-1,
-body[data-theme="halloween"] .table thead th:nth-child(2) {
-  color: #ff9d3d;
-  text-shadow: 0 0 10px rgba(255,100,0,.4);
-}
-
-body[data-theme="halloween"] .table tbody td.sticky-col-1 {
-  color: #e8d8f0;
-  text-shadow: 0 0 6px rgba(200,128,224,.2);
-}
-
-body[data-theme="halloween"] .table tbody td:nth-child(2) {
-  color: #fff;
-  text-shadow: none;
-}
-
-/* ============================================================
-   Table hover — neon horror sweep
-   ============================================================ */
-
-body[data-theme="halloween"] .table tbody tr:hover {
-  background: linear-gradient(90deg, rgba(255,80,0,.15), rgba(128,0,255,.1), transparent 60%);
-  box-shadow: inset 4px 0 0 #ff6a00;
-}
-
-/* ============================================================
-   Badges — Live / Final / Scheduled
-   ============================================================ */
-
-body[data-theme="halloween"] .badge-live {
-  background: #ff6a00;
-  color: #1a0014;
-  box-shadow: 0 0 12px rgba(255,106,0,.6);
-}
-
-body[data-theme="halloween"] .badge-final {
-  background: linear-gradient(135deg, #3a0060, #200038);
-  color: #d4a0ff;
-  border: 1px solid rgba(180,100,255,.3);
-}
-
-body[data-theme="halloween"] .badge-sched {
-  background: #1a0828;
-  color: #c090d0;
-  border: 1px solid rgba(180,100,255,.15);
-}
-
-/* ============================================================
-   Pick cells — poison green wins, blood red losses
-   ============================================================ */
-
-body[data-theme="halloween"] .pick-win {
-  background: rgba(0,200,80,.2);
-  color: #80ffb0;
-}
-
-body[data-theme="halloween"] .pick-loss {
-  background: rgba(200,0,40,.2);
-  color: #ff9090;
-}
-
-body[data-theme="halloween"] .pick-empty {
-  color: #8060a0;
-}
-
-/* ============================================================
-   Sticky column — dark purple edge
-   ============================================================ */
-
-body[data-theme="halloween"] .sticky-col-1 {
-  background: linear-gradient(90deg, #08010d, #190826);
-  box-shadow: 2px 0 0 rgba(255,100,0,.2) inset;
-}
-
-body[data-theme="halloween"] tr[data-me="true"] {
-  background: linear-gradient(90deg, rgba(255,80,0,.2), rgba(100,0,180,.15), transparent 70%);
-}
-body[data-theme="halloween"] tr[data-me="true"] .sticky-col-1 {
-  font-weight: 700;
-  text-shadow: 0 0 8px rgba(255,100,0,.7);
-  box-shadow: 2px 0 0 rgba(255,100,0,.8) inset;
-}
-
-/* ============================================================
-   Weekly Submissions
-   ============================================================ */
-
-body[data-theme="halloween"] .ws-label {
-  color: #ff9d3d;
-  border-bottom: 1px solid rgba(255,100,0,.2);
-}
-
-body[data-theme="halloween"] #ws-made .badge {
-  background: linear-gradient(135deg, #ff6a00, #cc3300);
-  color: #1a0014;
-}
-
-body[data-theme="halloween"] #ws-not .badge {
-  background: #1a0828;
-  color: #c090d0;
-  border: 1px solid rgba(180,100,255,.2);
-}
-
-/* ============================================================
-   Playoff divider
-   ============================================================ */
-
-body[data-theme="halloween"] .playoff-divider td {
-  padding: .3rem 0;
-  background: linear-gradient(90deg, rgba(255,0,60,.1), rgba(128,0,200,.1));
-  border-top: 2px solid #ff0044;
-  border-bottom: 1px solid rgba(128,0,200,.3);
-  color: #ff9d3d;
-}
-
-/* ============================================================
-   Logos — eerie orange rim glow
-   ============================================================ */
-
-body[data-theme="halloween"] .logo {
-  filter:
-    drop-shadow(0 0 5px rgba(255,80,0,.4))
-    drop-shadow(0 0 2px rgba(128,0,200,.3));
-}
-
-/* ============================================================
-   Trophy icon — jack-o-lantern
-   ============================================================ */
-
-body[data-theme="halloween"] .trophy-oval {
-  width: 30px; height: 18px;
-  background: radial-gradient(ellipse at 50% 40%, #ffbf60, #ff6a00 60%, #cc3300);
-  border: 2px solid #ff8c00;
-  border-radius: 50%;
-  box-shadow: 0 0 12px rgba(255,100,0,.5), 0 0 4px rgba(255,60,0,.8) inset;
-}
-body[data-theme="halloween"] .trophy-oval::before {
   content: "";
-  background: rgba(255,200,100,.6);
-  width: 1.5px;
-}
-body[data-theme="halloween"] .trophy-oval::after {
-  border-top-color: rgba(255,200,100,.6);
-  box-shadow: 0 -3px 0 0 rgba(255,200,100,.6), 0 3px 0 0 rgba(255,200,100,.6);
-}
-
-/* ============================================================
-   Nav — spooky purple tint
-   ============================================================ */
-
-body[data-theme="halloween"] #site-nav nav {
-  border-color: rgba(255,100,0,.15);
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(circle 90px at 50% 4%,  rgba(255,120,0,.22), transparent 70%),
+    radial-gradient(circle 240px at 50% 1%, rgba(200,30,0,.16), transparent 70%),
+    radial-gradient(ellipse 140% 40% at 50% 100%, rgba(70,0,110,.28), transparent 70%);
 }
 
-body[data-theme="halloween"] .cfp-select {
-  background: #1a0828;
-  border-color: rgba(255,100,0,.2);
-  color: #e8d8f0;
+/* Board edge catches the ember light. */
+[data-theme="halloween"] .scoreboard-wrap {
+  box-shadow:
+    inset 0 0 34px rgba(255,117,24,.07),
+    inset 0 1px 0 rgba(255,255,255,.06),
+    0 0 0 1px #1d0f28,
+    0 16px 56px rgba(0,0,0,.85),
+    0 0 26px rgba(255,90,0,.10);
+}
+
+/* Losing picks bruise purple instead of red - red on this background just
+   turns to mud. */
+[data-theme="halloween"] .pick-loss {
+  background: rgba(96,20,120,.24);
+  box-shadow: inset 3px 0 0 rgba(186,104,255,.75);
+  color: #d9a5f5;
+}
+[data-theme="halloween"] .pick-win {
+  background: rgba(46,138,60,.20);
+  box-shadow: inset 3px 0 0 rgba(125,255,90,.8);
+  color: #a5f59a;
+}
+
+/* A slow flicker on the live badge - a bad bulb, not a strobe. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="halloween"] .badge-live { animation: hw-flicker 4s steps(1,end) infinite; }
+  @keyframes hw-flicker {
+    0%, 43%, 47%, 61%, 65%, 100% { opacity: 1; }
+    45%, 63% { opacity: .55; }
+  }
 }

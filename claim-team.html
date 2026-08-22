@@ -4,6 +4,16 @@
   <meta charset="utf-8"/>
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://vopdioszofwdkwnujtiq.supabase.co wss://vopdioszofwdkwnujtiq.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <!-- Apply the season the leaderboard last resolved, before first paint, so the
+       theme doesn't flash in a few hundred ms after the page renders. Only the
+       leaderboard has the game data to work it out; every other page just
+       follows. -->
+  <script>
+    try {
+      var t = localStorage.getItem('cfb_theme_v1');
+      if (t && t !== 'default') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  </script>
   <!-- Cross-document view transitions reject with AbortError whenever a
        navigation interrupts one. It fires from browser internals ~57ms in -
        long before the ES-module graph (and the Supabase bundle behind it) has
@@ -42,6 +52,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./css/base.css">
+  <link rel="stylesheet" href="./css/theme-halloween.css">
+  <link rel="stylesheet" href="./css/theme-thanksgiving.css">
+  <link rel="stylesheet" href="./css/theme-christmas.css">
   <link rel="modulepreload" href="./js/vendor/supabase.js">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <style>

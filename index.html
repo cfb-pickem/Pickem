@@ -127,7 +127,7 @@
     /* Same LED pitch as the jumbotron, so it reads as part of the same board. */
     .reveal-banner::before{
       content:""; position:absolute; inset:0; pointer-events:none;
-      background-image:radial-gradient(circle, rgba(255,255,255,.05) 22%, transparent 23%);
+      background-image:radial-gradient(circle, var(--panel-dot) 22%, transparent 23%);
       background-size:4px 4px;
     }
     .reveal-banner > *{ position:relative; z-index:1; }
