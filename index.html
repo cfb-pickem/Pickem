@@ -478,6 +478,9 @@
     let gameStartTs = {};
 
     let currentTeamId = null;
+    // Scouting reports are for members, and nobody may scout themselves - see
+    // the guard in renderTable().
+    let isSignedIn = false;
     let hasPlayoffOption = false;
 
     let showPicks = true;
@@ -636,6 +639,7 @@
       try{
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
+        isSignedIn = true;
 
         const { data: myTeams, error: tErr } = await supabase
           .from('teams')
@@ -1377,23 +1381,36 @@
         // The name is the way in to a player's scouting report. It stays a plain
         // name visually - a dotted gold underline is the only hint - because the
         // board is still the point of this page.
+        //
+        // Two people never get that link. Signed-out visitors, because the board
+        // is public but scouting is for members. And YOU, on your own row: being
+        // able to read your own report would let you see the model's call on
+        // yourself and pick against it purely to stay unreadable, which poisons
+        // the data everyone else's report is built from.
         const tdTeam = document.createElement('td');
         tdTeam.className = 'pl-4 pr-2 py-2 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
-        const scoutBtn = document.createElement('button');
-        scoutBtn.type = 'button';
-        scoutBtn.className = 'scout-link';
-        scoutBtn.textContent = team.team_name;
-        scoutBtn.addEventListener('click', () => {
-          openScoutPanel({
-            teamId: team.team_id,
-            teamName: team.team_name,
-            games: lastGames,
-            season: currentSeason,
-            revealed: revealPicks,
-            pickMap
+        const isSelf = currentTeamId != null && team.team_id === currentTeamId;
+        if (isSignedIn && !isSelf) {
+          const scoutBtn = document.createElement('button');
+          scoutBtn.type = 'button';
+          scoutBtn.className = 'scout-link';
+          scoutBtn.textContent = team.team_name;
+          scoutBtn.addEventListener('click', () => {
+            openScoutPanel({
+              teamId: team.team_id,
+              teamName: team.team_name,
+              games: lastGames,
+              season: currentSeason,
+              revealed: revealPicks,
+              pickMap,
+              viewerTeamId: currentTeamId
+            });
           });
-        });
-        tdTeam.appendChild(scoutBtn);
+          tdTeam.appendChild(scoutBtn);
+        } else {
+          tdTeam.textContent = team.team_name;
+          if (isSelf) tdTeam.title = 'You cannot scout yourself';
+        }
         tr.appendChild(tdTeam);
 
         const tdPts = document.createElement('td');

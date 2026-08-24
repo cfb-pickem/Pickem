@@ -14,6 +14,21 @@
 // what they ACTUALLY picked and whether the model called it. That way it is
 // useful all week rather than only before kickoff.
 
+// WHO CAN OPEN THIS
+//
+// Signed-in members only, and never on yourself. Your own report would show you
+// the model's call on you, which is an open invitation to pick against it purely
+// to stay unreadable - and everyone else's report is built from your picks, so
+// that would quietly poison the whole feature.
+//
+// Both checks live in two places: index.html withholds the link, and
+// openScoutPanel refuses even when called directly. Be clear-eyed about what
+// that buys, though - it is a UI gate, not a security boundary. Revealed picks
+// are readable by the anon key because the public leaderboard needs them, so a
+// determined member could rebuild any of this by hand. Only the database can
+// actually enforce access, and the board being public is what stops us doing
+// that here.
+
 import { supabase } from './supabaseClient.js';
 import { escapeHtml, sameTeam } from './utils.js';
 import { buildTrainingRows, fitScoutModel, confidenceTier, explain } from './scoutModel.js';
@@ -204,7 +219,18 @@ function onKey(e) { if (e.key === 'Escape') close(); }
  * revealed: whether picks for this week are public yet.
  * pickMap: teamId -> { gameId: pickName }, used once the week has locked.
  */
-export async function openScoutPanel({ teamId, teamName, games, season, revealed, pickMap }) {
+export async function openScoutPanel({ teamId, teamName, games, season, revealed, pickMap, viewerTeamId }) {
+  // Nobody scouts themselves. Reading your own report would show you the model's
+  // call on you, which is an invitation to pick against it purely to stay
+  // unreadable - and every other player's report is built from your picks.
+  if (viewerTeamId != null && Number(viewerTeamId) === Number(teamId)) return;
+
+  // Members only. index.html already withholds the link when signed out; this
+  // covers anything that calls in another way. It is a UI gate, not a security
+  // boundary - only the database can actually enforce who reads picks.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
   close();
   const wrap = document.createElement('div');
   wrap.className = 'scout-overlay';
