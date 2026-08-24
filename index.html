@@ -435,6 +435,7 @@
     import { kickoffMs, isWeekLocked, isGameLocked, earliestKickoffMs } from './js/kickoff.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
     import { sameTeam, escapeHtml, buildPickMap, getTeamColor } from './js/utils.js';
+    import { openScoutPanel } from './js/scoutPanel.js';
 
     // DOM
     const seasonSelect = document.getElementById('season-select');
@@ -1373,9 +1374,26 @@
           tr.dataset.me = 'true';
         }
 
+        // The name is the way in to a player's scouting report. It stays a plain
+        // name visually - a dotted gold underline is the only hint - because the
+        // board is still the point of this page.
         const tdTeam = document.createElement('td');
         tdTeam.className = 'pl-4 pr-2 py-2 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
-        tdTeam.textContent = team.team_name;
+        const scoutBtn = document.createElement('button');
+        scoutBtn.type = 'button';
+        scoutBtn.className = 'scout-link';
+        scoutBtn.textContent = team.team_name;
+        scoutBtn.addEventListener('click', () => {
+          openScoutPanel({
+            teamId: team.team_id,
+            teamName: team.team_name,
+            games: lastGames,
+            season: currentSeason,
+            revealed: revealPicks,
+            pickMap
+          });
+        });
+        tdTeam.appendChild(scoutBtn);
         tr.appendChild(tdTeam);
 
         const tdPts = document.createElement('td');
