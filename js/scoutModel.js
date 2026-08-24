@@ -13,7 +13,21 @@
 //
 //                                       accuracy   log loss   AUC
 //   always guess "lays the points"       60.2%      0.6723    0.489
-//   this model                           59.2%      0.6590    0.599
+//   this model, leave-one-week-out       59.2%      0.6590    0.599
+//
+// Leave-one-week-out trains on every OTHER week, including later ones. That is
+// fine for comparing features but flatters the real job, which only ever has
+// the past. Walk-forward - train strictly on earlier weeks - is the number that
+// matches how js/scoutPanel.js actually uses this, and it depends heavily on
+// how much history exists:
+//
+//   prior rows available     accuracy   log loss   AUC   (vs baseline log loss)
+//     >= 150                  57.1%      0.6780    0.575   (0.6755)
+//     >= 400                  57.4%      0.6775    0.552   (0.6709)
+//     >= 600                  61.2%      0.6583    0.589   (0.6653)
+//
+// So it needs roughly a full prior season behind it to be clearly worth
+// showing. scoutPanel refuses to render a lean under 400 rows of history.
 //
 // That table is the whole story. The model RANKS and CALIBRATES better than
 // the naive rule (log loss down, AUC up from coin-flip), but it is WORSE at
@@ -88,6 +102,7 @@ export function buildTrainingRows(games, picks) {
     const favIsHome = line < 0;
     rows.push({
       pid: p.team_id,
+      season: Number(g.cfb_season),
       week: Number(g.week),
       laidPoints: (pickedHome === favIsHome) ? 1 : 0,
       spread: Math.abs(line),

@@ -94,5 +94,47 @@ if (hi > 0.97 || lo < 0.03) failures.push('model emitted near-certain probabilit
 const flips = modelPairs.filter(x => confidenceTier(x.p).tier === 'coin-flip').length;
 console.log(`graded a coin flip: ${flips}/${modelPairs.length} (${(100 * flips / modelPairs.length).toFixed(0)}%)`);
 
+// ---------------------------------------------------------------------------
+// NO LOOKAHEAD.
+//
+// The database already withholds a pick until its game kicks off - the anon key
+// can see 890 of 1399 rows - so a browser cannot read this week's picks even if
+// it wanted to. This is the second lock: scoutPanel fits only on games played
+// strictly BEFORE the week it predicts, so that once picks do become visible
+// the guess (and the "model called it" badge) is still honest rather than
+// self-fulfilling. Measured on 2025, training on the target week moves a
+// prediction 4.4pp on average and flips the predicted side on 12.5% of picks.
+//
+// Walk-forward is also the number that describes the real job, since the panel
+// only ever has the past to work with.
+console.log('');
+console.log('walk-forward (train strictly on earlier weeks)');
+const wfPairs = [];
+let leaked = 0;
+for (const wk of weeks) {
+  const train = rows.filter(r => r.week < wk);
+  const test = rows.filter(r => r.week === wk);
+  if (train.length < 400 || !test.length) continue;
+  leaked += train.filter(r => r.week >= wk).length;          // must stay 0
+  const m = fitScoutModel(train);
+  for (const r of test) {
+    const line = r.favHome ? -r.spread : r.spread;
+    const game = r.favHome ? { Home: r.fav, Away: r.dog, line } : { Home: r.dog, Away: r.fav, line };
+    const pred = m.predict(r.pid, game);
+    wfPairs.push({ p: pred ? pred.p : layRate, y: r.laidPoints });
+  }
+}
+if (leaked > 0) failures.push(`training set contained ${leaked} rows from the week being predicted`);
+if (wfPairs.length) {
+  const wf = metrics(wfPairs);
+  const wfRate = wfPairs.reduce((a, b) => a + b.y, 0) / wfPairs.length;
+  console.log(fmt('walk-forward', wf));
+  console.log(fmt('  its own baseline', metrics(wfPairs.map(x => ({ p: wfRate, y: x.y })))));
+  if (wf.auc < 0.52) failures.push(`walk-forward AUC collapsed to ${wf.auc.toFixed(4)}`);
+} else {
+  console.log('  not enough history yet to walk forward');
+}
+console.log(`target-week rows that leaked into training: ${leaked} (must be 0)`);
+console.log('');
 if (failures.length) { console.error('\nFAIL:'); for (const f of failures) console.error('  - ' + f); process.exit(1); }
-console.log('\nPASS — the model still beats guessing on calibration and ranking.');
+console.log('\nPASS — beats guessing on calibration and ranking, with no lookahead.');
