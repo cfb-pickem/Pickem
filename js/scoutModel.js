@@ -13,7 +13,7 @@
 //
 //                                       accuracy   log loss   AUC
 //   always guess "lays the points"       60.2%      0.6723    0.489
-//   this model                           57.6%      0.6661    0.568
+//   this model                           59.2%      0.6590    0.599
 //
 // That table is the whole story. The model RANKS and CALIBRATES better than
 // the naive rule (log loss down, AUC up from coin-flip), but it is WORSE at
@@ -28,12 +28,19 @@
 //   * A player's lay-rate has split-half reliability r=0.117 (Spearman-Brown
 //     0.209). At ~60 picks a season, personal ATS tendency is mostly noise.
 //     This is the single biggest limit, and it fixes itself with more seasons.
-//   * Team "brand" bias IS real and repeatable: split-half r=0.284. The pool
-//     over-backs some names and fades others regardless of the number, and
-//     that carries nearly all of the model's edge.
+//   * CONFERENCE is the strongest learned feature after the spread, and it
+//     generalises to teams the model has never scored (the map is static), so
+//     it still works in week 1. Adding it moved AUC 0.574 -> 0.599.
+//   * Team "brand" bias is real and repeatable: split-half r=0.284. The pool
+//     over-backs some names and fades others regardless of the number.
 //   * Spread size barely matters (lay-rate is 59-62% across every band), but
 //     whether the favourite is home or on the road matters a lot: the pool
 //     lays road favourites 69.6% of the time and home favourites 55.0%.
+//   * AP RANKING adds nothing once the spread is controlled for. Lay-rate is
+//     flat whether the favourite is ranked (61.4%), the underdog is (60.0%),
+//     both are (61.6%) or neither is (62.3%), and no individual chases the
+//     poll significantly (largest effect 1.5 SE across 13 players). The line
+//     already prices the rankings in.
 //   * Tested and discarded, all noise: tilt after a bad week (-4.9pp +/-3.9),
 //     slate balancing (variance matched binomial), and per-player team
 //     affinity (59 teams, 29 of them appear exactly once).
@@ -41,13 +48,17 @@
 // Re-run tools/scoutModel.test.mjs after touching any of this; it re-fits the
 // season and fails if the cross-validated numbers drift.
 
+import { conferenceOf } from './conferences.js';
+
 const BAND = s => (s < 3 ? 0 : s < 7 ? 1 : s < 12 ? 2 : 3);
 const sigmoid = z => 1 / (1 + Math.exp(-z));
 
 // Ridge penalties, chosen by the sweep in the test harness. They are strong on
 // purpose: at this sample size the unpenalised fit is worse than guessing.
-const L_BRAND  = 20;
-const L_PLAYER = 20;
+const L_BRAND       = 20;
+const L_PLAYER      = 20;
+const L_CONFERENCE  = 1;    // league-wide conference pull — the strongest addition
+const L_PLAYER_CONF = 25;   // one player's own conference lean; weaker, shrunk harder
 
 /**
  * Normalise a pick/team name the way the rest of the site does, so
@@ -90,24 +101,40 @@ export function buildTrainingRows(games, picks) {
 
 // Design row. Kept sparse-friendly: only a handful of entries are ever
 // non-zero, which is what keeps the Newton step cheap enough to run on open.
-function designRow(r, teamIx, playerIx) {
-  const T = teamIx.size, P = playerIx.size;
-  const v = new Float64Array(3 + T + P + P);
+function designRow(r, teamIx, playerIx, confIx, opts) {
+  const T = teamIx.size, P = playerIx.size, C = confIx.size;
+  const v = new Float64Array(3 + T + P + P + C + P * C);
   v[0] = 1;
   v[1] = r.favHome ? 0.5 : -0.5;                 // favourite home or on the road
   v[2] = (Math.min(r.spread, 21) - 7) / 7;       // centred spread size
-  v[3 + teamIx.get(r.fav)] += 1;                 // brand: backed
-  v[3 + teamIx.get(r.dog)] -= 1;                 // brand: faded
+  if (!(opts && opts.skipBrand)) {
+    v[3 + teamIx.get(r.fav)] += 1;               // brand: backed
+    v[3 + teamIx.get(r.dog)] -= 1;               // brand: faded
+  }
   v[3 + T + playerIx.get(r.pid)] = 1;            // player's own lay lean
   v[3 + T + P + playerIx.get(r.pid)] = r.favHome ? 0.5 : -0.5; // their home/road lean
+
+  // Conference. Same +1/-1 shape as brand: which conference is being backed,
+  // which is being faded. This is the single biggest feature after the spread.
+  const base = 3 + T + P + P;
+  const cf = confIx.get(conferenceOf(r.fav));
+  const cd = confIx.get(conferenceOf(r.dog));
+  if (cf != null) v[base + cf] += 1;
+  if (cd != null) v[base + cd] -= 1;
+  const off = base + C + playerIx.get(r.pid) * C;
+  if (cf != null) v[off + cf] += 1;
+  if (cd != null) v[off + cd] -= 1;
   return v;
 }
 
-function penalties(T, P) {
-  const pen = new Float64Array(3 + T + P + P);
+function penalties(T, P, C) {
+  const pen = new Float64Array(3 + T + P + P + C + P * C);
   pen[0] = 0; pen[1] = 0.01; pen[2] = 0.01;
   for (let i = 0; i < T; i++) pen[3 + i] = L_BRAND;
   for (let i = 0; i < P + P; i++) pen[3 + T + i] = L_PLAYER;
+  const base = 3 + T + P + P;
+  for (let i = 0; i < C; i++) pen[base + i] = L_CONFERENCE;
+  for (let i = 0; i < P * C; i++) pen[base + C + i] = L_PLAYER_CONF;
   return pen;
 }
 
@@ -164,13 +191,15 @@ export function fitScoutModel(rows) {
   if (!rows.length) return null;
   const teamNames  = [...new Set(rows.flatMap(r => [r.fav, r.dog]))].sort();
   const playerIds  = [...new Set(rows.map(r => r.pid))].sort((a, b) => a - b);
+  const confNames  = [...new Set(rows.flatMap(r => [conferenceOf(r.fav), conferenceOf(r.dog)]).filter(Boolean))].sort();
   const teamIx     = new Map(teamNames.map((t, i) => [t, i]));
   const playerIx   = new Map(playerIds.map((p, i) => [p, i]));
-  const T = teamIx.size, P = playerIx.size;
+  const confIx     = new Map(confNames.map((c, i) => [c, i]));
+  const T = teamIx.size, P = playerIx.size, C = confIx.size;
 
-  const X = rows.map(r => designRow(r, teamIx, playerIx));
+  const X = rows.map(r => designRow(r, teamIx, playerIx, confIx));
   const y = rows.map(r => r.laidPoints);
-  const w = fitRidge(X, y, penalties(T, P));
+  const w = fitRidge(X, y, penalties(T, P, C));
 
   const leagueLayRate = y.reduce((a, b) => a + b, 0) / y.length;
   const exposure = {};
@@ -178,7 +207,7 @@ export function fitScoutModel(rows) {
 
   return {
     leagueLayRate,
-    teamIx, playerIx, weights: w,
+    teamIx, playerIx, confIx, weights: w,
     /** log-odds nudge for backing this team, and how much data stands behind it */
     brand(team) {
       const i = teamIx.get(team);
@@ -188,6 +217,17 @@ export function fitScoutModel(rows) {
     playerLean(pid) {
       const i = playerIx.get(pid);
       return i == null ? 0 : w[3 + T + i];
+    },
+    /** league-wide pull toward or away from a conference */
+    conferencePull(conference) {
+      const i = confIx.get(conference);
+      return i == null ? 0 : w[3 + T + P + P + i];
+    },
+    /** one player's own lean toward or away from a conference */
+    playerConferencePull(pid, conference) {
+      const ci = confIx.get(conference), pi = playerIx.get(pid);
+      if (ci == null || pi == null) return 0;
+      return w[3 + T + P + P + C + pi * C + ci];
     },
     /**
      * P(player lays the points) for one upcoming game.
@@ -204,14 +244,24 @@ export function fitScoutModel(rows) {
         fav: favHome ? game.Home : game.Away,
         dog: favHome ? game.Away : game.Home
       };
-      // A team we have never seen contributes nothing rather than blowing up.
-      if (!teamIx.has(r.fav) || !teamIx.has(r.dog) || !playerIx.has(pid)) {
+      // A player we have never seen has no profile at all — nothing to say.
+      if (!playerIx.has(pid)) {
         return { p: this.leagueLayRate, fav: r.fav, dog: r.dog, spread: r.spread, unseen: true };
       }
-      const v = designRow(r, teamIx, playerIx);
+      // A team we have never seen is NOT a dead end. Its brand coefficient is
+      // simply unknown, but its CONFERENCE is known from the static map, and
+      // the spread, home/road and player terms all still apply. Week 1 of a new
+      // season is full of teams the model has never scored, so degrading
+      // gracefully here is the difference between a usable feature and a blank
+      // one. `newTeams` tells the UI to soften its language.
+      const newTeams = [r.fav, r.dog].filter(t => !teamIx.has(t));
+      const v = designRow(r, teamIx, playerIx, confIx, { skipBrand: newTeams.length > 0 });
       let s = 0;
       for (let j = 0; j < v.length; j++) if (v[j]) s += w[j] * v[j];
-      return { p: sigmoid(s), fav: r.fav, dog: r.dog, spread: r.spread, favHome, unseen: false };
+      return {
+        p: sigmoid(s), fav: r.fav, dog: r.dog, spread: r.spread, favHome,
+        unseen: false, newTeams
+      };
     }
   };
 }
@@ -222,11 +272,26 @@ export function fitScoutModel(rows) {
  * nothing may ever read as certain.
  */
 export function confidenceTier(p) {
-  const edge = Math.abs(p - 0.5);
-  if (edge < 0.05) return { tier: 'coin-flip', label: 'Coin flip' };
-  if (edge < 0.12) return { tier: 'slight',    label: 'Slight lean' };
-  if (edge < 0.20) return { tier: 'clear',     label: 'Clear lean' };
-  return { tier: 'strong', label: 'Strong lean' };
+  // These thresholds are MEASURED, not chosen for feel. Binning the
+  // cross-validated predictions against what actually happened:
+  //
+  //   predicted   actual     verdict
+  //     36%        50%       wrong direction  <- do not show
+  //     47%        53%       wrong direction  <- do not show
+  //     57%        51%       no signal        <- do not show
+  //     62%        63%       tracks reality
+  //     67%        66%       tracks reality
+  //     74%        73%       tracks reality
+  //     87%        86%       tracks reality
+  //
+  // The model can spot a player who is likely to LAY the points. It cannot
+  // spot one who is likely to TAKE them — below ~60% the predictions do not
+  // track reality at all. So everything under 0.60 is a coin flip, however
+  // far under it sits, and the band is deliberately asymmetric.
+  if (p >= 0.75) return { tier: 'strong', label: 'Strong lean' };
+  if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean' };
+  if (p >= 0.60) return { tier: 'slight', label: 'Slight lean' };
+  return { tier: 'coin-flip', label: 'No read' };
 }
 
 /**
@@ -254,6 +319,30 @@ export function explain(model, pid, prediction) {
       detail: `across ${dogBrand.n} exposures`
     });
   }
+  // Conference pull — the strongest single addition after the spread itself.
+  const favConf = conferenceOf(prediction.fav);
+  const dogConf = conferenceOf(prediction.dog);
+  if (favConf && favConf !== dogConf) {
+    const pull = model.conferencePull(favConf) + model.playerConferencePull(pid, favConf);
+    if (Math.abs(pull) > 0.06) {
+      out.push({
+        kind: pull > 0 ? 'up' : 'down',
+        text: `${pull > 0 ? 'Backs' : 'Fades'} the ${favConf}`,
+        detail: `${prediction.fav}'s conference`
+      });
+    }
+  }
+  if (dogConf && dogConf !== favConf) {
+    const pull = model.conferencePull(dogConf) + model.playerConferencePull(pid, dogConf);
+    if (Math.abs(pull) > 0.06) {
+      out.push({
+        kind: pull > 0 ? 'down' : 'up',
+        text: `${pull > 0 ? 'Backs' : 'Fades'} the ${dogConf}`,
+        detail: `${prediction.dog}'s conference`
+      });
+    }
+  }
+
   out.push(prediction.favHome
     ? { kind: 'down', text: 'Favourite is at home', detail: 'the pool lays home favourites just 55%' }
     : { kind: 'up',   text: 'Favourite is on the road', detail: 'the pool lays road favourites 70%' });
