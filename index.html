@@ -468,6 +468,10 @@
     // Playoff view: wins for games week > 15
     let winsByTeamPlayoff = {};
     let isPlayoffView = false;
+    // Tiebreakers are a separate board that rides the same week picker. They are
+    // NEVER folded into points, records or stats - see loadSeasonData(), which
+    // keeps them in their own cache field so they cannot leak into the season.
+    let isTiebreakerView = false;
 
     let lastTeams = [];
     let lastPickMap = {};
@@ -482,6 +486,11 @@
     // the guard in renderTable().
     let isSignedIn = false;
     let hasPlayoffOption = false;
+    // Regular-season and playoff tiebreakers are separate competitions with
+    // separate tallies - the split is week < 16 vs week >= 16, matching what the
+    // standalone tiebreakers page did.
+    let hasRegTiebreakers = false;
+    let hasPlayoffTiebreakers = false;
 
     let showPicks = true;
 
@@ -764,12 +773,20 @@
         if (val === 'playoff') {
           currentWeek = 'playoff';
           isPlayoffView = true;
+          isTiebreakerView = false;
           localStorage.removeItem(STORAGE_KEYS.lastWeek);
           await computePlayoffWins();
           await loadPlayoffWeek();
+        } else if (val === 'tiebreakers' || val === 'playoff-tiebreakers') {
+          currentWeek = val;
+          isPlayoffView = false;
+          isTiebreakerView = true;
+          localStorage.removeItem(STORAGE_KEYS.lastWeek);
+          await loadTiebreakerWeek(val === 'playoff-tiebreakers' ? 'playoff' : 'regular');
         } else {
           currentWeek = Number(val);
           isPlayoffView = false;
+          isTiebreakerView = false;
           setCached(STORAGE_KEYS.lastWeek, currentWeek);
           await computeSeasonWinsThroughWeek(currentWeek);
           await loadWeek(currentWeek);
@@ -785,7 +802,7 @@
     // then its picks. Each costs ~130ms of network for ~0.2ms of database work,
     // and every one of them is a slice of the same two sets. So both are fetched
     // once per season and sliced locally: five round trips become two.
-    let seasonCache = { season: null, games: null, picks: null };
+    let seasonCache = { season: null, games: null, picks: null, tbGames: null, tbPicks: null };
 
     async function loadSeasonData(season){
       if (seasonCache.season === season && seasonCache.games) return seasonCache;
@@ -806,7 +823,25 @@
         picks = p || [];
       }
 
-      seasonCache = { season, games: games || [], picks };
+      // Tiebreaker games are picked=false, so the query above never sees them.
+      // They are fetched and cached SEPARATELY and deliberately: dropping them
+      // into cache.games would put them in the week picker as ordinary weeks and
+      // walk them straight into the season points.
+      const { data: tbGames } = await supabase
+        .from('all_games')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker')
+        .eq('cfb_season', season)
+        .eq('tiebreaker', true);
+
+      let tbPicks = [];
+      const tbIds = (tbGames || []).map(g => g.GameId);
+      if (tbIds.length) {
+        const { data: tp } = await supabase
+          .from('picks').select('team_id, game_id, pick').in('game_id', tbIds);
+        tbPicks = tp || [];
+      }
+
+      seasonCache = { season, games: games || [], picks, tbGames: tbGames || [], tbPicks };
       return seasonCache;
     }
 
@@ -854,6 +889,8 @@
         weeks = [];
         weekSelect.innerHTML = '';
         hasPlayoffOption = false;
+        hasRegTiebreakers = false;
+        hasPlayoffTiebreakers = false;
         // An empty dropdown just reads as broken - hide it until there are weeks.
         setWeekPickerVisible(false);
         return null;
@@ -865,12 +902,22 @@
       const regularWeeks = uniqueWeeks.filter(w => w <= 15);
       weeks = regularWeeks;
 
+      const tbAll = cache.tbGames || [];
+      hasRegTiebreakers     = tbAll.some(g => g.week == null || Number(g.week) < 16);
+      hasPlayoffTiebreakers = tbAll.some(g => g.week != null && Number(g.week) >= 16);
+
       let html = '';
       if (regularWeeks.length){
         html += regularWeeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
       }
+      if (hasRegTiebreakers){
+        html += `<option value="tiebreakers">Tiebreakers</option>`;
+      }
       if (hasPlayoffOption){
         html += `<option value="playoff">Playoff</option>`;
+      }
+      if (hasPlayoffTiebreakers){
+        html += `<option value="playoff-tiebreakers">Playoff Tiebreakers</option>`;
       }
 
       weekSelect.innerHTML = html;
@@ -1217,6 +1264,104 @@
         : `Season ${currentSeason} • Playoff`);
     }
 
+
+    // Tiebreakers ride the same board but are scored on their own. A tiebreaker
+    // is only ever consulted when two players finish level, so counting one
+    // toward the season would defeat the point of having them. Everything here
+    // reads from seasonCache.tbGames / tbPicks, which no other view touches.
+    async function loadTiebreakerWeek(kind){
+      const isPlayoffTb = kind === 'playoff';
+      const label = isPlayoffTb ? 'Playoff Tiebreakers' : 'Tiebreakers';
+      const mySeq = loadSeq;
+      status(`Loading S${currentSeason} \u2022 ${label}\u2026`);
+      isPlayoffView = false;
+      isTiebreakerView = true;
+      stopLiveTicker();
+      headerStatusEls.clear();
+
+      const cache = await loadSeasonData(currentSeason);
+      if(!cache) return;
+      if(mySeq !== loadSeq) return;
+
+      // week >= 16 is the playoff tiebreaker set; anything earlier (or with no
+      // week at all) belongs to the regular season. The two are scored apart,
+      // so a player's playoff tiebreaks never help their regular-season tally.
+      const games = (cache.tbGames || [])
+        .filter(g => isPlayoffTb
+          ? (g.week != null && Number(g.week) >= 16)
+          : (g.week == null || Number(g.week) < 16))
+        .slice()
+        .sort((a, b) => {
+          const ta = kickoffMs(a) ?? Infinity;
+          const tb = kickoffMs(b) ?? Infinity;
+          return ta - tb;
+        });
+      lastGames = games;
+
+      weekStartTs = null;
+      gameStartTs = {};
+      for (const g of games) {
+        const ts = kickoffMs(g);
+        if (Number.isFinite(ts)) {
+          gameStartTs[g.GameId] = ts;
+          weekStartTs = (weekStartTs==null) ? ts : Math.min(weekStartTs, ts);
+        }
+      }
+      // Per-game reveal, as the playoff board does: a tiebreaker can be days
+      // away from its neighbours, so one shared lock would hide finished ones.
+      showPicks = true;
+
+      winnerMap = {}; lineMap = {};
+      gameIds = games.map(g=>g.GameId);
+      games.forEach(g=>{
+        winnerMap[g.GameId] = g.winner ?? null;
+        lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
+      });
+
+      let teamRows = await (window.__cfbPreload?.teams ?? Promise.resolve(null));
+      if(!teamRows){
+        const res = await supabase
+          .from('teams')
+          .select('team_id, team_name, active')
+          .order('team_name', { ascending: true });
+        if(res.error) return status(res.error.message, true);
+        teamRows = res.data;
+      }
+      if(mySeq !== loadSeq) return;
+
+      const want = new Set(gameIds.map(Number));
+      const pickRows = (cache.tbPicks || []).filter(p => want.has(Number(p.game_id)));
+      const pickMap = buildPickMap(pickRows);
+
+      // Tiebreaker points: correct tiebreaker calls, and nothing else. Kept in a
+      // local so it can never be mistaken for winsByTeamRegular.
+      const tbPoints = Object.create(null);
+      for (const p of pickRows){
+        const w = winnerMap[p.game_id];
+        if (w == null) continue;
+        if (sameTeam(p.pick, w)) tbPoints[p.team_id] = (tbPoints[p.team_id] || 0) + 1;
+      }
+
+      const teamsSorted = [...teamsForSeason(teamRows)].sort((a,b)=>{
+        const pa = getPoints(tbPoints, a.team_id);
+        const pb = getPoints(tbPoints, b.team_id);
+        if(pb !== pa) return pb - pa;
+        return a.team_name.localeCompare(b.team_name);
+      });
+
+      lastTeams = teamsSorted;
+      lastPickMap = pickMap;
+
+      const gameNameMap = buildGameNameMap(games);
+      renderHeader(gameNameMap, games);
+      renderTable(teamsSorted, pickMap, winnerMap, true, tbPoints, true);
+      showTable();
+
+      startLiveTicker();
+      const decided = games.filter(g => g.winner != null).length;
+      status(`Season ${currentSeason} \u2022 ${label} \u2014 ${decided} of ${games.length} settled. These do not count toward season points.`);
+    }
+
     function getLogoForPickExact(pick){
       if(!pick) return null;
       return logoByTeam[pick] || null;
@@ -1249,7 +1394,8 @@
 
       const thPts = document.createElement('th');
       thPts.className = 'pl-2 pr-3 py-3 text-center font-semibold text-white bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
-      thPts.textContent = isPhone ? 'PTS' : 'Points';
+      thPts.textContent = isTiebreakerView ? (isPhone ? 'TB' : 'Tiebreaks')
+                                           : (isPhone ? 'PTS' : 'Points');
       theadRow.appendChild(thPts);
 
       gameIds.forEach(id=>{
@@ -1390,7 +1536,9 @@
         const tdTeam = document.createElement('td');
         tdTeam.className = 'pl-4 pr-2 py-2 font-semibold text-[var(--cfp-ivory)] sticky-col-1';
         const isSelf = currentTeamId != null && team.team_id === currentTeamId;
-        if (isSignedIn && !isSelf) {
+        // Not on the tiebreaker board: the model is trained on the regular slate
+        // and has nothing to say about games it has never scored.
+        if (isSignedIn && !isSelf && !isTiebreakerView) {
           const scoutBtn = document.createElement('button');
           scoutBtn.type = 'button';
           scoutBtn.className = 'scout-link';
@@ -1747,7 +1895,10 @@
 
         // Fold the fresh row back into the season cache, otherwise the points
         // recompute below would read stale winners.
-        const cached = (seasonCache.games || []).find(g => Number(g.GameId) === Number(r.GameId));
+        // Tiebreaker games live in their own cache field, so look there too -
+        // otherwise live scores never land on the tiebreaker board.
+        const cached = (seasonCache.games || []).find(g => Number(g.GameId) === Number(r.GameId))
+                    || (seasonCache.tbGames || []).find(g => Number(g.GameId) === Number(r.GameId));
         if (cached) Object.assign(cached, r);
 
         const prevWinner = winnerMap[r.GameId] ?? null;
