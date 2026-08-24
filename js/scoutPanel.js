@@ -114,7 +114,7 @@ function tierClass(tier) {
     : 'is-flip';
 }
 
-function gameCard({ game, prediction, tier, reasons, actualPick, revealed }) {
+function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool }) {
   const away = escapeHtml(game.Away || '');
   const home = escapeHtml(game.Home || '');
   const line = Number(game.line);
@@ -182,6 +182,7 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed }) {
         </div>
       </div>
       ${flip ? '' : `<div class="scout-bar"><span style="width:${pct}%"></span></div>`}
+      ${pool ? `<div class="scout-pool">${escapeHtml(pool)}</div>` : ''}
       ${why ? `<ul class="scout-whys">${why}</ul>` : ''}
     </div>`;
 }
@@ -264,6 +265,37 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     : null;
   const model = targetWeek == null ? null : modelFor(data, Number(season), targetWeek);
 
+  // Where this player sits against the rest of the pool on the same game.
+  // Worth spelling out, because most of any single number here is the POOL:
+  // after one season a player's own tendency is worth under ten points of
+  // probability and never flips the side, so every player gets the same call
+  // with slightly different conviction. Printing "62%" alone would read as a
+  // personal prediction it simply is not.
+  const everyone = model ? [...model.playerIx.keys()] : [];
+  const ordinal = n => {
+    const r100 = n % 100, r10 = n % 10;
+    if (r100 >= 11 && r100 <= 13) return `${n}th`;
+    return `${n}${r10 === 1 ? 'st' : r10 === 2 ? 'nd' : r10 === 3 ? 'rd' : 'th'}`;
+  };
+  const poolLine = g => {
+    if (!model || everyone.length < 3) return null;
+    const mine = model.predict(teamId, g);
+    if (!mine || mine.unseen) return null;
+    const all = everyone
+      .map(pid => { const q = model.predict(pid, g); return q && !q.unseen ? q.p : null; })
+      .filter(v => v != null);
+    if (all.length < 3) return null;
+    const mean = all.reduce((a, b) => a + b, 0) / all.length;
+    const rank = all.filter(v => v > mine.p).length + 1;
+    const delta = Math.round((mine.p - mean) * 100);
+    const side = mean >= 0.5 ? 'lay' : 'take';
+    const nudge = delta === 0
+      ? 'right on the field'
+      : `${Math.abs(delta)}pt${Math.abs(delta) === 1 ? '' : 's'} ${delta > 0 ? 'more' : 'less'} likely than the field`;
+    return `Everyone leans this way \u2014 the pool averages ${Math.round(mean * 100)}% to ${side}. `
+         + `${teamName} is ${nudge}, ${ordinal(rank)} of ${all.length}.`;
+  };
+
   const cards = withLine.map(g => {
     const prediction = model ? model.predict(teamId, g) : null;
     const usable = prediction && !prediction.unseen;
@@ -274,7 +306,10 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
       tier,
       reasons: usable ? explain(model, teamId, prediction) : [],
       actualPick: pickMap && pickMap[teamId] ? pickMap[teamId][g.GameId] : null,
-      revealed
+      revealed,
+      // Not on a No read card: below 60% the direction does not track reality,
+      // so "everyone leans this way" would contradict the verdict above it.
+      pool: usable && !revealed && tier && tier.tier !== 'coin-flip' ? poolLine(g) : null
     });
   }).join('');
 
@@ -292,8 +327,10 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     </div>
     ${cards || '<p class="scout-note">No games with a posted line this week.</p>'}
     <p class="scout-note">${model
-      ? `Fitted only on games played before week ${targetWeek} &mdash; it has never seen this week's picks. A lean
-         only shows where the model has been measured to be right; below 60% it stops tracking reality, so it
-         says <strong>No read</strong> rather than guess.`
+      ? `Most of this is the pool, not the person. After one season a player's own tendency is worth under ten
+         points of probability and never flips the side, so read these as <strong>where ${escapeHtml(teamName)} sits
+         against the field</strong> rather than as a personal call. It separates people further every season played.
+         <br><br>Fitted only on games played before week ${targetWeek}, so it has never seen this week's picks.
+         Below 60% it stops tracking reality and says <strong>No read</strong> rather than guess.`
       : 'Not enough finished games yet to read anyone reliably. This fills in as the season goes.'}</p>`;
 }

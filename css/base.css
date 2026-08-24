@@ -937,3 +937,11 @@ header.cfp-card {
   border-bottom: 1px dotted rgba(218,165,32,.45);
 }
 .scout-link:hover{ color: var(--led-amber); border-bottom-color: var(--led-amber); }
+
+/* Where this player sits against the rest of the pool on the same game. */
+.scout-pool{
+  padding: 8px 12px 0;
+  font-size: .7rem;
+  line-height: 1.45;
+  color: #9aa0a8;
+}
