@@ -951,3 +951,40 @@ header.cfp-card {
 .is-untested .scout-pick{ color: #c4a6f5; }
 .is-untested .scout-chip{ color: #c4a6f5; border-color: rgba(155,123,212,.55); }
 .is-untested .scout-bar > span{ background: #9b7bd4; }
+
+/* ============================================
+   FIELD READ — what the league will likely do,
+   shown on each card while you pick
+   ============================================ */
+
+.pick-field{
+  margin-top: .6rem;
+  padding-top: .55rem;
+  border-top: 1px solid rgba(231,231,231,.08);
+}
+.pick-field-top{
+  display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
+}
+.pick-field-lbl{
+  font-family: 'Oswald', sans-serif; font-size: .52rem; letter-spacing: .18em;
+  text-transform: uppercase; color: #6b7079;
+}
+.pick-field-val{
+  font-family: 'Teko','Oswald',sans-serif; font-weight: 700; font-size: 1.05rem;
+  line-height: 1; color: var(--cfp-gold-2); font-variant-numeric: tabular-nums;
+}
+.pick-field-bar{
+  display: block; height: 4px; margin-top: .35rem; background: rgba(255,255,255,.07);
+}
+.pick-field-bar > span{ display: block; height: 4px; background: var(--cfp-gold-2); }
+.pick-field-whys{
+  display: flex; flex-wrap: wrap; gap: .3rem .5rem; margin-top: .45rem;
+}
+.pick-field-why{
+  font-size: .66rem; line-height: 1.3; color: #9aa0a8;
+}
+.pick-field-why::before{ content: "+ "; color: var(--led-win); }
+.pick-field-why.is-down::before{ content: "\2212 "; color: #e08d93; }
+.pick-field-val.is-untested{ color: #c4a6f5; }
+.pick-field-bar.is-untested > span{ background: #9b7bd4; }
+.pick-field-caveat{ font-size: .62rem; line-height: 1.35; color: #6b7079; margin-top: .35rem; }

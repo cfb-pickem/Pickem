@@ -276,6 +276,7 @@
     import { supabase } from './js/supabaseClient.js';
     import { escapeHtml, getTeamColor } from './js/utils.js';
     import { ctToEpochMs, isWeekLocked, isGameLocked as gameLocked } from './js/kickoff.js';
+    import { loadTrainingData, modelFor, fieldRead } from './js/scoutData.js';
 
     // CSS.escape polyfill (older browsers)
     if (!window.CSS || typeof CSS.escape !== 'function') {
@@ -957,6 +958,66 @@
       const cards = games.map(g => gameCardHtml(g, { playoffMode: isPlayoffMode }));
 
       gamesEl.innerHTML = cards.join('');
+      paintFieldReads(games);
+    }
+
+    // ---- What is the rest of the league likely to do with this game? ---------
+    //
+    // The useful question while picking is not "who wins" - the spread already
+    // answers that - it is "how contrarian am I about to be". So each card gets
+    // the share of the field expected on a side, and the reasons behind it.
+    //
+    // Two things this is careful about. It is fitted only on weeks that finished
+    // BEFORE this one, so it is describing history rather than reflecting other
+    // people's hidden picks back at you. And it leaves YOU out of the average:
+    // this is your opponents, and seeing your own number is the one thing the
+    // scouting report deliberately withholds.
+    //
+    // Painted after the cards are already on screen and interactive, because
+    // fitting takes a moment and nobody should wait to make a pick.
+    let fieldReadsDone = false;
+    async function paintFieldReads(games){
+      const withLine = (games || []).filter(g => g.line != null && Math.abs(Number(g.line)) >= 0.5);
+      if (!withLine.length || currentSeason == null) return;
+
+      const week = Math.min(...withLine.map(g => Number(g.week)).filter(Number.isFinite));
+      if (!Number.isFinite(week)) return;
+
+      let data;
+      try { data = await loadTrainingData(); }
+      catch (err) { console.warn('field read unavailable:', err); return; }
+
+      const model = modelFor(data, Number(currentSeason), week);
+      if (!model) return;   // not enough finished games to say anything honest
+
+      for (const g of withLine) {
+        const card = document.querySelector(`[data-game-id="${g.game_id}"]`);
+        if (!card || card.querySelector('.pick-field')) continue;
+
+        const read = fieldRead(model, { Home: g.home, Away: g.away, line: Number(g.line) }, selectedTeamId);
+        if (!read) continue;
+
+        const why = (read.reasons || []).slice(0, 2)
+          .map(r => `<span class="pick-field-why ${r.kind === 'up' ? 'is-up' : 'is-down'}">${escapeHtml(r.text)}</span>`)
+          .join('');
+
+        const el = document.createElement('div');
+        el.className = 'pick-field';
+        el.innerHTML =
+          '<div class="pick-field-top">' +
+            '<span class="pick-field-lbl">The field</span>' +
+            '<span class="pick-field-val' + (read.tested ? '' : ' is-untested') + '">' +
+              read.pct + '% on ' + escapeHtml(read.side) + '</span>' +
+          '</div>' +
+          '<div class="pick-field-bar' + (read.tested ? '' : ' is-untested') + '">' +
+            '<span style="width:' + read.pct + '%"></span></div>' +
+          (why ? '<div class="pick-field-whys">' + why + '</div>' : '') +
+          (read.tested ? '' :
+            '<div class="pick-field-caveat">Rough guess &mdash; the model has barely been graded on ' +
+            'calling the underdog side.</div>');
+        card.appendChild(el);
+      }
+      fieldReadsDone = true;
     }
 
     function renderTiebreakerCards(games){
@@ -971,6 +1032,7 @@
       const cards = games.map(g => gameCardHtml(g, { playoffMode: isPlayoffMode }));
 
       tiebreakerEl.innerHTML = cards.join('');
+      paintFieldReads(games);
     }
 
     function addPickHighlighting(){

@@ -388,7 +388,7 @@ export function confidenceTier(p) {
  * itself: each one is a measured effect the user can sanity-check, and they
  * stay meaningful even when the probability sits near 50%.
  */
-export function explain(model, pid, prediction) {
+export function explain(model, pid, prediction, opts) {
   if (!model || !prediction || prediction.unseen) return [];
   const out = [];
 
@@ -436,7 +436,10 @@ export function explain(model, pid, prediction) {
     ? { kind: 'down', text: 'Favourite is at home', detail: 'the pool lays home favourites just 55%' }
     : { kind: 'up',   text: 'Favourite is on the road', detail: 'the pool lays road favourites 70%' });
 
-  const lean = model.playerLean(pid);
+  // The picks page asks for a FIELD read, where a single player's lean has no
+  // business appearing. Everything above it is about the game and applies either
+  // way.
+  const lean = (opts && opts.includePlayer === false) ? 0 : model.playerLean(pid);
   if (Math.abs(lean) > 0.08) {
     out.push({
       kind: lean > 0 ? 'up' : 'down',

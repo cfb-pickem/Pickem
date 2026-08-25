@@ -31,60 +31,11 @@
 
 import { supabase } from './supabaseClient.js';
 import { escapeHtml, sameTeam } from './utils.js';
-import { buildTrainingRows, fitScoutModel, confidenceTier, explain } from './scoutModel.js';
+import { confidenceTier, explain } from './scoutModel.js';
+import { loadTrainingData, modelFor } from './scoutData.js';
 
-// STRICTLY NO LOOKAHEAD. The model is only ever fitted on games that finished
-// BEFORE the week being predicted. Training on the target week would mean the
-// "guess" had already read the picks it claims to predict — and since picks are
-// hidden until kickoff, it would also be deriving output from data the board
-// deliberately conceals. Measured on 2025, including the target week shifts a
-// prediction by 4.4pp on average, flips the predicted side on 12.5% of picks
-// and changes the confidence tier on 25.8%. So it is filtered, not trusted.
-//
-// Raw history is fetched once per page load; a model is then fitted per target
-// week and memoised, because each week legitimately needs a different fit.
-let trainingPromise = null;
-const modelByWeek = new Map();
-const MIN_HISTORY_ROWS = 400;
-
-function loadTrainingData() {
-  if (trainingPromise) return trainingPromise;
-  trainingPromise = (async () => {
-    const [{ data: games, error: gErr }, { data: picks, error: pErr }] = await Promise.all([
-      supabase.from('all_games')
-        .select('GameId, Away, Home, line, winner, picked, week, cfb_season')
-        .eq('picked', true),
-      supabase.from('picks').select('team_id, game_id, pick')
-    ]);
-    if (gErr || pErr) throw (gErr || pErr);
-    const rows = buildTrainingRows(games || [], picks || []);
-    return { rows, games: games || [], picks: picks || [] };
-  })().catch(err => { trainingPromise = null; throw err; });
-  return trainingPromise;
-}
-
-/**
- * Fit on everything that happened strictly before (season, week).
- * Returns null when there is no prior history at all — the very first week of
- * the very first season has nothing to learn from, and saying so is better
- * than inventing a number.
- */
-function modelFor(data, season, week) {
-  const key = `${season}|${week}`;
-  if (modelByWeek.has(key)) return modelByWeek.get(key);
-  const past = data.rows.filter(r =>
-    r.season < season || (r.season === season && r.week < week)
-  );
-  // Walk-forward on 2025 shows the fit is only reliably better than guessing
-  // once a decent block of history exists: under ~150 rows the probabilities
-  // are wildly overconfident (log loss 0.78 against a 0.67 baseline), and it is
-  // around a full prior season that it clearly wins. Below the floor we say so
-  // rather than dress up noise.
-  const model = past.length >= MIN_HISTORY_ROWS ? fitScoutModel(past) : null;
-  modelByWeek.set(key, model);
-  return model;
-}
-
+// The fit itself lives in js/scoutData.js, shared with the picks page and
+// scoped so it can never see the week it is predicting.
 /** Their season-to-date ATS record, straight from the training rows. */
 function atsRecord(games, picks, teamId, season) {
   const byId = new Map(games.map(g => [g.GameId, g]));
