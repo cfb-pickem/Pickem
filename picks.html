@@ -793,7 +793,7 @@
       // Normal picked games (exclude tiebreakers)
       const { data: regularData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin')
         .eq('picked', true)
         .eq('cfb_season', currentSeason)
         .eq('week', week)
@@ -804,7 +804,7 @@
       // Tiebreaker games for this week (use tiebreaker flag instead of picked)
       const { data: tbData, error: tbErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin')
         .eq('tiebreaker', true)
         .eq('cfb_season', currentSeason)
         .eq('week', week);
@@ -819,6 +819,7 @@
         away: g.Away,
         home: g.Home,
         line: (g.line == null ? null : Number(g.line)),
+        fpiMargin: (g.fpi_margin == null ? null : Number(g.fpi_margin)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
         network: g['Network'] || null,
@@ -836,6 +837,7 @@
         away: g.Away,
         home: g.Home,
         line: (g.line == null ? null : Number(g.line)),
+        fpiMargin: (g.fpi_margin == null ? null : Number(g.fpi_margin)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
         network: g['Network'] || null,
@@ -865,7 +867,7 @@
       // Playoff-eligible normal games (picked=true, no winner yet, not tiebreakers)
       const { data: regData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin')
         .eq('picked', true)
         .eq('cfb_season', currentSeason)
         .is('winner', null)
@@ -879,7 +881,7 @@
       // Playoff tiebreaker games (tiebreaker=true, no winner yet)
       const { data: tbData, error: tbErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin')
         .eq('tiebreaker', true)
         .eq('cfb_season', currentSeason)
         .is('winner', null);
@@ -894,6 +896,7 @@
         away: g.Away,
         home: g.Home,
         line: (g.line == null ? null : Number(g.line)),
+        fpiMargin: (g.fpi_margin == null ? null : Number(g.fpi_margin)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
         network: g['Network'] || null,
@@ -911,6 +914,7 @@
         away: g.Away,
         home: g.Home,
         line: (g.line == null ? null : Number(g.line)),
+        fpiMargin: (g.fpi_margin == null ? null : Number(g.fpi_margin)),
         espn_url: g.espn_url || null,
         start: g['Start (CT)'],
         network: g['Network'] || null,
@@ -975,6 +979,35 @@
     //
     // Painted after the cards are already on screen and interactive, because
     // fitting takes a moment and nobody should wait to make a pick.
+
+    // ESPN's own model, next to the market. Worth showing because it is the one
+    // number on the card that is NOT derived from this league: FPI is a public
+    // projection of the game itself.
+    //
+    // It is emphatically not a tipster - taking whichever side FPI likes went
+    // 48.7% against the spread on last season's slate, worse than just backing
+    // the favourite. What it is useful for is spotting a game the market and a
+    // respectable model flatly disagree about, which is exactly where a pick'em
+    // is decided. So it reports the gap and lets you make of it what you like.
+    function fpiLine(g){
+      if (g.fpiMargin == null || g.line == null) return '';
+      const marketHomeMargin = -Number(g.line);
+      const gap = Number(g.fpiMargin) - marketHomeMargin;   // >0 => FPI likes home more than the market
+      if (!Number.isFinite(gap)) return '';
+      const likes = gap > 0 ? g.home : g.away;
+      const by = Math.abs(gap);
+      const strong = by >= 4;
+      const homeBy = Number(g.fpiMargin);
+      const fav = homeBy >= 0 ? g.home : g.away;
+      return '<div class="pick-fpi' + (strong ? ' is-strong' : '') + '">' +
+        '<span class="pick-fpi-lbl">ESPN FPI</span> ' +
+        escapeHtml(fav) + ' by ' + Math.abs(homeBy).toFixed(1) +
+        (by < 1
+          ? ' — agrees with the line'
+          : ' — leans ' + escapeHtml(likes) + ' by ' + by.toFixed(1) + ' vs the line') +
+        '</div>';
+    }
+
     let fieldReadsDone = false;
     async function paintFieldReads(games){
       const withLine = (games || []).filter(g => g.line != null && Math.abs(Number(g.line)) >= 0.5);
@@ -1011,6 +1044,7 @@
           '</div>' +
           '<div class="pick-field-bar' + (read.tested ? '' : ' is-untested') + '">' +
             '<span style="width:' + read.pct + '%"></span></div>' +
+          fpiLine(g) +
           (why ? '<div class="pick-field-whys">' + why + '</div>' : '') +
           (read.tested ? '' :
             '<div class="pick-field-caveat">Rough guess &mdash; the model has barely been graded on ' +

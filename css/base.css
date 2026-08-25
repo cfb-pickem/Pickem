@@ -988,3 +988,17 @@ header.cfp-card {
 .pick-field-val.is-untested{ color: #c4a6f5; }
 .pick-field-bar.is-untested > span{ background: #9b7bd4; }
 .pick-field-caveat{ font-size: .62rem; line-height: 1.35; color: #6b7079; margin-top: .35rem; }
+
+/* ESPN FPI next to the market line, on each pick card. */
+.pick-fpi{
+  margin-top: .4rem;
+  font-size: .66rem;
+  line-height: 1.35;
+  color: #9aa0a8;
+}
+.pick-fpi-lbl{
+  font-family: 'Oswald', sans-serif; font-size: .52rem; letter-spacing: .14em;
+  text-transform: uppercase; color: #6b7079;
+}
+.pick-fpi.is-strong{ color: var(--cfp-ivory); }
+.pick-fpi.is-strong .pick-fpi-lbl{ color: var(--led-amber); }
