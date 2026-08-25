@@ -105,6 +105,7 @@ const L_PLAYER_CONF = 10;   // their own conference lean, shrunk harder
 // conference contributes nothing rather than a confident guess.
 const MIN_CONFERENCE_ROWS = 50;
 const L_FPI         = 2;    // one coefficient over every row, lightly shrunk
+const L_MOVE        = 2;    // line movement, same shape as FPI and same shrinkage
 
 // HOW THESE PENALTIES WERE CHOSEN.
 //
@@ -162,6 +163,7 @@ export function buildTrainingRows(games, picks) {
     rows.push({
       pid: p.team_id,
       fpiEdge: fpiEdge(g, line, favIsHome),
+      lineMove: lineMove(g, line, favIsHome),
       season: Number(g.cfb_season),
       week: Number(g.week),
       laidPoints: (pickedHome === favIsHome) ? 1 : 0,
@@ -195,25 +197,53 @@ function fpiEdge(g, line, favIsHome) {
 const FPI_SCALE = 10;
 const fpiFeature = e => (e == null ? 0 : Math.max(-1, Math.min(1, e / FPI_SCALE)));
 
+/**
+ * How far the line has travelled since we first saw it, pointing at the
+ * FAVOURITE. Positive means the favourite has been getting more favoured.
+ *
+ * `line` is home-relative, so the home team's implied margin is -line and the
+ * move in home terms is line_open - line.
+ *
+ * This is deliberately shipped before it can do anything. Every game currently
+ * on record opened at its present number, so the feature is zero everywhere and
+ * ridge fits a coefficient of zero - it costs nothing and changes nothing.
+ * line_history and line_open are filling from now on, and the first week a line
+ * actually moves is the week this starts contributing. Nobody has to switch it
+ * on.
+ */
+function lineMove(g, line, favIsHome) {
+  const open = g.line_open;
+  if (open == null || open === '') return null;
+  const openNum = Number(open);
+  if (!Number.isFinite(openNum)) return null;
+  const moveHome = openNum - line;
+  return favIsHome ? moveHome : -moveHome;
+}
+
+// Three points is a big move on a college spread, so that is the scale.
+const MOVE_SCALE = 3;
+const moveFeature = m => (m == null ? 0 : Math.max(-1, Math.min(1, m / MOVE_SCALE)));
+
 // Design row. Kept sparse-friendly: only a handful of entries are ever
 // non-zero, which is what keeps the Newton step cheap enough to run on open.
 function designRow(r, teamIx, playerIx, confIx, opts) {
   const T = teamIx.size, P = playerIx.size, C = confIx.size;
-  const v = new Float64Array(4 + T + P + P + C + P * C);
+  const v = new Float64Array(5 + T + P + P + C + P * C);
   v[0] = 1;
   v[1] = r.favHome ? 0.5 : -0.5;                 // favourite home or on the road
   v[2] = (Math.min(r.spread, 21) - 7) / 7;       // centred spread size
   v[3] = fpiFeature(r.fpiEdge);                  // ESPN's model vs the market
+  v[4] = moveFeature(r.lineMove);                // which way the line has travelled
   if (!(opts && opts.skipBrand)) {
-    v[4 + teamIx.get(r.fav)] += 1;               // brand: backed
-    v[4 + teamIx.get(r.dog)] -= 1;               // brand: faded
+    v[5 + teamIx.get(r.fav)] += 1;               // brand: backed
+    v[5 + teamIx.get(r.dog)] -= 1;               // brand: faded
   }
-  v[4 + T + playerIx.get(r.pid)] = 1;            // player's own lay lean
-  v[4 + T + P + playerIx.get(r.pid)] = r.favHome ? 0.5 : -0.5; // their home/road lean
+  v[5 + T + playerIx.get(r.pid)] = 1;            // player's own lay lean
+  v[5 + T + P + playerIx.get(r.pid)] = r.favHome ? 0.5 : -0.5; // their home/road lean
 
   // Conference. Same +1/-1 shape as brand: which conference is being backed,
   // which is being faded. This is the single biggest feature after the spread.
-  const base = 4 + T + P + P;
+  const base = 5 + T + P + P;
   const cf = confIx.get(conferenceOf(r.fav));
   const cd = confIx.get(conferenceOf(r.dog));
   if (cf != null) v[base + cf] += 1;
@@ -225,11 +255,11 @@ function designRow(r, teamIx, playerIx, confIx, opts) {
 }
 
 function penalties(T, P, C) {
-  const pen = new Float64Array(4 + T + P + P + C + P * C);
-  pen[0] = 0; pen[1] = 0.01; pen[2] = 0.01; pen[3] = L_FPI;
-  for (let i = 0; i < T; i++) pen[4 + i] = L_BRAND;
-  for (let i = 0; i < P + P; i++) pen[4 + T + i] = L_PLAYER;
-  const base = 4 + T + P + P;
+  const pen = new Float64Array(5 + T + P + P + C + P * C);
+  pen[0] = 0; pen[1] = 0.01; pen[2] = 0.01; pen[3] = L_FPI; pen[4] = L_MOVE;
+  for (let i = 0; i < T; i++) pen[5 + i] = L_BRAND;
+  for (let i = 0; i < P + P; i++) pen[5 + T + i] = L_PLAYER;
+  const base = 5 + T + P + P;
   for (let i = 0; i < C; i++) pen[base + i] = L_CONFERENCE;
   for (let i = 0; i < P * C; i++) pen[base + C + i] = L_PLAYER_CONF;
   return pen;
@@ -315,23 +345,23 @@ export function fitScoutModel(rows) {
     /** log-odds nudge for backing this team, and how much data stands behind it */
     brand(team) {
       const i = teamIx.get(team);
-      return { pull: i == null ? 0 : w[4 + i], n: exposure[team] || 0 };
+      return { pull: i == null ? 0 : w[5 + i], n: exposure[team] || 0 };
     },
     /** this player's own lean, over and above the game itself */
     playerLean(pid) {
       const i = playerIx.get(pid);
-      return i == null ? 0 : w[4 + T + i];
+      return i == null ? 0 : w[5 + T + i];
     },
     /** league-wide pull toward or away from a conference */
     conferencePull(conference) {
       const i = confIx.get(conference);
-      return i == null ? 0 : w[4 + T + P + P + i];
+      return i == null ? 0 : w[5 + T + P + P + i];
     },
     /** one player's own lean toward or away from a conference */
     playerConferencePull(pid, conference) {
       const ci = confIx.get(conference), pi = playerIx.get(pid);
       if (ci == null || pi == null) return 0;
-      return w[4 + T + P + P + C + pi * C + ci];
+      return w[5 + T + P + P + C + pi * C + ci];
     },
     /**
      * P(player lays the points) for one upcoming game.
@@ -347,7 +377,8 @@ export function fitScoutModel(rows) {
         favHome: favHome ? 1 : 0,
         fav: favHome ? game.Home : game.Away,
         dog: favHome ? game.Away : game.Home,
-        fpiEdge: fpiEdge(game, line, favHome)
+        fpiEdge: fpiEdge(game, line, favHome),
+        lineMove: lineMove(game, line, favHome)
       };
       // A player we have never seen has no profile at all — nothing to say.
       if (!playerIx.has(pid)) {

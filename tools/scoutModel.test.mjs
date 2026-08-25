@@ -56,10 +56,14 @@ function toGame(r) {
     const edgeHome = r.favHome ? r.fpiEdge : -r.fpiEdge;
     g.fpi_margin = edgeHome + (-line);
   }
+  if (r.lineMove != null) {
+    const moveHome = r.favHome ? r.lineMove : -r.lineMove;
+    g.line_open = moveHome + line;
+  }
   return g;
 }
 
-const games = await get('all_games?select=GameId,week,winner,picked,Away,Home,line,cfb_season,fpi_margin&limit=5000');
+const games = await get('all_games?select=GameId,week,winner,picked,Away,Home,line,line_open,cfb_season,fpi_margin&limit=5000');
 const picks = await get('picks?select=team_id,game_id,pick&limit=20000');
 const rows = buildTrainingRows(games, picks);
 console.log(`training rows: ${rows.length}`);

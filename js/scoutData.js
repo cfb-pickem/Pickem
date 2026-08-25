@@ -12,7 +12,7 @@
 // being asked about.
 
 import { supabase } from './supabaseClient.js';
-import { buildTrainingRows, fitScoutModel, explain } from './scoutModel.js';
+import { buildTrainingRows, fitScoutModel, explain, confidenceTier } from './scoutModel.js';
 
 let trainingPromise = null;
 const modelByWeek = new Map();
@@ -28,7 +28,7 @@ export function loadTrainingData() {
   trainingPromise = (async () => {
     const [{ data: games, error: gErr }, { data: picks, error: pErr }] = await Promise.all([
       supabase.from('all_games')
-        .select('GameId, Away, Home, line, winner, picked, week, cfb_season, fpi_margin')
+        .select('GameId, Away, Home, line, line_open, winner, picked, week, cfb_season, fpi_margin')
         .eq('picked', true),
       supabase.from('picks').select('team_id, game_id, pick')
     ]);
@@ -92,4 +92,90 @@ export function fieldRead(model, game, exclude) {
     // No player term - this is the field, not a person.
     reasons: explain(model, ids[0], sample, { includePlayer: false })
   };
+}
+
+
+/**
+ * What each confidence badge is ACTUALLY worth, measured on this league's own
+ * results rather than quoted from a backtest that shipped with the code.
+ *
+ * The numbers baked into confidenceTier() came from cross-validating the 2025
+ * season while building the thing. They were honest then and they go stale the
+ * moment this league plays a week they do not include - so the panel prefers
+ * this, and falls back to the baked-in figures only until there is enough
+ * played to say anything better.
+ *
+ * Method: hold out the most recently completed weeks, fit on everything before
+ * them, and grade the held-out picks. One extra fit rather than the ~20 a full
+ * leave-one-week-out would need, because this runs in somebody's browser while
+ * they are trying to read a scouting report.
+ *
+ * Returns null when there is not enough played, which is the correct answer
+ * early in a first season.
+ */
+const HOLDOUT_WEEKS = 8;
+const MIN_GRADED = 150;
+let accuracyPromise = null;
+
+export function badgeAccuracy(data) {
+  if (accuracyPromise) return accuracyPromise;
+  accuracyPromise = (async () => {
+    const cached = readCachedAccuracy(data.rows.length);
+    if (cached) return cached;
+
+    // Chronological, across seasons: 2025 week 14 comes before 2026 week 1.
+    const keyOf = r => r.season * 100 + r.week;
+    const keys = [...new Set(data.rows.map(keyOf))].sort((a, b) => a - b);
+    if (keys.length <= HOLDOUT_WEEKS) return null;
+
+    const heldFrom = keys[keys.length - HOLDOUT_WEEKS];
+    const train = data.rows.filter(r => keyOf(r) < heldFrom);
+    const test  = data.rows.filter(r => keyOf(r) >= heldFrom);
+    if (train.length < MIN_HISTORY_ROWS || test.length < MIN_GRADED) return null;
+
+    const model = fitScoutModel(train);
+    if (!model) return null;
+
+    const tally = {};
+    for (const r of test) {
+      const line = r.favHome ? -r.spread : r.spread;
+      const game = r.favHome
+        ? { Home: r.fav, Away: r.dog, line }
+        : { Home: r.dog, Away: r.fav, line };
+      if (r.fpiEdge != null) {
+        const edgeHome = r.favHome ? r.fpiEdge : -r.fpiEdge;
+        game.fpi_margin = edgeHome + (-line);
+      }
+      if (r.lineMove != null) {
+        const moveHome = r.favHome ? r.lineMove : -r.lineMove;
+        game.line_open = moveHome + line;
+      }
+      const p = model.predict(r.pid, game);
+      if (!p || p.unseen) continue;
+      const tier = confidenceTier(p.p).tier;
+      tally[tier] = tally[tier] || { n: 0, hit: 0 };
+      tally[tier].n++;
+      if ((p.p >= 0.5 ? 1 : 0) === r.laidPoints) tally[tier].hit++;
+    }
+
+    const out = { tiers: tally, weeks: HOLDOUT_WEEKS, graded: test.length };
+    writeCachedAccuracy(data.rows.length, out);
+    return out;
+  })().catch(() => null);
+  return accuracyPromise;
+}
+
+// Cached against the row count, so it recomputes exactly when a new week of
+// picks lands and not on every page view.
+const ACC_KEY = 'cfb-badge-accuracy-v1';
+function readCachedAccuracy(rowCount) {
+  try {
+    const raw = sessionStorage.getItem(ACC_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    return v && v.rowCount === rowCount ? v.value : null;
+  } catch { return null; }
+}
+function writeCachedAccuracy(rowCount, value) {
+  try { sessionStorage.setItem(ACC_KEY, JSON.stringify({ rowCount, value })); } catch {}
 }

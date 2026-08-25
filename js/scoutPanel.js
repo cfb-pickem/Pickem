@@ -32,7 +32,7 @@
 import { supabase } from './supabaseClient.js';
 import { escapeHtml, sameTeam } from './utils.js';
 import { confidenceTier, explain } from './scoutModel.js';
-import { loadTrainingData, modelFor } from './scoutData.js';
+import { loadTrainingData, modelFor, badgeAccuracy } from './scoutData.js';
 
 // The fit itself lives in js/scoutData.js, shared with the picks page and
 // scoped so it can never see the week it is predicting.
@@ -302,6 +302,26 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     return p && !p.unseen && confidenceTier(p.p).tier !== 'coin-flip';
   }).length;
 
+  // The legend ships with figures from the 2025 backtest. If this league has
+  // played enough for its OWN numbers, swap them in - a badge quoting a stale
+  // backtest is exactly the kind of number nobody should have to trust on faith.
+  // Deliberately after the panel is on screen: it costs a model fit.
+  badgeAccuracy(data).then(acc => {
+    if (!acc || openEl !== wrap) return;
+    const el = wrap.querySelector('#scout-badge-rates');
+    if (!el) return;
+    const pct = k => {
+      const t = acc.tiers[k];
+      return (t && t.n >= 20) ? `${Math.round(100 * t.hit / t.n)}%` : null;
+    };
+    const parts = [['strong', 'Strong lean'], ['clear', 'Clear lean'],
+                   ['slight', 'Slight lean'], ['coin-flip', 'Coin flip']]
+      .map(([k, label]) => { const p = pct(k); return p ? `<strong>${label} ${p}</strong>` : null; })
+      .filter(Boolean);
+    if (parts.length < 2) return;               // too thin to be worth swapping in
+    el.innerHTML = parts.join(', ') + ` <em>&mdash; measured on your last ${acc.weeks} weeks, ${acc.graded} picks</em>`;
+  });
+
   const bd = wrap.querySelector('.scout-bd');
   if (!bd) return;
   bd.innerHTML = `
@@ -312,9 +332,9 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     ${cards || '<p class="scout-note">No games with a posted line this week.</p>'}
     <p class="scout-note">${model
       ? `Every game gets a pick, and the badge says what it is worth. Measured on last season:
-         <strong>Strong lean 79%</strong>, <strong>Clear lean 67%</strong>, <strong>Slight lean 56%</strong>,
-         <strong>Coin flip 55%</strong> &mdash; so a coin flip really is one, and naming a side there is
-         a guess rather than a read. <strong>Untested</strong> means the model is fairly sure they take
+         <span id="scout-badge-rates"><strong>Strong lean 79%</strong>, <strong>Clear lean 67%</strong>,
+         <strong>Slight lean 56%</strong>, <strong>Coin flip 55%</strong></span> &mdash; so a coin flip
+         really is one, and naming a side there is a guess rather than a read. <strong>Untested</strong> means the model is fairly sure they take
          the points but has almost never been graded on that call.
          <br><br>Most of this is the pool, not the person: after one season a player's own tendency is only
          worth so much, so the side rarely differs from the field and what moves is conviction. Read these as

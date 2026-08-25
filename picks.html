@@ -793,7 +793,7 @@
       // Normal picked games (exclude tiebreakers)
       const { data: regularData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin, line_open')
         .eq('picked', true)
         .eq('cfb_season', currentSeason)
         .eq('week', week)
@@ -804,7 +804,7 @@
       // Tiebreaker games for this week (use tiebreaker flag instead of picked)
       const { data: tbData, error: tbErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin, line_open')
         .eq('tiebreaker', true)
         .eq('cfb_season', currentSeason)
         .eq('week', week);
@@ -867,7 +867,7 @@
       // Playoff-eligible normal games (picked=true, no winner yet, not tiebreakers)
       const { data: regData, error: regErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin, line_open')
         .eq('picked', true)
         .eq('cfb_season', currentSeason)
         .is('winner', null)
@@ -881,7 +881,7 @@
       // Playoff tiebreaker games (tiebreaker=true, no winner yet)
       const { data: tbData, error: tbErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin')
+        .select('GameId, Away, Home, line, "Start (CT)", "Network", espn_url, week, winner, tiebreaker, fpi_margin, line_open')
         .eq('tiebreaker', true)
         .eq('cfb_season', currentSeason)
         .is('winner', null);
