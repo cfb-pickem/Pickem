@@ -23,6 +23,11 @@ export default async function initNav(){
   if (!mount) return;
 
   const current = document.body?.dataset?.page || '';
+  const PAGE_LABELS = {
+    leaderboard: 'Leaderboard', picks: 'Make Picks', genius: 'League Info',
+    stats: 'Stats', commissioner: 'Commissioner', tiebreakers: 'Tiebreakers'
+  };
+  const currentLabel = PAGE_LABELS[current] || 'CFB Pick&rsquo;em';
   const { data: { session } } = await supabase.auth.getSession();
   const signedIn = !!session;
   const user = session?.user;
@@ -57,30 +62,35 @@ export default async function initNav(){
 
   mount.innerHTML = `
     <nav class="mb-5 text-sm font-semibold tracking-wider uppercase font-['Oswald',_sans-serif]">
-      <!-- Mobile: hamburger + brand row -->
-      <div class="flex items-center justify-between border-b border-[rgba(231,231,231,.08)] md:hidden">
-        <button id="nav-toggle" class="p-3 text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors" aria-label="Toggle menu">
-          <svg id="nav-icon-open" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <!-- Mobile bar. The page name lives here on purpose: a hamburger and a
+           Sign out button told you nothing about where you were. -->
+      <div class="navbar md:hidden">
+        <button id="nav-toggle" class="navbar-burger" aria-label="Open menu"
+                aria-expanded="false" aria-controls="nav-mobile-menu">
+          <svg id="nav-icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
           </svg>
-          <svg id="nav-icon-close" class="w-6 h-6 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <svg id="nav-icon-close" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" d="M6 18L18 6M6 6l12 12"/>
           </svg>
         </button>
-        <div class="flex items-center gap-2 pr-3">
-          ${signedIn
-            ? `<button id="nav-signout-mobile" class="px-3 py-2 text-xs text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign out</button>`
-            : `<a href="./signin.html" class="px-3 py-2 text-xs text-gray-300 hover:text-[var(--cfp-ivory)] transition-colors">Sign Up / Sign In</a>`
-          }
-        </div>
+        <span class="navbar-where">${currentLabel}</span>
+        ${signedIn
+          ? `<button id="nav-signout-mobile" class="navbar-auth">Sign out</button>`
+          : `<a href="./signin.html" class="navbar-auth">Sign In</a>`
+        }
       </div>
 
-      <!-- Mobile dropdown (hidden by default) -->
-      <ul id="nav-mobile-menu" class="md:hidden hidden flex-col border-b border-[rgba(231,231,231,.08)] bg-[var(--cfp-black)]"
-          style="transition: max-height .25s ease, opacity .2s ease; max-height: 0; opacity: 0; overflow: hidden;">
+      <!-- Mobile menu: a sheet over the page rather than a block that shoves it
+           down. Backdrop closes it, so does Escape. -->
+      <div id="nav-scrim" class="nav-scrim md:hidden" hidden></div>
+      <ul id="nav-mobile-menu" class="nav-sheet md:hidden" hidden>
         ${visibleLinks.map(l => {
           const active = l.key === current;
-          return `<li><a href="${l.href}" class="block px-5 py-3 border-t border-[rgba(231,231,231,.04)] ${active ? 'text-[var(--cfp-gold-2)] bg-[rgba(233,185,73,.06)]' : 'text-gray-300 hover:text-[var(--cfp-ivory)] hover:bg-[rgba(233,185,73,.04)]'} transition-colors">${l.label}</a></li>`;
+          return `<li><a href="${l.href}" class="nav-sheet-link${active ? ' is-active' : ''}">
+            <span>${l.label}</span>
+            ${active ? '<span class="nav-sheet-dot" aria-hidden="true"></span>' : ''}
+          </a></li>`;
         }).join('')}
       </ul>
 
@@ -108,30 +118,42 @@ export default async function initNav(){
   const iconOpen = document.getElementById('nav-icon-open');
   const iconClose = document.getElementById('nav-icon-close');
 
+  const scrim = document.getElementById('nav-scrim');
+
   if (toggle && mobileMenu) {
     let menuOpen = false;
-    toggle.addEventListener('click', () => {
-      menuOpen = !menuOpen;
-      if (menuOpen) {
-        mobileMenu.classList.remove('hidden');
-        mobileMenu.classList.add('flex');
+
+    const setOpen = open => {
+      menuOpen = open;
+      // `hidden` first so the sheet is out of the tab order when closed, then a
+      // class on the next frame so the transition actually runs.
+      if (open) {
+        mobileMenu.hidden = false;
+        if (scrim) scrim.hidden = false;
         requestAnimationFrame(() => {
-          mobileMenu.style.maxHeight = mobileMenu.scrollHeight + 'px';
-          mobileMenu.style.opacity = '1';
+          mobileMenu.classList.add('is-open');
+          scrim?.classList.add('is-open');
         });
+        document.body.style.overflow = 'hidden';
       } else {
-        mobileMenu.style.maxHeight = '0';
-        mobileMenu.style.opacity = '0';
-        mobileMenu.addEventListener('transitionend', () => {
-          if (!menuOpen) {
-            mobileMenu.classList.add('hidden');
-            mobileMenu.classList.remove('flex');
-          }
-        }, { once: true });
+        mobileMenu.classList.remove('is-open');
+        scrim?.classList.remove('is-open');
+        document.body.style.overflow = '';
+        setTimeout(() => {
+          if (!menuOpen) { mobileMenu.hidden = true; if (scrim) scrim.hidden = true; }
+        }, 200);
       }
-      iconOpen?.classList.toggle('hidden', menuOpen);
-      iconClose?.classList.toggle('hidden', !menuOpen);
-    });
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      iconOpen?.classList.toggle('hidden', open);
+      iconClose?.classList.toggle('hidden', !open);
+    };
+
+    toggle.addEventListener('click', () => setOpen(!menuOpen));
+    scrim?.addEventListener('click', () => setOpen(false));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) setOpen(false); });
+    // Tapping a link navigates, but close anyway so a cached back-nav is tidy.
+    mobileMenu.querySelectorAll('a').forEach(a => a.addEventListener('click', () => setOpen(false)));
   }
 
   // Wire sign-out (desktop)

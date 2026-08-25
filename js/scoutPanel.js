@@ -251,7 +251,9 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     const nudge = delta === 0
       ? 'right on the field'
       : `${Math.abs(delta)}pt${Math.abs(delta) === 1 ? '' : 's'} ${delta > 0 ? 'more' : 'less'} likely than the field`;
-    return `Everyone leans this way \u2014 the pool averages ${Math.round(mean * 100)}% to ${side}. `
+    // A projection from past seasons. Nobody's picks for this week are readable,
+    // and "the pool averages" read like a tally of real ones.
+    return `Projected across the league from past seasons: ${Math.round(mean * 100)}% to ${side}. `
          + `${teamName} is ${nudge}, ${ordinal(rank)} of ${all.length}.`;
   };
 

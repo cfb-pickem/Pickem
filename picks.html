@@ -1000,11 +1000,13 @@
       const homeBy = Number(g.fpiMargin);
       const fav = homeBy >= 0 ? g.home : g.away;
       return '<div class="pick-fpi' + (strong ? ' is-strong' : '') + '">' +
-        '<span class="pick-fpi-lbl">ESPN FPI</span> ' +
-        escapeHtml(fav) + ' by ' + Math.abs(homeBy).toFixed(1) +
-        (by < 1
-          ? ' — agrees with the line'
-          : ' — leans ' + escapeHtml(likes) + ' by ' + by.toFixed(1) + ' vs the line') +
+        '<span class="pick-fpi-lbl">ESPN FPI</span>' +
+        '<span class="pick-fpi-body">' +
+          '<span class="pick-fpi-call">' + escapeHtml(fav) + ' by ' + Math.abs(homeBy).toFixed(1) + '</span>' +
+          (by < 1
+            ? '<span class="pick-fpi-gap">agrees with the line</span>'
+            : '<span class="pick-fpi-gap">' + by.toFixed(1) + ' pts toward ' + escapeHtml(likes) + '</span>') +
+        '</span>' +
         '</div>';
     }
 
@@ -1036,20 +1038,39 @@
           .map(r => `<span class="pick-field-why ${r.kind === 'up' ? 'is-up' : 'is-down'}">${escapeHtml(r.text)}</span>`)
           .join('');
 
+        // Deliberately phrased as a projection, never as a count. Nobody's picks
+        // for this week are readable - not by the model, not by this page - and
+        // "71% on TCU" read like a tally of real ones.
+        const pickSide = read.side;
+        const otherSide = (pickSide === g.home) ? g.away : g.home;
+        const pctPick = read.pct;
+        const pctOther = 100 - read.pct;
+
         const el = document.createElement('div');
-        el.className = 'pick-field';
+        el.className = 'pick-field' + (read.tested ? '' : ' is-untested');
         el.innerHTML =
           '<div class="pick-field-top">' +
-            '<span class="pick-field-lbl">The field</span>' +
-            '<span class="pick-field-val' + (read.tested ? '' : ' is-untested') + '">' +
-              read.pct + '% on ' + escapeHtml(read.side) + '</span>' +
+            '<span class="pick-field-lbl">Projected field</span>' +
+            '<span class="pick-field-note">model, not picks</span>' +
           '</div>' +
-          '<div class="pick-field-bar' + (read.tested ? '' : ' is-untested') + '">' +
-            '<span style="width:' + read.pct + '%"></span></div>' +
-          fpiLine(g) +
+          '<div class="pick-split">' +
+            '<span class="pick-split-side' + (pctPick >= pctOther ? ' is-lead' : '') + '">' +
+              '<span class="pick-split-team">' + escapeHtml(pickSide) + '</span>' +
+              '<span class="pick-split-pct">' + pctPick + '%</span>' +
+            '</span>' +
+            '<span class="pick-split-bar">' +
+              '<span class="pick-split-fill" style="width:' + pctPick + '%"></span>' +
+            '</span>' +
+            '<span class="pick-split-side' + (pctOther > pctPick ? ' is-lead' : '') + '">' +
+              '<span class="pick-split-team">' + escapeHtml(otherSide) + '</span>' +
+              '<span class="pick-split-pct">' + pctOther + '%</span>' +
+            '</span>' +
+          '</div>' +
+          '<div class="pick-field-src">Learned from past seasons &mdash; this week&rsquo;s picks stay hidden until kickoff.</div>' +
           (why ? '<div class="pick-field-whys">' + why + '</div>' : '') +
+          fpiLine(g) +
           (read.tested ? '' :
-            '<div class="pick-field-caveat">Rough guess &mdash; the model has barely been graded on ' +
+            '<div class="pick-field-caveat">Treat lightly &mdash; the model has barely been graded on ' +
             'calling the underdog side.</div>');
         card.appendChild(el);
       }

@@ -953,52 +953,181 @@ header.cfp-card {
 .is-untested .scout-bar > span{ background: #9b7bd4; }
 
 /* ============================================
-   FIELD READ — what the league will likely do,
-   shown on each card while you pick
+   PROJECTED FIELD — a model read on each pick
+   card. Never a count of anyone's real picks.
    ============================================ */
 
 .pick-field{
-  margin-top: .6rem;
-  padding-top: .55rem;
-  border-top: 1px solid rgba(231,231,231,.08);
+  margin-top: .7rem;
+  padding: .6rem .7rem .65rem;
+  background: rgba(255,255,255,.022);
+  border: 1px solid rgba(231,231,231,.07);
+  border-left: 2px solid var(--cfp-gold);
 }
+.pick-field.is-untested{ border-left-color: #9b7bd4; }
+
 .pick-field-top{
   display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
+  margin-bottom: .55rem;
 }
 .pick-field-lbl{
-  font-family: 'Oswald', sans-serif; font-size: .52rem; letter-spacing: .18em;
+  font-family: 'Oswald', sans-serif; font-size: .56rem; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--cfp-gold-2);
+}
+.pick-field-note{
+  font-family: 'Oswald', sans-serif; font-size: .52rem; letter-spacing: .1em;
   text-transform: uppercase; color: #6b7079;
 }
-.pick-field-val{
-  font-family: 'Teko','Oswald',sans-serif; font-weight: 700; font-size: 1.05rem;
-  line-height: 1; color: var(--cfp-gold-2); font-variant-numeric: tabular-nums;
+
+/* Two sides of one bar, so a split reads as a split. */
+.pick-split{ display: flex; align-items: center; gap: .55rem; }
+.pick-split-side{
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 0 1 auto;
+  max-width: 34%;
 }
-.pick-field-bar{
-  display: block; height: 4px; margin-top: .35rem; background: rgba(255,255,255,.07);
+.pick-split-side:last-child{ align-items: flex-end; text-align: right; }
+.pick-split-team{
+  display: block;
+  font-family: 'Oswald', sans-serif; font-size: .58rem; letter-spacing: .05em;
+  text-transform: uppercase; color: #8b9099; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
-.pick-field-bar > span{ display: block; height: 4px; background: var(--cfp-gold-2); }
+.pick-split-pct{
+  display: block;
+  font-family: 'Teko','Oswald',sans-serif; font-weight: 700; font-size: 1.2rem;
+  line-height: 1; color: #7d838b; font-variant-numeric: tabular-nums;
+}
+.pick-split-side.is-lead .pick-split-team{ color: var(--cfp-ivory); }
+.pick-split-side.is-lead .pick-split-pct{ color: var(--cfp-gold-2); }
+.is-untested .pick-split-side.is-lead .pick-split-pct{ color: #c4a6f5; }
+
+.pick-split-bar{
+  display: block; flex: 1 1 auto; min-width: 0; height: 6px;
+  background: rgba(255,255,255,.07);
+}
+.pick-split-fill{
+  display: block; height: 6px;
+  background: linear-gradient(90deg, var(--cfp-gold), var(--cfp-gold-2));
+}
+.is-untested .pick-split-fill{ background: linear-gradient(90deg, #7c5fb0, #9b7bd4); }
+
+.pick-field-src{
+  font-size: .6rem; line-height: 1.45; color: #6b7079; margin-top: .5rem;
+}
 .pick-field-whys{
-  display: flex; flex-wrap: wrap; gap: .3rem .5rem; margin-top: .45rem;
+  display: flex; flex-wrap: wrap; gap: .2rem .7rem; margin-top: .45rem;
 }
-.pick-field-why{
-  font-size: .66rem; line-height: 1.3; color: #9aa0a8;
-}
+.pick-field-why{ font-size: .66rem; line-height: 1.35; color: #9aa0a8; }
 .pick-field-why::before{ content: "+ "; color: var(--led-win); }
 .pick-field-why.is-down::before{ content: "\2212 "; color: #e08d93; }
-.pick-field-val.is-untested{ color: #c4a6f5; }
-.pick-field-bar.is-untested > span{ background: #9b7bd4; }
-.pick-field-caveat{ font-size: .62rem; line-height: 1.35; color: #6b7079; margin-top: .35rem; }
+.pick-field-caveat{
+  font-size: .62rem; line-height: 1.4; color: #a892cf; margin-top: .45rem;
+}
 
-/* ESPN FPI next to the market line, on each pick card. */
+/* ESPN FPI, as a labelled row rather than a run-on sentence. */
 .pick-fpi{
-  margin-top: .4rem;
-  font-size: .66rem;
-  line-height: 1.35;
-  color: #9aa0a8;
+  display: flex; align-items: baseline; gap: .55rem;
+  margin-top: .55rem; padding-top: .5rem;
+  border-top: 1px solid rgba(231,231,231,.06);
 }
 .pick-fpi-lbl{
-  font-family: 'Oswald', sans-serif; font-size: .52rem; letter-spacing: .14em;
+  flex: none;
+  font-family: 'Oswald', sans-serif; font-size: .54rem; letter-spacing: .14em;
   text-transform: uppercase; color: #6b7079;
 }
-.pick-fpi.is-strong{ color: var(--cfp-ivory); }
+.pick-fpi-body{
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .55rem; min-width: 0;
+}
+.pick-fpi-call{
+  font-family: 'Oswald', sans-serif; font-size: .7rem; letter-spacing: .03em; color: #9aa0a8;
+}
+.pick-fpi-gap{ font-size: .64rem; color: #6b7079; }
 .pick-fpi.is-strong .pick-fpi-lbl{ color: var(--led-amber); }
+.pick-fpi.is-strong .pick-fpi-call{ color: var(--cfp-ivory); }
+.pick-fpi.is-strong .pick-fpi-gap{ color: var(--led-amber); }
+
+/* ============================================
+   MOBILE NAV — a sheet over the page, and a bar
+   that says where you are
+   ============================================ */
+
+.navbar{
+  display: flex; align-items: center; gap: .5rem;
+  border-bottom: 1px solid rgba(231,231,231,.08);
+  /* Sits ABOVE the sheet that drops out of it, so the close button never gets
+     covered by the thing it closes. */
+  position: sticky; top: 0; z-index: 205;
+  background: var(--cfp-black);
+  /* Every page wraps its content in p-4 (1rem) on mobile. Pulling the bar back
+     out to the viewport edge is what lets it line up with the full-bleed sheet
+     instead of leaving a visible step where the two meet. */
+  margin-left: -1rem; margin-right: -1rem;
+  padding-left: .35rem; padding-right: .35rem;
+}
+.navbar-burger{
+  width: 48px; height: 48px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; color: #cfd3d8; cursor: pointer;
+}
+.navbar-burger svg{ width: 22px; height: 22px; }
+.navbar-burger:hover{ color: var(--cfp-ivory); }
+.navbar-burger .hidden{ display: none; }
+
+/* The point of the bar: which page am I on. */
+.navbar-where{
+  flex: 1; min-width: 0;
+  font-family: 'Teko','Oswald',sans-serif; font-weight: 700;
+  font-size: 1.35rem; line-height: 1; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--cfp-gold-2); text-shadow: 0 0 10px rgba(240,199,94,.25);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.navbar-auth{
+  flex: none; min-height: 44px; display: inline-flex; align-items: center;
+  padding: 0 1rem; background: none; border: none; cursor: pointer;
+  font-family: 'Oswald', sans-serif; font-size: .7rem; letter-spacing: .12em;
+  text-transform: uppercase; color: #9aa0a8;
+}
+.navbar-auth:hover{ color: var(--cfp-ivory); }
+
+.nav-scrim{
+  position: fixed; inset: 0; z-index: 190;
+  background: rgba(0,0,0,.65);
+  opacity: 0; transition: opacity .2s ease;
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+}
+.nav-scrim.is-open{ opacity: 1; }
+
+.nav-sheet{
+  position: fixed; left: 0; right: 0; top: 0; z-index: 200;
+  margin: 0; padding: 49px 0 .5rem;      /* clears the bar it drops out of */
+  list-style: none;
+  background: linear-gradient(180deg, var(--cfp-black), #14161a);
+  border-bottom: 2px solid var(--cfp-gold);
+  box-shadow: 0 18px 44px rgba(0,0,0,.7);
+  transform: translateY(-102%);
+  transition: transform .22s cubic-bezier(.2,.7,.3,1);
+}
+.nav-sheet.is-open{ transform: translateY(0); }
+
+.nav-sheet-link{
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  min-height: 56px; padding: 0 1.25rem;
+  border-top: 1px solid rgba(231,231,231,.06);
+  font-family: 'Oswald', sans-serif; font-size: .95rem; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: #cfd3d8; text-decoration: none;
+}
+.nav-sheet-link:hover{ color: var(--cfp-ivory); background: rgba(233,185,73,.05); }
+.nav-sheet-link.is-active{
+  color: var(--cfp-gold-2);
+  background: rgba(233,185,73,.08);
+  box-shadow: inset 3px 0 0 var(--cfp-gold);
+}
+.nav-sheet-dot{
+  width: 7px; height: 7px; flex: none; border-radius: 50%;
+  background: var(--cfp-gold); box-shadow: 0 0 8px rgba(218,165,32,.8);
+}
+
+@media (min-width: 768px){
+  .navbar, .nav-sheet, .nav-scrim{ display: none !important; }
+}
