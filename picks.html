@@ -1027,7 +1027,9 @@
         const card = document.querySelector(`[data-game-id="${g.game_id}"]`);
         if (!card || card.querySelector('.pick-field')) continue;
 
-        const read = fieldRead(model, { Home: g.home, Away: g.away, line: Number(g.line) }, selectedTeamId);
+        const read = fieldRead(model,
+          { Home: g.home, Away: g.away, line: Number(g.line), fpi_margin: g.fpiMargin },
+          selectedTeamId);
         if (!read) continue;
 
         const why = (read.reasons || []).slice(0, 2)

@@ -13,7 +13,7 @@
 //
 //                                       accuracy   log loss   AUC
 //   always guess "lays the points"       60.2%      0.6723    0.489
-//   this model, leave-one-week-out       58.6%      0.6587    0.601
+//   this model, leave-one-week-out       60.5%      0.6558    0.605
 //
 // Leave-one-week-out trains on every OTHER week, including later ones. That is
 // fine for comparing features but flatters the real job, which only ever has
@@ -39,8 +39,8 @@
 // implies we know. `confidenceTier()` exists to keep the UI honest.
 //
 // It is also deliberately ASYMMETRIC. Predicting someone will LAY the points is
-// well tested - 60-73% right across 412 cross-validated predictions at an edge
-// of 0.10 or more, and 73% on the 80 that reach a Strong lean. Predicting they will TAKE the points is not: only five
+// well tested - 56-79% right across 410 cross-validated predictions at an edge
+// of 0.10 or more, and 79% on the 90 that reach a Strong lean. Predicting they will TAKE the points is not: only five
 // predictions in the whole 2025 season landed below 40%, so there is no
 // evidence either way. Those come back as "No read" WITH A REASON rather than
 // as a lean - and rather than as silence, which reads as having nothing to say.
@@ -49,6 +49,13 @@
 //   * A player's lay-rate has split-half reliability r=0.117 (Spearman-Brown
 //     0.209). At ~60 picks a season, personal ATS tendency is mostly noise.
 //     This is the single biggest limit, and it fixes itself with more seasons.
+//   * ESPN's FPI, as a DISAGREEMENT with the market rather than a tip. FPI
+//     cannot beat a closing line (48.7% ATS on the 2025 slate, worse than
+//     always backing the favourite) but it does predict this pool: when FPI
+//     dislikes the favourite by 7+, the league lays it 16.5pp less than the
+//     spread alone implies. Adding it moved accuracy 58.6% -> 60.5%, log loss
+//     0.6587 -> 0.6558, AUC 0.601 -> 0.605, and the same direction walking
+//     forward. Synced by sync_espn_fpi() on pg_cron.
 //   * CONFERENCE is the strongest learned feature after the spread, and it
 //     generalises to teams the model has never scored (the map is static), so
 //     it still works in week 1. Adding it moved AUC 0.574 -> 0.595. Only
@@ -97,6 +104,7 @@ const L_PLAYER_CONF = 10;   // their own conference lean, shrunk harder
 // almost nothing in cross-validation (AUC 0.597 -> 0.595). Below the floor a
 // conference contributes nothing rather than a confident guess.
 const MIN_CONFERENCE_ROWS = 50;
+const L_FPI         = 2;    // one coefficient over every row, lightly shrunk
 
 // HOW THESE PENALTIES WERE CHOSEN.
 //
@@ -153,6 +161,7 @@ export function buildTrainingRows(games, picks) {
     const favIsHome = line < 0;
     rows.push({
       pid: p.team_id,
+      fpiEdge: fpiEdge(g, line, favIsHome),
       season: Number(g.cfb_season),
       week: Number(g.week),
       laidPoints: (pickedHome === favIsHome) ? 1 : 0,
@@ -165,24 +174,46 @@ export function buildTrainingRows(games, picks) {
   return rows;
 }
 
+/**
+ * How far ESPN's FPI disagrees with the market, pointing at the FAVOURITE.
+ * Positive means FPI likes the favourite MORE than the line does.
+ *
+ * Null when no projection is stored, which the model treats as no opinion
+ * rather than as agreement - an unsynced game must not look like consensus.
+ */
+function fpiEdge(g, line, favIsHome) {
+  const m = g.fpi_margin;
+  if (m == null || m === '') return null;
+  const homeMargin = Number(m);
+  if (!Number.isFinite(homeMargin)) return null;
+  const edgeHome = homeMargin - (-line);       // >0: FPI likes home more than the market
+  return favIsHome ? edgeHome : -edgeHome;
+}
+
+// Squashed and capped: past about ten points of disagreement the difference
+// stops meaning anything, and one wild projection should not dominate the fit.
+const FPI_SCALE = 10;
+const fpiFeature = e => (e == null ? 0 : Math.max(-1, Math.min(1, e / FPI_SCALE)));
+
 // Design row. Kept sparse-friendly: only a handful of entries are ever
 // non-zero, which is what keeps the Newton step cheap enough to run on open.
 function designRow(r, teamIx, playerIx, confIx, opts) {
   const T = teamIx.size, P = playerIx.size, C = confIx.size;
-  const v = new Float64Array(3 + T + P + P + C + P * C);
+  const v = new Float64Array(4 + T + P + P + C + P * C);
   v[0] = 1;
   v[1] = r.favHome ? 0.5 : -0.5;                 // favourite home or on the road
   v[2] = (Math.min(r.spread, 21) - 7) / 7;       // centred spread size
+  v[3] = fpiFeature(r.fpiEdge);                  // ESPN's model vs the market
   if (!(opts && opts.skipBrand)) {
-    v[3 + teamIx.get(r.fav)] += 1;               // brand: backed
-    v[3 + teamIx.get(r.dog)] -= 1;               // brand: faded
+    v[4 + teamIx.get(r.fav)] += 1;               // brand: backed
+    v[4 + teamIx.get(r.dog)] -= 1;               // brand: faded
   }
-  v[3 + T + playerIx.get(r.pid)] = 1;            // player's own lay lean
-  v[3 + T + P + playerIx.get(r.pid)] = r.favHome ? 0.5 : -0.5; // their home/road lean
+  v[4 + T + playerIx.get(r.pid)] = 1;            // player's own lay lean
+  v[4 + T + P + playerIx.get(r.pid)] = r.favHome ? 0.5 : -0.5; // their home/road lean
 
   // Conference. Same +1/-1 shape as brand: which conference is being backed,
   // which is being faded. This is the single biggest feature after the spread.
-  const base = 3 + T + P + P;
+  const base = 4 + T + P + P;
   const cf = confIx.get(conferenceOf(r.fav));
   const cd = confIx.get(conferenceOf(r.dog));
   if (cf != null) v[base + cf] += 1;
@@ -194,11 +225,11 @@ function designRow(r, teamIx, playerIx, confIx, opts) {
 }
 
 function penalties(T, P, C) {
-  const pen = new Float64Array(3 + T + P + P + C + P * C);
-  pen[0] = 0; pen[1] = 0.01; pen[2] = 0.01;
-  for (let i = 0; i < T; i++) pen[3 + i] = L_BRAND;
-  for (let i = 0; i < P + P; i++) pen[3 + T + i] = L_PLAYER;
-  const base = 3 + T + P + P;
+  const pen = new Float64Array(4 + T + P + P + C + P * C);
+  pen[0] = 0; pen[1] = 0.01; pen[2] = 0.01; pen[3] = L_FPI;
+  for (let i = 0; i < T; i++) pen[4 + i] = L_BRAND;
+  for (let i = 0; i < P + P; i++) pen[4 + T + i] = L_PLAYER;
+  const base = 4 + T + P + P;
   for (let i = 0; i < C; i++) pen[base + i] = L_CONFERENCE;
   for (let i = 0; i < P * C; i++) pen[base + C + i] = L_PLAYER_CONF;
   return pen;
@@ -284,23 +315,23 @@ export function fitScoutModel(rows) {
     /** log-odds nudge for backing this team, and how much data stands behind it */
     brand(team) {
       const i = teamIx.get(team);
-      return { pull: i == null ? 0 : w[3 + i], n: exposure[team] || 0 };
+      return { pull: i == null ? 0 : w[4 + i], n: exposure[team] || 0 };
     },
     /** this player's own lean, over and above the game itself */
     playerLean(pid) {
       const i = playerIx.get(pid);
-      return i == null ? 0 : w[3 + T + i];
+      return i == null ? 0 : w[4 + T + i];
     },
     /** league-wide pull toward or away from a conference */
     conferencePull(conference) {
       const i = confIx.get(conference);
-      return i == null ? 0 : w[3 + T + P + P + i];
+      return i == null ? 0 : w[4 + T + P + P + i];
     },
     /** one player's own lean toward or away from a conference */
     playerConferencePull(pid, conference) {
       const ci = confIx.get(conference), pi = playerIx.get(pid);
       if (ci == null || pi == null) return 0;
-      return w[3 + T + P + P + C + pi * C + ci];
+      return w[4 + T + P + P + C + pi * C + ci];
     },
     /**
      * P(player lays the points) for one upcoming game.
@@ -315,7 +346,8 @@ export function fitScoutModel(rows) {
         spread: Math.abs(line),
         favHome: favHome ? 1 : 0,
         fav: favHome ? game.Home : game.Away,
-        dog: favHome ? game.Away : game.Home
+        dog: favHome ? game.Away : game.Home,
+        fpiEdge: fpiEdge(game, line, favHome)
       };
       // A player we have never seen has no profile at all — nothing to say.
       if (!playerIx.has(pid)) {
@@ -365,9 +397,9 @@ export function confidenceTier(p) {
   // and `hit` is not a vibe - it is how often this badge picked the right side
   // across all 826 cross-validated predictions from last season. A coin flip is
   // labelled a coin flip precisely so nobody reads it as a call.
-  if (p >= 0.75) return { tier: 'strong', label: 'Strong lean', hit: 73 };
-  if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean',  hit: 71 };
-  if (p >= 0.60) return { tier: 'slight', label: 'Slight lean', hit: 60 };
+  if (p >= 0.75) return { tier: 'strong', label: 'Strong lean', hit: 79 };
+  if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean',  hit: 67 };
+  if (p >= 0.60) return { tier: 'slight', label: 'Slight lean', hit: 56 };
   // Two very different reasons to stay quiet, and the UI should not render them
   // the same way. Under 0.40 the model has a real opinion - it thinks they will
   // TAKE the points - but across the whole 2025 season only five predictions
@@ -380,7 +412,7 @@ export function confidenceTier(p) {
   // implies no opinion) and a lean badge would claim a confidence the record
   // does not support, so this gets its own label and no quoted hit rate.
   if (p <= 0.40) return { tier: 'untested', label: 'Untested', reason: 'leans-dog' };
-  return { tier: 'coin-flip', label: 'Coin flip', hit: 49, reason: 'too-close' };
+  return { tier: 'coin-flip', label: 'Coin flip', hit: 55, reason: 'too-close' };
 }
 
 /**

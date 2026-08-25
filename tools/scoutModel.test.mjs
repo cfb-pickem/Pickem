@@ -46,7 +46,20 @@ function metrics(pairs) {
   };
 }
 
-const games = await get('all_games?select=GameId,week,winner,picked,Away,Home,line,cfb_season&limit=5000');
+// Rebuild the game exactly as the model saw it, FPI included. Handing predict()
+// a game with no fpi_margin while the fit had one is a train/serve mismatch that
+// silently understates the model - it did, before this existed.
+function toGame(r) {
+  const line = r.favHome ? -r.spread : r.spread;
+  const g = r.favHome ? { Home: r.fav, Away: r.dog, line } : { Home: r.dog, Away: r.fav, line };
+  if (r.fpiEdge != null) {
+    const edgeHome = r.favHome ? r.fpiEdge : -r.fpiEdge;
+    g.fpi_margin = edgeHome + (-line);
+  }
+  return g;
+}
+
+const games = await get('all_games?select=GameId,week,winner,picked,Away,Home,line,cfb_season,fpi_margin&limit=5000');
 const picks = await get('picks?select=team_id,game_id,pick&limit=20000');
 const rows = buildTrainingRows(games, picks);
 console.log(`training rows: ${rows.length}`);
@@ -62,8 +75,7 @@ for (const wk of weeks) {
   if (!train.length || !test.length) continue;
   const m = fitScoutModel(train);
   for (const r of test) {
-    const line = r.favHome ? -r.spread : r.spread;
-    const game = r.favHome ? { Home: r.fav, Away: r.dog, line } : { Home: r.dog, Away: r.fav, line };
+    const game = toGame(r);
     const pred = m.predict(r.pid, game);
     modelPairs.push({ p: pred ? pred.p : layRate, y: r.laidPoints });
   }
@@ -118,9 +130,7 @@ for (const wk of weeks) {
   leaked += train.filter(r => r.week >= wk).length;          // must stay 0
   const m = fitScoutModel(train);
   for (const r of test) {
-    const line = r.favHome ? -r.spread : r.spread;
-    const game = r.favHome ? { Home: r.fav, Away: r.dog, line } : { Home: r.dog, Away: r.fav, line };
-    const pred = m.predict(r.pid, game);
+    const pred = m.predict(r.pid, toGame(r));
     wfPairs.push({ p: pred ? pred.p : layRate, y: r.laidPoints });
   }
 }

@@ -287,8 +287,8 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     ${cards || '<p class="scout-note">No games with a posted line this week.</p>'}
     <p class="scout-note">${model
       ? `Every game gets a pick, and the badge says what it is worth. Measured on last season:
-         <strong>Strong lean 73%</strong>, <strong>Clear lean 71%</strong>, <strong>Slight lean 60%</strong>,
-         <strong>Coin flip 49%</strong> &mdash; so a coin flip really is one, and naming a side there is
+         <strong>Strong lean 79%</strong>, <strong>Clear lean 67%</strong>, <strong>Slight lean 56%</strong>,
+         <strong>Coin flip 55%</strong> &mdash; so a coin flip really is one, and naming a side there is
          a guess rather than a read. <strong>Untested</strong> means the model is fairly sure they take
          the points but has almost never been graded on that call.
          <br><br>Most of this is the pool, not the person: after one season a player's own tendency is only

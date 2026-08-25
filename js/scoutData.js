@@ -28,7 +28,7 @@ export function loadTrainingData() {
   trainingPromise = (async () => {
     const [{ data: games, error: gErr }, { data: picks, error: pErr }] = await Promise.all([
       supabase.from('all_games')
-        .select('GameId, Away, Home, line, winner, picked, week, cfb_season')
+        .select('GameId, Away, Home, line, winner, picked, week, cfb_season, fpi_margin')
         .eq('picked', true),
       supabase.from('picks').select('team_id, game_id, pick')
     ]);
