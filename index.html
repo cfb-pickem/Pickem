@@ -372,6 +372,8 @@
       <span class="ml-2">Win cells tint green; loss cells tint red.</span>
     </div>
 
+    <div id="week-recap" class="mt-4" hidden></div>
+
     <div id="weekly-submissions" class="scoreboard-wrap mt-4">
       <div class="scoreboard-header" style="padding:.6rem 1rem;border-bottom:3px solid #444;">
         <span style="font-family:'Teko','Oswald',sans-serif;font-size:1.3rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#ddd;">
@@ -436,6 +438,7 @@
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
     import { sameTeam, escapeHtml, buildPickMap, getTeamColor } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
+    import { renderWeekRecap } from './js/weekRecap.js';
 
     // DOM
     const seasonSelect = document.getElementById('season-select');
@@ -1154,6 +1157,11 @@
       await renderWeeklySubmissions(teamsSorted, pickMap);
       showTable();
 
+      // Only meaningful once the week is over; the recap hides itself otherwise.
+      renderWeekRecap(document.getElementById('week-recap'),
+        { season: currentSeason, week, games, teams: teamsSorted })
+        .catch(e => console.warn('week recap unavailable:', e));
+
       saveSnapshot();
       startLiveTicker();
       startRevealCountdown();
@@ -1165,6 +1173,7 @@
     }
 
     async function loadPlayoffWeek(){
+      { const el = document.getElementById('week-recap'); if (el) { el.hidden = true; el.innerHTML = ''; } }
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Playoff…`);
       isPlayoffView = true;
@@ -1270,6 +1279,7 @@
     // toward the season would defeat the point of having them. Everything here
     // reads from seasonCache.tbGames / tbPicks, which no other view touches.
     async function loadTiebreakerWeek(kind){
+      { const el = document.getElementById('week-recap'); if (el) { el.hidden = true; el.innerHTML = ''; } }
       const isPlayoffTb = kind === 'playoff';
       const label = isPlayoffTb ? 'Playoff Tiebreakers' : 'Tiebreakers';
       const mySeq = loadSeq;

@@ -1148,3 +1148,57 @@ header.cfp-card {
 @media (min-width: 768px){
   .navbar, .nav-sheet, .nav-scrim{ display: none !important; }
 }
+
+/* ============================================
+   WEEK RECAP — how the model read a finished week
+   ============================================ */
+
+.recap{
+  background: linear-gradient(180deg, var(--cfp-black), var(--cfp-gray));
+  border: 1px solid rgba(218,165,32,.12);
+  border-top: 3px solid var(--cfp-gold);
+  padding: .9rem 1rem 1rem;
+}
+.recap-head{
+  display: flex; align-items: baseline; justify-content: space-between; gap: .75rem;
+  flex-wrap: wrap; margin-bottom: .7rem;
+}
+.recap-title{
+  font-family: 'Teko','Oswald',sans-serif; font-weight: 700; font-size: 1.35rem;
+  line-height: 1; letter-spacing: .05em; text-transform: uppercase; color: var(--cfp-ivory);
+}
+.recap-score{
+  font-family: 'Teko','Oswald',sans-serif; font-weight: 700; font-size: 1.6rem;
+  line-height: 1; color: var(--cfp-gold-2); font-variant-numeric: tabular-nums;
+}
+.recap-score-pct{ font-size: 1.05rem; color: #9aa0a8; margin-left: .3rem; }
+
+.recap-tiers{ display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .75rem; }
+.recap-tier{
+  display: flex; align-items: baseline; gap: .35rem;
+  padding: .25rem .55rem; background: rgba(255,255,255,.04);
+  border: 1px solid rgba(231,231,231,.08);
+}
+.recap-tier-lbl{
+  font-family: 'Oswald', sans-serif; font-size: .56rem; letter-spacing: .12em;
+  text-transform: uppercase; color: #6b7079;
+}
+.recap-tier-val{
+  font-family: 'Teko','Oswald',sans-serif; font-weight: 700; font-size: .95rem;
+  color: var(--cfp-ivory); font-variant-numeric: tabular-nums;
+}
+
+.recap-notes{ display: grid; grid-template-columns: 1fr; gap: .35rem; }
+@media (min-width: 640px){ .recap-notes{ grid-template-columns: 1fr 1fr; gap: .35rem 1.25rem; } }
+/* Two columns, so a long matchup wraps inside its own value rather than
+   sliding back under the label. */
+.recap-note{
+  display: flex; align-items: baseline; gap: .6rem;
+  font-size: .74rem; line-height: 1.45; color: #c9ced4;
+}
+.recap-note-lbl{
+  flex: none; width: 7.5rem;
+  font-family: 'Oswald', sans-serif; font-size: .56rem; letter-spacing: .12em;
+  text-transform: uppercase; color: #6b7079;
+}
+.recap-foot{ font-size: .64rem; line-height: 1.45; color: #6b7079; margin: .7rem 0 0; }
