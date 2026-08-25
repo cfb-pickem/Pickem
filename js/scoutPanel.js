@@ -189,8 +189,8 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool 
       <div class="scout-bar"><span style="width:${Math.max(pct, 100 - pct)}%"></span></div>
       ${pool ? `<div class="scout-pool">${escapeHtml(pool)}</div>` : ''}
       ${leansDog ? `<div class="scout-pool">Treat this one lightly. Calling a dog is a direction
-        the model has barely been tested on &mdash; only five predictions all last season landed this
-        low &mdash; so the number above is a guess, not a read.</div>` : ''}
+        the model has barely been tested on &mdash; 17 predictions all last season landed this low, and they
+        came in at 53% &mdash; so the number above is a guess, not a read.</div>` : ''}
       ${why ? `<ul class="scout-whys">${why}</ul>` : ''}
     </div>`;
 }
@@ -336,14 +336,14 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     ${cards || '<p class="scout-note">No games with a posted line this week.</p>'}
     <p class="scout-note">${model
       ? `Every game gets a pick, and the badge says what it is worth. Measured on last season:
-         <strong>Strong lean 75%</strong>, <strong>Clear lean 68%</strong>, <strong>Slight lean 56%</strong>,
-         <strong>Coin flip 50%</strong> &mdash; so a coin flip really is one, and naming a side there is
+         <strong>Strong lean 73%</strong>, <strong>Clear lean 71%</strong>, <strong>Slight lean 60%</strong>,
+         <strong>Coin flip 49%</strong> &mdash; so a coin flip really is one, and naming a side there is
          a guess rather than a read. <strong>Untested</strong> means the model is fairly sure they take
          the points but has almost never been graded on that call.
-         <br><br>${escapeHtml(teamName)}'s own history is weighted hard here &mdash; harder than its accuracy alone
-         would justify &mdash; so these are their numbers rather than the pool's. The side still rarely differs from
-         the field, because the pool's lean on a game is bigger than any one person's; what widens is conviction.
-         It separates people further every season played.
+         <br><br>Most of this is the pool, not the person: after one season a player's own tendency is only
+         worth so much, so the side rarely differs from the field and what moves is conviction. Read these as
+         <strong>where ${escapeHtml(teamName)} sits against the field</strong>. It separates people further every
+         season played.
          <br><br>Fitted only on games played before week ${targetWeek}, so it has never seen this week's picks.
          Every game gets a side named; the badge is what says how far to trust it.`
       : 'Not enough finished games yet to read anyone reliably. This fills in as the season goes.'}</p>`;

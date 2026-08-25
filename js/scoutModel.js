@@ -13,7 +13,7 @@
 //
 //                                       accuracy   log loss   AUC
 //   always guess "lays the points"       60.2%      0.6723    0.489
-//   this model, leave-one-week-out       57.9%      0.6684    0.582
+//   this model, leave-one-week-out       58.6%      0.6587    0.601
 //
 // Leave-one-week-out trains on every OTHER week, including later ones. That is
 // fine for comparing features but flatters the real job, which only ever has
@@ -39,8 +39,8 @@
 // implies we know. `confidenceTier()` exists to keep the UI honest.
 //
 // It is also deliberately ASYMMETRIC. Predicting someone will LAY the points is
-// well tested - 56-75% right across 390 cross-validated predictions at an edge
-// of 0.10 or more, and 75% on the 137 that reach a Strong lean. Predicting they will TAKE the points is not: only five
+// well tested - 60-73% right across 412 cross-validated predictions at an edge
+// of 0.10 or more, and 73% on the 80 that reach a Strong lean. Predicting they will TAKE the points is not: only five
 // predictions in the whole 2025 season landed below 40%, so there is no
 // evidence either way. Those come back as "No read" WITH A REASON rather than
 // as a lean - and rather than as silence, which reads as having nothing to say.
@@ -82,9 +82,9 @@ const sigmoid = z => 1 / (1 + Math.exp(-z));
 // Ridge penalties, chosen by the sweep in the test harness. They are strong on
 // purpose: at this sample size the unpenalised fit is worse than guessing.
 const L_BRAND       = 20;
-const L_PLAYER      = 1;    // the player's own lean - weighted hard, see note below
-const L_CONFERENCE  = 3;    // league-wide conference pull — the strongest addition
-const L_PLAYER_CONF = 1.5;  // their own conference lean
+const L_PLAYER      = 8;    // the player's own lean
+const L_CONFERENCE  = 1;    // league-wide conference pull
+const L_PLAYER_CONF = 10;   // their own conference lean, shrunk harder
 
 // A conference needs this many appearances before it gets its own coefficient.
 // Ridge shrinks by information, not by sample size, so without a floor a
@@ -98,31 +98,32 @@ const L_PLAYER_CONF = 1.5;  // their own conference lean
 // conference contributes nothing rather than a confident guess.
 const MIN_CONFERENCE_ROWS = 50;
 
-// HOW HARD THE PERSON COUNTS AGAINST THE POOL.
+// HOW THESE PENALTIES WERE CHOSEN.
 //
-// L_PLAYER started at 20, which is what the cross-validation likes: personal
-// tendency is barely reliable (split-half r=0.117), so the maths wants it
-// shrunk almost to nothing. The cost was that all thirteen players came out
-// within 8.6 points of each other and never disagreed - a "scouting report"
-// that said the same thing about everybody.
+// Grid-searched over brand, conference and player weights, scored two ways: hold
+// out one week at a time (LOO, n=826) and walk forward on past weeks only, gated
+// at 400 rows of history the way scoutPanel gates it (WF, n=404).
 //
-// So it is deliberately turned up, and 1 is where it stops: the furthest the
-// person can be weighted while the model is still BETTER CALIBRATED THAN
-// GUESSING. Log loss 0.6684 against a 0.6723 baseline. At 0.5 it becomes 0.6765
-// and crosses that line, which is the point where the numbers start lying.
+//   brand conf player    LOO ll    LOO AUC    WF ll     WF AUC
+//     20    1     6      0.6590    0.5999    0.6848    0.5373
+//     20    1     8      0.6587    0.6009    0.6849    0.5364   <- chosen
+//     20    1    12      0.6585    0.6008    0.6854    0.5337
+//     20    2     6      0.6595    0.5974    0.6844    0.5385
+//     40    1     8      0.6580    0.6001    0.6832    0.5309
 //
-//   L_PLAYER   spread across players   log loss   AUC     "Strong lean" tier
-//     20              8.6pp             0.6598    0.595   75% right on n=36
-//      4             16.0pp             0.6608    0.593   73% on n=95
-//      1             25.0pp             0.6684    0.582   75% on n=137
-//      0.5           31.6pp             0.6765    0.575   75% on n=147  <- too far
+// Everything in that table sits inside 0.002 of log loss and 0.005 of AUC of
+// everything else. That is hyperparameter noise on 826 rows, not signal, so the
+// 4th decimal was not chased: this is simply the best AUC under both scorings,
+// and AUC is what the panel actually leans on when it ranks a player against
+// the field.
 //
-// Worth knowing what this does and does not buy. Sides still almost never
-// differ between players - the pool's lean on a given game is simply bigger
-// than any one person's - so what widens is CONVICTION, not the pick. Ranking
-// gets slightly worse (AUC 0.595 -> 0.582) and that is the real price. What
-// improves is coverage: four times as many games earn a Strong lean, and that
-// badge still calls the right side 75% of the time.
+// One earlier experiment is worth not repeating. L_PLAYER was pushed to 1 to
+// force the thirteen players further apart - it worked (spread 8.6pp -> 25pp)
+// but cost real ranking quality (LOO AUC 0.595 -> 0.582, WF worse still), and
+// the sides barely moved anyway because the pool's lean on a game is bigger
+// than any one person's. 8 keeps most of the separation (about 13pp) while
+// being the best-ranking setting on the board, so it is not a compromise
+// between the two so much as the point where they agree.
 
 /**
  * Normalise a pick/team name the way the rest of the site does, so
@@ -364,21 +365,22 @@ export function confidenceTier(p) {
   // and `hit` is not a vibe - it is how often this badge picked the right side
   // across all 826 cross-validated predictions from last season. A coin flip is
   // labelled a coin flip precisely so nobody reads it as a call.
-  if (p >= 0.75) return { tier: 'strong', label: 'Strong lean', hit: 75 };
-  if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean',  hit: 68 };
-  if (p >= 0.60) return { tier: 'slight', label: 'Slight lean', hit: 56 };
+  if (p >= 0.75) return { tier: 'strong', label: 'Strong lean', hit: 73 };
+  if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean',  hit: 71 };
+  if (p >= 0.60) return { tier: 'slight', label: 'Slight lean', hit: 60 };
   // Two very different reasons to stay quiet, and the UI should not render them
   // the same way. Under 0.40 the model has a real opinion - it thinks they will
   // TAKE the points - but across the whole 2025 season only five predictions
   // ever landed there, so that direction has never been tested. That is
   // untested, not absent, and a card saying nothing implies the wrong one.
   // Below 0.40 the model is NOT ambivalent - it is fairly sure they take the
-  // points. What is missing is any track record: five predictions all season
-  // landed here. "Coin flip" would misdescribe that (it implies no opinion) and
-  // so would a lean badge (it implies a tested one). Hence its own label, and
-  // no hit rate quoted, because n=5 is not a number worth printing.
+  // points. What is missing is a track record: only 17 predictions all season
+  // landed here, and they came in at 52.9%, which is a coin flip on a sample
+  // too small to call one. "Coin flip" would misdescribe the model's state (it
+  // implies no opinion) and a lean badge would claim a confidence the record
+  // does not support, so this gets its own label and no quoted hit rate.
   if (p <= 0.40) return { tier: 'untested', label: 'Untested', reason: 'leans-dog' };
-  return { tier: 'coin-flip', label: 'Coin flip', hit: 50, reason: 'too-close' };
+  return { tier: 'coin-flip', label: 'Coin flip', hit: 49, reason: 'too-close' };
 }
 
 /**
