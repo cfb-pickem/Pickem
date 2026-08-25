@@ -157,8 +157,11 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool 
   }
 
   const flip = tier.tier === 'coin-flip';
+  const leansDog = flip && tier.reason === 'leans-dog';
   const side = prediction.p >= 0.5 ? prediction.fav : prediction.dog;
   const pct = Math.round(prediction.p * 100);
+  // A no-read that leans to the dog still gets to say so, just not as a lean.
+  const dogSpread = `+${Math.abs(Number(game.line))}`;
   const why = (reasons || []).slice(0, 3).map(r => `
       <li class="scout-why ${r.kind === 'up' ? 'is-up' : 'is-down'}">
         <span class="scout-why-sign">${r.kind === 'up' ? '+' : '−'}</span>
@@ -174,7 +177,11 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool 
       <div class="scout-game-bd">
         <div class="scout-side">
           <span class="scout-pick${flip ? ' is-muted' : ''}">${flip ? 'No read' : escapeHtml(side)}</span>
-          <span class="scout-sub">${flip ? 'could go either way' : 'lays the points'}</span>
+          <span class="scout-sub">${flip
+            ? (leansDog
+                ? `leans ${escapeHtml(prediction.dog)} ${dogSpread}, but see below`
+                : 'too close to call')
+            : 'lays the points'}</span>
         </div>
         <div class="scout-meter">
           ${flip ? '' : `<span class="scout-pct">${pct}%</span>`}
@@ -183,6 +190,10 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool 
       </div>
       ${flip ? '' : `<div class="scout-bar"><span style="width:${pct}%"></span></div>`}
       ${pool ? `<div class="scout-pool">${escapeHtml(pool)}</div>` : ''}
+      ${leansDog ? `<div class="scout-pool">The model does lean toward
+        ${escapeHtml(prediction.dog)} ${dogSpread} here. It is not shown as a lean because calling a
+        dog is a direction it has never been tested on &mdash; only five predictions all last season
+        landed this low, far too few to trust.</div>` : ''}
       ${why ? `<ul class="scout-whys">${why}</ul>` : ''}
     </div>`;
 }

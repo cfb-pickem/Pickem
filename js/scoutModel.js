@@ -13,7 +13,7 @@
 //
 //                                       accuracy   log loss   AUC
 //   always guess "lays the points"       60.2%      0.6723    0.489
-//   this model, leave-one-week-out       59.2%      0.6590    0.599
+//   this model, leave-one-week-out       58.2%      0.6598    0.595
 //
 // Leave-one-week-out trains on every OTHER week, including later ones. That is
 // fine for comparing features but flatters the real job, which only ever has
@@ -38,13 +38,25 @@
 // Never render it as a prediction, a lock, or a confidence percentage that
 // implies we know. `confidenceTier()` exists to keep the UI honest.
 //
+// It is also deliberately ASYMMETRIC. Predicting someone will LAY the points is
+// well tested - 67-75% right across 403 cross-validated predictions at an edge
+// of 0.10 or more. Predicting they will TAKE the points is not: only five
+// predictions in the whole 2025 season landed below 40%, so there is no
+// evidence either way. Those come back as "No read" WITH A REASON rather than
+// as a lean - and rather than as silence, which reads as having nothing to say.
+//
 // WHY the ceiling is low — measured, not assumed:
 //   * A player's lay-rate has split-half reliability r=0.117 (Spearman-Brown
 //     0.209). At ~60 picks a season, personal ATS tendency is mostly noise.
 //     This is the single biggest limit, and it fixes itself with more seasons.
 //   * CONFERENCE is the strongest learned feature after the spread, and it
 //     generalises to teams the model has never scored (the map is static), so
-//     it still works in week 1. Adding it moved AUC 0.574 -> 0.599.
+//     it still works in week 1. Adding it moved AUC 0.574 -> 0.595. Only
+//     conferences with real exposure get a coefficient (MIN_CONFERENCE_ROWS):
+//     without that floor a 29-row conference earned a +0.9 pull, and two of
+//     those stacking sent a week 0 prediction to 14% - somewhere nothing had
+//     ever tested. The floor lifts the split-half correlation of the
+//     conference block from 0.09 to 0.59.
 //   * Team "brand" bias is real and repeatable: split-half r=0.284. The pool
 //     over-backs some names and fades others regardless of the number.
 //   * Spread size barely matters (lay-rate is 59-62% across every band), but
@@ -71,8 +83,20 @@ const sigmoid = z => 1 / (1 + Math.exp(-z));
 // purpose: at this sample size the unpenalised fit is worse than guessing.
 const L_BRAND       = 20;
 const L_PLAYER      = 20;
-const L_CONFERENCE  = 1;    // league-wide conference pull — the strongest addition
+const L_CONFERENCE  = 3;    // league-wide conference pull — the strongest addition
 const L_PLAYER_CONF = 25;   // one player's own conference lean; weaker, shrunk harder
+
+// A conference needs this many appearances before it gets its own coefficient.
+// Ridge shrinks by information, not by sample size, so without a floor a
+// conference seen 29 times can still earn a ±0.9 pull — and two of those
+// stacking on one game sends a prediction somewhere nothing has ever tested.
+// Split-half across the season: SEC (590 rows) and Big 12 (266) hold their sign
+// and size, while American (29) swings +0.91 -> -0.17. Excluding just the two
+// smallest lifts the split-half correlation of the whole conference block from
+// 0.09 to 0.59 - i.e. from noise to something that replicates - and costs
+// almost nothing in cross-validation (AUC 0.597 -> 0.595). Below the floor a
+// conference contributes nothing rather than a confident guess.
+const MIN_CONFERENCE_ROWS = 50;
 
 /**
  * Normalise a pick/team name the way the rest of the site does, so
@@ -206,7 +230,14 @@ export function fitScoutModel(rows) {
   if (!rows.length) return null;
   const teamNames  = [...new Set(rows.flatMap(r => [r.fav, r.dog]))].sort();
   const playerIds  = [...new Set(rows.map(r => r.pid))].sort((a, b) => a - b);
-  const confNames  = [...new Set(rows.flatMap(r => [conferenceOf(r.fav), conferenceOf(r.dog)]).filter(Boolean))].sort();
+  const confSeen = {};
+  for (const r of rows) {
+    for (const t of [r.fav, r.dog]) {
+      const c = conferenceOf(t);
+      if (c) confSeen[c] = (confSeen[c] || 0) + 1;
+    }
+  }
+  const confNames = Object.keys(confSeen).filter(c => confSeen[c] >= MIN_CONFERENCE_ROWS).sort();
   const teamIx     = new Map(teamNames.map((t, i) => [t, i]));
   const playerIx   = new Map(playerIds.map((p, i) => [p, i]));
   const confIx     = new Map(confNames.map((c, i) => [c, i]));
@@ -306,7 +337,13 @@ export function confidenceTier(p) {
   if (p >= 0.75) return { tier: 'strong', label: 'Strong lean' };
   if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean' };
   if (p >= 0.60) return { tier: 'slight', label: 'Slight lean' };
-  return { tier: 'coin-flip', label: 'No read' };
+  // Two very different reasons to stay quiet, and the UI should not render them
+  // the same way. Under 0.40 the model has a real opinion - it thinks they will
+  // TAKE the points - but across the whole 2025 season only five predictions
+  // ever landed there, so that direction has never been tested. That is
+  // untested, not absent, and a card saying nothing implies the wrong one.
+  if (p <= 0.40) return { tier: 'coin-flip', label: 'No read', reason: 'leans-dog' };
+  return { tier: 'coin-flip', label: 'No read', reason: 'too-close' };
 }
 
 /**
