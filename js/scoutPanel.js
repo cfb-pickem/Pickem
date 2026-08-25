@@ -164,12 +164,35 @@ function shell(name, bodyHtml) {
 }
 
 let openEl = null;
+let lockedScrollY = 0;
+
+// iOS Safari ignores `body { overflow: hidden }` - the page keeps scrolling
+// behind a fixed overlay, which drags the panel around and reads as the whole
+// thing being broken. Pinning the body and restoring the offset afterwards is
+// the version that actually holds on a phone.
+function lockScroll() {
+  lockedScrollY = window.scrollY || window.pageYOffset || 0;
+  document.body.style.position = 'fixed';
+  document.body.style.top = `-${lockedScrollY}px`;
+  document.body.style.left = '0';
+  document.body.style.right = '0';
+  document.body.style.overflow = 'hidden';
+}
+function unlockScroll() {
+  document.body.style.position = '';
+  document.body.style.top = '';
+  document.body.style.left = '';
+  document.body.style.right = '';
+  document.body.style.overflow = '';
+  window.scrollTo(0, lockedScrollY);
+}
+
 function close() {
   if (!openEl) return;
   openEl.remove();
   openEl = null;
   document.removeEventListener('keydown', onKey);
-  document.body.style.overflow = '';
+  unlockScroll();
 }
 function onKey(e) { if (e.key === 'Escape') close(); }
 
@@ -196,7 +219,7 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
   wrap.className = 'scout-overlay';
   wrap.innerHTML = shell(teamName, '<p class="scout-note">Reading the season…</p>');
   document.body.appendChild(wrap);
-  document.body.style.overflow = 'hidden';
+  lockScroll();
   openEl = wrap;
   document.addEventListener('keydown', onKey);
   wrap.addEventListener('click', e => { if (e.target === wrap) close(); });

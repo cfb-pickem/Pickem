@@ -800,6 +800,8 @@ header.cfp-card {
 
 .scout-overlay{
   position: fixed; inset: 0; z-index: 400;
+  height: 100dvh;
+  overscroll-behavior: contain;
   background: rgba(0,0,0,.72);
   display: flex; align-items: flex-end; justify-content: center;
   padding: 0;
@@ -810,14 +812,22 @@ header.cfp-card {
 }
 
 .scout-sheet{
-  width: 100%; max-width: 520px; max-height: 92vh;
+  width: 100%; max-width: 520px;
+  /* dvh, not vh. On iOS Safari vh counts the space behind the address bar, so a
+     92vh sheet is taller than what you can actually see and the header - close
+     button included - sits off screen. dvh tracks the visible viewport; the vh
+     line stays as a fallback for anything that does not know dvh. */
+  max-height: 92vh;
+  max-height: 92dvh;
   display: flex; flex-direction: column;
   background: linear-gradient(180deg, var(--cfp-black), #16181c);
   border: 1px solid rgba(218,165,32,.12);
   border-top: 3px solid var(--cfp-gold);
   box-shadow: 0 -12px 48px rgba(0,0,0,.7);
 }
-@media (min-width: 640px){ .scout-sheet{ max-height: 88vh; box-shadow: 0 24px 70px rgba(0,0,0,.8); } }
+@media (min-width: 640px){
+  .scout-sheet{ max-height: 88vh; max-height: 88dvh; box-shadow: 0 24px 70px rgba(0,0,0,.8); }
+}
 
 .scout-hd{
   display: flex; align-items: flex-start; gap: 12px;
@@ -841,7 +851,13 @@ header.cfp-card {
 }
 .scout-close:hover{ color: var(--cfp-ivory); border-color: rgba(231,231,231,.3); }
 
-.scout-bd{ padding: 14px 16px 20px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.scout-bd{
+  padding: 14px 16px 20px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  /* Stops the scroll handing off to the page underneath when you reach the end
+     of the panel, which on a phone reads as the whole thing jumping. */
+  overscroll-behavior: contain;
+}
 
 .scout-stats{
   display: flex; gap: 0; margin-bottom: 14px;
@@ -971,7 +987,7 @@ header.cfp-card {
   margin-bottom: .55rem;
 }
 .pick-field-lbl{
-  font-family: 'Oswald', sans-serif; font-size: .56rem; letter-spacing: .18em;
+  font-family: 'Oswald', sans-serif; font-size: .56rem; letter-spacing: .14em;
   text-transform: uppercase; color: var(--cfp-gold-2);
 }
 .pick-field-note{
