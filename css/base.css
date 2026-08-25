@@ -1001,15 +1001,16 @@ header.cfp-card {
 .pick-split-side.is-lead .pick-split-pct{ color: var(--cfp-gold-2); }
 .is-untested .pick-split-side.is-lead .pick-split-pct{ color: #c4a6f5; }
 
+/* One bar, two segments in away|home order so each sits under its own badge.
+   Gold marks the bigger share, so the colour means the same thing here as it
+   does on the percentages either side of it. */
 .pick-split-bar{
-  display: block; flex: 1 1 auto; min-width: 0; height: 6px;
-  background: rgba(255,255,255,.07);
+  display: flex; flex: 1 1 auto; min-width: 0; height: 6px; gap: 2px;
+  background: transparent;
 }
-.pick-split-fill{
-  display: block; height: 6px;
-  background: linear-gradient(90deg, var(--cfp-gold), var(--cfp-gold-2));
-}
-.is-untested .pick-split-fill{ background: linear-gradient(90deg, #7c5fb0, #9b7bd4); }
+.pick-split-seg{ display: block; height: 6px; background: rgba(255,255,255,.09); }
+.pick-split-seg.is-lead{ background: var(--cfp-gold-2); }
+.is-untested .pick-split-seg.is-lead{ background: #9b7bd4; }
 
 .pick-field-src{
   font-size: .6rem; line-height: 1.45; color: #6b7079; margin-top: .5rem;

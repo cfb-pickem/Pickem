@@ -1041,10 +1041,12 @@
         // Deliberately phrased as a projection, never as a count. Nobody's picks
         // for this week are readable - not by the model, not by this page - and
         // "71% on TCU" read like a tally of real ones.
-        const pickSide = read.side;
-        const otherSide = (pickSide === g.home) ? g.away : g.home;
-        const pctPick = read.pct;
-        const pctOther = 100 - read.pct;
+        // Away on the left, home on the right - the same order as the logos and
+        // the pick buttons directly above. Ordering by whichever side the model
+        // likes put TCU's share under North Carolina's badge, which read as a
+        // mistake even though the numbers were right.
+        const pctAway = (read.side === g.away) ? read.pct : 100 - read.pct;
+        const pctHome = 100 - pctAway;
 
         const el = document.createElement('div');
         el.className = 'pick-field' + (read.tested ? '' : ' is-untested');
@@ -1054,19 +1056,19 @@
             '<span class="pick-field-note">Historical pick model</span>' +
           '</div>' +
           '<div class="pick-split">' +
-            '<span class="pick-split-side' + (pctPick >= pctOther ? ' is-lead' : '') + '">' +
-              '<span class="pick-split-team">' + escapeHtml(pickSide) + '</span>' +
-              '<span class="pick-split-pct">' + pctPick + '%</span>' +
+            '<span class="pick-split-side' + (pctAway >= pctHome ? ' is-lead' : '') + '">' +
+              '<span class="pick-split-team">' + escapeHtml(g.away) + '</span>' +
+              '<span class="pick-split-pct">' + pctAway + '%</span>' +
             '</span>' +
             '<span class="pick-split-bar">' +
-              '<span class="pick-split-fill" style="width:' + pctPick + '%"></span>' +
+              '<span class="pick-split-seg' + (pctAway >= pctHome ? ' is-lead' : '') + '" style="width:' + pctAway + '%"></span>' +
+              '<span class="pick-split-seg' + (pctHome > pctAway ? ' is-lead' : '') + '" style="width:' + pctHome + '%"></span>' +
             '</span>' +
-            '<span class="pick-split-side' + (pctOther > pctPick ? ' is-lead' : '') + '">' +
-              '<span class="pick-split-team">' + escapeHtml(otherSide) + '</span>' +
-              '<span class="pick-split-pct">' + pctOther + '%</span>' +
+            '<span class="pick-split-side' + (pctHome > pctAway ? ' is-lead' : '') + '">' +
+              '<span class="pick-split-team">' + escapeHtml(g.home) + '</span>' +
+              '<span class="pick-split-pct">' + pctHome + '%</span>' +
             '</span>' +
           '</div>' +
-          '<div class="pick-field-src">Learned from past seasons &mdash; this week&rsquo;s picks stay hidden until kickoff.</div>' +
           (why ? '<div class="pick-field-whys">' + why + '</div>' : '') +
           fpiLine(g) +
           (read.tested ? '' :
