@@ -111,6 +111,7 @@ function tierClass(tier) {
   return tier === 'strong' ? 'is-strong'
     : tier === 'clear' ? 'is-clear'
     : tier === 'slight' ? 'is-slight'
+    : tier === 'untested' ? 'is-untested'
     : 'is-flip';
 }
 
@@ -156,8 +157,8 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool 
       </div>`;
   }
 
-  const flip = tier.tier === 'coin-flip';
-  const leansDog = flip && tier.reason === 'leans-dog';
+  const flip = tier.tier === 'coin-flip' || tier.tier === 'untested';
+  const leansDog = tier.tier === 'untested';
   const side = prediction.p >= 0.5 ? prediction.fav : prediction.dog;
   const pct = Math.round(prediction.p * 100);
   // A no-read that leans to the dog still gets to say so, just not as a lean.
@@ -176,24 +177,20 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool 
       </div>
       <div class="scout-game-bd">
         <div class="scout-side">
-          <span class="scout-pick${flip ? ' is-muted' : ''}">${flip ? 'No read' : escapeHtml(side)}</span>
-          <span class="scout-sub">${flip
-            ? (leansDog
-                ? `leans ${escapeHtml(prediction.dog)} ${dogSpread}, but see below`
-                : 'too close to call')
-            : 'lays the points'}</span>
+          <span class="scout-pick${flip ? ' is-muted' : ''}">${escapeHtml(side)}</span>
+          <span class="scout-sub">${prediction.p >= 0.5 ? 'lays the points' : `takes the points, ${dogSpread}`}${
+            tier.tier === 'coin-flip' ? ' — but barely' : ''}</span>
         </div>
         <div class="scout-meter">
-          ${flip ? '' : `<span class="scout-pct">${pct}%</span>`}
+          <span class="scout-pct">${Math.max(pct, 100 - pct)}%</span>
           <span class="scout-chip">${escapeHtml(tier.label)}</span>
         </div>
       </div>
-      ${flip ? '' : `<div class="scout-bar"><span style="width:${pct}%"></span></div>`}
+      <div class="scout-bar"><span style="width:${Math.max(pct, 100 - pct)}%"></span></div>
       ${pool ? `<div class="scout-pool">${escapeHtml(pool)}</div>` : ''}
-      ${leansDog ? `<div class="scout-pool">The model does lean toward
-        ${escapeHtml(prediction.dog)} ${dogSpread} here. It is not shown as a lean because calling a
-        dog is a direction it has never been tested on &mdash; only five predictions all last season
-        landed this low, far too few to trust.</div>` : ''}
+      ${leansDog ? `<div class="scout-pool">Treat this one lightly. Calling a dog is a direction
+        the model has barely been tested on &mdash; only five predictions all last season landed this
+        low &mdash; so the number above is a guess, not a read.</div>` : ''}
       ${why ? `<ul class="scout-whys">${why}</ul>` : ''}
     </div>`;
 }
@@ -320,7 +317,7 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
       revealed,
       // Not on a No read card: below 60% the direction does not track reality,
       // so "everyone leans this way" would contradict the verdict above it.
-      pool: usable && !revealed && tier && tier.tier !== 'coin-flip' ? poolLine(g) : null
+      pool: usable && !revealed ? poolLine(g) : null
     });
   }).join('');
 
@@ -338,7 +335,12 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     </div>
     ${cards || '<p class="scout-note">No games with a posted line this week.</p>'}
     <p class="scout-note">${model
-      ? `Most of this is the pool, not the person. After one season a player's own tendency is worth under ten
+      ? `Every game gets a pick, and the badge says what it is worth. Measured on last season:
+         <strong>Strong lean 75%</strong>, <strong>Clear lean 70%</strong>, <strong>Slight lean 67%</strong>,
+         <strong>Coin flip 47%</strong> &mdash; so a coin flip really is one, and naming a side there is
+         a guess rather than a read. <strong>Untested</strong> means the model is fairly sure they take
+         the points but has almost never been graded on that call.
+         <br><br>Most of this is the pool, not the person. After one season a player's own tendency is worth under ten
          points of probability and never flips the side, so read these as <strong>where ${escapeHtml(teamName)} sits
          against the field</strong> rather than as a personal call. It separates people further every season played.
          <br><br>Fitted only on games played before week ${targetWeek}, so it has never seen this week's picks.

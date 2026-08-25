@@ -945,3 +945,9 @@ header.cfp-card {
   line-height: 1.45;
   color: #9aa0a8;
 }
+
+/* "Untested": the model has a view, but no track record behind it. */
+.scout-game.is-untested{ border-color: rgba(155,123,212,.30); }
+.is-untested .scout-pick{ color: #c4a6f5; }
+.is-untested .scout-chip{ color: #c4a6f5; border-color: rgba(155,123,212,.55); }
+.is-untested .scout-bar > span{ background: #9b7bd4; }

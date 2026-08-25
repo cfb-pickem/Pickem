@@ -334,16 +334,25 @@ export function confidenceTier(p) {
   // spot one who is likely to TAKE them — below ~60% the predictions do not
   // track reality at all. So everything under 0.60 is a coin flip, however
   // far under it sits, and the band is deliberately asymmetric.
-  if (p >= 0.75) return { tier: 'strong', label: 'Strong lean' };
-  if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean' };
-  if (p >= 0.60) return { tier: 'slight', label: 'Slight lean' };
+  // Every game names a side. The badge is what says how much that name is worth,
+  // and `hit` is not a vibe - it is how often this badge picked the right side
+  // across all 826 cross-validated predictions from last season. A coin flip is
+  // labelled a coin flip precisely so nobody reads it as a call.
+  if (p >= 0.75) return { tier: 'strong', label: 'Strong lean', hit: 75 };
+  if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean',  hit: 70 };
+  if (p >= 0.60) return { tier: 'slight', label: 'Slight lean', hit: 67 };
   // Two very different reasons to stay quiet, and the UI should not render them
   // the same way. Under 0.40 the model has a real opinion - it thinks they will
   // TAKE the points - but across the whole 2025 season only five predictions
   // ever landed there, so that direction has never been tested. That is
   // untested, not absent, and a card saying nothing implies the wrong one.
-  if (p <= 0.40) return { tier: 'coin-flip', label: 'No read', reason: 'leans-dog' };
-  return { tier: 'coin-flip', label: 'No read', reason: 'too-close' };
+  // Below 0.40 the model is NOT ambivalent - it is fairly sure they take the
+  // points. What is missing is any track record: five predictions all season
+  // landed here. "Coin flip" would misdescribe that (it implies no opinion) and
+  // so would a lean badge (it implies a tested one). Hence its own label, and
+  // no hit rate quoted, because n=5 is not a number worth printing.
+  if (p <= 0.40) return { tier: 'untested', label: 'Untested', reason: 'leans-dog' };
+  return { tier: 'coin-flip', label: 'Coin flip', hit: 47, reason: 'too-close' };
 }
 
 /**
