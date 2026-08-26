@@ -322,6 +322,8 @@
     </section>
 
     <!-- SEASON-WIDE TABLES: Win % + Top Dawg -->
+    <section id="season-history" class="mb-5" hidden></section>
+
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
       <!-- LEFT: Total Season Win % -->
       <div class="cfp-card gold-shadow">
@@ -430,6 +432,7 @@
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
+    import { renderSeasonHistory } from './js/seasonHistory.js';
     import { sameTeam, escapeHtml } from './js/utils.js';
     import { gameScore } from './js/gameScore.js';
 
@@ -1011,6 +1014,12 @@
 
       await main();
       seasonSel.onchange = main;
+
+      // Season-by-season spans every year, so it does not follow the season
+      // picker and only needs rendering once. Fired after the page is usable
+      // rather than blocking it.
+      renderSeasonHistory(document.getElementById('season-history'), supabase)
+        .catch(e => console.warn('season history unavailable:', e));
     }
 
     startup();

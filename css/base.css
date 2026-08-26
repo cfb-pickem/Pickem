@@ -1202,3 +1202,25 @@ header.cfp-card {
   text-transform: uppercase; color: #6b7079;
 }
 .recap-foot{ font-size: .64rem; line-height: 1.45; color: #6b7079; margin: .7rem 0 0; }
+
+/* ============================================
+   SEASON BY SEASON — history table on the stats page
+   ============================================ */
+
+.hist-name{
+  font-family: 'Oswald', sans-serif; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--cfp-ivory); white-space: nowrap;
+}
+.hist-win{
+  font-family: 'Teko','Oswald',sans-serif; font-weight: 700; font-size: 1.15rem;
+  color: #e8e8e8; font-variant-numeric: tabular-nums;
+}
+/* Carried over from Splash rather than computed here. */
+.hist-win.is-archive{ color: var(--cfp-gold-2); }
+.hist-none{ color: #4b5058; }
+.hist-career{
+  font-family: 'Teko','Oswald',sans-serif; font-weight: 700; font-size: 1.35rem;
+  color: #fff; font-variant-numeric: tabular-nums;
+}
+.hist-seasons{ color: #9aa0a8; font-variant-numeric: tabular-nums; }
+.hist-foot{ font-size: .68rem; line-height: 1.5; color: #6b7079; margin: .6rem 0 0; }
