@@ -38,9 +38,23 @@
 // Never render it as a prediction, a lock, or a confidence percentage that
 // implies we know. `confidenceTier()` exists to keep the UI honest.
 //
-// It is also deliberately ASYMMETRIC. Predicting someone will LAY the points is
-// well tested - 56-79% right across 410 cross-validated predictions at an edge
-// of 0.10 or more, and 79% on the 90 that reach a Strong lean. Predicting they will TAKE the points is not: only five
+// The thresholds are NOT symmetric about 0.5, and that is measured rather than
+// assumed. Everything here is against the spread, so "favourite" and "underdog"
+// look like arbitrary labels - but the POOL is not symmetric about them. It lays
+// the points 60% of the time, so predicting somebody takes them is a fight with
+// the base rate:
+//
+//   the model says          n     called the side right
+//     will LAY             661          62.9%
+//     will TAKE            165          50.9%
+//
+// A dog call is a coin flip. Not for want of training - 329 of the 826 training
+// picks took a dog, 39.8% of them - but because the evidence rarely overcomes
+// the prior in that direction. So nothing under 0.60 claims anything, whichever
+// side it names, and the card prints the side regardless so it can be judged.
+//
+// By edge on the lay side: 0.10-0.15 is 56.0% (n=116), 0.15-0.25 is 67.2%
+// (n=204), 0.25+ is 78.9% (n=90). That is where Slight, Clear and Strong sit. Predicting they will TAKE the points is not: only five
 // predictions in the whole 2025 season landed below 40%, so there is no
 // evidence either way. Those come back as "No read" WITH A REASON rather than
 // as a lean - and rather than as silence, which reads as having nothing to say.
@@ -431,19 +445,11 @@ export function confidenceTier(p) {
   if (p >= 0.75) return { tier: 'strong', label: 'Strong lean', hit: 79 };
   if (p >= 0.65) return { tier: 'clear',  label: 'Clear lean',  hit: 67 };
   if (p >= 0.60) return { tier: 'slight', label: 'Slight lean', hit: 56 };
-  // Two very different reasons to stay quiet, and the UI should not render them
-  // the same way. Under 0.40 the model has a real opinion - it thinks they will
-  // TAKE the points - but across the whole 2025 season only five predictions
-  // ever landed there, so that direction has never been tested. That is
-  // untested, not absent, and a card saying nothing implies the wrong one.
-  // Below 0.40 the model is NOT ambivalent - it is fairly sure they take the
-  // points. What is missing is a track record: only 17 predictions all season
-  // landed here, and they came in at 52.9%, which is a coin flip on a sample
-  // too small to call one. "Coin flip" would misdescribe the model's state (it
-  // implies no opinion) and a lean badge would claim a confidence the record
-  // does not support, so this gets its own label and no quoted hit rate.
-  if (p <= 0.40) return { tier: 'untested', label: 'Untested', reason: 'leans-dog' };
-  return { tier: 'coin-flip', label: 'Coin flip', hit: 55, reason: 'too-close' };
+  // No special case below 0.5 any more. There used to be an "Untested" tier for
+  // dog calls, on the grounds that almost none had ever been graded. Enough have
+  // now - 165 of them - and they come in at 50.9%. Tested, and worthless. One
+  // coin-flip tier covers both directions, and the card still names a side.
+  return { tier: 'coin-flip', label: 'Coin flip', hit: 52 };
 }
 
 /**

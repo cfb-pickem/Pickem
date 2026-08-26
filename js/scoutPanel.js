@@ -62,7 +62,6 @@ function tierClass(tier) {
   return tier === 'strong' ? 'is-strong'
     : tier === 'clear' ? 'is-clear'
     : tier === 'slight' ? 'is-slight'
-    : tier === 'untested' ? 'is-untested'
     : 'is-flip';
 }
 
@@ -108,8 +107,8 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool 
       </div>`;
   }
 
-  const flip = tier.tier === 'coin-flip' || tier.tier === 'untested';
-  const leansDog = tier.tier === 'untested';
+  const flip = tier.tier === 'coin-flip';
+  const leansDog = prediction.p < 0.5;
   const side = prediction.p >= 0.5 ? prediction.fav : prediction.dog;
   const pct = Math.round(prediction.p * 100);
   // A no-read that leans to the dog still gets to say so, just not as a lean.
@@ -139,9 +138,9 @@ function gameCard({ game, prediction, tier, reasons, actualPick, revealed, pool 
       </div>
       <div class="scout-bar"><span style="width:${Math.max(pct, 100 - pct)}%"></span></div>
       ${pool ? `<div class="scout-pool">${escapeHtml(pool)}</div>` : ''}
-      ${leansDog ? `<div class="scout-pool">Treat this one lightly. Calling a dog is a direction
-        the model has barely been tested on &mdash; 17 predictions all last season landed this low, and they
-        came in at 53% &mdash; so the number above is a guess, not a read.</div>` : ''}
+      ${leansDog ? `<div class="scout-pool">Worth knowing: calls like this &mdash; that somebody TAKES the
+        points &mdash; have landed at 51% across 165 graded predictions. A coin flip. The pool lays the points
+        60% of the time, and the model rarely has enough to argue with that.</div>` : ''}
       ${why ? `<ul class="scout-whys">${why}</ul>` : ''}
     </div>`;
 }
@@ -333,7 +332,7 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
     <p class="scout-note">${model
       ? `Every game gets a pick, and the badge says what it is worth. Measured on last season:
          <span id="scout-badge-rates"><strong>Strong lean 79%</strong>, <strong>Clear lean 67%</strong>,
-         <strong>Slight lean 56%</strong>, <strong>Coin flip 55%</strong></span> &mdash; so a coin flip
+         <strong>Slight lean 56%</strong>, <strong>Coin flip 52%</strong></span> &mdash; so a coin flip
          really is one, and naming a side there is a guess rather than a read. <strong>Untested</strong> means the model is fairly sure they take
          the points but has almost never been graded on that call.
          <br><br>Most of this is the pool, not the person: after one season a player's own tendency is only
