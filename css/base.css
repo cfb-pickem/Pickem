@@ -1273,7 +1273,10 @@ header.cfp-card {
   }
 }
 
-/* A pick card is a column: the analytics block sits at the bottom of it, so
-   cards in the same row end level instead of stair-stepping. */
+/* A pick card is a column. Cards in a row already stretch to the same height,
+   so the analytics block stays put under the badges rather than being pushed to
+   the floor: a card carrying an extra line of caveat would otherwise drag every
+   line inside it out of step with the card beside it. Any slack ends up as quiet
+   space at the foot of the shorter card instead. */
 .pick-game{ display: flex; flex-direction: column; }
-.pick-game .pick-field{ margin-top: auto; }
+.pick-game .pick-field{ margin-bottom: auto; }
