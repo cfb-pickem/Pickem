@@ -958,10 +958,22 @@
       prefillSelections();
     }
 
+    // Three columns is right for a twelve-game playoff slate and wrong for the
+    // four-game week this league usually plays - it leaves one card stranded
+    // beside two empty columns. So the column count follows the slate.
+    function fitColumns(el, n){
+      if (!el) return;
+      el.classList.remove('md:grid-cols-2', 'lg:grid-cols-3');
+      const cols = n <= 4 ? Math.max(1, Math.min(2, n)) : 3;
+      el.style.gridTemplateColumns = '';
+      el.dataset.cols = String(cols);
+    }
+
     function renderGameCards(games){
       const cards = games.map(g => gameCardHtml(g, { playoffMode: isPlayoffMode }));
 
       gamesEl.innerHTML = cards.join('');
+      fitColumns(gamesEl, games.length);
       paintFieldReads(games);
     }
 
@@ -1090,6 +1102,7 @@
       const cards = games.map(g => gameCardHtml(g, { playoffMode: isPlayoffMode }));
 
       tiebreakerEl.innerHTML = cards.join('');
+      fitColumns(tiebreakerEl, games.length);
       paintFieldReads(games);
     }
 

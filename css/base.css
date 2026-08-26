@@ -829,6 +829,33 @@ header.cfp-card {
   .scout-sheet{ max-height: 88vh; max-height: 88dvh; box-shadow: 0 24px 70px rgba(0,0,0,.8); }
 }
 
+/* ---- Desktop: stop being a phone ----------------------------------------
+   At 520px wide in a 1440px window the panel was a tall column you had to
+   scroll to see half of - four games, two visible. Wider, and the cards go
+   two-up, so a whole week fits on screen at once. */
+@media (min-width: 900px){
+  .scout-sheet{ max-width: 940px; }
+  .scout-hd{ padding: 18px 22px; }
+  .scout-name{ font-size: 2.4rem; }
+
+  .scout-bd{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-content: start;
+    padding: 16px 22px 22px;
+  }
+  /* The summary and the footnote are about the whole panel, not one game. */
+  .scout-stats,
+  .scout-bd > .scout-note{ grid-column: 1 / -1; margin-bottom: 0; }
+  .scout-game{ margin-bottom: 0; }
+
+  /* Room to breathe now that there is room. */
+  .scout-pick{ font-size: 2.1rem; }
+  .scout-pct{ font-size: 2.2rem; }
+  .scout-stat{ font-size: 1.9rem; }
+}
+
 .scout-hd{
   display: flex; align-items: flex-start; gap: 12px;
   padding: 14px 16px; flex: none;
@@ -1224,3 +1251,29 @@ header.cfp-card {
 }
 .hist-seasons{ color: #9aa0a8; font-variant-numeric: tabular-nums; }
 .hist-foot{ font-size: .68rem; line-height: 1.5; color: #6b7079; margin: .6rem 0 0; }
+
+/* ============================================
+   PICK GRID — columns follow the slate size
+   ============================================ */
+
+/* Single column on a phone regardless; the data-cols count is a desktop idea. */
+#games[data-cols], #tiebreaker-games[data-cols]{ grid-template-columns: 1fr; }
+
+@media (min-width: 768px){
+  #games[data-cols="2"], #tiebreaker-games[data-cols="2"]{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #games[data-cols="3"], #tiebreaker-games[data-cols="3"]{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1100px){
+  #games[data-cols="3"], #tiebreaker-games[data-cols="3"]{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* A pick card is a column: the analytics block sits at the bottom of it, so
+   cards in the same row end level instead of stair-stepping. */
+.pick-game{ display: flex; flex-direction: column; }
+.pick-game .pick-field{ margin-top: auto; }
