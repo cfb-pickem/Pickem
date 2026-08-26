@@ -16,7 +16,14 @@
 // source and none of them are here.
 //
 // Names are the Splash entry names, mapped to current teams by NAME_ALIASES
-// below, since a couple were spelled differently there.
+// below, since a couple were spelled differently there - and one player has
+// gone by more than one entry name across seasons.
+//
+// KNOWN GAP: the 2023 screenshot this came from was cut off. 2022 and 2024 both
+// ended with "Showing 1 to 10 of 10 entries" so they are complete; 2023 showed
+// twelve rows with no such footer, so there are probably more below the fold.
+// Anyone missing from 2023 below is missing for that reason, not because they
+// did not play.
 
 export const HISTORY_WEEKS = 15;
 
@@ -55,8 +62,14 @@ export const LEAGUE_HISTORY = {
   },
 };
 
-// Splash entry name -> team_name in this database, where they differ.
-const NAME_ALIASES = { 'kevinculligan': 'Kevin Culligan' };
+// Splash entry name -> team_name in this database, where they differ. Someone
+// who renamed their entry between seasons still needs their history to add up,
+// so match on every name they have played under.
+const NAME_ALIASES = {
+  'kevinculligan': 'Kevin Culligan',
+  'pancho':        'Breaking Horrendous',
+  'pomcho':        'Breaking Horrendous',
+};
 
 const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
 
