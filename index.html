@@ -812,7 +812,7 @@
 
       const { data: games, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at')
         .eq('cfb_season', season)
         .eq('picked', true);
       if (gErr){ status('Could not load the season schedule.', true); return null; }
@@ -832,7 +832,7 @@
       // walk them straight into the season points.
       const { data: tbGames } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at')
         .eq('cfb_season', season)
         .eq('tiebreaker', true);
 
@@ -1377,6 +1377,42 @@
       return logoByTeam[pick] || null;
     }
 
+    // THE LIVE LINE, and what makes it safe to show next to the scored one.
+    //
+    // all_games.line is frozen at Tuesday 11:00 and is the only number anything
+    // is graded against. all_games.line_live is a separate column carrying the
+    // in-game price off ESPN's live-odds provider, refreshed every minute by
+    // sync_live_lines(). It is shown only while a game is actually running, and
+    // only while the feed is demonstrably alive: line_live_at is re-stamped on
+    // every successful read, so a clock that has stopped means the feed died,
+    // not that the market went quiet. A frozen number wearing a LIVE label is
+    // worse than no number at all, so past that age it simply disappears.
+    const LIVE_LINE_MAX_AGE_MS = 15 * 60 * 1000;
+
+    function liveLineOf(row){
+      if (!row || String(row.Status || '') !== 'in_progress') return null;
+      const v = row.line_live == null ? null : Number(row.line_live);
+      if (v == null || Number.isNaN(v)) return null;
+      const t = row.line_live_at ? Date.parse(row.line_live_at) : NaN;
+      if (!Number.isFinite(t) || Date.now() - t > LIVE_LINE_MAX_AGE_MS) return null;
+      return v;
+    }
+
+    // Same sign convention as the scored line: the stored number is the home
+    // team's, so the away side is its negation.
+    function paintLive(entry, row){
+      if (!entry) return;
+      const v = liveLineOf(row);
+      const show = (el, n) => {
+        if (!el) return;
+        el.textContent = n == null ? '' : `${n > 0 ? '+' : ''}${n}`;
+        el.hidden = n == null;
+      };
+      show(entry.awayLiveEl, v == null ? null : -v);
+      show(entry.homeLiveEl, v);
+      if (entry.liveTagEl) entry.liveTagEl.hidden = (v == null);
+    }
+
     function scoreClasses(status, aPts, hPts, side){
       const base = 'game-hdr-score';
       if (status === 'final') {
@@ -1453,6 +1489,10 @@
         awaySideTop.appendChild(awayTeam);
         awaySide.appendChild(awaySideTop);
         if (ln != null && !isNaN(ln)) { const awayLn = -ln; const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${awayLn > 0 ? '+' : ''}${awayLn})`; awaySide.appendChild(l); }
+        const awayLiveEl = document.createElement('div');
+        awayLiveEl.className = 'game-hdr-live';
+        awayLiveEl.hidden = true;
+        awaySide.appendChild(awayLiveEl);
         wrap.appendChild(awaySide);
 
         // Center status
@@ -1479,6 +1519,13 @@
           t.textContent = formatTimeCentral(row && row['Start (CT)']) || 'TBD';
           center.appendChild(t);
         }
+        // One LIVE tag for the pair, so neither gold number needs its own label
+        // in a column this narrow.
+        const liveTagEl = document.createElement('div');
+        liveTagEl.className = 'game-hdr-livetag';
+        liveTagEl.textContent = 'LIVE';
+        liveTagEl.hidden = true;
+        center.appendChild(liveTagEl);
         wrap.appendChild(center);
 
         // Home side
@@ -1502,11 +1549,18 @@
         if (homeLogo) { const img = document.createElement('img'); img.src = homeLogo; img.className = 'game-hdr-logo'; img.alt = home; homeSideTop.appendChild(img); }
         homeSide.appendChild(homeSideTop);
         if (ln != null && !isNaN(ln)) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${ln > 0 ? '+' : ''}${ln})`; homeSide.appendChild(l); }
+        const homeLiveEl = document.createElement('div');
+        homeLiveEl.className = 'game-hdr-live';
+        homeLiveEl.hidden = true;
+        homeSide.appendChild(homeLiveEl);
         wrap.appendChild(homeSide);
 
         th.appendChild(wrap);
 
-        headerStatusEls.set(String(id), { awayScoreEl, homeScoreEl, centerEl: center, awayName: away, homeName: home });
+        const entry = { awayScoreEl, homeScoreEl, centerEl: center, awayName: away, homeName: home,
+                        awayLiveEl, homeLiveEl, liveTagEl };
+        paintLive(entry, row);
+        headerStatusEls.set(String(id), entry);
         theadRow.appendChild(th);
       });
     }
@@ -1864,7 +1918,7 @@
 
       const { data: rows, error } = await supabase
         .from('all_games')
-        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner')
+        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner, line_live, line_live_at')
         .in('GameId', gameIds);
 
       if(error){
@@ -1901,7 +1955,11 @@
           } else {
             const t = document.createElement('div'); t.className = 'game-hdr-time'; t.textContent = formatTimeCentral(r['Start (CT)']) || 'TBD'; centerEl.appendChild(t);
           }
+          // The rebuild above wipes the centre, LIVE tag included, so put it
+          // back before paintLive() decides whether it should be showing.
+          if (entry.liveTagEl) centerEl.appendChild(entry.liveTagEl);
         }
+        paintLive(entry, r);
 
         // Fold the fresh row back into the season cache, otherwise the points
         // recompute below would read stale winners.
