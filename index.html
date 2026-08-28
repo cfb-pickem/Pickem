@@ -103,6 +103,32 @@
     .pick-loss{background:rgba(120,32,38,.20);box-shadow:inset 3px 0 0 rgba(214,85,92,.7);color:#e08d93}
     .pick-empty{color:#8b9099}
 
+    /* Live states, at roughly half the weight of the settled ones above. A game
+       in progress has not decided anything yet, and shading it as hard as a
+       final would say it had. */
+    .pick-cover{background:rgba(30,138,86,.10);box-shadow:inset 3px 0 0 rgba(52,199,123,.45)}
+    .pick-nocover{background:rgba(120,32,38,.10);box-shadow:inset 3px 0 0 rgba(214,85,92,.40)}
+
+    /* Backdoor watch: fourth quarter, and a field goal flips the cover. Declared
+       after the two above so it wins the box-shadow. */
+    /* Only the rule pulses, never the fill: the green/red behind it still has to
+       say WHICH side is covering. Amber means "a field goal flips this", not
+       "forget who is ahead". */
+    .pick-backdoor{animation:backdoor 1.4s ease-in-out infinite}
+    @keyframes backdoor{
+      0%,100%{box-shadow:inset 3px 0 0 rgba(255,176,32,.95)}
+      50%    {box-shadow:inset 3px 0 0 rgba(255,176,32,.25)}
+    }
+    /* The pulse is the alarm, so if motion is unwelcome the colour has to carry
+       it alone rather than the cell just going quiet. */
+    @media (prefers-reduced-motion: reduce){
+      .pick-backdoor{animation:none;box-shadow:inset 3px 0 0 rgba(255,176,32,.95)}
+    }
+
+    /* Nobody else took this side. Outline rather than fill, so it stacks with
+       whichever of the five states above the cell is already wearing. */
+    .pick-lonely{outline:1px solid rgba(233,185,73,.6);outline-offset:-3px}
+
     .badge-live{animation:live-pulse 2s ease-in-out infinite}
     @keyframes live-pulse{0%,100%{opacity:1}50%{opacity:.7}}
 
@@ -523,6 +549,9 @@
     let liveIntervalMs = LIVE_MS_IDLE;
 
     const headerStatusEls = new Map();
+    // gameId:teamId -> the cell, so live cover shading can be repainted on the
+    // ticker without re-rendering the table and throwing away scroll position.
+    const coverCells = new Map();
 
     // Perf cache
     const STORAGE_KEYS = {
@@ -1413,6 +1442,110 @@
       if (entry.liveTagEl) entry.liveTagEl.hidden = (v == null);
     }
 
+    // LIVE COVER, and why it is the same sum the database does.
+    //
+    // set_winner_on_final() settles a finished game with `(HomePts + line) >
+    // AwayPts`. Evaluate that same expression while the game is still being
+    // played and what comes out is the cover margin: how many points the home
+    // side is covering by right now, negative if it is the away side. So the
+    // shading on the board mid-game is not an approximation of the rule that
+    // will decide it - it is that rule, run early.
+    //
+    // It can never land on zero. Every line in the table ends in .5 by trigger,
+    // and an integer score plus .5 is never an integer, so there is no level
+    // state to colour - which is the same reason this league needs no push rule.
+    function coverMargin(row){
+      if (!row || String(row.Status || '') !== 'in_progress') return null;
+      const ln = row.line    == null ? NaN : Number(row.line);
+      const a  = row.AwayPts == null ? NaN : Number(row.AwayPts);
+      const h  = row.HomePts == null ? NaN : Number(row.HomePts);
+      if (!Number.isFinite(ln) || !Number.isFinite(a) || !Number.isFinite(h)) return null;
+      return (h + ln) - a;
+    }
+
+    // The same margin from one pick's side of it: positive means this pick is
+    // covering by that many points.
+    function coverForPick(row, pick){
+      const m = coverMargin(row);
+      if (m == null || !pick) return null;
+      if (sameTeam(pick, row.Home)) return m;
+      if (sameTeam(pick, row.Away)) return -m;
+      return null;   // a pick that matches neither side of the game it is on
+    }
+
+    // A field goal flips the cover, late enough that there may not be another
+    // drive. In a spread pool that is the moment worth shouting about, and it is
+    // routinely nothing at all on the scoreboard - a three-score game can sit on
+    // a knife edge here.
+    const BACKDOOR_PTS = 3.5;
+    function isBackdoor(row, margin){
+      if (margin == null) return false;
+      if (Math.abs(margin) > BACKDOOR_PTS) return false;
+      return Number(row.Period) >= 4;
+    }
+
+    function paintCovers(){
+      if (!coverCells.size) return;
+      const byId = new Map();
+      for (const g of (lastGames || [])) byId.set(String(g.GameId), g);
+
+      coverCells.forEach(cell => {
+        const { td, img, pick, gameId } = cell;
+        td.classList.remove('pick-cover', 'pick-nocover', 'pick-backdoor');
+
+        const row = byId.get(String(gameId));
+        const m = row ? coverForPick(row, pick) : null;
+        if (m == null) {
+          // Back to whatever renderTable decided: settled cells keep their
+          // win/loss shading, everything else goes back to waiting.
+          if (!td.classList.contains('pick-win') && !td.classList.contains('pick-loss')) {
+            td.classList.add('pick-empty');
+          }
+          td.removeAttribute('title');
+          if (img) img.title = pick;
+          return;
+        }
+
+        // pick-empty is renderTable's "nothing has happened here yet", and its
+        // grey text would drag down a cell that has no logo to shade.
+        td.classList.remove('pick-empty');
+        td.classList.add(m > 0 ? 'pick-cover' : 'pick-nocover');
+        if (isBackdoor(row, m)) td.classList.add('pick-backdoor');
+
+        const words = `${pick} ${m > 0 ? 'covering' : 'not covering'} by ${Math.abs(m)}`;
+        td.title = words;
+        if (img) img.title = words;
+      });
+    }
+
+    // LONELY PICK. Once a week is revealed, a side exactly one person took is the
+    // most interesting cell on the board: the only pick that can move somebody
+    // past the entire league at once, or drop them behind it.
+    //
+    // Counted over the teams actually on screen, so it means "alone in this
+    // league" rather than "alone in whatever rows came back". And it needs a
+    // crowd to be alone against - in a four-handed week a 3-1 split is a stand,
+    // in a two-handed one everybody is lonely and the outline means nothing.
+    const LONELY_MIN_FIELD = 4;
+    function lonelyPicks(teams, pickMap, ids){
+      const lonely = new Set();
+      (ids || []).forEach(id => {
+        const holders = new Map();
+        (teams || []).forEach(t => {
+          const p = pickMap?.[t.team_id]?.[id];
+          if (!p || String(p).trim() === '') return;
+          const key = String(p).trim().toLowerCase();
+          if (!holders.has(key)) holders.set(key, []);
+          holders.get(key).push(t.team_id);
+        });
+        let field = 0;
+        holders.forEach(v => { field += v.length; });
+        if (field < LONELY_MIN_FIELD) return;
+        holders.forEach(v => { if (v.length === 1) lonely.add(`${v[0]}:${id}`); });
+      });
+      return lonely;
+    }
+
     function scoreClasses(status, aPts, hPts, side){
       const base = 'game-hdr-score';
       if (status === 'final') {
@@ -1567,6 +1700,8 @@
 
     function renderTable(teams, pickMap, winnerMap, revealPicks, pointsMap, playoffMode){
       tbody.innerHTML = '';
+      coverCells.clear();
+      const lonely = lonelyPicks(teams, pickMap, gameIds);
 
       const pointsArray = teams.map(t => getPoints(pointsMap, t.team_id));
       const cutoffPts = pointsArray.length ? (pointsArray[Math.min(3, pointsArray.length - 1)] || 0) : 0;
@@ -1667,8 +1802,9 @@
           }
 
           const url = hasPick ? getLogoForPickExact(pick) : null;
+          let img = null;
           if(url){
-            const img = document.createElement('img');
+            img = document.createElement('img');
             img.src = url;
             img.alt = pick;
             img.title = pick;
@@ -1677,6 +1813,13 @@
             td.appendChild(img);
           }else{
             td.textContent = hasPick ? pick : '—';
+          }
+
+          if(hasPick){
+            if(lonely.has(`${team.team_id}:${id}`)) td.classList.add('pick-lonely');
+            // Registered even for a settled game: paintCovers() is what decides
+            // there is nothing live to show and leaves the final shading alone.
+            coverCells.set(`${team.team_id}:${id}`, { td, img, pick, gameId: id });
           }
 
           tr.appendChild(td);
@@ -1700,6 +1843,8 @@
           tbody.appendChild(divTr);
         }
       });
+
+      paintCovers();
     }
 
     // Who has submitted this week.
@@ -2023,6 +2168,8 @@
         playRevealAnimation();
         await renderWeeklySubmissions(lastTeams, lastPickMap);
       }
+
+      paintCovers();
     }
 
     // Scroll hint: hide fade when scrolled to end
