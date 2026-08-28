@@ -1528,17 +1528,64 @@
       return z >= 0 ? 1 - p : p;
     }
 
+    // WHERE THE EXPECTED FINAL MARGIN COMES FROM.
+    //
+    // First choice is the market. An in-play spread is a full-game number - it
+    // already contains the score, the clock, who has the ball and every injury
+    // the room knows about - so the gap between our frozen line and the live one
+    // IS the expected final cover margin, with no modelling on our side:
+    //
+    //     expected final  =  line  -  line_live
+    //
+    // Verified on the tail of real games, where the live number converges on the
+    // result: Ohio State at Michigan closed live at 18.5 against a final margin
+    // of 18, Grambling at Ohio State at -69.5 against -70, Texas Tech at West
+    // Virginia at 46.5 against 49.
+    //
+    // Held to a much tighter freshness bar than the number the header displays.
+    // A stale live line is worse than none: the clock keeps running, so sigma
+    // keeps shrinking, and the shading would get more confident about a quote
+    // that stopped tracking the game. Past this it falls back to the clock.
+    const MARKET_MAX_AGE_MS = 4 * 60 * 1000;
+
+    function marketExpectation(row, sign){
+      const ln = Number(row.line);
+      const lv = row.line_live == null ? NaN : Number(row.line_live);
+      if (!Number.isFinite(ln) || !Number.isFinite(lv)) return null;
+      const at = row.line_live_at ? Date.parse(row.line_live_at) : NaN;
+      if (!Number.isFinite(at) || Date.now() - at > MARKET_MAX_AGE_MS) return null;
+      return sign * (ln - lv);
+    }
+
+    // Fallback, and the only path the postseason has: ESPN publishes no live
+    // provider for neutral-site bowl and playoff games. Over a whole game the
+    // favourite is expected to win by exactly the line, so what is still to come
+    // is the line scaled by the share of the game left to play.
+    function clockExpectation(row, sign, m, f){
+      const ln = Number(row.line);
+      if (!Number.isFinite(ln)) return null;
+      return m - (sign * ln) * f;
+    }
+
     // For one pick: where it stands now, and how likely that is to hold.
     function coverOdds(row, pick){
       const m = coverForPick(row, pick);
       if (m == null) return null;
-      const ln = Number(row.line);
-      if (!Number.isFinite(ln)) return null;
       const f = fractionRemaining(row);
-      const lineForPick = sameTeam(pick, row.Home) ? ln : -ln;
-      const expected = m - lineForPick * f;
+      const sign = sameTeam(pick, row.Home) ? 1 : -1;
+
+      let expected = marketExpectation(row, sign);
+      let source = 'live line';
+      if (expected == null) {
+        expected = clockExpectation(row, sign, m, f);
+        source = 'clock';
+      }
+      if (expected == null) return null;
+
+      // However good the central estimate, the spread of outcomes around it
+      // still narrows with the clock rather than with the source.
       const sigma = Math.max(SIGMA_FLOOR, SIGMA_FULL * Math.sqrt(f));
-      return { margin: m, p: normalCdf(expected / sigma) };
+      return { margin: m, p: normalCdf(expected / sigma), source };
     }
 
     // Colour strength from that probability. Dead zone in the middle so a game
@@ -1585,7 +1632,7 @@
           return;
         }
 
-        const { margin, p } = odds;
+        const { margin, p, source } = odds;
         const intensity = coverIntensity(p);
         // Never 0% or 100%: the model is a normal curve, not a referee, and a
         // game with a minute left has still been lost from further out.
@@ -1603,7 +1650,7 @@
         if (isBackdoor(row, margin)) td.classList.add('pick-backdoor');
 
         const words = `${pick} ${margin > 0 ? 'covering' : 'not covering'} by ` +
-                      `${Math.abs(margin)} — ${pct}% to cover from here`;
+                      `${Math.abs(margin)} — ${pct}% to cover from here · ${source}`;
         td.title = words;
         if (img) img.title = words;
       });
