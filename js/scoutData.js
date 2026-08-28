@@ -88,6 +88,10 @@ export function fieldRead(model, game, exclude) {
     // round it has almost no record (17 predictions all last season, 53% right),
     // so the picks page says so rather than quoting a bare number.
     tested: mean > 0.40,
+    // Bigger than any spread the league has ever picked, so the model is
+    // extrapolating rather than reading. Carried out here so the card can say
+    // so instead of printing a confident-looking split.
+    beyondSpread: !!sample.beyondSpread,
     spread: sample.spread,
     // No player term - this is the field, not a person.
     reasons: explain(model, ids[0], sample, { includePlayer: false })

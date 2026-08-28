@@ -281,7 +281,10 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
 
   const cards = withLine.map(g => {
     const prediction = model ? model.predict(teamId, g) : null;
-    const usable = prediction && !prediction.unseen;
+    // beyondSpread is a No read card for the same reason unseen is: the model
+    // has nothing behind the number. Better an honest blank than a verdict on a
+    // game twice as lopsided as anything in the training data.
+    const usable = prediction && !prediction.unseen && !prediction.beyondSpread;
     const tier = usable ? confidenceTier(prediction.p) : null;
     return gameCard({
       game: g,
@@ -298,7 +301,7 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
 
   const reads = withLine.filter(g => {
     const p = model && model.predict(teamId, g);
-    return p && !p.unseen && confidenceTier(p.p).tier !== 'coin-flip';
+    return p && !p.unseen && !p.beyondSpread && confidenceTier(p.p).tier !== 'coin-flip';
   }).length;
 
   // The legend ships with figures from the 2025 backtest. If this league has

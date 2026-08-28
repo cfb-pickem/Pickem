@@ -1061,7 +1061,25 @@
         const pctHome = 100 - pctAway;
 
         const el = document.createElement('div');
-        el.className = 'pick-field' + (read.tested ? '' : ' is-untested');
+        el.className = 'pick-field' + (read.tested && !read.beyondSpread ? '' : ' is-untested');
+
+        // A spread bigger than any the league has ever picked gets no split and
+        // no reasons - only the admission, and the FPI row, which is ESPN's
+        // number rather than ours and stands on its own. Printing 44/56 under a
+        // 55.5-point line would be the model dressing up a shrug.
+        if (read.beyondSpread) {
+          el.innerHTML =
+            '<div class="pick-field-top">' +
+              '<span class="pick-field-lbl">Historical league pick model</span>' +
+            '</div>' +
+            '<div class="pick-field-caveat">No read &mdash; at ' + read.spread +
+              ' points this is a bigger spread than this league has ever picked, so there is ' +
+              'nothing in the record to read it against.</div>' +
+            fpiLine(g);
+          card.appendChild(el);
+          continue;
+        }
+
         el.innerHTML =
           '<div class="pick-field-top">' +
             '<span class="pick-field-lbl">Historical league pick model</span>' +

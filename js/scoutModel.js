@@ -257,14 +257,24 @@ function designRow(r, teamIx, playerIx, confIx, opts) {
 
   // Conference. Same +1/-1 shape as brand: which conference is being backed,
   // which is being faded. This is the single biggest feature after the spread.
-  const base = 5 + T + P + P;
-  const cf = confIx.get(conferenceOf(r.fav));
-  const cd = confIx.get(conferenceOf(r.dog));
-  if (cf != null) v[base + cf] += 1;
-  if (cd != null) v[base + cd] -= 1;
-  const off = base + C + playerIx.get(r.pid) * C;
-  if (cf != null) v[off + cf] += 1;
-  if (cd != null) v[off + cd] -= 1;
+  //
+  // All or nothing, and that matters. The coefficients were fitted on games
+  // where BOTH sides had a conference - every one of the 826 training rows does,
+  // because this league has never picked an FBS side against an FCS one. Apply
+  // half of a difference feature and it stops being a difference: an FCS
+  // opponent has no conference, so a heavy favourite would collect its own
+  // conference's fade with nothing on the other side to answer it. That is how
+  // a 55.5-point favourite came out at 56%.
+  if (!(opts && opts.skipConference)) {
+    const base = 5 + T + P + P;
+    const cf = confIx.get(conferenceOf(r.fav));
+    const cd = confIx.get(conferenceOf(r.dog));
+    if (cf != null) v[base + cf] += 1;
+    if (cd != null) v[base + cd] -= 1;
+    const off = base + C + playerIx.get(r.pid) * C;
+    if (cf != null) v[off + cf] += 1;
+    if (cd != null) v[off + cd] -= 1;
+  }
   return v;
 }
 
@@ -350,11 +360,16 @@ export function fitScoutModel(rows) {
   const w = fitRidge(X, y, penalties(T, P, C));
 
   const leagueLayRate = y.reduce((a, b) => a + b, 0) / y.length;
+  // The largest spread this league has ever picked. Read back out at predict
+  // time so the UI can say when it is being asked about a game bigger than
+  // anything in the record, rather than quoting a number as if it knew.
+  const maxSpread = rows.reduce((m, r) => Math.max(m, r.spread), 0);
   const exposure = {};
   for (const r of rows) { exposure[r.fav] = (exposure[r.fav] || 0) + 1; exposure[r.dog] = (exposure[r.dog] || 0) + 1; }
 
   return {
     leagueLayRate,
+    maxSpread,
     teamIx, playerIx, confIx, weights: w,
     /** log-odds nudge for backing this team, and how much data stands behind it */
     brand(team) {
@@ -405,12 +420,24 @@ export function fitScoutModel(rows) {
       // gracefully here is the difference between a usable feature and a blank
       // one. `newTeams` tells the UI to soften its language.
       const newTeams = [r.fav, r.dog].filter(t => !teamIx.has(t));
-      const v = designRow(r, teamIx, playerIx, confIx, { skipBrand: newTeams.length > 0 });
+      // An FCS opponent is not in the conference map at all, and a one-sided
+      // conference term is worse than none - see designRow.
+      const noConference = !conferenceOf(r.fav) || !conferenceOf(r.dog);
+      const v = designRow(r, teamIx, playerIx, confIx, {
+        skipBrand: newTeams.length > 0,
+        skipConference: noConference
+      });
       let s = 0;
       for (let j = 0; j < v.length; j++) if (v[j]) s += w[j] * v[j];
       return {
         p: sigmoid(s), fav: r.fav, dog: r.dog, spread: r.spread, favHome,
-        unseen: false, newTeams
+        unseen: false, newTeams, noConference,
+        // Bigger than anything this league has ever picked. The spread feature
+        // is clipped at 21 points, so a 55.5-point game is scored as if it were
+        // a 21-point one - and the record above 21 is two games pointing
+        // opposite ways. The number still comes out; the UI has to say it is
+        // an extrapolation rather than a read.
+        beyondSpread: r.spread > maxSpread
       };
     }
   };
