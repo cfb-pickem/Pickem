@@ -103,11 +103,18 @@
     .pick-loss{background:rgba(120,32,38,.20);box-shadow:inset 3px 0 0 rgba(214,85,92,.7);color:#e08d93}
     .pick-empty{color:#8b9099}
 
-    /* Live states, at roughly half the weight of the settled ones above. A game
-       in progress has not decided anything yet, and shading it as hard as a
-       final would say it had. */
-    .pick-cover{background:rgba(30,138,86,.10);box-shadow:inset 3px 0 0 rgba(52,199,123,.45)}
-    .pick-nocover{background:rgba(120,32,38,.10);box-shadow:inset 3px 0 0 rgba(214,85,92,.40)}
+    /* Live states. The strength is driven by --cover-i, set per cell from how
+       settled the cover actually is - 0 at kickoff, 1 once it is all but decided.
+       A game in progress has decided nothing yet, so even at full strength these
+       stay under the settled win/loss shading above. */
+    .pick-cover{
+      background:rgba(30,138,86,calc(var(--cover-i,0) * .15));
+      box-shadow:inset 3px 0 0 rgba(52,199,123,calc(var(--cover-i,0) * .62));
+    }
+    .pick-nocover{
+      background:rgba(120,32,38,calc(var(--cover-i,0) * .15));
+      box-shadow:inset 3px 0 0 rgba(214,85,92,calc(var(--cover-i,0) * .55));
+    }
 
     /* Backdoor watch: fourth quarter, and a field goal flips the cover. Declared
        after the two above so it wins the box-shadow. */
@@ -1473,6 +1480,77 @@
       return null;   // a pick that matches neither side of the game it is on
     }
 
+    // HOW SETTLED IS IT? The margin above says who is covering; on its own it is
+    // a bad thing to colour a board with, because at 0-0 it equals the line. Kick
+    // off and every cell would take a side instantly, having learned nothing -
+    // it would just be restating the spread, which is already printed above it.
+    //
+    // What the shading should track is the expected FINAL margin, and how much
+    // game is left to change it:
+    //
+    //   expected final margin  =  margin now  -  line x (share of game left)
+    //
+    // because over a whole game the favourite is expected to win by exactly the
+    // line, so what is still to come is the line scaled by the time still to
+    // play. At kickoff that comes out at 0 - a coin flip, no colour - and it
+    // earns colour only as the game says something the spread did not.
+    //
+    // The spread is 15.2 points wide, one standard deviation, measured over the
+    // 756 completed FBS games of 2025: residual (HomePts + line) - AwayPts had a
+    // mean of +1.14, so the market is near enough unbiased, and a stdev of 15.2.
+    // Uncertainty shrinks with the root of the time left, so a 3-point cushion
+    // is nearly nothing in the first quarter and nearly everything with a minute
+    // to go.
+    const SIGMA_FULL   = 15.2;   // points, 1 s.d. of final margin around the line
+    const SIGMA_FLOOR  = 0.8;    // keeps the last tick of the clock from dividing by zero
+    const OT_FRACTION  = 0.05;   // overtime: barely any clock, still plenty of swing
+    const REG_MINUTES  = 60;
+
+    function fractionRemaining(row){
+      const per = Number(row.Period);
+      if (!Number.isFinite(per) || per < 1) return 1;
+      if (per >= 5) return OT_FRACTION;
+      const m = String(row.Clock || '').trim().match(/^(\d+):(\d{2})$/);
+      // No clock on the row yet - treat it as mid-quarter rather than guessing
+      // in either direction.
+      const mins = m ? Number(m[1]) + Number(m[2]) / 60 : 7.5;
+      const left = (4 - per) * 15 + Math.min(15, Math.max(0, mins));
+      return Math.min(1, Math.max(0, left / REG_MINUTES));
+    }
+
+    // Normal CDF, Abramowitz & Stegun 26.2.17. Max error 7.5e-8, which is many
+    // orders of magnitude finer than a colour ramp can show.
+    function normalCdf(z){
+      const t = 1 / (1 + 0.2316419 * Math.abs(z));
+      const d = 0.3989422804014327 * Math.exp(-z * z / 2);
+      const p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 +
+                t * (-1.821255978 + t * 1.330274429))));
+      return z >= 0 ? 1 - p : p;
+    }
+
+    // For one pick: where it stands now, and how likely that is to hold.
+    function coverOdds(row, pick){
+      const m = coverForPick(row, pick);
+      if (m == null) return null;
+      const ln = Number(row.line);
+      if (!Number.isFinite(ln)) return null;
+      const f = fractionRemaining(row);
+      const lineForPick = sameTeam(pick, row.Home) ? ln : -ln;
+      const expected = m - lineForPick * f;
+      const sigma = Math.max(SIGMA_FLOOR, SIGMA_FULL * Math.sqrt(f));
+      return { margin: m, p: normalCdf(expected / sigma) };
+    }
+
+    // Colour strength from that probability. Dead zone in the middle so a game
+    // that is genuinely a coin flip shows nothing at all rather than a wash of
+    // near-invisible tint across the whole board.
+    const COVER_DEAD_ZONE = 0.10;   // p within .45-.55 -> no colour
+    const COVER_FULL      = 0.90;   // p beyond .05/.95 -> full strength
+    function coverIntensity(p){
+      const c = Math.abs(2 * p - 1);
+      return Math.min(1, Math.max(0, (c - COVER_DEAD_ZONE) / (COVER_FULL - COVER_DEAD_ZONE)));
+    }
+
     // A field goal flips the cover, late enough that there may not be another
     // drive. In a spread pool that is the moment worth shouting about, and it is
     // routinely nothing at all on the scoreboard - a three-score game can sit on
@@ -1492,10 +1570,11 @@
       coverCells.forEach(cell => {
         const { td, img, pick, gameId } = cell;
         td.classList.remove('pick-cover', 'pick-nocover', 'pick-backdoor');
+        td.style.removeProperty('--cover-i');
 
         const row = byId.get(String(gameId));
-        const m = row ? coverForPick(row, pick) : null;
-        if (m == null) {
+        const odds = row ? coverOdds(row, pick) : null;
+        if (!odds) {
           // Back to whatever renderTable decided: settled cells keep their
           // win/loss shading, everything else goes back to waiting.
           if (!td.classList.contains('pick-win') && !td.classList.contains('pick-loss')) {
@@ -1506,13 +1585,25 @@
           return;
         }
 
-        // pick-empty is renderTable's "nothing has happened here yet", and its
-        // grey text would drag down a cell that has no logo to shade.
-        td.classList.remove('pick-empty');
-        td.classList.add(m > 0 ? 'pick-cover' : 'pick-nocover');
-        if (isBackdoor(row, m)) td.classList.add('pick-backdoor');
+        const { margin, p } = odds;
+        const intensity = coverIntensity(p);
+        // Never 0% or 100%: the model is a normal curve, not a referee, and a
+        // game with a minute left has still been lost from further out.
+        const pct = Math.min(99, Math.max(1, Math.round(p * 100)));
 
-        const words = `${pick} ${m > 0 ? 'covering' : 'not covering'} by ${Math.abs(m)}`;
+        // Below the dead zone there is nothing worth saying in colour, so the
+        // cell stays as it was and only the tooltip carries the detail.
+        if (intensity > 0) {
+          // pick-empty is renderTable's "nothing has happened here yet", and its
+          // grey text would drag down a cell that has no logo to shade.
+          td.classList.remove('pick-empty');
+          td.classList.add(margin > 0 ? 'pick-cover' : 'pick-nocover');
+          td.style.setProperty('--cover-i', intensity.toFixed(3));
+        }
+        if (isBackdoor(row, margin)) td.classList.add('pick-backdoor');
+
+        const words = `${pick} ${margin > 0 ? 'covering' : 'not covering'} by ` +
+                      `${Math.abs(margin)} — ${pct}% to cover from here`;
         td.title = words;
         if (img) img.title = words;
       });
