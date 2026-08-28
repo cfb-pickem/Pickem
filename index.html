@@ -2156,6 +2156,64 @@
       revealTimer = setInterval(tickRevealCountdown, 1000);
     }
 
+    // KICKOFF RE-READ, and why the reveal is worthless without it.
+    //
+    // The database hides other people's picks until the week locks. It does it
+    // with a RESTRICTIVE policy, so it is ANDed on top of everything else and
+    // there is no way round it: the pick list this page fetched on load contains
+    // the viewer's own row and nothing else. Flipping the board over at kickoff
+    // therefore reveals exactly what is in hand, which is a table of dashes -
+    // and since nothing else on the page ever re-reads picks, it stays that way
+    // until somebody thinks to reload.
+    //
+    // Keyed on the game ids rather than a flag, so changing week or season
+    // arms it again on its own.
+    let pickReloadFor = null;
+
+    async function reloadPicksAfterReveal(){
+      if (!gameIds.length) return;
+      const key = gameIds.join(',');
+      if (pickReloadFor === key) return;
+
+      const { data, error } = await supabase
+        .from('picks').select('team_id, game_id, pick').in('game_id', gameIds);
+      if (error || !data) return;            // leave it unset so the next tick retries
+
+      // Do not latch on an unconvincing answer. The browser's idea of kickoff
+      // and the database's can differ by a second or two, and a re-read that
+      // lands on the wrong side of that comes back holding only the viewer's own
+      // row - exactly what it was sent to replace. Treat "still just me" as
+      // not-yet rather than done, and let the ticker come round again; once the
+      // policy has actually opened, this latches and stops asking.
+      const teamsSeen = new Set(data.map(p => Number(p.team_id))).size;
+      const convincing = teamsSeen > 1 || (lastTeams || []).length <= 1;
+      if (convincing) pickReloadFor = key;
+
+      // The scouting panel and the weekly submissions list read the cache, not
+      // lastPickMap, so it has to learn about these too. Replace rather than
+      // append: the viewer's own picks are already in there.
+      const field = (isPlayoffView || isTiebreakerView) ? 'tbPicks' : 'picks';
+      const fresh = new Set(data.map(p => `${p.team_id}:${p.game_id}`));
+      seasonCache[field] = [
+        ...(seasonCache[field] || []).filter(p => !fresh.has(`${p.team_id}:${p.game_id}`)),
+        ...data
+      ];
+
+      lastPickMap = buildPickMap(data);
+      renderTable(lastTeams, lastPickMap, winnerMap, showPicks, getPointsMapForCurrentView(), isPlayoffView);
+      await renderWeeklySubmissions(lastTeams, lastPickMap);
+    }
+
+    // Kickoff is the one moment of the week this page cannot afford to be lazy
+    // about, and the ticker can be up to ninety seconds away from its next pass.
+    // So ask on a short leash instead. reloadPicksAfterReveal() latches as soon
+    // as it gets a convincing answer, which makes every later call a no-op.
+    function chaseRevealedPicks(){
+      for (const ms of [0, 3000, 10000, 30000]) {
+        setTimeout(() => reloadPicksAfterReveal().catch(e => console.warn('pick re-read failed:', e)), ms);
+      }
+    }
+
     // Kickoff hit while someone is watching: flip the board over.
     function revealNow(){
       if (showPicks) return;
@@ -2165,6 +2223,8 @@
       renderTable(lastTeams, lastPickMap, winnerMap, showPicks, pointsMap, isPlayoffView);
       playRevealAnimation();
       status(`Kickoff! Picks are in for Season ${currentSeason} • Week ${currentWeek}.`);
+      // Then go and get what the database was hiding a second ago.
+      chaseRevealedPicks();
     }
 
     // Ripple the flip across columns so the board turns over left to right,
@@ -2309,6 +2369,10 @@
         status(`Kickoff! Picks are in for Season ${currentSeason} • Week ${currentWeek}.`);
         needRerender = true;
       }
+      // Both reveal paths need the re-read, and it de-duplicates itself. Also
+      // covers the reload-after-kickoff case, where showPicks is true from the
+      // first render but the fetch still raced the policy opening.
+      if (showPicks) reloadPicksAfterReveal().catch(e => console.warn('pick re-read failed:', e));
 
       // Playoff: per-game gating
       if (isPlayoffView) {
