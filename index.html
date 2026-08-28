@@ -1588,10 +1588,21 @@
       return { margin: m, p: normalCdf(expected / sigma), source };
     }
 
-    // Colour strength from that probability. Dead zone in the middle so a game
-    // that is genuinely a coin flip shows nothing at all rather than a wash of
-    // near-invisible tint across the whole board.
-    const COVER_DEAD_ZONE = 0.10;   // p within .45-.55 -> no colour
+    // Colour strength from that probability, and the dead zone is deliberately
+    // wide. Anything between 30% and 70% is a game still being played, and
+    // shading it says the board knows something it does not. Colour has to mean
+    // "this is going one way", so nothing shows until a pick is at least 20
+    // points clear of a coin flip, and full strength waits until it is all but
+    // settled. Between those it ramps, so a game that is drifting one way looks
+    // like it is drifting rather than snapping.
+    //
+    //     p      50    60    70    75    80    85    90    95
+    //     colour  -     -     -    .20   .40   .60   .80   1.00
+    //
+    // The backdoor alarm is unaffected and this is what makes the two work
+    // together: a one-score endgame is a coin flip, so it carries no colour at
+    // all and the amber rule has the cell to itself.
+    const COVER_DEAD_ZONE = 0.40;   // p within .30-.70 -> no colour
     const COVER_FULL      = 0.90;   // p beyond .05/.95 -> full strength
     function coverIntensity(p){
       const c = Math.abs(2 * p - 1);
