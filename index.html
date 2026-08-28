@@ -1413,6 +1413,34 @@
       return logoByTeam[pick] || null;
     }
 
+    // IS THIS GAME BEING PLAYED RIGHT NOW?
+    //
+    // Everything live on this page hangs off this one question, so it is asked
+    // in one place. The column is written by a Supabase edge function that is
+    // deployed rather than versioned in this repo, and ESPN's own feed offers
+    // two spellings for the same state - `state: "in"` and
+    // `name: "STATUS_IN_PROGRESS"`. This page has always read 'in_progress' and
+    // a season of live scores says that is right, but the score-feed fix in
+    // 0c0b9ba hedged across both, so somebody was not certain. Accepting either
+    // costs nothing and removes the one failure that would take the whole live
+    // board down silently.
+    //
+    // The period fallback is last and deliberately narrow: a game that is not
+    // final, not still scheduled, and has a quarter on it is being played,
+    // whatever the feed decided to call it.
+    const LIVE_WORDS = new Set(['in_progress', 'in progress', 'inprogress', 'in', 'live']);
+    const DEAD_WORDS = new Set(['final', 'scheduled', 'pre', 'postponed', 'canceled', 'cancelled', '']);
+
+    const isLiveStatus = st => LIVE_WORDS.has(String(st ?? '').trim().toLowerCase());
+
+    function isLive(row){
+      if (!row) return false;
+      const st = String(row.Status ?? '').trim().toLowerCase();
+      if (isLiveStatus(st)) return true;
+      if (DEAD_WORDS.has(st)) return false;
+      return Number(row.Period) >= 1;
+    }
+
     // THE LIVE LINE, and what makes it safe to show next to the scored one.
     //
     // all_games.line is frozen at Tuesday 11:00 and is the only number anything
@@ -1426,7 +1454,7 @@
     const LIVE_LINE_MAX_AGE_MS = 15 * 60 * 1000;
 
     function liveLineOf(row){
-      if (!row || String(row.Status || '') !== 'in_progress') return null;
+      if (!isLive(row)) return null;
       const v = row.line_live == null ? null : Number(row.line_live);
       if (v == null || Number.isNaN(v)) return null;
       const t = row.line_live_at ? Date.parse(row.line_live_at) : NaN;
@@ -1462,7 +1490,7 @@
     // and an integer score plus .5 is never an integer, so there is no level
     // state to colour - which is the same reason this league needs no push rule.
     function coverMargin(row){
-      if (!row || String(row.Status || '') !== 'in_progress') return null;
+      if (!isLive(row)) return null;
       const ln = row.line    == null ? NaN : Number(row.line);
       const a  = row.AwayPts == null ? NaN : Number(row.AwayPts);
       const h  = row.HomePts == null ? NaN : Number(row.HomePts);
@@ -1703,7 +1731,7 @@
         if (side === 'away') return base + (a >= h ? ' score-win' : ' score-loss');
         return base + (h >= a ? ' score-win' : ' score-loss');
       }
-      if (status === 'in_progress') {
+      if (isLiveStatus(status)) {
         const a = Number(aPts), h = Number(hPts);
         if (isNaN(a) || isNaN(h)) return base;
         if (side === 'away') return base + (a >= h ? ' score-lead' : ' score-trail');
@@ -1785,7 +1813,7 @@
           f.className = 'game-hdr-final';
           f.textContent = 'FINAL';
           center.appendChild(f);
-        } else if (status === 'in_progress') {
+        } else if (isLiveStatus(status) || (status !== 'final' && Number(row?.Period) >= 1)) {
           const p = row?.Period || 1;
           const per = document.createElement('div');
           per.className = 'game-hdr-period';
@@ -2181,9 +2209,9 @@
     function applyLiveCadence(rows){
       const now = Date.now();
       const anyLive = (rows || []).some(r => {
-        const st = String(r?.Status ?? '').toLowerCase();
-        if (st === 'final') return false;
-        if (st === 'in' || st === 'live' || r?.Period) return true;
+        if (String(r?.Status ?? '').trim().toLowerCase() === 'final') return false;
+        if (isLive(r)) return true;
+        // Kicked off but the feed has not caught up yet still means poll fast.
         const ts = kickoffMs(r);
         return ts != null && now >= ts;
       });
@@ -2242,7 +2270,7 @@
           centerEl.innerHTML = '';
           if (r.Status === 'final') {
             const f = document.createElement('div'); f.className = 'game-hdr-final'; f.textContent = 'FINAL'; centerEl.appendChild(f);
-          } else if (r.Status === 'in_progress') {
+          } else if (isLive(r)) {
             const p = r.Period || 1;
             const per = document.createElement('div'); per.className = 'game-hdr-period'; per.textContent = p >= 5 ? 'OT' : p + 'TH'; centerEl.appendChild(per);
             const clk = document.createElement('div'); clk.className = 'game-hdr-clock'; clk.textContent = r.Clock || ''; centerEl.appendChild(clk);
