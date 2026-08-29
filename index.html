@@ -103,28 +103,17 @@
     .pick-loss{background:rgba(120,32,38,.20);box-shadow:inset 3px 0 0 rgba(214,85,92,.7);color:#e08d93}
     .pick-empty{color:#8b9099}
 
-    /* SETTLED VERSUS STILL BEING PLAYED.
-       The two above are results: they are in the points. The two below are a game
-       in progress and count for nothing yet. Colour alone could not carry that -
-       a blowout in the third quarter shades as hard as a final, which is exactly
-       the confusion. So the difference is the SHAPE of the rule, not its colour:
-       a settled cell has a solid bar down its left edge, a live one has a broken
-       one. Dashes read as provisional at a glance and survive being the same
-       green. The fill stays lighter as well, so the two signals agree. */
-    .pick-cover, .pick-nocover{
-      background-repeat:no-repeat;
-      background-position:left top;
-      background-size:3px 100%;
-    }
+    /* Live states. The strength is driven by --cover-i, set per cell from how
+       settled the cover actually is - 0 at kickoff, 1 once it is all but decided.
+       A game in progress has decided nothing yet, so even at full strength these
+       stay under the settled win/loss shading above. */
     .pick-cover{
-      background-image:repeating-linear-gradient(to bottom,
-        rgba(52,199,123,calc(var(--cover-i,0) * .78)) 0 5px, transparent 5px 10px);
-      background-color:rgba(30,138,86,calc(var(--cover-i,0) * .13));
+      background:rgba(30,138,86,calc(var(--cover-i,0) * .15));
+      box-shadow:inset 3px 0 0 rgba(52,199,123,calc(var(--cover-i,0) * .62));
     }
     .pick-nocover{
-      background-image:repeating-linear-gradient(to bottom,
-        rgba(214,85,92,calc(var(--cover-i,0) * .70)) 0 5px, transparent 5px 10px);
-      background-color:rgba(120,32,38,calc(var(--cover-i,0) * .13));
+      background:rgba(120,32,38,calc(var(--cover-i,0) * .15));
+      box-shadow:inset 3px 0 0 rgba(214,85,92,calc(var(--cover-i,0) * .55));
     }
 
     /* Backdoor watch: fourth quarter, and a field goal flips the cover. Declared
@@ -134,16 +123,13 @@
        "forget who is ahead". */
     .pick-backdoor{animation:backdoor 1.4s ease-in-out infinite}
     @keyframes backdoor{
-      0%,100%{background-image:repeating-linear-gradient(to bottom,
-        rgba(255,176,32,.95) 0 5px, transparent 5px 10px)}
-      50%    {background-image:repeating-linear-gradient(to bottom,
-        rgba(255,176,32,.28) 0 5px, transparent 5px 10px)}
+      0%,100%{box-shadow:inset 3px 0 0 rgba(255,176,32,.95)}
+      50%    {box-shadow:inset 3px 0 0 rgba(255,176,32,.25)}
     }
     /* The pulse is the alarm, so if motion is unwelcome the colour has to carry
        it alone rather than the cell just going quiet. */
     @media (prefers-reduced-motion: reduce){
-      .pick-backdoor{animation:none;background-image:repeating-linear-gradient(to bottom,
-        rgba(255,176,32,.95) 0 5px, transparent 5px 10px)}
+      .pick-backdoor{animation:none;box-shadow:inset 3px 0 0 rgba(255,176,32,.95)}
     }
 
     /* Nobody else took this side. Outline rather than fill, so it stacks with
@@ -1674,16 +1660,7 @@
 
     // The centre of the cell, in one place instead of two. It was built inline in
     // renderHeader and rebuilt again in the ticker, which is how the two drifted.
-    // The column head is marked alive for as long as the game is on. Toggled
-    // in the one place the live state is already decided, so it can never
-    // disagree with the clock sitting inside it.
-    function paintPlaying(centerEl, row){
-      const hdr = centerEl && centerEl.closest('.game-hdr');
-      if (hdr) hdr.classList.toggle('is-playing', isLive(row));
-    }
-
     function paintCenter(centerEl, row){
-      paintPlaying(centerEl, row);
       if (!centerEl) return;
       centerEl.innerHTML = '';
       const add = (cls, txt) => {
