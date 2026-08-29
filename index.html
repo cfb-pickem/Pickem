@@ -551,7 +551,11 @@
     // Adaptive score polling. A fixed 30s tick was both too slow while games are
     // actually in progress and pure waste the rest of the year. The ESPN job
     // refreshes the database once a minute, so LIVE_MS is the useful floor.
-    const LIVE_MS_ACTIVE = 15000;  // something is in progress
+    // The database refreshes scores and the live line once a minute - pg_cron
+    // will not go finer - so the client's own interval is the only part left
+    // worth shortening. At 8s a change is on screen about four seconds after it
+    // lands, against fifteen before.
+    const LIVE_MS_ACTIVE = 8000;   // something is in progress
     const LIVE_MS_IDLE   = 90000;  // everything final / nothing kicked off yet
     let liveIntervalMs = LIVE_MS_IDLE;
 
@@ -1464,16 +1468,48 @@
 
     // Same sign convention as the scored line: the stored number is the home
     // team's, so the away side is its negation.
+    // One banner across the foot of the cell, naming the side laying the points.
+    //
+    // Not a number under each team, mirrored. Measured in the running app, a
+    // phone column leaves 38.3px between the scores and "TCU -6.5" needs 40. The
+    // banner is the only element spanning the whole 51px cell, which is what
+    // makes it fit at all - and naming the team is what lets one number do the
+    // work of two.
+    //
+    // The stored number is the home team's, so a negative one means the home side
+    // is laying the points. Whoever is laying them is quoted negative.
     function paintLive(entry, row){
-      if (!entry) return;
+      if (!entry || !entry.bannerEl) return;
       const v = liveLineOf(row);
-      const show = (el, n) => {
-        if (!el) return;
-        el.textContent = n == null ? '' : `→${n > 0 ? '+' : ''}${n}`;
-        el.hidden = n == null;
+      if (v == null) { entry.bannerEl.hidden = true; entry.bannerEl.textContent = ''; return; }
+      const team = v < 0 ? entry.homeAbbr : entry.awayAbbr;
+      entry.bannerEl.textContent = team + ' −' + Math.abs(v);
+      entry.bannerEl.hidden = false;
+    }
+
+    // The centre of the cell, in one place instead of two. It was built inline in
+    // renderHeader and rebuilt again in the ticker, which is how the two drifted.
+    function paintCenter(centerEl, row){
+      if (!centerEl) return;
+      centerEl.innerHTML = '';
+      const add = (cls, txt) => {
+        const d = document.createElement('div');
+        d.className = cls; d.textContent = txt; centerEl.appendChild(d);
       };
-      show(entry.awayLiveEl, v == null ? null : -v);
-      show(entry.homeLiveEl, v);
+      if (String((row && row.Status) || '').trim().toLowerCase() === 'final') {
+        add('game-hdr-final', 'FINAL');
+        return;
+      }
+      if (isLive(row)) {
+        // One row, and no separator between them. Measured in the running app:
+        // "1ST . 4:00" comes to 38.8px against 38.3px of usable width in a phone
+        // column, and the dot is exactly what pushes it over. "1ST 4:00" is 33.8.
+        const clk = String((row && row.Clock) || '').trim();
+        const per = periodLabel((row && row.Period) || 1);
+        add('game-hdr-state', clk ? per + ' ' + clk : per);
+        return;
+      }
+      add('game-hdr-time', formatTimeCentral(row && row['Start (CT)']) || 'TBD');
     }
 
     // LIVE COVER, and why it is the same sum the database does.
@@ -1801,38 +1837,19 @@
           f.textContent = `${awayLn > 0 ? '+' : ''}${awayLn}`;
           awayLineRow.appendChild(f);
         }
-        const awayLiveEl = document.createElement('span');
-        awayLiveEl.className = 'hdr-ln-live';
-        awayLiveEl.hidden = true;
-        awayLineRow.appendChild(awayLiveEl);
         awaySide.appendChild(awayLineRow);
-        wrap.appendChild(awaySide);
+        // The three blocks get their own row so the banner can sit under all of
+        // them. On a desktop they are a flex row, and a fourth child would
+        // otherwise land beside them rather than beneath.
+        const main = document.createElement('div');
+        main.className = 'game-hdr-main';
+        main.appendChild(awaySide);
 
         // Center status
         const center = document.createElement('div');
         center.className = 'game-hdr-center';
-        if (status === 'final') {
-          const f = document.createElement('div');
-          f.className = 'game-hdr-final';
-          f.textContent = 'FINAL';
-          center.appendChild(f);
-        } else if (isLiveStatus(status) || (status !== 'final' && Number(row?.Period) >= 1)) {
-          const p = row?.Period || 1;
-          const per = document.createElement('div');
-          per.className = 'game-hdr-period';
-          per.textContent = periodLabel(p);
-          const clk = document.createElement('div');
-          clk.className = 'game-hdr-clock';
-          clk.textContent = row?.Clock || '';
-          center.appendChild(per);
-          center.appendChild(clk);
-        } else {
-          const t = document.createElement('div');
-          t.className = 'game-hdr-time';
-          t.textContent = formatTimeCentral(row && row['Start (CT)']) || 'TBD';
-          center.appendChild(t);
-        }
-        wrap.appendChild(center);
+        paintCenter(center, row);
+        main.appendChild(center);
 
         // Home side
         const homeSide = document.createElement('div');
@@ -1860,17 +1877,19 @@
           f.textContent = `${ln > 0 ? '+' : ''}${ln}`;
           homeLineRow.appendChild(f);
         }
-        const homeLiveEl = document.createElement('span');
-        homeLiveEl.className = 'hdr-ln-live';
-        homeLiveEl.hidden = true;
-        homeLineRow.appendChild(homeLiveEl);
         homeSide.appendChild(homeLineRow);
-        wrap.appendChild(homeSide);
+        main.appendChild(homeSide);
+        wrap.appendChild(main);
+
+        const bannerEl = document.createElement('div');
+        bannerEl.className = 'game-hdr-banner';
+        bannerEl.hidden = true;
+        wrap.appendChild(bannerEl);
 
         th.appendChild(wrap);
 
         const entry = { awayScoreEl, homeScoreEl, centerEl: center, awayName: away, homeName: home,
-                        awayLiveEl, homeLiveEl };
+                        awayAbbr, homeAbbr, bannerEl };
         paintLive(entry, row);
         headerStatusEls.set(String(id), entry);
         theadRow.appendChild(th);
@@ -2327,19 +2346,7 @@
         if (awayScoreEl) { awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–'; awayScoreEl.className = scoreClasses(); }
         if (homeScoreEl) { homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–'; homeScoreEl.className = scoreClasses(); }
 
-        // Update center status
-        if (centerEl) {
-          centerEl.innerHTML = '';
-          if (r.Status === 'final') {
-            const f = document.createElement('div'); f.className = 'game-hdr-final'; f.textContent = 'FINAL'; centerEl.appendChild(f);
-          } else if (isLive(r)) {
-            const p = r.Period || 1;
-            const per = document.createElement('div'); per.className = 'game-hdr-period'; per.textContent = periodLabel(p); centerEl.appendChild(per);
-            const clk = document.createElement('div'); clk.className = 'game-hdr-clock'; clk.textContent = r.Clock || ''; centerEl.appendChild(clk);
-          } else {
-            const t = document.createElement('div'); t.className = 'game-hdr-time'; t.textContent = formatTimeCentral(r['Start (CT)']) || 'TBD'; centerEl.appendChild(t);
-          }
-        }
+        paintCenter(centerEl, r);
         paintLive(entry, r);
 
         // Fold the fresh row back into the season cache, otherwise the points

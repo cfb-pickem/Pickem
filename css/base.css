@@ -274,13 +274,19 @@ header.cfp-card {
 /* --- Game header (jumbotron-style column headers) --- */
 
 .game-hdr {
+  display: block;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+/* The away block, the clock and the home block. Split out from .game-hdr so the
+   live-line banner can sit under all three - on a desktop these are a flex row,
+   and a fourth child would otherwise land beside them rather than beneath. */
+.game-hdr-main {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 2px 10px;
   flex-wrap: nowrap;
-  white-space: nowrap;
 }
 .game-hdr-logo {
   width: 34px; height: 34px;
@@ -338,6 +344,20 @@ header.cfp-card {
   min-width: 32px;
   align-self: stretch;
 }
+/* Quarter and clock on one line, and no separator between them. Measured in the
+   running app: "1ST . 4:00" comes to 38.8px against the 38.3px a phone column
+   actually leaves between the two scores, and the dot is exactly what pushes it
+   over. "1ST 4:00" is 33.8px and fits with room to spare. */
+.game-hdr-state {
+  font-family: 'Oswald', sans-serif;
+  font-size: .5rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #c9ced5;
+  line-height: 1;
+  letter-spacing: .04em;
+  font-variant-numeric: tabular-nums;
+}
 .game-hdr-period {
   font-family: 'Oswald', sans-serif;
   font-size: .45rem;
@@ -394,6 +414,27 @@ header.cfp-card {
   min-height: .7rem;
   white-space: nowrap;
 }
+/* THE LIVE LINE, as a banner across the foot of the cell.
+   Full bleed on purpose: the padded middle of a phone column is 38.3px and
+   "TCU -6.5" needs 40, so spanning the whole 51px is the only way it fits. It
+   names the side laying the points, which is what lets one number replace the
+   mirrored pair that used to sit under each score. Hidden outright unless the
+   game is running and the feed is fresh. */
+.game-hdr-banner {
+  margin: 5px -10px -2px;
+  padding: 4px 3px;
+  background: rgba(255,255,255,.06);
+  font-family: 'Oswald', sans-serif;
+  font-size: .58rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .03em;
+  color: #dfe3e8;
+  text-align: center;
+  line-height: 1;
+}
+.game-hdr-banner[hidden] { display: none; }
+
 /* The number the week is scored against, and the number the market is at now.
    Same weight, same colour, joined by an arrow - the relationship is what the
    arrow is for, so neither needs a colour or a label to explain it. Under a
@@ -403,22 +444,27 @@ header.cfp-card {
 .hdr-ln-live[hidden] { display: none; }
 
 @media (max-width: 640px) {
-  .game-hdr { gap: 4px; padding: 3px 6px; }
+  .game-hdr { padding: 3px 6px; }
+  .game-hdr-main { gap: 4px; }
   .game-hdr-logo { display: none; }
   .game-hdr-side-top .game-hdr-logo { display: none; }
   .game-hdr-score { font-size: 1.2rem; }
   .game-hdr-abbr { font-size: .68rem; }
   .game-hdr-line { font-size: .55rem; letter-spacing: -.01em; }
-  /* On a phone the three blocks stack in a fifty-pixel column and run into one
-     another, so there is no telling where one team's numbers stop. A hairline
-     above and below the clock separates them without adding anything to look at. */
+  /* The clock now sits between the two teams and separates them on its own, so
+     the hairlines that used to fence it come out. What it needs instead is air:
+     a clear gap above and below is what stops the three blocks reading as one
+     run of eight numbers. */
   .game-hdr-center {
-    padding: 4px 5px;
-    margin: 3px 0;
+    padding: 0;
+    margin: 7px 0;
     min-width: 30px;
-    border-top: 1px solid rgba(231,231,231,.08);
-    border-bottom: 1px solid rgba(231,231,231,.08);
   }
+  .game-hdr-main { display: block; }
+  /* 7.8px, so a fourth quarter still fits: "4TH 12:35" is 38.8px at 8.8 and
+     34.4px here, against 38.3px of usable width. */
+  .game-hdr-state { font-size: .49rem; }
+  .game-hdr-banner { margin: 6px -6px -3px; font-size: .55rem; }
   .game-hdr-period, .game-hdr-final { font-size: .58rem; }
   .game-hdr-clock, .game-hdr-time { font-size: .55rem; margin-top: 2px; }
   .game-hdr-team { min-width: auto; }
