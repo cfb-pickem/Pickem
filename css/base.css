@@ -279,36 +279,6 @@ header.cfp-card {
   white-space: nowrap;
 }
 
-/* STILL BEING PLAYED. The column head breathes for as long as the game is on,
-   and stops dead the moment it goes final. It answers the question the clock
-   alone did not: not "who is winning" but "is this in my points yet".
-
-   Three and a half seconds a cycle - slow enough to read as alive rather than as
-   something demanding attention. No hue: a plain white wash, so it reads as lit
-   rather than as another colour on a board that has had enough of them. The
-   first attempt at this ran from 1.2% to 7.5% alpha and was invisible on a phone
-   in daylight, which is worse than not doing it. */
-@keyframes hdr-alive {
-  0%, 100% { background-color: rgba(255,255,255,.02); }
-  50%      { background-color: rgba(255,255,255,.14); }
-}
-.game-hdr.is-playing {
-  animation: hdr-alive 3.5s ease-in-out infinite;
-  border-radius: 3px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .game-hdr.is-playing { animation: none; background-color: rgba(255,255,255,.10); }
-}
-/* The away block, the clock and the home block. Split out from .game-hdr so the
-   live-line banner can sit under all three - on a desktop these are a flex row,
-   and a fourth child would otherwise land beside them rather than beneath. */
-.game-hdr-main {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  flex-wrap: nowrap;
-}
 .game-hdr-logo {
   width: 34px; height: 34px;
   object-fit: contain;

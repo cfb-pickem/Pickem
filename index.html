@@ -110,17 +110,36 @@
       text-shadow:0 0 10px rgba(240,199,94,.5), 0 0 22px rgba(240,199,94,.18);
     }
 
-    /* Live states. The strength is driven by --cover-i, set per cell from how
-       settled the cover actually is - 0 at kickoff, 1 once it is all but decided.
-       A game in progress has decided nothing yet, so even at full strength these
-       stay under the settled win/loss shading above. */
+    /* LIVE CELLS BREATHE. SETTLED ONES DO NOT.
+       That is the whole difference between "this is in your points" and "this
+       game is still going", and it is carried by motion rather than by colour -
+       which matters because a blowout in the third quarter shades exactly as
+       hard as a final, so the green cannot tell you which is which. A cell that
+       is still moving has not been counted.
+
+       --cover-i is how settled the cover is, 0 at kickoff to 1 once it is
+       decided. --cover-pulse rides on top of it, 0.38 to 1 and back over three
+       seconds. Registering it with @property is what makes it animatable at all;
+       where that is unsupported the fallback of 1 leaves the shading static,
+       which is simply what it was before.
+
+       No left rule on a live cell either - only the fill moves. The bar is what
+       a settled result gets, so having one on both made the two states look
+       alike from across the table, which was the original complaint. */
+    @property --cover-pulse { syntax: '<number>'; inherits: false; initial-value: 1; }
+    @keyframes cover-breathe{
+      0%,100%{ --cover-pulse: .38 }
+      50%    { --cover-pulse: 1 }
+    }
+    .pick-cover, .pick-nocover{ animation: cover-breathe 3s ease-in-out infinite; }
     .pick-cover{
-      background:rgba(30,138,86,calc(var(--cover-i,0) * .15));
-      box-shadow:inset 3px 0 0 rgba(52,199,123,calc(var(--cover-i,0) * .62));
+      background:rgba(30,138,86,calc(var(--cover-i,0) * var(--cover-pulse,1) * .26));
     }
     .pick-nocover{
-      background:rgba(120,32,38,calc(var(--cover-i,0) * .15));
-      box-shadow:inset 3px 0 0 rgba(214,85,92,calc(var(--cover-i,0) * .55));
+      background:rgba(120,32,38,calc(var(--cover-i,0) * var(--cover-pulse,1) * .26));
+    }
+    @media (prefers-reduced-motion: reduce){
+      .pick-cover, .pick-nocover{ animation: none; --cover-pulse: .8; }
     }
 
     /* Backdoor watch: fourth quarter, and a field goal flips the cover. Declared
@@ -128,15 +147,19 @@
     /* Only the rule pulses, never the fill: the green/red behind it still has to
        say WHICH side is covering. Amber means "a field goal flips this", not
        "forget who is ahead". */
+    /* The alarm is a faster amber breath of the same fill - no rule, for the same
+       reason the live cells lost theirs. It runs at 1.4s against the 3s of a
+       normal live cell, so a knife edge reads as more urgent than the cell next
+       to it without needing a different shape. */
     .pick-backdoor{animation:backdoor 1.4s ease-in-out infinite}
     @keyframes backdoor{
-      0%,100%{box-shadow:inset 3px 0 0 rgba(255,176,32,.95)}
-      50%    {box-shadow:inset 3px 0 0 rgba(255,176,32,.25)}
+      0%,100%{background:rgba(190,120,10,.30)}
+      50%    {background:rgba(190,120,10,.06)}
     }
     /* The pulse is the alarm, so if motion is unwelcome the colour has to carry
        it alone rather than the cell just going quiet. */
     @media (prefers-reduced-motion: reduce){
-      .pick-backdoor{animation:none;box-shadow:inset 3px 0 0 rgba(255,176,32,.95)}
+      .pick-backdoor{animation:none;background:rgba(190,120,10,.24)}
     }
 
     /* Nobody else took this side. Outline rather than fill, so it stacks with
@@ -1667,15 +1690,7 @@
 
     // The centre of the cell, in one place instead of two. It was built inline in
     // renderHeader and rebuilt again in the ticker, which is how the two drifted.
-    // Marks the column head alive. Toggled in the one place the live state is
-    // already decided, so it can never disagree with the clock inside it.
-    function paintPlaying(centerEl, row){
-      const hdr = centerEl && centerEl.closest('.game-hdr');
-      if (hdr) hdr.classList.toggle('is-playing', isLive(row));
-    }
-
     function paintCenter(centerEl, row){
-      paintPlaying(centerEl, row);
       if (!centerEl) return;
       centerEl.innerHTML = '';
       const add = (cls, txt) => {
