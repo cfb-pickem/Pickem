@@ -381,6 +381,25 @@ header.cfp-card {
   .game-hdr-score.is-scored { animation: score-pop 1s ease-in-out; }
   .score-delta { animation: none; opacity: 1; transform: translate(-50%, -12px); }
 }
+/* THE CHANNEL. Sits above the whole cell, dimmer than anything else in it: it
+   is reference information you read once before kickoff, not something to watch.
+   Present but blank when a game has no network, so a week where only some games
+   carry one still lines up column to column. */
+.game-hdr-net {
+  font-family: 'Oswald', sans-serif;
+  font-size: .46rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #6b7079;
+  line-height: 1;
+  text-align: center;
+  margin-bottom: 3px;
+  white-space: nowrap;
+}
+.game-hdr-net.is-empty { visibility: hidden; }
+.game-hdr-net .net-short { display: none; }
+
 /* Neutral. The logo directly beside it already says which team this is, so
    colouring the letters as well was a second answer to a question nobody had
    asked twice - and several team colours are close to unreadable on black. */
@@ -552,6 +571,11 @@ header.cfp-card {
 @media (max-width: 640px) {
   .game-hdr { padding: 3px 6px; }
   .game-hdr-main { gap: 4px; }
+  /* A phone column has ~38px between the scores. "ACC NETWORK" needs about 55,
+     so the short form takes over and the full name stays in the tooltip. */
+  .game-hdr-net { font-size: .44rem; letter-spacing: .08em; margin-bottom: 4px; }
+  .game-hdr-net .net-full { display: none; }
+  .game-hdr-net .net-short { display: inline; }
   .game-hdr-logo { display: none; }
   .game-hdr-side-top .game-hdr-logo { display: none; }
   .game-hdr-score { font-size: 1.2rem; }

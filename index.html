@@ -636,6 +636,17 @@
       return toHexC(hslToRgb([h, s, 0.9]));
     }
 
+    // WHAT CHANNEL IS IT ON. Only three of the nineteen networks in this
+    // database are too long for a phone column - the rest are already four or
+    // five characters. The full name goes out too, and CSS shows whichever one
+    // the width can afford.
+    const NETWORK_SHORT = {
+      'ACC Network': 'ACCN',
+      'SEC Network': 'SECN',
+      'USA Net': 'USA'
+    };
+    const shortNetwork = n => NETWORK_SHORT[String(n || '').trim()] || String(n || '').trim();
+
     const headerStatusEls = new Map();
     // The one LIVE label, in the points column, pointing at the row of banners.
     let liveTagEl = null;
@@ -2000,6 +2011,28 @@
         const hasUrl = !!(row?.espn_url && /^https?:\/\//i.test(row.espn_url));
         const wrap = document.createElement(hasUrl ? 'a' : 'div');
         wrap.className = 'game-hdr';
+
+        // The channel, above everything else, because it is the one thing you
+        // want BEFORE the game rather than during it. Kept in the flow even when
+        // there is no network on the row, so a week where only some games have
+        // one still lines up column to column.
+        const netEl = document.createElement('div');
+        netEl.className = 'game-hdr-net';
+        const netName = String(row?.Network ?? '').trim();
+        if (netName) {
+          const full = document.createElement('span');
+          full.className = 'net-full';
+          full.textContent = netName;
+          const abbr = document.createElement('span');
+          abbr.className = 'net-short';
+          abbr.textContent = shortNetwork(netName);
+          netEl.appendChild(full);
+          netEl.appendChild(abbr);
+          netEl.title = 'On ' + netName;
+        } else {
+          netEl.classList.add('is-empty');
+          netEl.textContent = '\u00a0';
+        }
         if (hasUrl) { wrap.href = row.espn_url.trim(); wrap.target = '_blank'; wrap.rel = 'noopener noreferrer'; wrap.style.textDecoration = 'none'; wrap.style.color = 'inherit'; }
 
         // Line value
@@ -2090,6 +2123,7 @@
         }
         homeSide.appendChild(homeLineRow);
         main.appendChild(homeSide);
+        wrap.appendChild(netEl);
         wrap.appendChild(main);
 
         const bannerEl = document.createElement('div');
