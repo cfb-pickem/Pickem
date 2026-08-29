@@ -103,12 +103,6 @@
     .pick-loss{background:rgba(120,32,38,.20);box-shadow:inset 3px 0 0 rgba(214,85,92,.7);color:#e08d93}
     .pick-empty{color:#8b9099}
 
-    /* The covering side of a finished game. The one place gold belongs on this
-       board: it marks the result the week is actually scored on. */
-    .game-hdr-score.is-cover{
-      color:var(--cfp-gold-2);
-      text-shadow:0 0 10px rgba(240,199,94,.5), 0 0 22px rgba(240,199,94,.18);
-    }
 
     /* LIVE CELLS BREATHE. SETTLED ONES DO NOT.
        That is the whole difference between "this is in your points" and "this
@@ -1657,19 +1651,31 @@
 
     // Who has the ball. A dot rather than a word, and positioned absolutely, so
     // it costs none of the 38px a phone column has between the two scores.
-    function paintPossession(entry, row){
+    // ONE DOT, THREE THINGS. The same mark in the same place beside the score
+    // carries every per-side fact this board has, and which fact it is comes
+    // from its colour:
+    //
+    //   white  this side has the ball
+    //   red    ...and they are inside the twenty
+    //   green  the game is over and this side covered
+    //
+    // Doing it with one element rather than three is what keeps it legible in a
+    // cell this size, and it means the states can never contradict each other -
+    // a game cannot be live and final at once, so the dot cannot be two colours.
+    function paintDots(entry, row){
       if (!entry) return;
       const live = isLive(row);
-      const side = live ? String(row?.possession ?? '') : '';
-      // The red zone belongs to the drive, not to a team - "whoever has the ball
-      // is inside the twenty" - so it colours the dot already saying who that is,
-      // rather than adding a second mark to a cell with no room for one.
+      const covered = live ? null : coveringSide(entry, row);
+      const side = live ? String(row?.possession ?? '') : (covered || '');
       const red = live && row?.is_red_zone === true;
       const set = (el, on, team) => {
         if (!el) return;
         el.hidden = !on;
         el.classList.toggle('is-redzone', on && red);
-        if (on) el.title = team + (red ? ' in the red zone' : ' has the ball');
+        el.classList.toggle('is-covered', on && !live);
+        if (on) el.title = !live ? team + ' covered'
+                         : red  ? team + ' in the red zone'
+                                : team + ' has the ball';
       };
       set(entry.awayPossEl, side === 'away', entry.awayAbbr);
       set(entry.homePossEl, side === 'home', entry.homeAbbr);
@@ -2023,12 +2029,7 @@
       return (h + ln) > a ? 'home' : 'away';
     }
 
-    function paintFinalCover(entry, row){
-      if (!entry) return;
-      const side = coveringSide(entry, row);
-      if (entry.awayScoreEl) entry.awayScoreEl.classList.toggle('is-cover', side === 'away');
-      if (entry.homeScoreEl) entry.homeScoreEl.classList.toggle('is-cover', side === 'home');
-    }
+
 
     function renderHeader(gameNameMap, gameRows){
       theadRow.innerHTML = '';
@@ -2205,8 +2206,7 @@
                         awayTeamEl: awayTeam, homeTeamEl: homeTeam, awayPossEl, homePossEl,
                         line: ln };
         paintLive(entry, row);
-        paintPossession(entry, row);
-        paintFinalCover(entry, row);
+        paintDots(entry, row);
         headerStatusEls.set(String(id), entry);
         theadRow.appendChild(th);
       });
@@ -2680,8 +2680,7 @@
 
         paintCenter(centerEl, r);
         paintLive(entry, r);
-        paintPossession(entry, r);
-        paintFinalCover(entry, r);
+        paintDots(entry, r);
         refreshLiveTag();
 
         // Fold the fresh row back into the season cache, otherwise the points

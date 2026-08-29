@@ -310,6 +310,16 @@ header.cfp-card {
 }
 .poss-dot[hidden] { display: none; }
 
+/* COVERED. Same dot, same place, in the green this board already uses for a
+   won pick - so a finished game says who covered without the score having to
+   change colour. Only ever on a game that is over, and never at the same time
+   as possession, which cannot exist once a game is final. */
+.poss-dot.is-covered {
+  background: var(--led-win);
+  box-shadow: 0 0 6px var(--led-win-glow);
+  animation: none;
+}
+
 /* IN THE RED ZONE. The same dot, in red, breathing slowly. Deliberately the only
    change - a cell this size cannot take another mark, and the dot is already
    pointing at the team the red zone belongs to. The pulse is on the glow alone,
