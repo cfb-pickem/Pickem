@@ -70,7 +70,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=fa557d00">
+  <link rel="stylesheet" href="./css/base.css?v=409bcf68">
   <link rel="stylesheet" href="./css/theme-halloween.css?v=c39d5271">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=c3815cb1">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=23a99229">
@@ -680,6 +680,32 @@
       'USA Net': 'USA'
     };
     const shortNetwork = n => NETWORK_SHORT[String(n || '').trim()] || String(n || '').trim();
+
+    // E**N, ON EVERY ESPN CHANNEL.
+    //
+    // Where the S and the P sit differs per mark, so the band to cut is measured
+    // per asset rather than assumed. Their letters touch - none of these files
+    // has a single empty column - so the joins were found from the column-by-
+    // column ink profile of each one, taking the minima: ESPN's fall at 25.0 /
+    // 49.0 / 74.0% of its width, ESPN2's at 19.7 / 38.7 / 58.0 / 79.3, ESPN+'s
+    // at 20.3 / 39.3 / 58.7 / 80.0. The pairs below are the join before the S
+    // and the join after the P, each pulled in about a percent so no sliver of
+    // either letter survives at the edge.
+    const ESPN_REDACT = {
+      'ESPN':  [23.5, 74.5],
+      'ESPN2': [18.5, 58.5],
+      'ESPN+': [19.0, 59.2],
+    };
+
+    // ESPNU is deliberately absent, and so is anything else that turns up. Its
+    // mark is not a flat wordmark but a shield - white letters knocked out of a
+    // solid black badge - so a band cut through it punches a hole in the badge
+    // rather than removing letters, and it is nearly opaque end to end, which
+    // means the white-silhouette filter flattens it to a slab whether it is cut
+    // or not. Channels without a measured band drop the mark and take the
+    // asterisks in letters instead, which is correct for any future one too.
+    const isEspnFamily = n => /^ESPN/i.test(String(n || '').trim());
+    const starEspn = n => String(n || '').replace(/^ESP/i, 'E**');
 
     const headerStatusEls = new Map();
     // The one LIVE label, in the points column, pointing at the row of banners.
@@ -1711,12 +1737,35 @@
       const name = String(row?.Network ?? '').trim();
       const src  = String(row?.network_logo ?? '').trim();
 
+      const short = name ? shortNetwork(name) : '';
+      const family = isEspnFamily(name);
+
       entry.netEl.classList.toggle('is-empty', !name);
+      // The tooltip keeps the channel's real name - somebody looking for what to
+      // put the television on should not have to decode the joke.
       entry.netEl.title = name ? 'On ' + name : '';
       // A non-breaking space rather than nothing, so a week where only some
       // games carry a network still lines up column to column.
-      entry.netFullEl.textContent  = name || '\u00a0';
-      entry.netShortEl.textContent = name ? shortNetwork(name) : '\u00a0';
+      entry.netFullEl.textContent  = name ? (family ? starEspn(name) : name) : '\u00a0';
+      entry.netShortEl.textContent = short ? (family ? starEspn(short) : short) : '\u00a0';
+
+      // HOW BIG THE WORDMARK CAN BE, which is a different answer per network.
+      //
+      // A phone column gives the strip 38px, and the marks fill all 38 of them -
+      // that is what made FOX at 7.4px look like a caption next to a logo. The
+      // fix is to set the letters near the height of a mark, but the size that
+      // does that for FOX does not fit CBSSN, and neither fits PEACOCK.
+      //
+      // So the size is chosen per column from the length of the name, which the
+      // stylesheet cannot see. Every bucket was measured against the 38px: FOX
+      // at 12px is 19.7 wide, ESPN at 11px is 22, CBSSN at 10px is 29.3, and
+      // PEACOCK - the longest name in the database, and the only one of nineteen
+      // that needs the bottom rung - is 35 at 8.5px. Short names come out
+      // biggest, which is also what the marks do.
+      entry.netEl.dataset.fit = short.length <= 3 ? 'wide'
+                              : short.length === 4 ? 'mid'
+                              : short.length === 5 ? 'narrow'
+                              : 'tight';
 
       const want = /^https:\/\//i.test(src) ? src : '';
       if (!want) {
@@ -1725,6 +1774,29 @@
         entry.netEl.classList.remove('has-logo');
         return;
       }
+      // The band this mark's S and P occupy, if it is one we have measured. The
+      // same two numbers drive the cut and the box the asterisks are centred in,
+      // so the two can never drift apart.
+      const band = family ? ESPN_REDACT[name] : null;
+      entry.netEl.classList.toggle('is-espn', !!band);
+      if (band) {
+        entry.netEl.style.setProperty('--redact-a', band[0] + '%');
+        entry.netEl.style.setProperty('--redact-b', band[1] + '%');
+      } else {
+        entry.netEl.style.removeProperty('--redact-a');
+        entry.netEl.style.removeProperty('--redact-b');
+      }
+
+      // An ESPN channel we have no band for shows no mark at all - the letters
+      // carry the asterisks instead. Handled here rather than by hiding the
+      // image, so nothing is ever fetched that will not be drawn.
+      if (family && !band) {
+        entry.netLogoEl.hidden = true;
+        entry.netLogoEl.removeAttribute('src');
+        entry.netEl.classList.remove('has-logo');
+        return;
+      }
+
       entry.netLogoEl.alt = name;
       if (entry.netLogoEl.getAttribute('src') !== want) {
         // Back to the wordmark until the new one loads, never through a gap.
@@ -2158,7 +2230,23 @@
         netFullEl.className = 'net-full';
         const netShortEl = document.createElement('span');
         netShortEl.className = 'net-short';
-        netEl.appendChild(netLogoEl);
+        // The two characters that stand in for the middle of the ESPN mark. In
+        // the DOM for every column and shown for exactly one, so nothing has to
+        // be built or torn down when the board re-renders.
+        const netRedactEl = document.createElement('span');
+        netRedactEl.className = 'net-redact';
+        netRedactEl.setAttribute('aria-hidden', 'true');
+        netRedactEl.textContent = '**';
+        // A wrapper that shrink-wraps the mark, so the asterisks can be
+        // positioned against the IMAGE rather than against the column. It has to
+        // be: the cut band is centred on the mark only for ESPN itself, and on
+        // ESPN2 and ESPN+ it sits well left of centre, so asterisks centred in
+        // the column landed on the N instead of in the gap.
+        const netMarkEl = document.createElement('span');
+        netMarkEl.className = 'net-mark';
+        netMarkEl.appendChild(netLogoEl);
+        netMarkEl.appendChild(netRedactEl);
+        netEl.appendChild(netMarkEl);
         netEl.appendChild(netFullEl);
         netEl.appendChild(netShortEl);
         if (hasUrl) { wrap.href = row.espn_url.trim(); wrap.target = '_blank'; wrap.rel = 'noopener noreferrer'; wrap.style.textDecoration = 'none'; wrap.style.color = 'inherit'; }

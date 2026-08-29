@@ -395,9 +395,14 @@ header.cfp-card {
   padding: 4px 3px;
   background: rgba(255,255,255,.045);
   font-family: 'Oswald', sans-serif;
-  font-size: .5rem;
+  /* Set near the height of a mark rather than to the size of a caption. A
+     column showing FOX in letters sits beside one showing the ESPN logo, and
+     until this they were not the same piece of information at the same volume -
+     the mark was 13px tall and the word was 8. Desktop has 170px to play with,
+     so one size covers even "ACC NETWORK" spelled out. */
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: .12em;
+  letter-spacing: .05em;
   text-transform: uppercase;
   color: #9aa0a8;
   /* The line box is set to the height of the mark, not to the type, so a column
@@ -406,6 +411,8 @@ header.cfp-card {
   line-height: 13px;
   text-align: center;
   white-space: nowrap;
+  /* The two asterisks over the ESPN mark are positioned against this. */
+  position: relative;
 }
 .game-hdr-net.is-empty { visibility: hidden; }
 .game-hdr-net .net-short { display: none; }
@@ -437,6 +444,59 @@ header.cfp-card {
 .game-hdr-net .net-logo[hidden] { display: none; }
 .game-hdr-net.has-logo .net-full,
 .game-hdr-net.has-logo .net-short { display: none; }
+
+/* E**N.
+   The band comes in from the script as --redact-a / --redact-b, because where
+   the S and the P sit is a property of each mark's own artwork rather than
+   something a stylesheet can know - see ESPN_REDACT for how the numbers were
+   measured. The fallback pair is ESPN's own, so a rule that somehow arrives
+   without them still cuts in a sane place rather than blanking the mark.
+
+   The asterisks are positioned against the mark, not against the column, using
+   the same two numbers as the cut: the span IS the cut band, so centring inside
+   it lands them in the gap whatever the artwork does. Centring them in the
+   column only works for ESPN, whose gap happens to straddle the middle; ESPN2's
+   sits well left of it. They sit below full size because an asterisk's ink
+   hangs near the cap line - at the letters' size it would float above them. */
+.game-hdr-net .net-mark {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+  line-height: 0;
+  max-width: 100%;
+}
+.game-hdr-net:not(.has-logo) .net-mark { display: none; }
+.game-hdr-net .net-redact { display: none; }
+.game-hdr-net.is-espn.has-logo .net-logo {
+  -webkit-mask-image: linear-gradient(to right, #000 0 var(--redact-a, 23.5%),
+                        transparent var(--redact-a, 23.5%) var(--redact-b, 74.5%),
+                        #000 var(--redact-b, 74.5%));
+          mask-image: linear-gradient(to right, #000 0 var(--redact-a, 23.5%),
+                        transparent var(--redact-a, 23.5%) var(--redact-b, 74.5%),
+                        #000 var(--redact-b, 74.5%));
+}
+.game-hdr-net.is-espn.has-logo .net-redact {
+  display: flex;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--redact-a, 23.5%);
+  right: calc(100% - var(--redact-b, 74.5%));
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: .02em;
+  line-height: 1;
+  color: #fff;
+  opacity: .58;
+  /* An asterisk's ink hangs near the cap line rather than sitting on the middle
+     of its em box, so centring the box floats it above the letters either side.
+     This drops it onto their optical centre. */
+  transform: translateY(.19em);
+}
 
 /* Neutral. The logo directly beside it already says which team this is, so
    colouring the letters as well was a second answer to a question nobody had
@@ -611,13 +671,22 @@ header.cfp-card {
   .game-hdr-main { gap: 4px; }
   /* A phone column has ~38px between the scores. "ACC NETWORK" needs about 55,
      so the short form takes over and the full name stays in the tooltip. */
-  .game-hdr-net { font-size: .46rem; letter-spacing: .08em; margin: -3px -6px 9px; padding: 4px 2px; line-height: 11px; }
+  .game-hdr-net { margin: -3px -6px 9px; padding: 4px 2px; line-height: 11px; }
   .game-hdr-net .net-full { display: none; }
   .game-hdr-net .net-short { display: inline; }
+  /* 38px of usable width, and the marks use every one of them - so the letters
+     are sized to come as close to that as the name allows. Set from the length
+     of the short form in paintNetwork, because the stylesheet cannot count
+     characters. Widths measured in Oswald 600 at this letter-spacing against
+     the 38: 19.7 / 22 / 29.3 / 35. */
+  .game-hdr-net[data-fit="mid"]    { font-size: 11px; }
+  .game-hdr-net[data-fit="narrow"] { font-size: 10px; }
+  .game-hdr-net[data-fit="tight"]  { font-size: 8.5px; letter-spacing: .03em; }
   /* A phone column is about 47px wide inside the strip. The tallest of these
      marks is 2:1, so 11px of height is at most 22px of width and every one of
      them clears it without max-width having to do anything. */
   .game-hdr-net .net-logo { height: 11px; }
+  .game-hdr-net.is-espn.has-logo .net-redact { font-size: 9px; }
   .game-hdr-net.has-logo .net-short { display: none; }
   .game-hdr-logo { display: none; }
   .game-hdr-side-top .game-hdr-logo { display: none; }
