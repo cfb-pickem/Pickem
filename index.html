@@ -469,7 +469,7 @@
     import { supabase } from './js/supabaseClient.js';
     import { kickoffMs, isWeekLocked, isGameLocked, earliestKickoffMs } from './js/kickoff.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
-    import { sameTeam, escapeHtml, buildPickMap } from './js/utils.js';
+    import { sameTeam, escapeHtml, buildPickMap, teamColorOnDark } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
 
@@ -1940,6 +1940,11 @@
         const awayAbbrEl = document.createElement('div');
         awayAbbrEl.className = 'game-hdr-abbr';
         awayAbbrEl.textContent = awayAbbr;
+        // The team's own colour, lifted only if it cannot be read on this panel -
+        // see teamColorOnDark(). Half the palette is a navy or a forest green
+        // that would otherwise be invisible here.
+        const awayInk = teamColorOnDark(away);
+        if (awayInk) awayAbbrEl.style.color = awayInk;
         const awayScoreEl = document.createElement('div');
         awayScoreEl.className = scoreClasses();
         awayTeam.appendChild(awayAbbrEl);
@@ -1984,6 +1989,8 @@
         const homeAbbrEl = document.createElement('div');
         homeAbbrEl.className = 'game-hdr-abbr';
         homeAbbrEl.textContent = homeAbbr;
+        const homeInk = teamColorOnDark(home);
+        if (homeInk) homeAbbrEl.style.color = homeInk;
         const homeScoreEl = document.createElement('div');
         homeScoreEl.className = scoreClasses();
         homeTeam.appendChild(homeAbbrEl);
