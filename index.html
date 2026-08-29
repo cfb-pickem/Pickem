@@ -854,7 +854,7 @@
 
       const { data: games, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind, possession')
         .eq('cfb_season', season)
         .eq('picked', true);
       if (gErr){ status('Could not load the season schedule.', true); return null; }
@@ -874,7 +874,7 @@
       // walk them straight into the season points.
       const { data: tbGames } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind, possession')
         .eq('cfb_season', season)
         .eq('tiebreaker', true);
 
@@ -1500,6 +1500,58 @@
       liveTagEl.hidden = !any;
     }
 
+    // A SCORE GOING UP SHOULD LOOK LIKE SOMETHING.
+    //
+    // The number used to swap silently, which on a board you are watching for
+    // three hours is the one moment worth noticing and the one it did nothing
+    // for. Now the digits punch out and the points that were just scored rise
+    // off them and fade - so a touchdown reads as a touchdown from across the
+    // room, and you can tell a 7 from a 3 without doing the arithmetic.
+    //
+    // Only ever on the way up, and only for a game being played: a correction, a
+    // reload or a change of week must not set fireworks off. The first paint
+    // records the score without animating for exactly that reason.
+    const SCORE_DELTA_MS = 1300;
+
+    function setScore(el, teamEl, value, live){
+      if (!el) return;
+      const text = (value !== '' && value != null) ? String(value) : '\u2013';
+      const prev = el.dataset.score;
+      if (el.textContent !== text) el.textContent = text;
+      if (prev === undefined || prev === text) { el.dataset.score = text; return; }
+      el.dataset.score = text;
+
+      const before = Number(prev), after = Number(text);
+      if (!live || !Number.isFinite(before) || !Number.isFinite(after) || after <= before) return;
+
+      el.classList.remove('is-scored');
+      void el.offsetWidth;              // restart it if two scores land close together
+      el.classList.add('is-scored');
+      setTimeout(() => el.classList.remove('is-scored'), 900);
+
+      if (!teamEl) return;
+      const d = document.createElement('span');
+      d.className = 'score-delta';
+      d.textContent = '+' + (after - before);
+      teamEl.appendChild(d);
+      setTimeout(() => d.remove(), SCORE_DELTA_MS + 120);
+    }
+
+    // Who has the ball. A dot rather than a word, and positioned absolutely, so
+    // it costs none of the 38px a phone column has between the two scores.
+    function paintPossession(entry, row){
+      if (!entry) return;
+      const live = isLive(row);
+      const side = live ? String(row?.possession ?? '') : '';
+      const set = (el, on, team) => {
+        if (!el) return;
+        el.hidden = !on;
+        if (on) el.title = team + ' has the ball';
+      };
+      set(entry.awayPossEl, side === 'away', entry.awayAbbr);
+      set(entry.homePossEl, side === 'home', entry.homeAbbr);
+    }
+
     function paintLive(entry, row){
       if (!entry || !entry.bannerEl) return;
       const v = liveLineOf(row);
@@ -1870,9 +1922,13 @@
         awayAbbrEl.textContent = awayAbbr;
         const awayScoreEl = document.createElement('div');
         awayScoreEl.className = scoreClasses();
-        awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–';
         awayTeam.appendChild(awayAbbrEl);
         awayTeam.appendChild(awayScoreEl);
+        const awayPossEl = document.createElement('span');
+        awayPossEl.className = 'poss-dot';
+        awayPossEl.hidden = true;
+        awayTeam.appendChild(awayPossEl);
+        setScore(awayScoreEl, awayTeam, aPts, false);
         awaySideTop.appendChild(awayTeam);
         awaySide.appendChild(awaySideTop);
         const awayLineRow = document.createElement('div');
@@ -1910,9 +1966,13 @@
         homeAbbrEl.textContent = homeAbbr;
         const homeScoreEl = document.createElement('div');
         homeScoreEl.className = scoreClasses();
-        homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–';
         homeTeam.appendChild(homeAbbrEl);
         homeTeam.appendChild(homeScoreEl);
+        const homePossEl = document.createElement('span');
+        homePossEl.className = 'poss-dot';
+        homePossEl.hidden = true;
+        homeTeam.appendChild(homePossEl);
+        setScore(homeScoreEl, homeTeam, hPts, false);
         homeSideTop.appendChild(homeTeam);
         if (homeLogo) { const img = document.createElement('img'); img.src = homeLogo; img.className = 'game-hdr-logo'; img.alt = home; homeSideTop.appendChild(img); }
         homeSide.appendChild(homeSideTop);
@@ -1936,8 +1996,10 @@
         th.appendChild(wrap);
 
         const entry = { awayScoreEl, homeScoreEl, centerEl: center, awayName: away, homeName: home,
-                        awayAbbr, homeAbbr, bannerEl };
+                        awayAbbr, homeAbbr, bannerEl,
+                        awayTeamEl: awayTeam, homeTeamEl: homeTeam, awayPossEl, homePossEl };
         paintLive(entry, row);
+        paintPossession(entry, row);
         headerStatusEls.set(String(id), entry);
         theadRow.appendChild(th);
       });
@@ -2370,7 +2432,7 @@
 
       const { data: rows, error } = await supabase
         .from('all_games')
-        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner, line_live, line_live_at, line_live_kind')
+        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner, line_live, line_live_at, line_live_kind, possession')
         .in('GameId', gameIds);
 
       if(error){
@@ -2392,11 +2454,13 @@
         const hPts = r.HomePts ?? '';
 
         // Update scores
-        if (awayScoreEl) { awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–'; awayScoreEl.className = scoreClasses(); }
-        if (homeScoreEl) { homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–'; homeScoreEl.className = scoreClasses(); }
+        const live = isLive(r);
+        setScore(awayScoreEl, entry.awayTeamEl, aPts, live);
+        setScore(homeScoreEl, entry.homeTeamEl, hPts, live);
 
         paintCenter(centerEl, r);
         paintLive(entry, r);
+        paintPossession(entry, r);
         refreshLiveTag();
 
         // Fold the fresh row back into the season cache, otherwise the points
