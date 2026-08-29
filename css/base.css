@@ -714,11 +714,15 @@ header.cfp-card {
 }
 .table tbody td:last-child { border-right: none; }
 
-/* No divider after the points column. The dividers exist to separate one game
-   from the next; between the standings and the first game there is nothing to
-   separate, and the line there just fenced the board off from its own scores. */
-#leaderboard-table thead th:nth-child(2),
-#leaderboard-table tbody td:nth-child(2) { border-right: none; }
+/* The divider after the points column is the ordinary one, deliberately: every
+   column on this board is separated from the next by the same hairline, and
+   points to first game is no different from team to points.
+
+   It was taken out for a while because something much louder was standing in
+   the same place - settled cells used to draw a 3px green or red rule down
+   their left edge, which in the middle of the board hid inside the divider but
+   beside the points column stood alone as a bright bar. Removing the hairline
+   was treating the symptom. The bar is gone now and the hairline is back. */
 
 /* --- Table text — jumbotron style --- */
 

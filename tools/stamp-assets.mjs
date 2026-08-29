@@ -25,11 +25,17 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const hashes = new Map();
 
+// Line endings are normalised out before hashing. They have to be: these files
+// are CRLF in a Windows checkout and LF on the Linux runner that verifies the
+// stamp, so hashing the bytes gives two different answers for one unchanged
+// file and the check fails on every commit. The hash only has to change when
+// the content does - it is not a checksum of any particular encoding of it.
 const hashOf = (rel) => {
   if (!hashes.has(rel)) {
     let h;
     try {
-      h = createHash('sha256').update(readFileSync(join(root, rel))).digest('hex').slice(0, 8);
+      const text = readFileSync(join(root, rel), 'utf8').split('\r\n').join('\n');
+      h = createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 8);
     } catch {
       h = null;   // a link to something that is not in the repo: leave it alone
     }
