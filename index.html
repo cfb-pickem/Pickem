@@ -118,8 +118,8 @@
        is still moving has not been counted.
 
        --cover-i is how settled the cover is, 0 at kickoff to 1 once it is
-       decided. --cover-pulse rides on top of it, 0.38 to 1 and back over three
-       seconds. Registering it with @property is what makes it animatable at all;
+       decided. --cover-pulse rides on top of it, 0.82 to 1 and back over six
+       seconds - a shimmer you notice out of the corner of an eye, not a throb. Registering it with @property is what makes it animatable at all;
        where that is unsupported the fallback of 1 leaves the shading static,
        which is simply what it was before.
 
@@ -128,10 +128,10 @@
        alike from across the table, which was the original complaint. */
     @property --cover-pulse { syntax: '<number>'; inherits: false; initial-value: 1; }
     @keyframes cover-breathe{
-      0%,100%{ --cover-pulse: .38 }
+      0%,100%{ --cover-pulse: .82 }
       50%    { --cover-pulse: 1 }
     }
-    .pick-cover, .pick-nocover{ animation: cover-breathe 3s ease-in-out infinite; }
+    .pick-cover, .pick-nocover{ animation: cover-breathe 6s ease-in-out infinite; }
     .pick-cover{
       background:rgba(30,138,86,calc(var(--cover-i,0) * var(--cover-pulse,1) * .26));
     }
@@ -139,7 +139,7 @@
       background:rgba(120,32,38,calc(var(--cover-i,0) * var(--cover-pulse,1) * .26));
     }
     @media (prefers-reduced-motion: reduce){
-      .pick-cover, .pick-nocover{ animation: none; --cover-pulse: .8; }
+      .pick-cover, .pick-nocover{ animation: none; --cover-pulse: .9; }
     }
 
     /* Backdoor watch: fourth quarter, and a field goal flips the cover. Declared
@@ -147,14 +147,14 @@
     /* Only the rule pulses, never the fill: the green/red behind it still has to
        say WHICH side is covering. Amber means "a field goal flips this", not
        "forget who is ahead". */
-    /* The alarm is a faster amber breath of the same fill - no rule, for the same
-       reason the live cells lost theirs. It runs at 1.4s against the 3s of a
-       normal live cell, so a knife edge reads as more urgent than the cell next
-       to it without needing a different shape. */
-    .pick-backdoor{animation:backdoor 1.4s ease-in-out infinite}
+    /* The alarm is an amber breath of the same fill - no rule, for the same
+       reason the live cells lost theirs. Softened alongside them, but kept at
+       less than half their cycle: a knife edge should read as more urgent than
+       the cell beside it, and the difference in tempo is what says so. */
+    .pick-backdoor{animation:backdoor 2.4s ease-in-out infinite}
     @keyframes backdoor{
-      0%,100%{background:rgba(190,120,10,.30)}
-      50%    {background:rgba(190,120,10,.06)}
+      0%,100%{background:rgba(190,120,10,.20)}
+      50%    {background:rgba(190,120,10,.07)}
     }
     /* The pulse is the alarm, so if motion is unwelcome the colour has to carry
        it alone rather than the cell just going quiet. */

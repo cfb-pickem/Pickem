@@ -381,7 +381,7 @@ header.cfp-card {
      the cell is bracketed by its two pieces of context: what channel it is on,
      and where the market has it. Same negative margins as the banner - they
      cancel the cell padding so both span the full column. */
-  margin: -2px -10px 5px;
+  margin: -2px -10px 9px;
   padding: 4px 3px;
   background: rgba(255,255,255,.045);
   font-family: 'Oswald', sans-serif;
@@ -570,7 +570,7 @@ header.cfp-card {
   .game-hdr-main { gap: 4px; }
   /* A phone column has ~38px between the scores. "ACC NETWORK" needs about 55,
      so the short form takes over and the full name stays in the tooltip. */
-  .game-hdr-net { font-size: .46rem; letter-spacing: .08em; margin: -3px -6px 5px; padding: 4px 2px; }
+  .game-hdr-net { font-size: .46rem; letter-spacing: .08em; margin: -3px -6px 9px; padding: 4px 2px; }
   .game-hdr-net .net-full { display: none; }
   .game-hdr-net .net-short { display: inline; }
   .game-hdr-logo { display: none; }
@@ -667,6 +667,12 @@ header.cfp-card {
   border-right: 1px solid rgba(255,255,255,.04);
 }
 .table tbody td:last-child { border-right: none; }
+
+/* No divider after the points column. The dividers exist to separate one game
+   from the next; between the standings and the first game there is nothing to
+   separate, and the line there just fenced the board off from its own scores. */
+#leaderboard-table thead th:nth-child(2),
+#leaderboard-table tbody td:nth-child(2) { border-right: none; }
 
 /* --- Table text — jumbotron style --- */
 
