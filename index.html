@@ -1469,7 +1469,7 @@
       const v = liveLineOf(row);
       const show = (el, n) => {
         if (!el) return;
-        el.textContent = n == null ? '' : `${n > 0 ? '+' : ''}${n}`;
+        el.textContent = n == null ? '' : `→${n > 0 ? '+' : ''}${n}`;
         el.hidden = n == null;
       };
       show(entry.awayLiveEl, v == null ? null : -v);
@@ -1792,11 +1792,20 @@
         awayTeam.appendChild(awayScoreEl);
         awaySideTop.appendChild(awayTeam);
         awaySide.appendChild(awaySideTop);
-        if (ln != null && !isNaN(ln)) { const awayLn = -ln; const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${awayLn > 0 ? '+' : ''}${awayLn})`; awaySide.appendChild(l); }
-        const awayLiveEl = document.createElement('div');
-        awayLiveEl.className = 'game-hdr-live';
+        const awayLineRow = document.createElement('div');
+        awayLineRow.className = 'game-hdr-line';
+        if (ln != null && !isNaN(ln)) {
+          const awayLn = -ln;
+          const f = document.createElement('span');
+          f.className = 'hdr-ln';
+          f.textContent = `${awayLn > 0 ? '+' : ''}${awayLn}`;
+          awayLineRow.appendChild(f);
+        }
+        const awayLiveEl = document.createElement('span');
+        awayLiveEl.className = 'hdr-ln-live';
         awayLiveEl.hidden = true;
-        awaySide.appendChild(awayLiveEl);
+        awayLineRow.appendChild(awayLiveEl);
+        awaySide.appendChild(awayLineRow);
         wrap.appendChild(awaySide);
 
         // Center status
@@ -1843,11 +1852,19 @@
         homeSideTop.appendChild(homeTeam);
         if (homeLogo) { const img = document.createElement('img'); img.src = homeLogo; img.className = 'game-hdr-logo'; img.alt = home; homeSideTop.appendChild(img); }
         homeSide.appendChild(homeSideTop);
-        if (ln != null && !isNaN(ln)) { const l = document.createElement('div'); l.className = 'game-hdr-line'; l.textContent = `(${ln > 0 ? '+' : ''}${ln})`; homeSide.appendChild(l); }
-        const homeLiveEl = document.createElement('div');
-        homeLiveEl.className = 'game-hdr-live';
+        const homeLineRow = document.createElement('div');
+        homeLineRow.className = 'game-hdr-line';
+        if (ln != null && !isNaN(ln)) {
+          const f = document.createElement('span');
+          f.className = 'hdr-ln';
+          f.textContent = `${ln > 0 ? '+' : ''}${ln}`;
+          homeLineRow.appendChild(f);
+        }
+        const homeLiveEl = document.createElement('span');
+        homeLiveEl.className = 'hdr-ln-live';
         homeLiveEl.hidden = true;
-        homeSide.appendChild(homeLiveEl);
+        homeLineRow.appendChild(homeLiveEl);
+        homeSide.appendChild(homeLineRow);
         wrap.appendChild(homeSide);
 
         th.appendChild(wrap);

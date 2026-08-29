@@ -299,13 +299,12 @@ header.cfp-card {
    colouring the letters as well was a second answer to a question nobody had
    asked twice - and several team colours are close to unreadable on black. */
 .game-hdr-abbr {
-  color: #9aa0a8;
   font-family: 'Oswald', sans-serif;
   font-size: .5rem;
   font-weight: 600;
   letter-spacing: .1em;
   text-transform: uppercase;
-  color: var(--cfp-gold-2);
+  color: #8b9099;
   line-height: 1;
 }
 /* Scores read as scoreboard LEDs: tabular figures so digits stay in column,
@@ -322,7 +321,7 @@ header.cfp-card {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
   color: var(--led-white);
-  text-shadow: 0 0 6px rgba(244,246,248,.35);
+  text-shadow: 0 0 8px rgba(244,246,248,.18);
 }
 /* Scores stay one colour. Green for the winner, amber for the leader and dim
    for the other side meant the header carried three colour scales at once - on
@@ -344,13 +343,15 @@ header.cfp-card {
   font-size: .45rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--led-amber);
+  color: #c9ced5;
   line-height: 1;
   letter-spacing: .06em;
 }
 .game-hdr-clock {
+  font-family: 'Oswald', sans-serif;
   font-size: .45rem;
-  color: #ccc;
+  font-variant-numeric: tabular-nums;
+  color: #c9ced5;
   line-height: 1.1;
 }
 .game-hdr-final {
@@ -379,45 +380,45 @@ header.cfp-card {
   gap: 6px;
 }
 .game-hdr-line {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 2px;
   font-family: 'Oswald', sans-serif;
-  font-size: .6rem;
+  font-size: .58rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: #9aa0a8;
   line-height: 1;
-  margin-top: 0;
-  letter-spacing: .04em;
-  text-align: center;
+  letter-spacing: 0;
   width: 100%;
+  min-height: .7rem;
+  white-space: nowrap;
 }
-
-/* The live in-game line, under the frozen one it is NOT replacing. Gold so the
-   eye can tell which number is the market's opinion right now and which is the
-   one the week is scored against; hidden outright unless the game is running and
-   the feed is fresh. It carries no label - the amber quarter beside it is
-   already the sign that this game is being played. */
-.game-hdr-live {
-  font-family: 'Oswald', sans-serif;
-  font-size: .6rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--cfp-gold-2);
-  line-height: 1;
-  letter-spacing: .04em;
-  text-align: center;
-  width: 100%;
-}
-.game-hdr-live[hidden]{ display: none; }
+/* The number the week is scored against, and the number the market is at now.
+   Same weight, same colour, joined by an arrow - the relationship is what the
+   arrow is for, so neither needs a colour or a label to explain it. Under a
+   50px column on a phone this is the only shape that fits both. */
+.hdr-ln      { color: #868c95; }
+.hdr-ln-live { color: #868c95; }
+.hdr-ln-live[hidden] { display: none; }
 
 @media (max-width: 640px) {
   .game-hdr { gap: 4px; padding: 3px 6px; }
-  .game-hdr-live { font-size: .58rem; }
   .game-hdr-logo { display: none; }
   .game-hdr-side-top .game-hdr-logo { display: none; }
   .game-hdr-score { font-size: 1.2rem; }
   .game-hdr-abbr { font-size: .68rem; }
-  .game-hdr-line { font-size: .58rem; margin-top: 0; }
-  .game-hdr-center { padding: 6px 5px; min-width: 30px; }
+  .game-hdr-line { font-size: .55rem; letter-spacing: -.01em; }
+  /* On a phone the three blocks stack in a fifty-pixel column and run into one
+     another, so there is no telling where one team's numbers stop. A hairline
+     above and below the clock separates them without adding anything to look at. */
+  .game-hdr-center {
+    padding: 4px 5px;
+    margin: 3px 0;
+    min-width: 30px;
+    border-top: 1px solid rgba(231,231,231,.08);
+    border-bottom: 1px solid rgba(231,231,231,.08);
+  }
   .game-hdr-period, .game-hdr-final { font-size: .58rem; }
   .game-hdr-clock, .game-hdr-time { font-size: .55rem; margin-top: 2px; }
   .game-hdr-team { min-width: auto; }
