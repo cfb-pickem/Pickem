@@ -70,10 +70,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css">
-  <link rel="stylesheet" href="./css/theme-halloween.css">
-  <link rel="stylesheet" href="./css/theme-thanksgiving.css">
-  <link rel="stylesheet" href="./css/theme-christmas.css">
+  <link rel="stylesheet" href="./css/base.css?v=28d27660">
+  <link rel="stylesheet" href="./css/theme-halloween.css?v=9c73a86b">
+  <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=ac81b58f">
+  <link rel="stylesheet" href="./css/theme-christmas.css?v=4047bc04">
   <link rel="modulepreload" href="./js/vendor/supabase.js">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
@@ -98,9 +98,22 @@
     }
 
     /* Cell shading reads as scoreboard data, not decoration: desaturated and
-       cool, with a left rule doing the work instead of a strong fill. */
-    .pick-win{background:rgba(30,138,86,.20);box-shadow:inset 3px 0 0 rgba(52,199,123,.85);color:#7fe3ac}
-    .pick-loss{background:rgba(120,32,38,.20);box-shadow:inset 3px 0 0 rgba(214,85,92,.7);color:#e08d93}
+       cool, the fill and the figure carrying it between them.
+
+       NO LEFT RULE. It used to draw a 3px bar down the left edge of every
+       settled cell. In the middle of the board that bar landed on top of the
+       divider between one game and the next and passed for part of it, but the
+       first game column has no divider to its left - the one after the points
+       was deliberately removed - so there the bar stood on its own and read as a
+       stray line fencing the scores off from the standings. It only appeared
+       once a game went final, which is why it turned up out of nowhere.
+
+       Nothing is lost by dropping it. The fill and the text are already green or
+       red; the bar was a third telling of the same fact. What separates a
+       settled cell from a live one is that the live one breathes - that is the
+       distinction that actually needed carrying, and it does not need an edge. */
+    .pick-win{background:rgba(30,138,86,.20);color:#7fe3ac}
+    .pick-loss{background:rgba(120,32,38,.20);color:#e08d93}
     .pick-empty{color:#8b9099}
 
 
@@ -117,9 +130,8 @@
        where that is unsupported the fallback of 1 leaves the shading static,
        which is simply what it was before.
 
-       No left rule on a live cell either - only the fill moves. The bar is what
-       a settled result gets, so having one on both made the two states look
-       alike from across the table, which was the original complaint. */
+       No left rule here either, and now none on a settled cell - only the fill
+       differs, and only motion says which of the two states it is in. */
     @property --cover-pulse { syntax: '<number>'; inherits: false; initial-value: 1; }
     @keyframes cover-breathe{
       0%,100%{ --cover-pulse: .82 }
@@ -137,14 +149,12 @@
     }
 
     /* Backdoor watch: fourth quarter, and a field goal flips the cover. Declared
-       after the two above so it wins the box-shadow. */
-    /* Only the rule pulses, never the fill: the green/red behind it still has to
-       say WHICH side is covering. Amber means "a field goal flips this", not
-       "forget who is ahead". */
-    /* The alarm is an amber breath of the same fill - no rule, for the same
-       reason the live cells lost theirs. Softened alongside them, but kept at
-       less than half their cycle: a knife edge should read as more urgent than
-       the cell beside it, and the difference in tempo is what says so. */
+       after the two above so it wins the fill.
+
+       An amber breath of that same fill - no rule, for the same reason nothing
+       else on this board has one any more. Softened alongside the live cells but
+       kept at less than half their cycle: a knife edge should read as more
+       urgent than the cell beside it, and the tempo is what says so. */
     .pick-backdoor{animation:backdoor 2.4s ease-in-out infinite}
     @keyframes backdoor{
       0%,100%{background:rgba(190,120,10,.20)}
@@ -373,7 +383,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css">
+  <link rel="stylesheet" href="./css/tailwind.css?v=0ed87306">
 </head>
 
 <body data-page="leaderboard">
@@ -966,7 +976,7 @@
 
       const { data: games, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind, possession, is_red_zone')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, network_logo, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .eq('cfb_season', season)
         .eq('picked', true);
       if (gErr){ status('Could not load the season schedule.', true); return null; }
@@ -986,7 +996,7 @@
       // walk them straight into the season points.
       const { data: tbGames } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind, possession, is_red_zone')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, network_logo, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .eq('cfb_season', season)
         .eq('tiebreaker', true);
 
@@ -1681,6 +1691,49 @@
       set(entry.homePossEl, side === 'home', entry.homeAbbr);
     }
 
+    // THE CHANNEL, AS ITS MARK WHERE THERE IS ONE.
+    //
+    // ESPN publishes a logo for its own family and a handful of partners and
+    // nothing at all for FOX, NBC or CBSSN - across one full Saturday slate six
+    // of nine broadcasters had one. So this is not a swap, it is a preference:
+    // the mark when it exists, the wordmark otherwise, and the wordmark is what
+    // stands until an image has demonstrably decoded.
+    //
+    // The marks arrive flat and in brand colour, which does not survive this
+    // background - ACC Network's is navy and the CW's is solid black, both
+    // invisible on it, and ESPN's is the red this board uses for a lost pick.
+    // brightness(0) invert(1) in the stylesheet reduces every one of them to a
+    // white silhouette at the same weight as the wordmark beside it, which is
+    // both legible on black and consistent across a row where some columns show
+    // a mark and some show letters.
+    function paintNetwork(entry, row){
+      if (!entry || !entry.netEl) return;
+      const name = String(row?.Network ?? '').trim();
+      const src  = String(row?.network_logo ?? '').trim();
+
+      entry.netEl.classList.toggle('is-empty', !name);
+      entry.netEl.title = name ? 'On ' + name : '';
+      // A non-breaking space rather than nothing, so a week where only some
+      // games carry a network still lines up column to column.
+      entry.netFullEl.textContent  = name || '\u00a0';
+      entry.netShortEl.textContent = name ? shortNetwork(name) : '\u00a0';
+
+      const want = /^https:\/\//i.test(src) ? src : '';
+      if (!want) {
+        entry.netLogoEl.hidden = true;
+        entry.netLogoEl.removeAttribute('src');
+        entry.netEl.classList.remove('has-logo');
+        return;
+      }
+      entry.netLogoEl.alt = name;
+      if (entry.netLogoEl.getAttribute('src') !== want) {
+        // Back to the wordmark until the new one loads, never through a gap.
+        entry.netLogoEl.hidden = true;
+        entry.netEl.classList.remove('has-logo');
+        entry.netLogoEl.setAttribute('src', want);
+      }
+    }
+
     function paintLive(entry, row){
       if (!entry || !entry.bannerEl) return;
       const v = liveLineOf(row);
@@ -2081,26 +2134,33 @@
         wrap.className = 'game-hdr';
 
         // The channel, above everything else, because it is the one thing you
-        // want BEFORE the game rather than during it. Kept in the flow even when
-        // there is no network on the row, so a week where only some games have
-        // one still lines up column to column.
+        // want BEFORE the game rather than during it. Built empty here and
+        // filled by paintNetwork, which is also what the ticker calls - the mark
+        // arrives from a different feed than the name and can land later.
         const netEl = document.createElement('div');
         netEl.className = 'game-hdr-net';
-        const netName = String(row?.Network ?? '').trim();
-        if (netName) {
-          const full = document.createElement('span');
-          full.className = 'net-full';
-          full.textContent = netName;
-          const abbr = document.createElement('span');
-          abbr.className = 'net-short';
-          abbr.textContent = shortNetwork(netName);
-          netEl.appendChild(full);
-          netEl.appendChild(abbr);
-          netEl.title = 'On ' + netName;
-        } else {
-          netEl.classList.add('is-empty');
-          netEl.textContent = '\u00a0';
-        }
+        const netLogoEl = document.createElement('img');
+        netLogoEl.className = 'net-logo';
+        netLogoEl.hidden = true;
+        netLogoEl.decoding = 'async';
+        // The wordmark is only stood down once the image has actually decoded,
+        // and goes straight back up if it ever fails. There is no state in which
+        // a column loses its channel.
+        netLogoEl.addEventListener('load', () => {
+          netLogoEl.hidden = false;
+          netEl.classList.add('has-logo');
+        });
+        netLogoEl.addEventListener('error', () => {
+          netLogoEl.hidden = true;
+          netEl.classList.remove('has-logo');
+        });
+        const netFullEl = document.createElement('span');
+        netFullEl.className = 'net-full';
+        const netShortEl = document.createElement('span');
+        netShortEl.className = 'net-short';
+        netEl.appendChild(netLogoEl);
+        netEl.appendChild(netFullEl);
+        netEl.appendChild(netShortEl);
         if (hasUrl) { wrap.href = row.espn_url.trim(); wrap.target = '_blank'; wrap.rel = 'noopener noreferrer'; wrap.style.textDecoration = 'none'; wrap.style.color = 'inherit'; }
 
         // Line value
@@ -2204,7 +2264,9 @@
         const entry = { awayScoreEl, homeScoreEl, centerEl: center, awayName: away, homeName: home,
                         awayAbbr, homeAbbr, bannerEl,
                         awayTeamEl: awayTeam, homeTeamEl: homeTeam, awayPossEl, homePossEl,
+                        netEl, netLogoEl, netFullEl, netShortEl,
                         line: ln };
+        paintNetwork(entry, row);
         paintLive(entry, row);
         paintDots(entry, row);
         headerStatusEls.set(String(id), entry);
@@ -2652,7 +2714,7 @@
 
       const { data: rows, error } = await supabase
         .from('all_games')
-        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner, line_live, line_live_at, line_live_kind, possession, is_red_zone')
+        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, network_logo, winner, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .in('GameId', gameIds);
 
       if(error){
@@ -2679,6 +2741,7 @@
         setScore(homeScoreEl, entry.homeTeamEl, hPts, live);
 
         paintCenter(centerEl, r);
+        paintNetwork(entry, r);
         paintLive(entry, r);
         paintDots(entry, r);
         refreshLiveTag();

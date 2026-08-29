@@ -400,12 +400,43 @@ header.cfp-card {
   letter-spacing: .12em;
   text-transform: uppercase;
   color: #9aa0a8;
-  line-height: 1;
+  /* The line box is set to the height of the mark, not to the type, so a column
+     showing FOX in letters is exactly as tall as one showing the ESPN logo and
+     everything below the strip stays on the same line across the row. */
+  line-height: 13px;
   text-align: center;
   white-space: nowrap;
 }
 .game-hdr-net.is-empty { visibility: hidden; }
 .game-hdr-net .net-short { display: none; }
+
+/* THE BROADCASTER'S MARK, when ESPN has one. Reduced to a white silhouette:
+   these arrive in brand colour and half of them cannot be seen on this
+   background at all - the CW's is solid black, ACC Network's is navy, and
+   ESPN's is the same red this board uses for a lost pick, which is worse than
+   invisible. brightness(0) flattens whatever the colour is to black and
+   invert(1) turns that white, alpha untouched, so a knocked-out counter stays
+   a hole rather than filling in.
+
+   The result sits at the same weight and dimness as the wordmark it replaces,
+   which is what lets a row mix the two - three columns showing a mark and a
+   fourth showing FOX in letters should look like one row, not two ideas.
+
+   13px rather than the 8px of the type beside it: a mark needs the height to be
+   recognisable, and it earns it back by not needing the letter-spacing. */
+.game-hdr-net .net-logo {
+  display: block;
+  height: 13px;
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: .58;
+}
+.game-hdr-net .net-logo[hidden] { display: none; }
+.game-hdr-net.has-logo .net-full,
+.game-hdr-net.has-logo .net-short { display: none; }
 
 /* Neutral. The logo directly beside it already says which team this is, so
    colouring the letters as well was a second answer to a question nobody had
@@ -580,9 +611,14 @@ header.cfp-card {
   .game-hdr-main { gap: 4px; }
   /* A phone column has ~38px between the scores. "ACC NETWORK" needs about 55,
      so the short form takes over and the full name stays in the tooltip. */
-  .game-hdr-net { font-size: .46rem; letter-spacing: .08em; margin: -3px -6px 9px; padding: 4px 2px; }
+  .game-hdr-net { font-size: .46rem; letter-spacing: .08em; margin: -3px -6px 9px; padding: 4px 2px; line-height: 11px; }
   .game-hdr-net .net-full { display: none; }
   .game-hdr-net .net-short { display: inline; }
+  /* A phone column is about 47px wide inside the strip. The tallest of these
+     marks is 2:1, so 11px of height is at most 22px of width and every one of
+     them clears it without max-width having to do anything. */
+  .game-hdr-net .net-logo { height: 11px; }
+  .game-hdr-net.has-logo .net-short { display: none; }
   .game-hdr-logo { display: none; }
   .game-hdr-side-top .game-hdr-logo { display: none; }
   .game-hdr-score { font-size: 1.2rem; }

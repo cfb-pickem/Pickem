@@ -37,3 +37,21 @@ jobs:
             exit 1
           fi
           echo "css/tailwind.css is up to date."
+
+      # Pages serves everything with max-age=600 and no version on it, so an HTML
+      # file and the stylesheet it was written against expire independently. A
+      # stale stylesheet under fresh markup is a half-deployed site: the classes
+      # land, the rules that style them do not. The hash in ?v= is what stops it,
+      # and a stamp that is out of date fails silently and only for other people,
+      # so it is checked here rather than trusted.
+      - name: Re-stamp stylesheet links
+        run: npm run stamp
+
+      - name: Verify the stamps match the stylesheets
+        run: |
+          if ! git diff --quiet -- '*.html'; then
+            echo "::error::Stylesheet cache stamps are out of date. Run 'npm run stamp' and commit the result."
+            git diff --stat -- '*.html'
+            exit 1
+          fi
+          echo "Stylesheet cache stamps are up to date."
