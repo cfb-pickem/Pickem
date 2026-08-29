@@ -319,6 +319,23 @@ header.cfp-card {
 }
 .poss-dot[hidden] { display: none; }
 
+/* IN THE RED ZONE. The same dot, in red, breathing slowly. Deliberately the only
+   change - a cell this size cannot take another mark, and the dot is already
+   pointing at the team the red zone belongs to. The pulse is on the glow alone,
+   never the size, so nothing around it moves. */
+.poss-dot.is-redzone {
+  background: #ff5f52;
+  box-shadow: 0 0 6px rgba(255,95,82,.9);
+  animation: redzone-breathe 2s ease-in-out infinite;
+}
+@keyframes redzone-breathe {
+  0%, 100% { box-shadow: 0 0 5px rgba(255,95,82,.55); }
+  50%      { box-shadow: 0 0 9px rgba(255,95,82,1), 0 0 16px rgba(255,95,82,.45); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .poss-dot.is-redzone { animation: none; box-shadow: 0 0 8px rgba(255,95,82,.95); }
+}
+
 /* THE SCORE GOING UP. The digits punch out and settle; the points just scored
    rise off them in green and fade. Both are transforms and opacity, so nothing
    reflows and the rest of the row does not move. */

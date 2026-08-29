@@ -854,7 +854,7 @@
 
       const { data: games, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind, possession')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .eq('cfb_season', season)
         .eq('picked', true);
       if (gErr){ status('Could not load the season schedule.', true); return null; }
@@ -874,7 +874,7 @@
       // walk them straight into the season points.
       const { data: tbGames } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind, possession')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .eq('cfb_season', season)
         .eq('tiebreaker', true);
 
@@ -1543,10 +1543,15 @@
       if (!entry) return;
       const live = isLive(row);
       const side = live ? String(row?.possession ?? '') : '';
+      // The red zone belongs to the drive, not to a team - "whoever has the ball
+      // is inside the twenty" - so it colours the dot already saying who that is,
+      // rather than adding a second mark to a cell with no room for one.
+      const red = live && row?.is_red_zone === true;
       const set = (el, on, team) => {
         if (!el) return;
         el.hidden = !on;
-        if (on) el.title = team + ' has the ball';
+        el.classList.toggle('is-redzone', on && red);
+        if (on) el.title = team + (red ? ' in the red zone' : ' has the ball');
       };
       set(entry.awayPossEl, side === 'away', entry.awayAbbr);
       set(entry.homePossEl, side === 'home', entry.homeAbbr);
@@ -2432,7 +2437,7 @@
 
       const { data: rows, error } = await supabase
         .from('all_games')
-        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner, line_live, line_live_at, line_live_kind, possession')
+        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .in('GameId', gameIds);
 
       if(error){
