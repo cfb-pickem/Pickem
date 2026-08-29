@@ -560,6 +560,8 @@
     let liveIntervalMs = LIVE_MS_IDLE;
 
     const headerStatusEls = new Map();
+    // The one LIVE label, in the points column, pointing at the row of banners.
+    let liveTagEl = null;
     // gameId:teamId -> the cell, so live cover shading can be repainted on the
     // ticker without re-rendering the table and throwing away scroll position.
     const coverCells = new Map();
@@ -1488,6 +1490,16 @@
     // the strip, and since the header cells are vertically centred that pushed
     // every row in that column out of line with the same row beside it - the
     // scores sat 13px apart across a single week.
+    // The label is only true while at least one game has a number under it.
+    function refreshLiveTag(){
+      if (!liveTagEl) return;
+      let any = false;
+      headerStatusEls.forEach(e => {
+        if (e.bannerEl && !e.bannerEl.classList.contains('is-empty')) any = true;
+      });
+      liveTagEl.hidden = !any;
+    }
+
     function paintLive(entry, row){
       if (!entry || !entry.bannerEl) return;
       const v = liveLineOf(row);
@@ -1799,10 +1811,26 @@
       thTeam.textContent = 'Team';
       theadRow.appendChild(thTeam);
 
+      // The points header also carries the label for the row of banners running
+      // along the foot of the game columns. Putting it here rather than inside a
+      // banner is what makes it affordable: the banner has about 42px to work
+      // with on a phone and "TCU -7.5" already needs 40 of them, so a word in
+      // front of it would push every column wider. Out here it costs nothing and
+      // labels all four games at once, which is all one label was ever doing.
       const thPts = document.createElement('th');
-      thPts.className = 'pl-2 pr-3 py-3 text-center font-semibold text-white bg-[var(--cfp-black)] font-[Oswald] tracking-wide';
-      thPts.textContent = isTiebreakerView ? (isPhone ? 'TB' : 'Tiebreaks')
-                                           : (isPhone ? 'PTS' : 'Points');
+      thPts.className = 'pl-2 pr-3 py-3 text-center font-semibold text-white bg-[var(--cfp-black)] font-[Oswald] tracking-wide hdr-pts-cell';
+      const ptsWrap = document.createElement('div');
+      ptsWrap.className = 'hdr-pts';
+      const ptsLabel = document.createElement('span');
+      ptsLabel.textContent = isTiebreakerView ? (isPhone ? 'TB' : 'Tiebreaks')
+                                              : (isPhone ? 'PTS' : 'Points');
+      ptsWrap.appendChild(ptsLabel);
+      liveTagEl = document.createElement('span');
+      liveTagEl.className = 'hdr-pts-live';
+      liveTagEl.textContent = 'LIVE';
+      liveTagEl.hidden = true;
+      ptsWrap.appendChild(liveTagEl);
+      thPts.appendChild(ptsWrap);
       theadRow.appendChild(thPts);
 
       gameIds.forEach(id=>{
@@ -1913,6 +1941,8 @@
         headerStatusEls.set(String(id), entry);
         theadRow.appendChild(th);
       });
+
+      refreshLiveTag();
     }
 
     function renderTable(teams, pickMap, winnerMap, revealPicks, pointsMap, playoffMode){
@@ -2367,6 +2397,7 @@
 
         paintCenter(centerEl, r);
         paintLive(entry, r);
+        refreshLiveTag();
 
         // Fold the fresh row back into the season cache, otherwise the points
         // recompute below would read stale winners.

@@ -439,6 +439,28 @@ header.cfp-card {
    the games beside it. */
 .game-hdr-banner.is-empty { visibility: hidden; }
 
+/* The label for that row of banners, sitting in the points column immediately to
+   their left. Pinned to the bottom of its own cell, which is where the banners
+   sit in theirs, so it reads as the start of the strip rather than as a stray
+   word. Right-aligned for the same reason: it should touch the first banner. */
+.hdr-pts-cell{ position: relative; }
+.hdr-pts{ height: 100%; display: flex; align-items: center; justify-content: center; }
+.hdr-pts-live{
+  /* Placed against the CELL, not the padding box, because that is what the
+     banners are placed against. Their band sits 13-30px up from the bottom of
+     the header row, so 18px puts this on the same line as them. */
+  position: absolute; right: 4px; bottom: 16px;
+  font-family: 'Oswald', sans-serif;
+  font-size: .46rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #7f858e;
+  line-height: 1;
+  pointer-events: none;
+}
+.hdr-pts-live[hidden]{ display: none; }
+
 /* The number the week is scored against, and the number the market is at now.
    Same weight, same colour, joined by an arrow - the relationship is what the
    arrow is for, so neither needs a colour or a label to explain it. Under a
