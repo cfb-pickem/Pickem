@@ -469,7 +469,7 @@
     import { supabase } from './js/supabaseClient.js';
     import { kickoffMs, isWeekLocked, isGameLocked, earliestKickoffMs } from './js/kickoff.js';
     import { updateSeasonalTheme } from './js/seasonalTheme.js';
-    import { sameTeam, escapeHtml, buildPickMap, getTeamColor } from './js/utils.js';
+    import { sameTeam, escapeHtml, buildPickMap } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
 
@@ -1474,7 +1474,6 @@
       };
       show(entry.awayLiveEl, v == null ? null : -v);
       show(entry.homeLiveEl, v);
-      if (entry.liveTagEl) entry.liveTagEl.hidden = (v == null);
     }
 
     // LIVE COVER, and why it is the same sum the database does.
@@ -1729,22 +1728,13 @@
     const QUARTER = ['1ST', '2ND', '3RD', '4TH'];
     const periodLabel = p => (Number(p) >= 5 ? 'OT' : (QUARTER[Number(p) - 1] || '1ST'));
 
-    function scoreClasses(status, aPts, hPts, side){
-      const base = 'game-hdr-score';
-      if (status === 'final') {
-        const a = Number(aPts), h = Number(hPts);
-        if (isNaN(a) || isNaN(h)) return base;
-        if (side === 'away') return base + (a >= h ? ' score-win' : ' score-loss');
-        return base + (h >= a ? ' score-win' : ' score-loss');
-      }
-      if (isLiveStatus(status)) {
-        const a = Number(aPts), h = Number(hPts);
-        if (isNaN(a) || isNaN(h)) return base;
-        if (side === 'away') return base + (a >= h ? ' score-lead' : ' score-trail');
-        return base + (h >= a ? ' score-lead' : ' score-trail');
-      }
-      return base;
-    }
+    // The score is a fact, not a verdict. It used to glow green for the winner,
+    // amber for whoever was ahead and go dim for the other side - three more
+    // colours in a column that already had the team colours, the line, the live
+    // line, the quarter and the clock. Who is winning is on the scoreboard
+    // already, in the numbers; who is COVERING, which is the only thing this
+    // league scores, is in the cells underneath.
+    const scoreClasses = () => 'game-hdr-score';
 
     function renderHeader(gameNameMap, gameRows){
       theadRow.innerHTML = '';
@@ -1795,10 +1785,8 @@
         const awayAbbrEl = document.createElement('div');
         awayAbbrEl.className = 'game-hdr-abbr';
         awayAbbrEl.textContent = awayAbbr;
-        const awayColor = getTeamColor(away);
-        if (awayColor) awayAbbrEl.style.color = awayColor;
         const awayScoreEl = document.createElement('div');
-        awayScoreEl.className = scoreClasses(status, aPts, hPts, 'away');
+        awayScoreEl.className = scoreClasses();
         awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–';
         awayTeam.appendChild(awayAbbrEl);
         awayTeam.appendChild(awayScoreEl);
@@ -1835,13 +1823,6 @@
           t.textContent = formatTimeCentral(row && row['Start (CT)']) || 'TBD';
           center.appendChild(t);
         }
-        // One LIVE tag for the pair, so neither gold number needs its own label
-        // in a column this narrow.
-        const liveTagEl = document.createElement('div');
-        liveTagEl.className = 'game-hdr-livetag';
-        liveTagEl.textContent = 'LIVE';
-        liveTagEl.hidden = true;
-        center.appendChild(liveTagEl);
         wrap.appendChild(center);
 
         // Home side
@@ -1854,10 +1835,8 @@
         const homeAbbrEl = document.createElement('div');
         homeAbbrEl.className = 'game-hdr-abbr';
         homeAbbrEl.textContent = homeAbbr;
-        const homeColor = getTeamColor(home);
-        if (homeColor) homeAbbrEl.style.color = homeColor;
         const homeScoreEl = document.createElement('div');
-        homeScoreEl.className = scoreClasses(status, aPts, hPts, 'home');
+        homeScoreEl.className = scoreClasses();
         homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–';
         homeTeam.appendChild(homeAbbrEl);
         homeTeam.appendChild(homeScoreEl);
@@ -1874,7 +1853,7 @@
         th.appendChild(wrap);
 
         const entry = { awayScoreEl, homeScoreEl, centerEl: center, awayName: away, homeName: home,
-                        awayLiveEl, homeLiveEl, liveTagEl };
+                        awayLiveEl, homeLiveEl };
         paintLive(entry, row);
         headerStatusEls.set(String(id), entry);
         theadRow.appendChild(th);
@@ -2328,8 +2307,8 @@
         const hPts = r.HomePts ?? '';
 
         // Update scores
-        if (awayScoreEl) { awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–'; awayScoreEl.className = scoreClasses(r.Status, aPts, hPts, 'away'); }
-        if (homeScoreEl) { homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–'; homeScoreEl.className = scoreClasses(r.Status, aPts, hPts, 'home'); }
+        if (awayScoreEl) { awayScoreEl.textContent = (aPts !== '' && aPts != null) ? aPts : '–'; awayScoreEl.className = scoreClasses(); }
+        if (homeScoreEl) { homeScoreEl.textContent = (hPts !== '' && hPts != null) ? hPts : '–'; homeScoreEl.className = scoreClasses(); }
 
         // Update center status
         if (centerEl) {
@@ -2343,9 +2322,6 @@
           } else {
             const t = document.createElement('div'); t.className = 'game-hdr-time'; t.textContent = formatTimeCentral(r['Start (CT)']) || 'TBD'; centerEl.appendChild(t);
           }
-          // The rebuild above wipes the centre, LIVE tag included, so put it
-          // back before paintLive() decides whether it should be showing.
-          if (entry.liveTagEl) centerEl.appendChild(entry.liveTagEl);
         }
         paintLive(entry, r);
 
