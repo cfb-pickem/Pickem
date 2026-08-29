@@ -852,7 +852,7 @@
 
       const { data: games, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind')
         .eq('cfb_season', season)
         .eq('picked', true);
       if (gErr){ status('Could not load the season schedule.', true); return null; }
@@ -872,7 +872,7 @@
       // walk them straight into the season points.
       const { data: tbGames } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind')
         .eq('cfb_season', season)
         .eq('tiebreaker', true);
 
@@ -1457,8 +1457,13 @@
     // worse than no number at all, so past that age it simply disappears.
     const LIVE_LINE_MAX_AGE_MS = 15 * 60 * 1000;
 
+    // Any game that has not finished, not only one being played. Lines move all
+    // week and ours freezes on the Tuesday, so the gap between what a week was
+    // picked at and where the market stands is worth showing from the moment it
+    // opens - not just for three hours on a Saturday.
     function liveLineOf(row){
-      if (!isLive(row)) return null;
+      if (!row) return null;
+      if (String(row.Status ?? '').trim().toLowerCase() === 'final') return null;
       const v = row.line_live == null ? null : Number(row.line_live);
       if (v == null || Number.isNaN(v)) return null;
       const t = row.line_live_at ? Date.parse(row.line_live_at) : NaN;
@@ -1478,13 +1483,22 @@
     //
     // The stored number is the home team's, so a negative one means the home side
     // is laying the points. Whoever is laying them is quoted negative.
+    // The banner keeps its space whether or not it has a number in it. Hiding it
+    // outright made the live column shorter than its neighbours by the height of
+    // the strip, and since the header cells are vertically centred that pushed
+    // every row in that column out of line with the same row beside it - the
+    // scores sat 13px apart across a single week.
     function paintLive(entry, row){
       if (!entry || !entry.bannerEl) return;
       const v = liveLineOf(row);
-      if (v == null) { entry.bannerEl.hidden = true; entry.bannerEl.textContent = ''; return; }
+      if (v == null) {
+        entry.bannerEl.classList.add('is-empty');
+        entry.bannerEl.textContent = '\u00a0';
+        return;
+      }
       const team = v < 0 ? entry.homeAbbr : entry.awayAbbr;
       entry.bannerEl.textContent = team + ' −' + Math.abs(v);
-      entry.bannerEl.hidden = false;
+      entry.bannerEl.classList.remove('is-empty');
     }
 
     // The centre of the cell, in one place instead of two. It was built inline in
@@ -1612,6 +1626,11 @@
     const MARKET_MAX_AGE_MS = 4 * 60 * 1000;
 
     function marketExpectation(row, sign){
+      // Only an in-play quote. A pregame book stops moving once the game starts,
+      // so reading its closing number as "where this will finish" would call a
+      // blowout an even game - and it is exactly what gets stored whenever ESPN
+      // drops its in-play provider mid-game, which it does.
+      if (row.line_live_kind !== 'inplay') return null;
       const ln = Number(row.line);
       const lv = row.line_live == null ? NaN : Number(row.line_live);
       if (!Number.isFinite(ln) || !Number.isFinite(lv)) return null;
@@ -1882,8 +1901,8 @@
         wrap.appendChild(main);
 
         const bannerEl = document.createElement('div');
-        bannerEl.className = 'game-hdr-banner';
-        bannerEl.hidden = true;
+        bannerEl.className = 'game-hdr-banner is-empty';
+        bannerEl.textContent = '\u00a0';
         wrap.appendChild(bannerEl);
 
         th.appendChild(wrap);
@@ -2321,7 +2340,7 @@
 
       const { data: rows, error } = await supabase
         .from('all_games')
-        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner, line_live, line_live_at')
+        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, winner, line_live, line_live_at, line_live_kind')
         .in('GameId', gameIds);
 
       if(error){

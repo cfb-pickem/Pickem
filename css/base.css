@@ -342,6 +342,7 @@ header.cfp-card {
   gap: 1px;
   padding: 0 6px;
   min-width: 32px;
+  min-height: 11px;          /* one line, whichever of the three states it is */
   align-self: stretch;
 }
 /* Quarter and clock on one line, and no separator between them. Measured in the
@@ -433,7 +434,10 @@ header.cfp-card {
   text-align: center;
   line-height: 1;
 }
-.game-hdr-banner[hidden] { display: none; }
+/* Present but blank, rather than removed: see paintLive(). Taking it out of the
+   flow shortened the cell and knocked the whole column out of alignment with
+   the games beside it. */
+.game-hdr-banner.is-empty { visibility: hidden; }
 
 /* The number the week is scored against, and the number the market is at now.
    Same weight, same colour, joined by an arrow - the relationship is what the
@@ -465,8 +469,11 @@ header.cfp-card {
      34.4px here, against 38.3px of usable width. */
   .game-hdr-state { font-size: .49rem; }
   .game-hdr-banner { margin: 6px -6px -3px; font-size: .55rem; }
-  .game-hdr-period, .game-hdr-final { font-size: .58rem; }
-  .game-hdr-clock, .game-hdr-time { font-size: .55rem; margin-top: 2px; }
+  .game-hdr-period, .game-hdr-final { font-size: .49rem; }
+  /* Same size and no extra margin, so "02:30 PM", "2ND 6:52" and "FINAL" are
+     all exactly one line tall and the rows either side of them line up. */
+  .game-hdr-clock, .game-hdr-time { font-size: .49rem; margin-top: 0; }
+  .game-hdr-center { min-height: 10px; }
   .game-hdr-team { min-width: auto; }
   .game-hdr-side { gap: 0; }
 }
