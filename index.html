@@ -1723,6 +1723,12 @@
       return lonely;
     }
 
+    // Quarters, spelled the way a scoreboard spells them. The old p + 'TH' was
+    // right three times out of four and put "1TH" on the board for the first
+    // quarter of the season opener.
+    const QUARTER = ['1ST', '2ND', '3RD', '4TH'];
+    const periodLabel = p => (Number(p) >= 5 ? 'OT' : (QUARTER[Number(p) - 1] || '1ST'));
+
     function scoreClasses(status, aPts, hPts, side){
       const base = 'game-hdr-score';
       if (status === 'final') {
@@ -1817,7 +1823,7 @@
           const p = row?.Period || 1;
           const per = document.createElement('div');
           per.className = 'game-hdr-period';
-          per.textContent = p >= 5 ? 'OT' : p + 'TH';
+          per.textContent = periodLabel(p);
           const clk = document.createElement('div');
           clk.className = 'game-hdr-clock';
           clk.textContent = row?.Clock || '';
@@ -2332,7 +2338,7 @@
             const f = document.createElement('div'); f.className = 'game-hdr-final'; f.textContent = 'FINAL'; centerEl.appendChild(f);
           } else if (isLive(r)) {
             const p = r.Period || 1;
-            const per = document.createElement('div'); per.className = 'game-hdr-period'; per.textContent = p >= 5 ? 'OT' : p + 'TH'; centerEl.appendChild(per);
+            const per = document.createElement('div'); per.className = 'game-hdr-period'; per.textContent = periodLabel(p); centerEl.appendChild(per);
             const clk = document.createElement('div'); clk.className = 'game-hdr-clock'; clk.textContent = r.Clock || ''; centerEl.appendChild(clk);
           } else {
             const t = document.createElement('div'); t.className = 'game-hdr-time'; t.textContent = formatTimeCentral(r['Start (CT)']) || 'TBD'; centerEl.appendChild(t);
