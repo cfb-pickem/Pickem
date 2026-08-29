@@ -1584,11 +1584,26 @@
         return;
       }
       if (isLive(row)) {
+        const clk = String((row && row.Clock) || '').trim();
+        const p = Number(row && row.Period) || 1;
+        // A quarter that has run out says so. "2ND 0:00" is what the clock
+        // reads, but nobody calls it that - and "4TH 0:00" sitting there looks
+        // like the feed has jammed when it is really ESPN holding the game open
+        // between the clock hitting zero and the result going official, which
+        // can be several minutes. FINAL still only ever comes from ESPN saying
+        // so; this is only about naming the gap honestly.
+        //
+        // Derived from the period and the clock rather than from a status of its
+        // own: no new field, no extra parsing, and it cannot break separately
+        // from the score it arrives with.
+        if (clk === '0:00') {
+          add('game-hdr-state', p === 2 ? 'HALF' : 'END ' + periodLabel(p));
+          return;
+        }
         // One row, and no separator between them. Measured in the running app:
         // "1ST . 4:00" comes to 38.8px against 38.3px of usable width in a phone
         // column, and the dot is exactly what pushes it over. "1ST 4:00" is 33.8.
-        const clk = String((row && row.Clock) || '').trim();
-        const per = periodLabel((row && row.Period) || 1);
+        const per = periodLabel(p);
         add('game-hdr-state', clk ? per + ' ' + clk : per);
         return;
       }
@@ -2027,7 +2042,20 @@
         } else break;
       }
 
-      const shouldInsertDivider = lastCutIndex >= 0 && lastCutIndex < teams.length - 1;
+      // The projected-playoff line waits until week 9. Before that the season is
+      // a handful of games old and the cut is mostly noise - four names sitting
+      // above a line because of one lucky Saturday, which reads as a standing
+      // rather than the coin-toss it is.
+      //
+      // Kept off the tiebreaker board at any week: that column counts tiebreaks,
+      // not season points, so a playoff cut drawn through it would be measuring
+      // the wrong thing entirely.
+      const PLAYOFF_LINE_FROM_WEEK = 9;
+      const weekNum = Number(currentWeek);
+      const playoffLineDue = !isTiebreakerView
+        && (isPlayoffView || (Number.isFinite(weekNum) && weekNum >= PLAYOFF_LINE_FROM_WEEK));
+      const shouldInsertDivider = playoffLineDue
+        && lastCutIndex >= 0 && lastCutIndex < teams.length - 1;
 
       teams.forEach((team, idx)=>{
         const tr = document.createElement('tr');

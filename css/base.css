@@ -1140,12 +1140,21 @@ header.cfp-card {
 .scout-note strong{ color: #9aa0a8; }
 
 /* the tap target on the board */
+/* No mark at rest. Every name on the board carried a dotted gold underline to
+   say it was clickable, which meant thirteen gold lines running down a column
+   whose job is to be read. The affordance moves to hover, and to a focus ring
+   for anyone arriving by keyboard - both of which are invisible until wanted. */
 .scout-link{
   background: none; border: none; padding: 0; font: inherit; color: inherit;
   cursor: pointer; text-align: left;
-  border-bottom: 1px dotted rgba(218,165,32,.45);
+  border-bottom: 1px dotted transparent;
 }
 .scout-link:hover{ color: var(--led-amber); border-bottom-color: var(--led-amber); }
+.scout-link:focus-visible{
+  outline: 2px solid var(--cfp-gold-2);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 
 /* Where this player sits against the rest of the pool on the same game. */
 .scout-pool{
