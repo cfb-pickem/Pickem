@@ -278,6 +278,27 @@ header.cfp-card {
   padding: 2px 10px;
   white-space: nowrap;
 }
+
+/* STILL BEING PLAYED. The column head breathes for as long as the game is on,
+   and stops dead the moment it goes final. It answers the question the clock
+   alone did not: not "who is winning" but "is this in my points yet".
+
+   Three and a half seconds a cycle - slow enough to read as alive rather than as
+   something demanding attention. No hue: a plain white wash, so it reads as lit
+   rather than as another colour on a board that has had enough of them. The
+   first attempt at this ran from 1.2% to 7.5% alpha and was invisible on a phone
+   in daylight, which is worse than not doing it. */
+@keyframes hdr-alive {
+  0%, 100% { background-color: rgba(255,255,255,.02); }
+  50%      { background-color: rgba(255,255,255,.14); }
+}
+.game-hdr.is-playing {
+  animation: hdr-alive 3.5s ease-in-out infinite;
+  border-radius: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-hdr.is-playing { animation: none; background-color: rgba(255,255,255,.10); }
+}
 /* The away block, the clock and the home block. Split out from .game-hdr so the
    live-line banner can sit under all three - on a desktop these are a flex row,
    and a fourth child would otherwise land beside them rather than beneath. */
@@ -386,15 +407,21 @@ header.cfp-card {
    Present but blank when a game has no network, so a week where only some games
    carry one still lines up column to column. */
 .game-hdr-net {
+  /* Full-bleed strip at the top, matching the live-line banner at the foot, so
+     the cell is bracketed by its two pieces of context: what channel it is on,
+     and where the market has it. Same negative margins as the banner - they
+     cancel the cell padding so both span the full column. */
+  margin: -2px -10px 5px;
+  padding: 4px 3px;
+  background: rgba(255,255,255,.045);
   font-family: 'Oswald', sans-serif;
-  font-size: .46rem;
+  font-size: .5rem;
   font-weight: 600;
   letter-spacing: .12em;
   text-transform: uppercase;
-  color: #6b7079;
+  color: #9aa0a8;
   line-height: 1;
   text-align: center;
-  margin-bottom: 3px;
   white-space: nowrap;
 }
 .game-hdr-net.is-empty { visibility: hidden; }
@@ -573,7 +600,7 @@ header.cfp-card {
   .game-hdr-main { gap: 4px; }
   /* A phone column has ~38px between the scores. "ACC NETWORK" needs about 55,
      so the short form takes over and the full name stays in the tooltip. */
-  .game-hdr-net { font-size: .44rem; letter-spacing: .08em; margin-bottom: 4px; }
+  .game-hdr-net { font-size: .46rem; letter-spacing: .08em; margin: -3px -6px 5px; padding: 4px 2px; }
   .game-hdr-net .net-full { display: none; }
   .game-hdr-net .net-short { display: inline; }
   .game-hdr-logo { display: none; }

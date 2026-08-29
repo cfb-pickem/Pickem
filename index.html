@@ -103,6 +103,13 @@
     .pick-loss{background:rgba(120,32,38,.20);box-shadow:inset 3px 0 0 rgba(214,85,92,.7);color:#e08d93}
     .pick-empty{color:#8b9099}
 
+    /* The covering side of a finished game. The one place gold belongs on this
+       board: it marks the result the week is actually scored on. */
+    .game-hdr-score.is-cover{
+      color:var(--cfp-gold-2);
+      text-shadow:0 0 10px rgba(240,199,94,.5), 0 0 22px rgba(240,199,94,.18);
+    }
+
     /* Live states. The strength is driven by --cover-i, set per cell from how
        settled the cover actually is - 0 at kickoff, 1 once it is all but decided.
        A game in progress has decided nothing yet, so even at full strength these
@@ -1660,7 +1667,15 @@
 
     // The centre of the cell, in one place instead of two. It was built inline in
     // renderHeader and rebuilt again in the ticker, which is how the two drifted.
+    // Marks the column head alive. Toggled in the one place the live state is
+    // already decided, so it can never disagree with the clock inside it.
+    function paintPlaying(centerEl, row){
+      const hdr = centerEl && centerEl.closest('.game-hdr');
+      if (hdr) hdr.classList.toggle('is-playing', isLive(row));
+    }
+
     function paintCenter(centerEl, row){
+      paintPlaying(centerEl, row);
       if (!centerEl) return;
       centerEl.innerHTML = '';
       const add = (cls, txt) => {
@@ -1963,6 +1978,43 @@
     // league scores, is in the cells underneath.
     const scoreClasses = () => 'game-hdr-score';
 
+    // ON A FINAL, THE SIDE THAT COVERED GOES GOLD.
+    //
+    // The side that COVERED, not the side that won - in this league those are
+    // routinely different teams, which is the whole reason the scoreboard needs
+    // to say it out loud. North Carolina lost by five at TCU and covered; the
+    // raw numbers say nothing about that.
+    //
+    // Gold because it is the board's own colour for "this is the thing that
+    // counts", and it only ever appears on a game that is over, so it stays rare.
+    // The team names and the scored line come from the ENTRY, not the row. The
+    // ticker's payload is a narrow select with no Away, Home or line in it, so
+    // reading them off the row worked on the first paint and then quietly undid
+    // itself eight seconds later when the ticker came round. None of the three
+    // can change once a header is built, so the entry is the right place for
+    // them anyway.
+    function coveringSide(entry, row){
+      if (!entry || !row) return null;
+      if (String(row.Status ?? '').trim().toLowerCase() !== 'final') return null;
+      const w = row.winner;
+      if (w) {
+        if (sameTeam(w, entry.homeName)) return 'home';
+        if (sameTeam(w, entry.awayName)) return 'away';
+      }
+      // winner is what the database scored the game on. If it has not landed
+      // yet, fall back to the identical sum set_winner_on_final() uses.
+      const ln = Number(entry.line), a = Number(row.AwayPts), h = Number(row.HomePts);
+      if (!Number.isFinite(ln) || !Number.isFinite(a) || !Number.isFinite(h)) return null;
+      return (h + ln) > a ? 'home' : 'away';
+    }
+
+    function paintFinalCover(entry, row){
+      if (!entry) return;
+      const side = coveringSide(entry, row);
+      if (entry.awayScoreEl) entry.awayScoreEl.classList.toggle('is-cover', side === 'away');
+      if (entry.homeScoreEl) entry.homeScoreEl.classList.toggle('is-cover', side === 'home');
+    }
+
     function renderHeader(gameNameMap, gameRows){
       theadRow.innerHTML = '';
 
@@ -2135,9 +2187,11 @@
 
         const entry = { awayScoreEl, homeScoreEl, centerEl: center, awayName: away, homeName: home,
                         awayAbbr, homeAbbr, bannerEl,
-                        awayTeamEl: awayTeam, homeTeamEl: homeTeam, awayPossEl, homePossEl };
+                        awayTeamEl: awayTeam, homeTeamEl: homeTeam, awayPossEl, homePossEl,
+                        line: ln };
         paintLive(entry, row);
         paintPossession(entry, row);
+        paintFinalCover(entry, row);
         headerStatusEls.set(String(id), entry);
         theadRow.appendChild(th);
       });
@@ -2612,6 +2666,7 @@
         paintCenter(centerEl, r);
         paintLive(entry, r);
         paintPossession(entry, r);
+        paintFinalCover(entry, r);
         refreshLiveTag();
 
         // Fold the fresh row back into the season cache, otherwise the points
