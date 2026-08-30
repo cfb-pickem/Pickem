@@ -117,35 +117,49 @@
     .pick-empty{color:#8b9099}
 
 
-    /* LIVE CELLS BREATHE. SETTLED ONES DO NOT.
-       That is the whole difference between "this is in your points" and "this
-       game is still going", and it is carried by motion rather than by colour -
-       which matters because a blowout in the third quarter shades exactly as
-       hard as a final, so the green cannot tell you which is which. A cell that
-       is still moving has not been counted.
+    /* A GAME STILL BEING PLAYED NEVER OUTSHOUTS A FINISHED ONE.
+       This is the rule the two states hang off, and it was being broken. A live
+       cell at full confidence was drawn at .26 alpha and a settled one at .20,
+       so a blowout in the third quarter came out GREENER than a game that was
+       actually over - and the breath swung between .213 and .26, which is to
+       say between two shades that both beat a final. Nothing about that could
+       be read. Colour said "decided" while the game was still going, and the
+       one signal meant to say otherwise was oscillating above the line it was
+       supposed to stay under.
 
-       --cover-i is how settled the cover is, 0 at kickoff to 1 once it is
-       decided. --cover-pulse rides on top of it, 0.82 to 1 and back over six
-       seconds - a shimmer you notice out of the corner of an eye, not a throb. Registering it with @property is what makes it animatable at all;
-       where that is unsupported the fallback of 1 leaves the shading static,
-       which is simply what it was before.
+       So the live peak is capped at .12 against the settled .20. At its
+       strongest a live cell is now a little over half the weight of a result,
+       and it can never reach one: that difference is legible standing still,
+       across the whole board, without waiting to watch anything move.
 
-       No left rule here either, and now none on a settled cell - only the fill
-       differs, and only motion says which of the two states it is in. */
-    @property --cover-pulse { syntax: '<number>'; inherits: false; initial-value: 1; }
+       The breath then rides UNDER that ceiling, .5 to 1 of it over four and a
+       half seconds - alpha .06 to .12. That is a wider swing in proportion than
+       the old one and a third of it in absolute terms, which is the trade that
+       makes it visible without becoming a throb: the eye reads the ratio, and
+       the ratio is what says "this is still moving". Registering --cover-pulse
+       with @property is what makes it animatable at all; where that is
+       unsupported the fallback leaves the fill static at the same safe ceiling.
+
+       Composited over the board, the three states now separate cleanly:
+         final       rgb( 16, 38, 29)
+         live peak   rgb( 15, 28, 23)
+         live trough rgb( 14, 21, 19)
+       A result is the only thing on the board that sits still and sits strong. */
+    @property --cover-pulse { syntax: '<number>'; inherits: false; initial-value: .75; }
     @keyframes cover-breathe{
-      0%,100%{ --cover-pulse: .82 }
+      0%,100%{ --cover-pulse: .5 }
       50%    { --cover-pulse: 1 }
     }
-    .pick-cover, .pick-nocover{ animation: cover-breathe 6s ease-in-out infinite; }
+    .pick-cover, .pick-nocover{ animation: cover-breathe 4.5s ease-in-out infinite; }
     .pick-cover{
-      background:rgba(30,138,86,calc(var(--cover-i,0) * var(--cover-pulse,1) * .26));
+      background:rgba(30,138,86,calc(var(--cover-i,0) * var(--cover-pulse,.75) * .12));
     }
     .pick-nocover{
-      background:rgba(120,32,38,calc(var(--cover-i,0) * var(--cover-pulse,1) * .26));
+      background:rgba(120,32,38,calc(var(--cover-i,0) * var(--cover-pulse,.75) * .12));
     }
+    /* Still capped, so the rule holds when the motion is gone. */
     @media (prefers-reduced-motion: reduce){
-      .pick-cover, .pick-nocover{ animation: none; --cover-pulse: .9; }
+      .pick-cover, .pick-nocover{ animation: none; --cover-pulse: .8; }
     }
 
     /* Backdoor watch: fourth quarter, and a field goal flips the cover. Declared
