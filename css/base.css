@@ -240,7 +240,23 @@ body {
   ::view-transition-new(root) { animation: none; }
 }
 
-.fade-in { animation: cfp-fade-in .35s ease-out both; }
+/* BACKWARDS, NOT BOTH, AND THE REASON MATTERS.
+   This animation ends on transform: translateY(0) - an identity matrix, but
+   still a transform, not `none`. With fill-mode `both` the final keyframe keeps
+   applying for as long as the element exists, so the page container it sits on
+   never stopped being transformed. A transformed element is the containing
+   block for every position:fixed descendant, which meant the mobile nav sheet
+   and its backdrop were not fixed to the viewport at all: they were fixed to
+   the page container. The sheet opened 16px low, matching the container's
+   padding, and drifted with the page once it was scrolled; the backdrop was
+   drawn the height of the container - 1368px on a 932px screen - so it
+   overshot the bottom and did not cover the top.
+
+   `backwards` applies the opening keyframe before the animation starts and
+   stops applying anything once it has finished. The entrance is identical -
+   the closing keyframe is the element's own resting state anyway - and the
+   container goes back to having no transform, so fixed means fixed again. */
+.fade-in { animation: cfp-fade-in .35s ease-out backwards; }
 @keyframes cfp-fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -1074,7 +1090,12 @@ header.cfp-card {
     min-height: 44px;
   }
 
-  #site-nav a,
+  /* A FLOOR, NOT A CEILING. This is an id selector, so it outranked every
+     component rule underneath it - the sheet rows ask for 56px and were being
+     held down to 44 by a rule whose only job was to stop anything being
+     SMALLER than 44. Excluding the one component that sets its own larger
+     target keeps the guarantee and drops the side effect. */
+  #site-nav a:not(.nav-sheet-link),
   #site-nav button {
     min-height: 44px;
     display: flex;
@@ -1464,7 +1485,10 @@ header.cfp-card {
 
 .nav-sheet{
   position: fixed; left: 0; right: 0; top: 0; z-index: 200;
-  margin: 0; padding: 49px 0 .5rem;      /* clears the bar it drops out of */
+  /* The top padding clears the bar the sheet drops out of. The value here is
+     only a starting point: the bar is sticky and sits 16px lower until the page
+     is scrolled, so nav.js measures it and sets the real padding on open. */
+  margin: 0; padding: 49px 0 .5rem;
   list-style: none;
   background: linear-gradient(180deg, var(--cfp-black), #14161a);
   border-bottom: 2px solid var(--cfp-gold);

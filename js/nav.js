@@ -119,9 +119,28 @@ export default async function initNav(){
   const iconClose = document.getElementById('nav-icon-close');
 
   const scrim = document.getElementById('nav-scrim');
+  const bar = mount.querySelector('.navbar');
 
   if (toggle && mobileMenu) {
     let menuOpen = false;
+
+    // WHERE THE SHEET STARTS.
+    //
+    // The sheet is fixed to the top of the viewport and clears the bar with top
+    // padding, and that padding used to be a hard-coded 49px - the bar's height.
+    // But the bar is sticky, not fixed: it only sits at y=0 once the page has
+    // scrolled past it. At the top of the page - which is exactly where you are
+    // when you first reach for the menu - it sits at y=16, below the 1rem of
+    // padding every page wraps its content in. So the sheet opened 16px too high
+    // and the first item, always the page you are on, was clipped behind the bar
+    // with its highlight half hidden.
+    //
+    // Measuring instead of assuming fixes both positions with one rule, and
+    // keeps working if the page padding or the bar's height ever changes.
+    const seatBelowBar = () => {
+      if (!bar) return;
+      mobileMenu.style.paddingTop = Math.round(bar.getBoundingClientRect().bottom) + 'px';
+    };
 
     const setOpen = open => {
       menuOpen = open;
@@ -130,6 +149,7 @@ export default async function initNav(){
       if (open) {
         mobileMenu.hidden = false;
         if (scrim) scrim.hidden = false;
+        seatBelowBar();
         requestAnimationFrame(() => {
           mobileMenu.classList.add('is-open');
           scrim?.classList.add('is-open');
@@ -151,6 +171,10 @@ export default async function initNav(){
 
     toggle.addEventListener('click', () => setOpen(!menuOpen));
     scrim?.addEventListener('click', () => setOpen(false));
+    // Turning the phone over with the menu open moves the bar under it. The page
+    // itself cannot scroll while the sheet is up, so this is the only way the
+    // measurement goes stale.
+    window.addEventListener('resize', () => { if (menuOpen) seatBelowBar(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) setOpen(false); });
     // Tapping a link navigates, but close anyway so a cached back-nav is tidy.
     mobileMenu.querySelectorAll('a').forEach(a => a.addEventListener('click', () => setOpen(false)));
