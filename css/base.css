@@ -1734,3 +1734,83 @@ td.slot-landed {
 @media (prefers-reduced-motion: reduce) {
   td.slot-landed { animation: none; }
 }
+
+/* ── THE MARK ─────────────────────────────
+ * What is left on the cell once the reels have stopped and the board has
+ * gone back to being a board. Without one, a slot pick is indistinguishable
+ * from a pick somebody actually made, a week later.
+ *
+ * NOT GOLD. Gold is this site's own accent — the header rule, the buttons and
+ * the focus outline all wear it — so a gold mark on a cell reads as chrome,
+ * as one more piece of the furniture, rather than as a fact about the pick.
+ *
+ * It is the edge of a poker chip, and it is the only one — the alternates it
+ * was chosen against are gone from here and from the panel.
+ *
+ * It is drawn on an inset overlay rather than on the cell itself. A leaderboard
+ * column is 34px wide on a phone and the crest is the thing being read, so the
+ * mark may not cover it or move the cell's box.
+ */
+:root{
+  /* A chip's edge spots, in the order they run round it. */
+  --chip-red:   #c1121f;
+  --chip-ink:   #0b0c0f;
+  --chip-white: #f2efe6;   /* warmed off pure white, which glares on charcoal */
+  --chip-blue:  #2a5bd7;
+}
+
+td.slot-was-cell{ position:relative; }
+.slot-was{ position:absolute; pointer-events:none; box-sizing:border-box; }
+
+/* chip — the edge of a poker chip. Small red, black, white and blue spots
+   repeating all the way round, which is what a chip's edge actually looks like
+   at a glance: a pattern, not four big blocks.
+   ...........................................................................
+   Four gradients, one per edge, each sized to a 2.5px bar and pinned to its
+   own side. The middle of the box is never painted, so the crest underneath is
+   untouched and nothing has to cut a hole for it — which is the whole reason
+   this beat the conic version it replaces. That one swept the spots round by
+   ANGLE, so they came out narrow at the middle of each edge and wide at the
+   corners, and it needed mask compositing that older Safari does not have.
+   This renders the same everywhere, evenly, with no fallback to keep in step.
+
+   --spot is the only number worth touching: it is one colour's width. */
+.slot-was--chip{
+  inset:0;
+  border-radius:3px;
+  --spot: 3px;
+  --edge: 2.5px;
+  --run: repeating-linear-gradient(90deg,
+    var(--chip-red)   0 var(--spot),
+    var(--chip-ink)   0 calc(var(--spot) * 2),
+    var(--chip-white) 0 calc(var(--spot) * 3),
+    var(--chip-blue)  0 calc(var(--spot) * 4));
+  --run-v: repeating-linear-gradient(180deg,
+    var(--chip-red)   0 var(--spot),
+    var(--chip-ink)   0 calc(var(--spot) * 2),
+    var(--chip-white) 0 calc(var(--spot) * 3),
+    var(--chip-blue)  0 calc(var(--spot) * 4));
+  background-image: var(--run), var(--run), var(--run-v), var(--run-v);
+  background-size:
+    100% var(--edge), 100% var(--edge),
+    var(--edge) 100%, var(--edge) 100%;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  background-repeat: no-repeat;
+}
+
+@media (max-width:640px){
+  /* A phone column has 24px of logo in it, so the spots shrink with it rather
+     than eating the crest. Finer, not fewer. */
+  .slot-was--chip{ --spot: 2px; --edge: 2px; }
+}
+
+/* While the reel is still turning the mark holds back. The cell is obviously a
+   slot cell at that moment - it is spinning - so the edge has nothing to say
+   yet, and it arrives as the reel stops. One CSS rule instead of a JS handshake
+   between renderTable and js/slots.js, which is two files that would have had
+   to agree about ordering forever. */
+td.slot-cell .slot-was{ opacity:0; }
+.slot-was{ transition:opacity .45s ease; }
+@media (prefers-reduced-motion: reduce){
+  .slot-was{ transition:none; }
+}

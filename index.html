@@ -70,7 +70,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=d2d9ec94">
+  <link rel="stylesheet" href="./css/base.css?v=8b641d68">
   <link rel="stylesheet" href="./css/theme-halloween.css?v=c39d5271">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=c3815cb1">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=23a99229">
@@ -520,7 +520,7 @@
     // Only exports that have existed for months. A NEW named export here is the
     // thing that broke the page: assets carry max-age=600, so a browser holding
     // the previous utils.js cannot satisfy it and the whole module dies.
-    import { sameTeam, escapeHtml, buildPickMap, buildSlotsMap, getTeamColor } from './js/utils.js';
+    import { sameTeam, escapeHtml, buildPickMap, buildSlotsMap, getTeamColor, markSlotCell } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
 
@@ -2521,6 +2521,11 @@
             if (lastSlotsMap?.[team.team_id]?.[id]) {
               td.dataset.slots = String(id);
               td.dataset.slotsTeam = String(team.team_id);
+              // And the chip edge, so the cell still says whose choice it was
+              // a week later, when the spin is long over. Only once the coin is
+              // flipped: an unrevealed slot pick has no logo to frame, and
+              // marking it would leak that a pick is in before kickoff.
+              if (img) markSlotCell(td);
             }
             if(lonely.has(`${team.team_id}:${id}`)) td.classList.add('pick-lonely');
             // Registered even for a settled game: paintCovers() is what decides

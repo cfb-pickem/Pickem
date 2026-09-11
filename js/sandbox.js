@@ -48,6 +48,7 @@
 
 import { sessionInfo } from './session.js';
 import { runSlots } from './slots.js';
+import { markSlotCell } from './utils.js';
 
 // KEEP THE GATE AT THE BOTTOM OF THIS FILE. Function declarations hoist but
 // `const` and `let` do not, so calling enableSandbox() from up here would reach
@@ -174,8 +175,8 @@ function labReset() {
     delete td.dataset.slotsTeam;
     td.classList.remove('slot-cell', 'slot-landed');
   });
-  document.querySelectorAll('.slot-was').forEach(m => m.remove());
   document.querySelectorAll('[data-slot-marked]').forEach(td => {
+    td.querySelectorAll('.slot-was').forEach(m => m.remove());
     delete td.dataset.slotMarked;
     td.classList.remove('slot-was-cell');
   });
@@ -201,12 +202,7 @@ function labReset() {
  */
 function labMarkCell(td) {
   td.dataset.slotMarked = '1';
-  td.classList.add('slot-was-cell');
-  const mark = document.createElement('span');
-  mark.className = 'slot-was slot-was--chip';
-  mark.title = 'The slots decided this one';
-  mark.setAttribute('aria-label', 'decided by the slots');
-  td.appendChild(mark);
+  markSlotCell(td);
 }
 
 async function labRun() {

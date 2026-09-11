@@ -103,6 +103,26 @@ export function buildSlotsMap(rows) {
   return map;
 }
 
+/**
+ * Put the chip edge on a cell the slots decided.
+ *
+ * ONE implementation, called from two places: renderTable in index.html marks
+ * every revealed slot pick as it draws the board, and the sandbox lab marks the
+ * cells it is pretending about. Two copies of three lines would have drifted,
+ * and the drift would have been invisible - a mark is not a thing that throws.
+ *
+ * Idempotent: re-rendering a row must not stack a second overlay on the cell.
+ */
+export function markSlotCell(td) {
+  if (!td || td.querySelector('.slot-was')) return;
+  td.classList.add('slot-was-cell');
+  const mark = document.createElement('span');
+  mark.className = 'slot-was slot-was--chip';
+  mark.title = 'The slots decided this one';
+  mark.setAttribute('aria-label', 'decided by the slots');
+  td.appendChild(mark);
+}
+
 export function buildPickMap(rows) {
   const map = {};
   (rows || []).forEach(r => {
