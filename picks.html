@@ -258,6 +258,43 @@
       .pick-game.is-pulling .lever-track{ animation:none; }
     }
 
+    /* PULLED BACK UP. The mirror of the jolt, shorter and without the reels -
+       releasing is a smaller event than committing and should not read like one. */
+    @keyframes lever-release{
+      0%   { transform:translateY(0); }
+      30%  { transform:translateY(-3px); }
+      70%  { transform:translateY(1px); }
+      100% { transform:translateY(0); }
+    }
+    .pick-game.is-releasing{ animation:lever-release .3s ease-out both; }
+    @media (prefers-reduced-motion: reduce){ .pick-game.is-releasing{ animation:none; } }
+
+    /* ARMED, AND OBVIOUS ABOUT IT. A slotted card has no highlighted team on it,
+       which on a board of four looks exactly like a game you forgot to pick. So
+       it has to carry its own state loudly: the card is outlined, the separator
+       between the tiles becomes a machine, and it keeps moving. */
+    .pick-game.is-slotted{
+      border-color:var(--cfp-gold);
+      box-shadow:0 0 0 1px var(--cfp-gold) inset, 0 6px 20px -10px rgba(218,165,32,.8);
+    }
+    .pick-game.is-slotted .pick-at{ color:transparent; position:relative; }
+    .pick-game.is-slotted .pick-at::after{
+      content:'F3B0';
+      position:absolute; inset:0; display:grid; place-items:center;
+      font-size:1.05rem; color:var(--cfp-ivory);
+      animation:slot-idle 2.6s ease-in-out infinite;
+    }
+    /* A slow tick rather than a spin: it runs for as long as the card is on
+       screen, and anything faster would be a nuisance beside three other games. */
+    @keyframes slot-idle{
+      0%, 100% { transform:translateY(0) rotate(0deg);  opacity:.85; }
+      45%      { transform:translateY(-2px) rotate(-7deg); opacity:1; }
+      70%      { transform:translateY(0) rotate(5deg);  opacity:.95; }
+    }
+    @media (prefers-reduced-motion: reduce){
+      .pick-game.is-slotted .pick-at::after{ animation:none; }
+    }
+
     /* Where a slotted game says what it is waiting for. Full width under the
        tiles, because the rail is 38px and a sentence does not fit in it. */
     .pick-slots-note{
@@ -273,6 +310,25 @@
       border-left-color:#e0912f; background:rgba(224,145,47,.09); color:#f0b46a;
     }
     .pick-slots-note b{ font-weight:600; color:var(--cfp-ivory); }
+
+    /* Saved. Loud on purpose: this is the only card on the board with no team
+       lit up, and the player needs to finish the week certain a pick is in. */
+    .pick-slots-note.is-in{
+      display:flex; align-items:center; gap:.45rem;
+      border-left-color:var(--cfp-gold-2);
+      background:linear-gradient(90deg, rgba(218,165,32,.22), rgba(218,165,32,.06));
+    }
+    .pick-slots-note.is-in::before{
+      content:'¹3';
+      flex:none; width:1.05rem; height:1.05rem; border-radius:50%;
+      display:grid; place-items:center;
+      background:var(--cfp-gold); color:#1a1200;
+      font-size:.62rem; font-weight:700;
+    }
+    /* Un-armed locally, but the database still holds the saved slots pick. */
+    .pick-slots-note.is-stale{
+      border-left-color:#e0912f; background:rgba(224,145,47,.09); color:#f0b46a;
+    }
     .pick-slots-note[hidden]{ display:none; }
 
     /* Pick buttons.
@@ -1347,25 +1403,43 @@
         card.classList.toggle('is-slotted', armed);
         if (!note) return;
 
-        if (!armed) { note.hidden = true; note.textContent = ''; return; }
+        const savedSlots = existingPicks.get(String(gameId)) === SLOTS_VALUE;
+
+        note.classList.remove('is-unsaved', 'is-in', 'is-stale');
+
+        // Pulled back up, but the database still holds the slots pick that was
+        // saved earlier. Unchecking a radio does not delete a row, and saving
+        // again would not either - there is nothing to save for a game with no
+        // selection - so the card has to say the old pick still stands rather
+        // than let the raised handle imply it is gone.
+        if (!armed) {
+          if (savedSlots) {
+            note.hidden = false;
+            note.classList.add('is-stale');
+            note.innerHTML = 'Your saved slots pick is <b>still in</b>. Pick a team to replace it, or pull the lever again.';
+          } else {
+            note.hidden = true; note.textContent = '';
+          }
+          return;
+        }
 
         // THREE DIFFERENT TRUTHS, and saying the wrong one is the whole risk
         // here. The lever being down means the player has chosen; it does not
         // mean anything has been written. existingPicks is what the database
         // actually holds, so it - not the lever - decides which of these the
         // card is allowed to claim.
-        const saved    = existingPicks.get(String(gameId)) === SLOTS_VALUE;
         const resolved = resolvedSlots.get(String(gameId));
 
         note.hidden = false;
-        note.classList.toggle('is-unsaved', !saved);
-
-        if (!saved) {
+        if (!savedSlots) {
+          note.classList.add('is-unsaved');
           note.innerHTML = 'Slots armed. <b>Hit Save</b> to record it — nothing is stored yet.';
         } else if (resolved) {
+          note.classList.add('is-in');
           note.innerHTML = 'The slots chose <b>' + escapeHtml(resolved) + '</b>.';
         } else {
-          note.innerHTML = '<b>Pick recorded.</b> No team is chosen yet — the slots spin at kickoff, and you will see the result on the leaderboard with everyone else.';
+          note.classList.add('is-in');
+          note.innerHTML = '<b>Your pick is in — the slots are holding it.</b> No team chosen yet: they spin at kickoff and you will see it on the leaderboard with everyone else.';
         }
       });
     }
@@ -1414,18 +1488,40 @@
           lever.classList.remove('is-dragging');
           const pulled = parseFloat(getComputedStyle(lever).getPropertyValue('--pull')) || 0;
           lever.style.removeProperty('--pull');     // hand position back to the class
-          // Past halfway commits. Short of it, the handle springs back to
-          // whatever the radio already said, so an abandoned pull changes nothing.
-          if (moved && pulled >= 0.5 && !input.checked) select();
-          else if (!moved && !input.checked) select();   // a plain click still works
-          else paintSlotsState();
+
+          // THE HANDLE GOES BOTH WAYS. Halfway is the line in either direction:
+          // drag a raised handle past it to arm the slots, drag a lowered one
+          // back above it to let them go. Either gesture abandoned short of the
+          // line leaves the radio exactly as it was, so a stray drag on a phone
+          // cannot change a pick.
+          if (moved) {
+            if (!input.checked && pulled >= 0.5) select();
+            else if (input.checked && pulled < 0.5) release_();
+            else paintSlotsState();                 // snap back, nothing changed
+          } else if (!input.checked) {
+            select();                               // a plain click still works
+          } else {
+            // Clicking a handle that is already down releases it, which is the
+            // only way back out with a mouse alone - a radio cannot be unchecked
+            // by clicking it again.
+            release_();
+          }
         };
         lever.addEventListener('pointerup', release);
         lever.addEventListener('pointercancel', release);
 
         // A drag must not also arrive as a click on the label, or the radio
         // would be toggled a second time after we have already settled it.
+        // A drag must not also arrive as a click on the label, or the radio would
+        // be toggled a second time after we have already settled it.
         lever.addEventListener('click', e => { if (moved) e.preventDefault(); });
+
+        // Keep the handle honest if the radio is changed from anywhere else.
+        lever.addEventListener('keydown', e => {
+          if ((e.key === 'Backspace' || e.key === 'Delete') && input.checked) {
+            e.preventDefault(); release_();
+          }
+        });
 
         // Setting the radio is ALL this does. Everything the pull looks like -
         // the handle staying down, the teams dimming, the note appearing - hangs
@@ -1434,6 +1530,21 @@
         function select(){
           input.checked = true;
           input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // Letting the slots go. A radio cannot be unchecked by the browser, so
+        // this does it explicitly and fires the same change event, which leaves
+        // the whole group empty - exactly the state a card is in before anything
+        // has been picked.
+        function release_(){
+          input.checked = false;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          paintSlotsState();
+          if (!card) return;
+          card.classList.remove('is-releasing');
+          void card.offsetWidth;
+          card.classList.add('is-releasing');
+          setTimeout(() => card.classList.remove('is-releasing'), 340);
         }
 
         function playPull(){
