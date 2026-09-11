@@ -141,7 +141,7 @@ let labMark = 'corner';
 const MARKS = ['corner', 'chip', 'rail', 'none'];
 
 function labNote(text) {
-  const n = labPanel && labPanel.querySelector('.lab-note');
+  const n = labPanel && labPanel.querySelector('.slot-panel-note');
   if (n) n.textContent = text;
 }
 
@@ -268,7 +268,7 @@ function mountLabPanel() {
     '<label class="slot-panel-field">Mark' +
       '<button type="button" class="slot-btn slot-btn--wide" data-act="mark">' + labMark + '</button>' +
     '</label>' +
-    '<div class="slot-note">&nbsp;</div>' +
+    '<div class="slot-panel-note">&nbsp;</div>' +
     '<div class="slot-panel-foot">Drives the real reveal in js/slots.js. Nothing is written to the database.</div>';
   document.body.appendChild(p);
   labPanel = p;
