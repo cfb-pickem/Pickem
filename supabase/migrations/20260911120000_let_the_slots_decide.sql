@@ -85,10 +85,18 @@ comment on function public.resolve_slot_picks() is
   'Flip the coin for every slots pick whose game has locked. Idempotent and one-way: a resolved pick is never re-rolled.';
 
 -- Callable by signed-in members so the leaderboard can resolve on load if the
--- cron is ever late. Deliberately NOT granted to anon: it is idempotent and
+-- cron is ever late. Deliberately NOT callable by anon: it is idempotent and
 -- cheap, but a publicly callable write is a publicly hammerable one, and
 -- signed-out visitors are served perfectly well by the schedule below.
-grant execute on function public.resolve_slot_picks() to authenticated;
+--
+-- THE REVOKE IS THE LOAD-BEARING LINE, not the grant. Postgres gives EXECUTE to
+-- PUBLIC on every new function, so granting to `authenticated` and stopping
+-- there leaves anon holding it anyway - which is what happened on the first run
+-- of this migration, and it verified as `grant PUBLIC EXECUTE` rather than the
+-- restriction the comment above claimed.
+revoke execute on function public.resolve_slot_picks() from public;
+revoke execute on function public.resolve_slot_picks() from anon;
+grant  execute on function public.resolve_slot_picks() to authenticated;
 
 -- 3. THE SCHEDULE ----------------------------------------------------------
 
