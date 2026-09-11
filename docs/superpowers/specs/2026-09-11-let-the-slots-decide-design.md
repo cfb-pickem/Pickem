@@ -1,6 +1,6 @@
 # Let the slots decide
 
-**Status:** built, on branch `slots`, awaiting the migration
+**Status:** shipped and verified against the live database, 2026-09-11
 **Date:** 2026-09-11
 
 A player who cannot call a game hands it to the house. Instead of picking a
@@ -258,17 +258,68 @@ small DOM, and covers the reveal already. Extending it:
 - once-only keys on `(team_id, game_id)` and survives a re-render
 - the spin runs after the reveal flip, not before
 
-SQL is verified by running the migration against a local `supabase start`
-instance and asserting: a resolved pick never changes on a second call; an
-unlocked game never resolves; `submission_status()` reports a pending slots
-pick as submitted; a member cannot insert `by_slots` with a non-null pick.
+SQL was verified against the live database in rolled-back transactions rather
+than a local instance — see Rollout below for what each check found.
 
-## Rollout
+## Rollout — what actually happened
 
-The migration is **not** applied as part of this work. The Supabase CLI is not
-linked in this checkout, and pushing schema changes to the live league database
-is your call, not mine. The file lands in `supabase/migrations/` and I will tell
-you the command to run.
+The CLI turned out to be authenticated and already linked, so this was applied
+and verified directly.
+
+**`supabase db push` would have been wrong.** The remote has no
+`supabase_migrations.schema_migrations` table at all: this project has never
+used push, and the files in `supabase/migrations/` are a written record of
+changes applied by hand. Pushing would have replayed all thirty against a
+database that already has them. Applied with `db query -f` instead, which is how
+every other migration here landed.
+
+### A bug this caught
+
+Verification came back showing `grant PUBLIC EXECUTE` on `resolve_slot_picks()`.
+Postgres grants EXECUTE to PUBLIC on every new function, so granting it to
+`authenticated` and stopping there left `anon` holding it — the opposite of what
+the comment beside the grant claimed. **The REVOKE is the load-bearing line, not
+the grant.** Fixed; anon now gets `401 permission denied` on the RPC.
+
+Also worth recording: `pick` was already nullable, so that `alter` was a no-op.
+
+### Verified behaviour
+
+Everything below ran inside transactions that were rolled back. A final sweep
+confirmed zero test rows, zero `by_slots` rows and zero `slots_resolved_at`
+stamps left in production.
+
+| | |
+|---|---|
+| flips only locked games | a finished game resolved to a real side; an unkicked week-2 game stayed null |
+| one-way | first call resolved 2 rows, second and third returned 0, zero rows moved afterwards |
+| independent flips | two games, two different sides |
+| `submission_status()` | false with no picks, true with a *pending* slots pick, still returns no pick values |
+| REST | all three front-end queries 200 (they were 400 before the migration) |
+
+RLS, impersonating a real non-commissioner member via `request.jwt.claims`:
+
+| attempt | result |
+|---|---|
+| save a slots pick on an open game | allowed |
+| claim `by_slots` with a team already chosen | **blocked** |
+| slot a game that already kicked off | **blocked** |
+| slot a game for another player | **blocked** |
+| fill in their own pending slots pick | **blocked** |
+| switch slots → real pick, and back, before lock | allowed both ways |
+| another member reads that pending pick | 0 rows visible |
+
+### The check that nearly got missed
+
+The first resolver test ran on an admin connection, which bypasses RLS anyway —
+so it proved nothing about whether `picks_slots_start_empty_upd` would block the
+resolver in production. It does not, for two independent reasons: `picks` has
+`relforcerowsecurity = false` so the table owner bypasses RLS, and the policy is
+scoped `to authenticated` while the function and its cron job both run as
+`postgres`. Confirmed empirically as well as structurally.
+
+Cron `resolve-slot-picks` is owned by `postgres`, active, 9 runs in the first
+hour, 0 failures.
 
 Order matters: migration first, then the picks page, then the reveal. A picks
 page that writes `by_slots` to a database without the column fails loudly on
