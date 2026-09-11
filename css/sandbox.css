@@ -187,49 +187,72 @@
 .slot-range{ width:7.5rem; accent-color:var(--cfp-gold); }
 .slot-btn--wide{ min-width:5.5rem; text-transform:none; letter-spacing:.04em; }
 
-/* ── THE MARK ──────────────────────────────────────────────────────────
+/* ── THE MARK ─────────────────────────────────────────────
  * What is left on the cell once the reels have stopped and the board has
  * gone back to being a board. Without one, a slot pick is indistinguishable
  * from a pick somebody actually made, a week later.
  *
- * Three candidates, cycled from the panel so they can be compared on the
- * same cells without sitting through another roll. None of them may cover
- * the crest or change the cell's box - a leaderboard column is 34px wide on
- * a phone and the pick is the thing being read.
+ * NOT GOLD. Gold is this site's own accent — the header rule, the buttons and
+ * the focus outline all wear it — so a gold mark on a cell reads as chrome, as
+ * one more piece of the furniture, rather than as a fact about the pick. The
+ * palette below is the table instead: felt green, roulette red, black.
+ *
+ * Three candidates, cycled from the panel so they can be compared on the same
+ * cells without sitting through another roll. All three are borders, and all
+ * three are drawn on an inset overlay rather than on the cell itself — a
+ * leaderboard column is 34px wide on a phone and the crest is the thing being
+ * read, so the mark may not cover it or change the cell's box.
  */
+[data-sandbox="on"]{
+  --casino-felt:   #157f4f;   /* table baize, under the lamp */
+  --casino-felt-2: #0a4a2d;
+  --casino-red:    #c1121f;   /* the odd pockets */
+  --casino-ink:    #0b0c0f;   /* the even ones */
+  --casino-neon:   #ff2e4d;   /* the sign over the door */
+}
+
 td.slot-was-cell{ position:relative; }
 .slot-was{ position:absolute; pointer-events:none; }
 
-/* corner — a notch cut into the top-right, the quietest of the three */
-.slot-was--corner{
-  top:0; right:0; width:0; height:0;
-  border-top:9px solid var(--cfp-gold);
-  border-left:9px solid transparent;
-  filter:drop-shadow(0 0 4px rgba(218,165,32,.7));
+/* felt — a thin baize edge. Quiet enough to sit on every slot cell on the
+   board at once without the column turning into a christmas tree. */
+.slot-was--felt{
+  inset:1px;
+  border:1.5px solid var(--casino-felt);
+  border-radius:4px;
+  box-shadow:0 0 0 1px rgba(10,74,45,.55) inset, 0 0 5px rgba(21,127,79,.35);
 }
 
-/* chip — a struck disc in the bottom-right. Reads as a stamp on the pick */
-.slot-was--chip{
-  right:2px; bottom:2px;
-  width:11px; height:11px; border-radius:50%;
-  display:grid; place-items:center;
-  background:radial-gradient(circle at 34% 30%, var(--cfp-gold-2), var(--cfp-gold) 70%);
-  color:#241900;
-  font-family:'Oswald',sans-serif; font-size:7px; font-weight:700; line-height:1;
-  box-shadow:0 1px 3px rgba(0,0,0,.8);
+/* roulette — red and black segments running round the cell, the wheel's own
+   rhythm. border-image will not follow a radius, and the square corner is
+   half of why this one reads as a wheel rather than as a button. */
+.slot-was--roulette{
+  inset:1px;
+  border:2px solid transparent;
+  border-image:repeating-linear-gradient(
+    45deg,
+    var(--casino-red) 0 5px,
+    var(--casino-ink) 5px 10px
+  ) 1;
+  filter:drop-shadow(0 0 3px rgba(193,18,31,.5));
 }
 
-/* rail — a bar along the foot, matching the language the board already uses
-   for a settled result, so it reads as "this cell was decided elsewhere" */
-.slot-was--rail{
-  left:3px; right:3px; bottom:1px; height:2px; border-radius:1px;
-  background:linear-gradient(90deg, transparent, var(--cfp-gold), transparent);
-  box-shadow:0 0 6px rgba(218,165,32,.75);
+/* neon — a sign outline. The loudest of the three: for when a slot pick
+   should be visible from across the standings rather than on inspection. */
+.slot-was--neon{
+  inset:1px;
+  border:1.5px solid var(--casino-neon);
+  border-radius:3px;
+  box-shadow:
+    0 0 4px rgba(255,46,77,.9),
+    0 0 10px rgba(255,46,77,.45),
+    0 0 3px rgba(255,46,77,.8) inset;
 }
 
 @media (max-width:640px){
-  /* A phone column has 24px of logo in it; the notch is the only one of the
-     three that costs none of it. */
-  .slot-was--chip{ width:9px; height:9px; font-size:6px; }
-  .slot-was--corner{ border-top-width:7px; border-left-width:7px; }
+  /* A phone column has 24px of logo in it. Thinner edges, so what is left of
+     the cell is still the crest. */
+  .slot-was--felt,
+  .slot-was--neon{ border-width:1px; inset:0; }
+  .slot-was--roulette{ border-width:1.5px; inset:0; }
 }

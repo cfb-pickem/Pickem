@@ -137,8 +137,8 @@ const LAB_SEEN_PREFIX = 'cfb-slots-seen';
 let labPanel = null;
 let labCells = 3;
 let labSpeed = 1;
-let labMark = 'corner';
-const MARKS = ['corner', 'chip', 'rail', 'none'];
+let labMark = 'felt';
+const MARKS = ['felt', 'roulette', 'neon', 'none'];
 
 function labNote(text) {
   const n = labPanel && labPanel.querySelector('.slot-panel-note');
@@ -190,9 +190,17 @@ function labReset() {
  * is what is left of it on the board afterwards.
  *
  * Three of them to compare, because which one is right is a looking question:
- *   corner — a gold notch cut into the top-right of the cell
- *   chip   — a small gold disc in the bottom-right, over the crest
- *   rail   — a gold bar along the foot of the cell, like a covered result
+ * NOT GOLD. Gold is the site's own accent — the header rule, the buttons, the
+ * focus outline all wear it — so a gold mark reads as chrome rather than as a
+ * fact about the pick. These borrow the table instead: felt green, roulette
+ * red, black.
+ *
+ *   felt     — a thin felt-green edge, the quietest of the three
+ *   roulette — red and black segments around the cell, the wheel's own rhythm
+ *   neon     — a red sign outline, the loudest, for when it should be obvious
+ *
+ * Each is an inset overlay rather than a border on the cell itself, so none of
+ * them changes the column's box or costs the crest a pixel.
  */
 function labMarkCell(td) {
   if (labMark === 'none') return;
@@ -202,7 +210,6 @@ function labMarkCell(td) {
   mark.className = 'slot-was slot-was--' + labMark;
   mark.title = 'The slots decided this one';
   mark.setAttribute('aria-label', 'decided by the slots');
-  if (labMark === 'chip') mark.textContent = 'S';
   td.appendChild(mark);
 }
 
