@@ -1700,7 +1700,12 @@
       const done = [];
       tiles.forEach((tile, idx) => {
         const factor = 1 + Math.pow(idx / 2, 2);
-        const turns = Math.round(16 * factor);
+        // Strip length and duration move TOGETHER, always. Stretching the time
+        // on its own does not make a longer spin, it makes a slower one - the
+        // same handful of symbols drifting past instead of a reel running. About
+        // thirteen symbols a second is the pace that reads as a machine, so more
+        // time buys proportionally more strip and the speed stays put.
+        const turns = Math.round(30 * factor);
 
         const reel = document.createElement('div');
         reel.className = 'pick-reel';
@@ -1747,7 +1752,7 @@
             {                    filter: 'blur(3px)', offset: 0.45 },
             { top: land + 'px',  filter: 'blur(0px)' }
           ],
-          { duration: Math.round(factor * 1250), easing: 'cubic-bezier(.16,.62,.18,1)', fill: 'forwards' }
+          { duration: Math.round(factor * 2350), easing: 'cubic-bezier(.16,.62,.18,1)', fill: 'forwards' }
         );
         done.push(anim.finished.catch(() => {}).then(() => {
           reel.remove();
