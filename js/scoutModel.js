@@ -91,6 +91,46 @@
 //   * Tested and discarded, all noise: tilt after a bad week (-4.9pp +/-3.9),
 //     slate balancing (variance matched binomial), and per-player team
 //     affinity (59 teams, 29 of them appear exactly once).
+//   * NOTRE DAME OPPONENTS. Worth writing down in full, because the raw numbers
+//     look convincing and are not. Notre Dame itself has never been on a slate -
+//     zero appearances in 88 picked games across 2025 and 2026 - so the only
+//     testable version is whether the pool over-backs the teams ND plays. In
+//     2025 it looks like it does: of the twelve teams on ND's schedule, seven
+//     reached a slate, and across those 14 games the pool took the ND opponent
+//     66.0% of the time against a 60.2% lay rate, in BOTH directions (as a
+//     favourite 68.8% laid, as a dog only 38.6% laid). Against 4,000 random
+//     seven-team sets matched on the same favourite/underdog game mix, 66.0%
+//     sits at p=0.006, and the current model still under-predicts those rows by
+//     +8.2pp against +0.9pp everywhere else.
+//
+//     It is still not a feature, for two measured reasons.
+//
+//     First, bootstrapping by GAME rather than by pick - 14 clusters, not 150
+//     independent rows - puts the residual at -0.3pp to +15.9pp. The whole
+//     effect rests on fourteen games.
+//
+//     Second and decisively, it does not transfer. Fit the ND-opponent
+//     coefficient on six of the seven teams and apply it to the seventh, and
+//     the out-of-team residual collapses from +8.2pp to +0.6pp, with the sign
+//     splitting 3 up and 4 down (Stanford +29.8pp, Texas A&M +12.6pp, but Miami
+//     -9.7pp, Navy -4.4pp, USC -3.2pp, NC State -3.2pp, Purdue 0.0pp). Miami is
+//     the tell: ND's marquee opponent, 37 exposures, and no effect whatsoever.
+//     So this is not a schedule effect at all - it is four brands the pool
+//     happens to like (Texas A&M 84.6%, Navy 83.3%, Stanford 81.8%, USC 66.7%)
+//     that happened to share an opponent, and `brand` already carries them.
+//     Added as a sixth base feature it moves nothing: LOO log loss 0.6558 ->
+//     0.6552, AUC 0.605 -> 0.605, accuracy 60.5% -> 59.9%, all inside the
+//     hyperparameter noise documented below.
+//
+//     Nor is the residual a sign that brand is over-shrunk. Sweeping L_BRAND at
+//     5/10/15/20/30/40 makes both scorings monotonically WORSE as the penalty
+//     loosens (LOO log loss 0.6598 at 5 against 0.6555 at 30; walk-forward
+//     0.6916 against 0.6812). Brand wants more shrinkage, not less.
+//
+//     2026 cannot settle it either way: only three graded games so far involve
+//     a 2026 ND opponent (North Carolina, Stanford, SMU), backed 66.7%. Three
+//     games is an anecdote. If it is ever revisited, the test that matters is
+//     the leave-one-opponent-out one above, not the raw rate.
 //
 // Re-run tools/scoutModel.test.mjs after touching any of this; it re-fits the
 // season and fails if the cross-validated numbers drift.
