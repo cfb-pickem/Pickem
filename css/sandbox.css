@@ -79,3 +79,64 @@
 @media (max-width: 480px) {
   .sandbox-banner-text { display: none; }
 }
+
+/* ======================================================================
+ * The slot lab's controls, and the three candidate marks it compares.
+ * Sandbox only: js/sandbox.js loads this and nobody else does.
+ * ====================================================================== */
+
+.slot-panel-field{
+  display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+  margin-top:.45rem;
+  font-family:'Oswald',sans-serif; font-size:.62rem; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:#9aa0a6;
+}
+.slot-range{ width:7.5rem; accent-color:var(--cfp-gold); }
+.slot-btn--wide{ min-width:5.5rem; text-transform:none; letter-spacing:.04em; }
+
+/* ── THE MARK ──────────────────────────────────────────────────────────
+ * What is left on the cell once the reels have stopped and the board has
+ * gone back to being a board. Without one, a slot pick is indistinguishable
+ * from a pick somebody actually made, a week later.
+ *
+ * Three candidates, cycled from the panel so they can be compared on the
+ * same cells without sitting through another roll. None of them may cover
+ * the crest or change the cell's box - a leaderboard column is 34px wide on
+ * a phone and the pick is the thing being read.
+ */
+td.slot-was-cell{ position:relative; }
+.slot-was{ position:absolute; pointer-events:none; }
+
+/* corner — a notch cut into the top-right, the quietest of the three */
+.slot-was--corner{
+  top:0; right:0; width:0; height:0;
+  border-top:9px solid var(--cfp-gold);
+  border-left:9px solid transparent;
+  filter:drop-shadow(0 0 4px rgba(218,165,32,.7));
+}
+
+/* chip — a struck disc in the bottom-right. Reads as a stamp on the pick */
+.slot-was--chip{
+  right:2px; bottom:2px;
+  width:11px; height:11px; border-radius:50%;
+  display:grid; place-items:center;
+  background:radial-gradient(circle at 34% 30%, var(--cfp-gold-2), var(--cfp-gold) 70%);
+  color:#241900;
+  font-family:'Oswald',sans-serif; font-size:7px; font-weight:700; line-height:1;
+  box-shadow:0 1px 3px rgba(0,0,0,.8);
+}
+
+/* rail — a bar along the foot, matching the language the board already uses
+   for a settled result, so it reads as "this cell was decided elsewhere" */
+.slot-was--rail{
+  left:3px; right:3px; bottom:1px; height:2px; border-radius:1px;
+  background:linear-gradient(90deg, transparent, var(--cfp-gold), transparent);
+  box-shadow:0 0 6px rgba(218,165,32,.75);
+}
+
+@media (max-width:640px){
+  /* A phone column has 24px of logo in it; the notch is the only one of the
+     three that costs none of it. */
+  .slot-was--chip{ width:9px; height:9px; font-size:6px; }
+  .slot-was--corner{ border-top-width:7px; border-left-width:7px; }
+}

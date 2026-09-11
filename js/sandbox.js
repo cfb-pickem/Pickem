@@ -47,6 +47,7 @@
 // an Edge Function — not a page and not a query parameter.
 
 import { sessionInfo } from './session.js';
+import { runSlots } from './slots.js';
 
 // KEEP THE GATE AT THE BOTTOM OF THIS FILE. Function declarations hoist but
 // `const` and `let` do not, so calling enableSandbox() from up here would reach
@@ -87,10 +88,11 @@ function enableSandbox() {
   // react to a later re-render (the page re-renders on live score updates), a
   // MutationObserver on #table-scroll-wrap is the honest way to do it.
   //
-  // Empty on purpose. The slot-machine reveal was prototyped here and has since
-  // shipped for real in js/slots.js; it was deleted rather than left behind, so
-  // there is one implementation instead of two that can disagree.
+  // The reveal itself is NOT prototyped here - it shipped in js/slots.js and the
+  // lab below imports it rather than keeping a second copy that can disagree.
   // --------------------------------------------------------------------
+
+  initSlotLab();
 }
 
 function mountBanner() {
@@ -103,6 +105,202 @@ function mountBanner() {
     <a class="sandbox-banner-exit" href="./index.html">Leave</a>
   `;
   document.body.appendChild(bar);
+}
+
+/* ======================================================================
+ * THE SLOT LAB — sandbox only
+ * ======================================================================
+ *
+ * A bench for the thing nobody can watch on demand: what the reveal looks like
+ * at kickoff. It only happens once per person per game, on a Saturday, for a
+ * player who slotted a game days earlier — so without this the only way to see
+ * it is to wait for one and not blink.
+ *
+ * IT DRIVES THE REAL REVEAL. runSlots() is imported from js/slots.js and called
+ * as the leaderboard calls it, against cells tagged exactly as renderTable tags
+ * them. Nothing here reimplements the spin, so what you are looking at is the
+ * shipped animation rather than a second copy of it that can quietly disagree.
+ *
+ * What the lab adds is only the things production cannot give you on a Tuesday:
+ * cells to spin (there are no real slot picks yet), a way to watch it again,
+ * and a speed control — which works by setting playbackRate on the animations
+ * that are already running, so the timing you judge is the real curve played
+ * faster or slower rather than a different animation.
+ *
+ * READ ONLY, like the rest of the sandbox. It tags cells in the DOM and writes
+ * the same localStorage keys the reveal already writes. It touches no database.
+ */
+
+
+const LAB_SEEN_PREFIX = 'cfb-slots-seen';
+
+let labPanel = null;
+let labCells = 3;
+let labSpeed = 1;
+let labMark = 'corner';
+const MARKS = ['corner', 'chip', 'rail', 'none'];
+
+function labNote(text) {
+  const n = labPanel && labPanel.querySelector('.lab-note');
+  if (n) n.textContent = text;
+}
+
+/** Every cell on the board that is showing a pick, so it has something to land on. */
+function labCandidates() {
+  const out = [];
+  document.querySelectorAll('tbody tr').forEach(tr => {
+    if (tr.classList.contains('playoff-divider')) return;
+    [...tr.children].forEach((td, col) => {
+      if (col < 2) return;
+      if (!td.querySelector('img.logo')) return;
+      out.push({ td, col, row: tr });
+    });
+  });
+  return out;
+}
+
+/** Forget every reveal this browser has watched, so they can all run again. */
+function labForget() {
+  try {
+    for (const k of Object.keys(localStorage)) {
+      if (k.indexOf(LAB_SEEN_PREFIX) === 0) localStorage.removeItem(k);
+    }
+  } catch {}
+}
+
+/** Take the board back to how it looked before the lab touched it. */
+function labReset() {
+  document.querySelectorAll('.slot-box').forEach(b => b.remove());
+  document.querySelectorAll('[data-slots]').forEach(td => {
+    delete td.dataset.slots;
+    delete td.dataset.slotsTeam;
+    td.classList.remove('slot-cell', 'slot-landed');
+  });
+  document.querySelectorAll('.slot-was').forEach(m => m.remove());
+  document.querySelectorAll('[data-slot-marked]').forEach(td => {
+    delete td.dataset.slotMarked;
+    td.classList.remove('slot-was-cell');
+  });
+}
+
+/**
+ * THE MARK. After the reels stop the cell goes back to being an ordinary logo,
+ * and a week later nobody can tell that pick was the house's rather than the
+ * player's. That is the gap this is filling: the spin is a moment, and the mark
+ * is what is left of it on the board afterwards.
+ *
+ * Three of them to compare, because which one is right is a looking question:
+ *   corner — a gold notch cut into the top-right of the cell
+ *   chip   — a small gold disc in the bottom-right, over the crest
+ *   rail   — a gold bar along the foot of the cell, like a covered result
+ */
+function labMarkCell(td) {
+  if (labMark === 'none') return;
+  td.dataset.slotMarked = '1';
+  td.classList.add('slot-was-cell');
+  const mark = document.createElement('span');
+  mark.className = 'slot-was slot-was--' + labMark;
+  mark.title = 'The slots decided this one';
+  mark.setAttribute('aria-label', 'decided by the slots');
+  if (labMark === 'chip') mark.textContent = 'S';
+  td.appendChild(mark);
+}
+
+async function labRun() {
+  labReset();
+  labForget();
+
+  const all = labCandidates();
+  if (!all.length) {
+    labNote('No revealed picks on this board — choose an earlier week, then Roll.');
+    return;
+  }
+
+  // One per row at most, so it reads as "these players used the slots" rather
+  // than something happening to a whole column.
+  const byRow = new Map();
+  for (const c of all) if (!byRow.has(c.row)) byRow.set(c.row, c);
+  const chosen = [...byRow.values()].sort(() => Math.random() - 0.5)
+    .slice(0, Math.min(labCells, byRow.size));
+
+  // Tagged exactly the way renderTable tags a real slot pick, because that is
+  // the only thing js/slots.js reads.
+  chosen.forEach((c, i) => {
+    c.td.dataset.slots = String(9000 + i);
+    c.td.dataset.slotsTeam = String(8000 + i);
+  });
+
+  labNote('Rolling ' + chosen.length + ' cell' + (chosen.length === 1 ? '' : 's') + '…');
+
+  // Start the real reveal, then bend the animations that are now running. The
+  // spin keeps its own easing curve and only the rate changes, so a slow pass
+  // is this animation slowed down rather than a different one.
+  const spinning = runSlots();
+  if (labSpeed !== 1) {
+    requestAnimationFrame(() => {
+      document.getAnimations?.().forEach(a => {
+        if (a.effect?.target?.classList?.contains('slot-strip')) a.playbackRate = labSpeed;
+      });
+    });
+  }
+
+  const n = await spinning;
+  chosen.forEach(c => labMarkCell(c.td));
+  labNote('Landed. ' + n + ' cell' + (n === 1 ? '' : 's') + ' decided by the house'
+        + (labMark === 'none' ? ', unmarked.' : ', marked "' + labMark + '".'));
+}
+
+function mountLabPanel() {
+  const p = document.createElement('div');
+  p.className = 'slot-panel';
+  p.innerHTML =
+    '<div class="slot-panel-title">Slot lab <span class="slot-panel-tag">sandbox</span></div>' +
+    '<div class="slot-panel-row">' +
+      '<button type="button" class="slot-btn" data-act="roll">Roll it</button>' +
+      '<button type="button" class="slot-btn" data-act="reset">Clear</button>' +
+    '</div>' +
+    '<label class="slot-panel-field">Cells' +
+      '<input type="number" min="1" max="8" value="' + labCells + '" class="slot-input" data-act="cells">' +
+    '</label>' +
+    '<label class="slot-panel-field">Speed <span data-speed-out>1.0&times;</span>' +
+      '<input type="range" min="25" max="200" step="5" value="100" class="slot-range" data-act="speed">' +
+    '</label>' +
+    '<label class="slot-panel-field">Mark' +
+      '<button type="button" class="slot-btn slot-btn--wide" data-act="mark">' + labMark + '</button>' +
+    '</label>' +
+    '<div class="slot-note">&nbsp;</div>' +
+    '<div class="slot-panel-foot">Drives the real reveal in js/slots.js. Nothing is written to the database.</div>';
+  document.body.appendChild(p);
+  labPanel = p;
+
+  p.querySelector('[data-act="roll"]').addEventListener('click', labRun);
+  p.querySelector('[data-act="reset"]').addEventListener('click', () => {
+    labReset(); labNote('Board back to normal.');
+  });
+  p.querySelector('[data-act="cells"]').addEventListener('change', e => {
+    labCells = Math.max(1, Math.min(8, Number(e.target.value) || 1));
+  });
+  p.querySelector('[data-act="speed"]').addEventListener('input', e => {
+    labSpeed = Number(e.target.value) / 100;
+    p.querySelector('[data-speed-out]').innerHTML = labSpeed.toFixed(2) + '&times;';
+  });
+  p.querySelector('[data-act="mark"]').addEventListener('click', e => {
+    labMark = MARKS[(MARKS.indexOf(labMark) + 1) % MARKS.length];
+    e.target.textContent = labMark;
+    // Re-mark what is already on the board so the styles can be compared
+    // without sitting through another roll.
+    document.querySelectorAll('.slot-was').forEach(m => m.remove());
+    document.querySelectorAll('[data-slot-marked]').forEach(td => {
+      td.classList.remove('slot-was-cell');
+      delete td.dataset.slotMarked;
+      labMarkCell(td);
+    });
+  });
+}
+
+function initSlotLab() {
+  mountLabPanel();
+  labNote('Roll it to watch a kickoff reveal.');
 }
 
 // ======================================================================
