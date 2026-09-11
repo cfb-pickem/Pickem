@@ -185,7 +185,6 @@
   letter-spacing:.08em; text-transform:uppercase; color:#9aa0a6;
 }
 .slot-range{ width:7.5rem; accent-color:var(--cfp-gold); }
-.slot-btn--wide{ min-width:5.5rem; text-transform:none; letter-spacing:.04em; }
 
 /* ── THE MARK ─────────────────────────────
  * What is left on the cell once the reels have stopped and the board has
@@ -196,9 +195,12 @@
  * the focus outline all wear it — so a gold mark on a cell reads as chrome,
  * as one more piece of the furniture, rather than as a fact about the pick.
  *
- * Every one of these is drawn on an inset overlay rather than on the cell
- * itself. A leaderboard column is 34px wide on a phone and the crest is the
- * thing being read, so the mark may not cover it or move the cell's box.
+ * It is the edge of a poker chip, and it is the only one — the alternates it
+ * was chosen against are gone from here and from the panel.
+ *
+ * It is drawn on an inset overlay rather than on the cell itself. A leaderboard
+ * column is 34px wide on a phone and the crest is the thing being read, so the
+ * mark may not cover it or move the cell's box.
  */
 [data-sandbox="on"]{
   /* A chip's edge spots, in the order they run round it. */
@@ -206,10 +208,6 @@
   --chip-ink:   #0b0c0f;
   --chip-white: #f2efe6;   /* warmed off pure white, which glares on charcoal */
   --chip-blue:  #2a5bd7;
-
-  --casino-felt:   #157f4f;   /* baize, under the lamp */
-  --casino-felt-2: #0a4a2d;
-  --casino-neon:   #ff2e4d;   /* the sign over the door */
 }
 
 td.slot-was-cell{ position:relative; }
@@ -254,32 +252,9 @@ td.slot-was-cell{ position:relative; }
   }
 }
 
-/* felt — a thin baize edge. The quiet one: enough of it can sit on the board
-   at once without the column turning into a christmas tree. */
-.slot-was--felt{
-  inset:1px;
-  border:1.5px solid var(--casino-felt);
-  border-radius:4px;
-  box-shadow:0 0 0 1px rgba(10,74,45,.55) inset, 0 0 5px rgba(21,127,79,.35);
-}
-
-/* neon — a sign outline. The loud one: for when a slot pick should be seen
-   from across the standings rather than on inspection. */
-.slot-was--neon{
-  inset:1px;
-  border:1.5px solid var(--casino-neon);
-  border-radius:3px;
-  box-shadow:
-    0 0 4px rgba(255,46,77,.9),
-    0 0 10px rgba(255,46,77,.45),
-    0 0 3px rgba(255,46,77,.8) inset;
-}
-
 @media (max-width:640px){
   /* A phone column has 24px of logo in it. Thinner edges, so what is left of
      the cell is still the crest. Declared after the @supports upgrade so this
      wins on padding as well as on width. */
   .slot-was--chip{ border-width:1.5px; padding:2px; }
-  .slot-was--felt,
-  .slot-was--neon{ border-width:1px; inset:0; }
 }

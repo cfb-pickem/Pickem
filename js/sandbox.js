@@ -137,8 +137,6 @@ const LAB_SEEN_PREFIX = 'cfb-slots-seen';
 let labPanel = null;
 let labCells = 3;
 let labSpeed = 1;
-let labMark = 'chip';
-const MARKS = ['chip', 'felt', 'neon', 'none'];
 
 function labNote(text) {
   const n = labPanel && labPanel.querySelector('.slot-panel-note');
@@ -189,26 +187,23 @@ function labReset() {
  * player's. That is the gap this is filling: the spin is a moment, and the mark
  * is what is left of it on the board afterwards.
  *
- * Three of them to compare, because which one is right is a looking question:
- * NOT GOLD. Gold is the site's own accent — the header rule, the buttons, the
- * focus outline all wear it — so a gold mark reads as chrome rather than as a
- * fact about the pick. These borrow the table instead: felt green, roulette
- * red, black.
+ * It is the edge of a poker chip: red, black, white and blue spots running
+ * round the cell the way they run round a chip. There is one of these and no
+ * switch to change it — the alternates it was compared against are gone.
  *
- *   chip — the edge of a poker chip: red, black, white and blue spots
- *          running round the cell the way they run round a chip
- *   felt — a thin baize edge, the quiet one
- *   neon — a red sign outline, the loud one, for when it should be obvious
+ * NOT GOLD, which is the reason it looks the way it does. Gold is this site's
+ * own accent, worn by the header rule and the buttons and the focus outline,
+ * so a gold mark reads as one more piece of furniture rather than as a fact
+ * about the pick.
  *
- * Each is an inset overlay rather than a border on the cell itself, so none of
- * them changes the column's box or costs the crest a pixel.
+ * It is an inset overlay rather than a border on the cell itself, so it never
+ * changes the column's box or costs the crest a pixel.
  */
 function labMarkCell(td) {
-  if (labMark === 'none') return;
   td.dataset.slotMarked = '1';
   td.classList.add('slot-was-cell');
   const mark = document.createElement('span');
-  mark.className = 'slot-was slot-was--' + labMark;
+  mark.className = 'slot-was slot-was--chip';
   mark.title = 'The slots decided this one';
   mark.setAttribute('aria-label', 'decided by the slots');
   td.appendChild(mark);
@@ -254,8 +249,7 @@ async function labRun() {
 
   const n = await spinning;
   chosen.forEach(c => labMarkCell(c.td));
-  labNote('Landed. ' + n + ' cell' + (n === 1 ? '' : 's') + ' decided by the house'
-        + (labMark === 'none' ? ', unmarked.' : ', marked "' + labMark + '".'));
+  labNote('Landed. ' + n + ' cell' + (n === 1 ? '' : 's') + ' decided by the house.');
 }
 
 function mountLabPanel() {
@@ -273,9 +267,6 @@ function mountLabPanel() {
     '<label class="slot-panel-field">Speed <span data-speed-out>1.0&times;</span>' +
       '<input type="range" min="25" max="200" step="5" value="100" class="slot-range" data-act="speed">' +
     '</label>' +
-    '<label class="slot-panel-field">Mark' +
-      '<button type="button" class="slot-btn slot-btn--wide" data-act="mark">' + labMark + '</button>' +
-    '</label>' +
     '<div class="slot-panel-note">&nbsp;</div>' +
     '<div class="slot-panel-foot">Drives the real reveal in js/slots.js. Nothing is written to the database.</div>';
   document.body.appendChild(p);
@@ -292,17 +283,6 @@ function mountLabPanel() {
     labSpeed = Number(e.target.value) / 100;
     p.querySelector('[data-speed-out]').innerHTML = labSpeed.toFixed(2) + '&times;';
   });
-  p.querySelector('[data-act="mark"]').addEventListener('click', e => {
-    labMark = MARKS[(MARKS.indexOf(labMark) + 1) % MARKS.length];
-    e.target.textContent = labMark;
-    // Re-mark what is already on the board so the styles can be compared
-    // without sitting through another roll.
-    document.querySelectorAll('.slot-was').forEach(m => m.remove());
-    document.querySelectorAll('[data-slot-marked]').forEach(td => {
-      td.classList.remove('slot-was-cell');
-      delete td.dataset.slotMarked;
-      labMarkCell(td);
-    });
   });
 }
 
