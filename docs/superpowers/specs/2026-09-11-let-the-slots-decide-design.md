@@ -1,6 +1,6 @@
 # Let the slots decide
 
-**Status:** design, awaiting review
+**Status:** built, on branch `slots`, awaiting the migration
 **Date:** 2026-09-11
 
 A player who cannot call a game hands it to the house. Instead of picking a
@@ -278,9 +278,10 @@ save.
 
 - Any limit on slots picks per week (decided against)
 - Showing anyone *why* a pick was slotted, beyond the spin itself
-- Stats-page treatment — whether slot picks are excluded from a player's
-  scouting profile is a real question, and a separate one. Note that
-  `js/scoutModel.js` trains on every pick in `picks`, so slot picks will enter
-  the model as if the player chose them. That is a genuine contamination of the
-  personal-lean feature and should be looked at before the model is next
-  retrained.
+Originally out of scope and since pulled in at the commissioner's request:
+**slot picks no longer train the analytics model.** `buildTrainingRows()` drops
+any row with `by_slots`, because a coin flip is indistinguishable in the table
+from a considered pick and would be read as evidence about how that person
+thinks. It would land hardest on the weakest thing in the model — personal
+lay-rate already sits at split-half r=0.117 — while looking like more data.
+They still score, still show, still spin; they are just not evidence.

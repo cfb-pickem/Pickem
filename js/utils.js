@@ -84,6 +84,25 @@ export function getTeamColor(teamName) {
   return TEAM_COLORS[teamName] || null;
 }
 
+/**
+ * team_id -> game_id -> true, for picks the slots decided.
+ *
+ * Kept separate from buildPickMap rather than folded into it: a slot pick IS a
+ * pick everywhere that scores or renders one, and widening the pick map's values
+ * into objects would make every one of those callers unwrap something they have
+ * no interest in. This is read by one thing - the reveal - so it lives on its
+ * own and costs the rest of the page nothing.
+ */
+export function buildSlotsMap(rows) {
+  const map = {};
+  (rows || []).forEach(r => {
+    if (!r.by_slots) return;
+    if (!map[r.team_id]) map[r.team_id] = {};
+    map[r.team_id][r.game_id] = true;
+  });
+  return map;
+}
+
 export function buildPickMap(rows) {
   const map = {};
   (rows || []).forEach(r => {

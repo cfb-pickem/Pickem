@@ -30,7 +30,9 @@ export function loadTrainingData() {
       supabase.from('all_games')
         .select('GameId, Away, Home, line, line_open, winner, picked, week, cfb_season, fpi_margin')
         .eq('picked', true),
-      supabase.from('picks').select('team_id, game_id, pick')
+      // by_slots comes along so buildTrainingRows can drop coin flips before
+      // they are mistaken for judgement. Without it the filter silently passes.
+      supabase.from('picks').select('team_id, game_id, pick, by_slots')
     ]);
     if (gErr || pErr) throw (gErr || pErr);
     const rows = buildTrainingRows(games || [], picks || []);
