@@ -266,21 +266,77 @@
        actually has: a lit marquee across the top, a recessed window with a
        bezel round it, and reels sunk behind glass. */
 
-    /* 1. The marquee. A machine is lit from the top, and on a board of four
-          this is the part you see first without reading anything. */
-    .pick-game.is-slotted::before{
-      content:''; position:absolute; left:14%; right:14%; top:-1px; height:3px;
-      border-radius:0 0 3px 3px;
-      background:linear-gradient(90deg,
-        transparent, var(--cfp-gold-2), var(--cfp-gold), var(--cfp-gold-2), transparent);
-      background-size:200% 100%;
-      box-shadow:0 0 12px rgba(218,165,32,.85);
-      pointer-events:none;
+    /* 1. THE TOPPER. The lit strip above a cabinet, and the part of a real
+          machine you see first from across a room. It carries what mode the
+          card is in, so the line under the reels is free to say only where the
+          pick actually stands.
+
+          Hidden until the lever comes down. An unslotted card has no cabinet at
+          all and is exactly the card it always was. */
+    .slot-topper{
+      position:relative;
+      padding:.5rem .75rem .45rem; text-align:center;
+      border-radius:10px 10px 0 0;
+      background:linear-gradient(180deg,#3a2c08,#1a1305 70%,#0e0a03);
+      border:1px solid #6d4d0d; border-bottom:none;
     }
-    /* Chasing while the reels run, still while they are stopped - a machine
-       mid-spin is doing something and a machine at rest is not. */
-    .pick-game.is-pulling::before{ animation:marquee-chase .9s linear infinite; }
-    @keyframes marquee-chase{ from{ background-position:200% 0; } to{ background-position:0 0; } }
+    .slot-topper[hidden]{ display:none; }
+    .slot-topper-name{
+      font-family:'Oswald',sans-serif; font-weight:600;
+      font-size:.7rem; letter-spacing:.15em; text-transform:uppercase;
+      line-height:1.25; color:var(--cfp-gold-2);
+      text-shadow:0 0 14px rgba(240,199,94,.6);
+      text-wrap:balance;
+    }
+    /* The bulb run. The one thing a cabinet has that nothing else on this page
+       does, which is most of why it reads as a machine at a glance. */
+    .slot-bulbs{ position:absolute; inset:.28rem .55rem auto; display:flex; justify-content:space-between; }
+    .slot-bulbs span{
+      width:4px; height:4px; border-radius:50%;
+      background:var(--cfp-gold-2); box-shadow:0 0 6px rgba(240,199,94,.9);
+      opacity:.32;
+    }
+    /* Chasing while the reels run, still once they stop. */
+    .pick-game.is-pulling .slot-bulbs span{ animation:slot-bulb 1s steps(1,end) infinite; }
+    .slot-bulbs span:nth-child(3n+1){ animation-delay:0s; }
+    .slot-bulbs span:nth-child(3n+2){ animation-delay:.33s; }
+    .slot-bulbs span:nth-child(3n){   animation-delay:.66s; }
+    @keyframes slot-bulb{ 0%,32%{ opacity:1; } 33%,100%{ opacity:.3; } }
+
+    /* The deck: the cabinet body the reels and the handle are mounted in. */
+    .pick-body{ position:relative; }
+    .pick-game.is-slotted .pick-body{
+      padding:.7rem;
+      background:linear-gradient(180deg,#2b2113,#14100a);
+      border-left:1px solid #6d4d0d; border-right:1px solid #6d4d0d;
+    }
+
+    /* The base plate, stamped the way a machine's is. */
+    .slot-base{
+      display:flex; justify-content:space-between; align-items:center; gap:.5rem;
+      padding:.5rem .75rem;
+      border-radius:0 0 10px 10px;
+      background:linear-gradient(180deg,#1a1305,#0d0902);
+      border:1px solid #6d4d0d; border-top:none;
+    }
+    .slot-base[hidden]{ display:none; }
+    .slot-stamp{
+      font-family:'Oswald',sans-serif; font-size:.5rem; font-weight:600;
+      letter-spacing:.15em; text-transform:uppercase; color:#8a6f28;
+    }
+    .slot-coin{
+      width:34px; height:7px; border-radius:4px; flex:none;
+      background:linear-gradient(180deg,#000,#2a2113);
+      box-shadow:inset 0 1px 2px rgba(0,0,0,.9), 0 1px 0 rgba(218,165,32,.2);
+    }
+
+    /* The card gets out of the cabinet's way: no padding, no border, no ground
+       of its own, because the topper, the deck and the base are the chrome now. */
+    .pick-game.is-slotted{
+      padding:0; border-color:transparent; background:none;
+      box-shadow:none;
+      filter:drop-shadow(0 14px 24px rgba(0,0,0,.55));
+    }
 
     /* 2. The window. Sunk into the card with a gold bezel round it, so the two
           tiles read as being BEHIND glass rather than sitting on the card. */
@@ -318,7 +374,7 @@
           machine behaves changed with it. */
 
     @media (prefers-reduced-motion: reduce){
-      .pick-game.is-pulling::before{ animation:none; }
+      .pick-game.is-pulling .slot-bulbs span{ animation:none; opacity:1; }
     }
 
     /* THE REELS. johakr/html5-slot-machine's mechanism - a strip of symbols in
@@ -408,10 +464,6 @@
        which on a board of four looks exactly like a game you forgot to pick. So
        it has to carry its own state loudly: the card is outlined, the separator
        between the tiles becomes a machine, and it keeps moving. */
-    .pick-game.is-slotted{
-      border-color:var(--cfp-gold);
-      box-shadow:0 0 0 1px var(--cfp-gold) inset, 0 6px 20px -10px rgba(218,165,32,.8);
-    }
     /* 4. The reel divider. A machine does not put a glyph between its reels, it
           puts a strip of chrome there - and drawing that is both more honest
           than an emoji and sharper at this size, because it is a gradient rather
@@ -573,7 +625,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=9ce0780e">
+  <link rel="stylesheet" href="./css/tailwind.css?v=24a6fb56">
 </head>
 <body data-page="picks">
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
@@ -1003,23 +1055,49 @@
         '</label>'
       );
 
+      // THE CABINET. A slotted card is not a card with a machine drawn on it,
+      // it is the machine: a lit topper, a deck holding the reels and the
+      // handle, and a base plate stamped with the matchup. All three are in the
+      // markup for every card and hidden until the lever comes down, so slot
+      // mode is a class on the card rather than a rebuild of it.
+      const abbr = t => String(t || '').toUpperCase();
+      const topper = (
+        '<div class="slot-topper" data-slot-topper hidden aria-hidden="true">' +
+          '<div class="slot-bulbs">' + '<span></span>'.repeat(12) + '</div>' +
+          '<div class="slot-topper-name" data-slot-headline></div>' +
+        '</div>'
+      );
+      const base = (
+        '<div class="slot-base" data-slot-base hidden aria-hidden="true">' +
+          '<span class="slot-stamp">' + escapeHtml(abbr(g.away)) + ' &middot; ' + escapeHtml(abbr(g.home)) + '</span>' +
+          '<span class="slot-coin"></span>' +
+          '<span class="slot-stamp">1 game &middot; 1 pull</span>' +
+        '</div>'
+      );
+
       return (
         '<div class="cfp-card game-card pick-game" data-game-id="' + g.game_id + '">' +
-          '<div class="pick-game-head">' +
-            '<span class="pick-game-meta">' + meta + '</span>' +
-            (playoffMode ? '<span data-lock-state class="pick-lockstate"></span>' : espnLink) +
-          '</div>' +
-          // The two reels sit INSIDE the cabinet and the handle hangs off the
-          // outside of it, the way a real machine is put together. Without the
-          // wrapper the bezel would have to be drawn around the lever too.
-          '<div class="pick-buttons pick-sides">' +
-            '<div class="pick-window">' +
-              side(g.away, hasLine ? fmt(-g.line) : null) +
-              '<span class="pick-at" aria-hidden="true">@</span>' +
-              side(g.home, hasLine ? fmt(g.line)  : null) +
+          topper +
+          // Everything the card normally shows lives in here, so the deck can
+          // grow side rails around it without the topper and base being inside
+          // the thing they are supposed to be bolted to.
+          '<div class="pick-body">' +
+            '<div class="pick-game-head">' +
+              '<span class="pick-game-meta">' + meta + '</span>' +
+              (playoffMode ? '<span data-lock-state class="pick-lockstate"></span>' : espnLink) +
             '</div>' +
-            slots +
+            // The two reels sit INSIDE the window and the handle hangs off the
+            // outside of it, the way a real machine is put together.
+            '<div class="pick-buttons pick-sides">' +
+              '<div class="pick-window">' +
+                side(g.away, hasLine ? fmt(-g.line) : null) +
+                '<span class="pick-at" aria-hidden="true">@</span>' +
+                side(g.home, hasLine ? fmt(g.line)  : null) +
+              '</div>' +
+              slots +
+            '</div>' +
           '</div>' +
+          base +
           '<div class="pick-slots-note" data-slots-note hidden></div>' +
         '</div>'
       );
@@ -1585,10 +1663,27 @@
         const armed = !!(input && input.checked);
         lever.classList.toggle('selected', armed);
         card.classList.toggle('is-slotted', armed);
-        if (!note) return;
 
         const savedSlots = existingPicks.get(String(gameId)) === SLOTS_VALUE;
+        const resolvedTeam = resolvedSlots.get(String(gameId));
 
+        // The cabinet is only bolted on for a game that is actually in slot mode.
+        const topper = card.querySelector('[data-slot-topper]');
+        const base   = card.querySelector('[data-slot-base]');
+        if (topper) topper.hidden = !armed;
+        if (base)   base.hidden   = !armed;
+
+        const headline = card.querySelector('[data-slot-headline]');
+        if (headline) {
+          // The topper says what mode this is; the line under the reels says
+          // where the pick stands. Once the coin has landed the topper stops
+          // promising a reveal, because there has already been one.
+          headline.textContent = resolvedTeam
+            ? 'Slot mode · the house has chosen'
+            : 'Slot mode · pick revealed at kickoff';
+        }
+
+        if (!note) return;
         note.classList.remove('is-unsaved', 'is-in', 'is-stale');
 
         // Pulled back up, but the database still holds the slots pick that was
@@ -1600,8 +1695,7 @@
           if (savedSlots) {
             note.hidden = false;
             note.classList.add('is-stale');
-            note.innerHTML = slotNote('Saved slot pick still stands',
-              'Pick a team to replace it, or pull the lever again.');
+            note.innerHTML = 'Your saved slot pick <b>still stands</b>. Pick a team to replace it, or pull the lever again.';
           } else {
             note.hidden = true; note.textContent = '';
           }
@@ -1613,25 +1707,19 @@
         // mean anything has been written. existingPicks is what the database
         // actually holds, so it - not the lever - decides which of these the
         // card is allowed to claim.
-        const resolved = resolvedSlots.get(String(gameId));
-
         note.hidden = false;
+        // The topper above is already saying what mode this is, so this line
+        // carries the one thing it cannot: whether anything has actually been
+        // written down. A lit marquee is not a row in the database.
         if (!savedSlots) {
-          // The headline is the fun part and the line under it is the true part.
-          // "Pick revealed at kickoff" on its own would be a claim about a row
-          // that does not exist yet - nothing is written until Save is pressed -
-          // so the sub-line carries that and the headline stays out of its way.
           note.classList.add('is-unsaved');
-          note.innerHTML = slotNote('Slot mode · pick revealed at kickoff',
-            '<b>Not saved yet</b> — hit Save to lock it in.');
-        } else if (resolved) {
+          note.innerHTML = '<b>Not saved yet</b> — hit Save to lock it in.';
+        } else if (resolvedTeam) {
           note.classList.add('is-in');
-          note.innerHTML = slotNote('Slot mode · the slots chose ' + escapeHtml(resolved),
-            'It is on the board with everyone else’s.');
+          note.innerHTML = 'The slots chose <b>' + escapeHtml(resolvedTeam) + '</b>.';
         } else {
           note.classList.add('is-in');
-          note.innerHTML = slotNote('Slot mode · pick revealed at kickoff',
-            'Locked in. No team chosen yet — the reels spin on the leaderboard.');
+          note.innerHTML = '<b>Locked in.</b> No team chosen yet — the reels spin on the leaderboard at kickoff.';
         }
       });
     }
@@ -1653,12 +1741,6 @@
     const REEL_WARPS = ['squash','stretch','flip','upside','tipsy','huge','tiny','melt','wobble'];
     const REEL_TINTS = ['radioactive','negative','ghost','oldtimey','xray','hot'];
     const reelPick = a => a[Math.floor(Math.random() * a.length)];
-
-    /** Marquee headline over a plain-English line about where the pick stands. */
-    function slotNote(headline, detail){
-      return '<span class="slot-note-head">' + headline + '</span>' +
-             '<span class="slot-note-sub">' + detail + '</span>';
-    }
 
     /**
      * Spin both reels.
