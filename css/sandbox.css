@@ -213,48 +213,44 @@
 td.slot-was-cell{ position:relative; }
 .slot-was{ position:absolute; pointer-events:none; box-sizing:border-box; }
 
-/* chip — the edge of a poker chip. Red, black, white and blue spots running
-   ROUND the cell, which is the whole difference between this and a striped
-   edge: a chip's spots sweep the perimeter, they do not cross it.
-   .................................................................
-   The fallback below is a plain four-sided dashed edge — red at the top,
-   black right, white bottom, blue left. It is what shows wherever the mask
-   compositing the upgrade needs is missing, and it is deliberately the base
-   rule rather than the override, so a browser that cannot do the good version
-   lands on something safe instead of on a conic gradient over the crest. */
+/* chip — the edge of a poker chip. Small red, black, white and blue spots
+   repeating all the way round, which is what a chip's edge actually looks like
+   at a glance: a pattern, not four big blocks.
+   ...........................................................................
+   Four gradients, one per edge, each sized to a 2.5px bar and pinned to its
+   own side. The middle of the box is never painted, so the crest underneath is
+   untouched and nothing has to cut a hole for it — which is the whole reason
+   this beat the conic version it replaces. That one swept the spots round by
+   ANGLE, so they came out narrow at the middle of each edge and wide at the
+   corners, and it needed mask compositing that older Safari does not have.
+   This renders the same everywhere, evenly, with no fallback to keep in step.
+
+   --spot is the only number worth touching: it is one colour's width. */
 .slot-was--chip{
   inset:0;
-  border:2px dashed var(--chip-red);
-  border-right-color:var(--chip-ink);
-  border-bottom-color:var(--chip-white);
-  border-left-color:var(--chip-blue);
   border-radius:3px;
-}
-
-@supports ((mask-composite: exclude) or (-webkit-mask-composite: xor)){
-  /* Sixteen spots around the cell, four colours repeating. The conic gradient
-     paints the whole box and the mask then subtracts the content area, so what
-     survives is the 2.5px frame — the crest underneath is never covered.
-     mask-composite MUST come after the mask shorthand, which resets it. */
-  .slot-was--chip{
-    border:0;
-    padding:2.5px;
-    border-radius:4px;
-    background:repeating-conic-gradient(from 11.25deg at 50% 50%,
-      var(--chip-red)   0 22.5deg,
-      var(--chip-ink)   0 45deg,
-      var(--chip-white) 0 67.5deg,
-      var(--chip-blue)  0 90deg);
-    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor;
-            mask-composite:exclude;
-  }
+  --spot: 3px;
+  --edge: 2.5px;
+  --run: repeating-linear-gradient(90deg,
+    var(--chip-red)   0 var(--spot),
+    var(--chip-ink)   0 calc(var(--spot) * 2),
+    var(--chip-white) 0 calc(var(--spot) * 3),
+    var(--chip-blue)  0 calc(var(--spot) * 4));
+  --run-v: repeating-linear-gradient(180deg,
+    var(--chip-red)   0 var(--spot),
+    var(--chip-ink)   0 calc(var(--spot) * 2),
+    var(--chip-white) 0 calc(var(--spot) * 3),
+    var(--chip-blue)  0 calc(var(--spot) * 4));
+  background-image: var(--run), var(--run), var(--run-v), var(--run-v);
+  background-size:
+    100% var(--edge), 100% var(--edge),
+    var(--edge) 100%, var(--edge) 100%;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  background-repeat: no-repeat;
 }
 
 @media (max-width:640px){
-  /* A phone column has 24px of logo in it. Thinner edges, so what is left of
-     the cell is still the crest. Declared after the @supports upgrade so this
-     wins on padding as well as on width. */
-  .slot-was--chip{ border-width:1.5px; padding:2px; }
+  /* A phone column has 24px of logo in it, so the spots shrink with it rather
+     than eating the crest. Finer, not fewer. */
+  .slot-was--chip{ --spot: 2px; --edge: 2px; }
 }
