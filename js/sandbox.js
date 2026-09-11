@@ -214,8 +214,14 @@ function spinCell(cell, order) {
 
   // A longer strip and a longer spin for each successive cell, so a board with
   // several of them lands one after another instead of all at once.
-  const turns = 9 + order * 4;
-  const duration = 1100 + order * 420;
+  //
+  // The two numbers move TOGETHER on purpose. Stretching the duration on its own
+  // would not lengthen the spin so much as slow it down — the same handful of
+  // symbols drifting past instead of a reel running. Roughly 8.5 symbols a second
+  // is the pace that reads as a slot machine, so more time buys proportionally
+  // more strip and the speed stays put.
+  const turns = 16 + order * 6;
+  const duration = 1900 + order * 560;
 
   const strip = document.createElement('div');
   strip.className = 'slot-strip';
