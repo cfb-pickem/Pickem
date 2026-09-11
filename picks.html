@@ -287,7 +287,12 @@
     .pick-game.is-slotted .pick-window{
       padding:.45rem .5rem;
       border-color:rgba(218,165,32,.7);
-      background:linear-gradient(180deg, rgba(0,0,0,.7), rgba(0,0,0,.3));
+      background:
+        radial-gradient(circle at 7px 7px,                      rgba(218,165,32,.85) 0 1.4px, transparent 2.2px),
+        radial-gradient(circle at calc(100% - 7px) 7px,          rgba(218,165,32,.85) 0 1.4px, transparent 2.2px),
+        radial-gradient(circle at 7px calc(100% - 7px),          rgba(218,165,32,.85) 0 1.4px, transparent 2.2px),
+        radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), rgba(218,165,32,.85) 0 1.4px, transparent 2.2px),
+        linear-gradient(180deg, rgba(0,0,0,.7), rgba(0,0,0,.3));
       box-shadow:
         inset 0 3px 14px rgba(0,0,0,.95),
         inset 0 0 0 1px rgba(255,255,255,.05),
@@ -319,50 +324,82 @@
       .pick-game.is-pulling::before{ animation:none; }
     }
 
-    /* THE REELS. Straight from johakr/html5-slot-machine: a strip of symbols in
-       an overflow-hidden box, driven by the Web Animations API, blur peaking
-       mid-spin, and the last symbol sitting at the END of the strip so the reel
-       ARRIVES on it rather than being snapped into place.
-       js/slots.js does the same thing on the leaderboard, and the funhouse warps
-       both of them use live in css/base.css so there is one set, not two.
+    /* THE ROTARY. Danziger/slotjs rather than johakr's strips: the reels are
+       discs, the symbols sit at i * alpha degrees around each one, and the disc
+       turns rather than scrolling. In a tile this size it reads far better than
+       a strip, which only ever had room to show one symbol at a time anyway.
 
-       What is different here, and it is the whole point: these reels must not
-       land on a team. Nothing has been decided when you pull this - the coin is
-       flipped in Postgres at kickoff - so they settle on a question mark. A reel
-       that stopped on a name would be inventing a result days early. */
-    .pick-reel{
-      position:relative; overflow:hidden; width:46px; height:46px; flex:none;
+       Two things taken from it verbatim because they are not obvious:
+
+         * The GHOST CELLS. Between every pair of real symbols it interpolates
+           extra copies at fading opacity, which is what smears a spinning disc.
+           A rotating element cannot be motion-blurred by the browser, so the
+           blur is built out of geometry instead.
+
+         * The FIREFOX BRANCH. Their comment says blur is too slow there, so
+           Firefox gets the ghosts without the blur filter. Kept, because it is
+           the kind of thing you only learn by shipping.
+
+       And johakr's rule still holds underneath: the transform animates on the
+       dial while any filter sits on its parent, because Safari will not animate
+       both on one element. */
+    .pick-rotary{
+      --dial: 86px;
+      --cell: 26px;
+      position:absolute; left:50%; top:50%;
+      width:var(--dial); height:var(--dial); margin:calc(var(--dial) / -2);
+      border-radius:50%; overflow:hidden; pointer-events:none;
+      background:radial-gradient(circle at 50% 38%, #1b1e23, #050607 72%);
+      box-shadow:
+        inset 0 0 0 2px rgba(218,165,32,.6),
+        inset 0 7px 20px rgba(0,0,0,.95),
+        0 0 20px -7px rgba(218,165,32,.7);
       contain:layout paint;
     }
-    .pick-reel-strip{
-      position:absolute; top:0; left:0; right:0;
-      display:flex; flex-direction:column; align-items:center;
-      will-change:top, filter;
+    /* The reading position. A rotary machine has one, and without it the disc
+       is just a spinning circle with no answer on it. */
+    .pick-rotary::after{
+      content:''; position:absolute; left:50%; top:-1px;
+      width:0; height:0; margin-left:-6px;
+      border-left:6px solid transparent; border-right:6px solid transparent;
+      border-top:9px solid var(--cfp-gold-2);
+      filter:drop-shadow(0 1px 3px rgba(0,0,0,.9));
     }
-    .pick-reel-sym{
-      width:46px; height:46px; object-fit:contain; flex:none;
-      /* Their comment, and worth keeping: this fixes flicker on iOS. */
-      transform:translate3d(0,0,0);
+    .pick-rotary-dial{ position:absolute; inset:0; will-change:transform; }
+    .pick-rotary-cell{
+      position:absolute; top:50%; left:0; width:50%; height:var(--cell);
+      margin-top:calc(var(--cell) / -2);
+      transform-origin:center right;
+      display:flex; align-items:center; justify-content:flex-start;
+      padding-left:5px;
     }
-    .pick-reel-q{
-      width:46px; height:46px; flex:none;
-      display:grid; place-items:center;
-      font-family:'Teko','Oswald',sans-serif; font-size:2rem; font-weight:700;
-      color:var(--cfp-gold-2);
-      text-shadow:0 0 14px rgba(218,165,32,.8);
+    .pick-rotary-cell img{
+      width:var(--cell); height:var(--cell); object-fit:contain;
+      transform:translate3d(0,0,0);     /* johakr: fixes flicker on iOS */
     }
-
-    /* The reference flips the whole machine on a win. Borrowed for the instant
-       the reels stop, because that is the moment worth marking. */
-    .pick-game.is-jackpot .pick-reel{ transform:scaleY(-1); }
-    .pick-game.is-jackpot .pick-reel-sym,
-    .pick-game.is-jackpot .pick-reel-q{ transform:scaleY(-1); }
-
+    .pick-rotary-cell.is-ghost{ pointer-events:none; }
+    .pick-rotary-cell.is-blur img{ filter:blur(2px); }
+    .pick-rotary-q{
+      font-family:'Teko','Oswald',sans-serif; font-size:1.5rem; font-weight:700;
+      line-height:1; color:var(--cfp-gold-2);
+      text-shadow:0 0 12px rgba(218,165,32,.9);
+    }
+    /* Both discs have stopped. johakr inverts the whole machine when it pays
+       out; at this scale a flare off the bezel and the payline reads better than
+       flipping the card upside down. */
+    @keyframes jackpot-flare{
+      0%   { box-shadow:inset 0 3px 14px rgba(0,0,0,.95), 0 0 0 0 rgba(218,165,32,.9); }
+      40%  { box-shadow:inset 0 3px 14px rgba(0,0,0,.95), 0 0 30px 8px rgba(218,165,32,.85); }
+      100% { box-shadow:inset 0 3px 14px rgba(0,0,0,.95), 0 0 16px -6px rgba(218,165,32,.75); }
+    }
+    .pick-game.is-jackpot .pick-window{ animation:jackpot-flare .5s ease-out both; }
+    .pick-game.is-jackpot .pick-window::after{ opacity:1; box-shadow:0 0 14px rgba(218,165,32,1); }
     @media (prefers-reduced-motion: reduce){
-      .pick-game.is-jackpot .pick-reel,
-      .pick-game.is-jackpot .pick-reel-sym,
-      .pick-game.is-jackpot .pick-reel-q{ transform:none; }
+      .pick-game.is-jackpot .pick-window{ animation:none; }
     }
+
+    /* Everything the tile normally shows steps aside while its disc is turning. */
+    .pick-side.is-spinning > *:not(.pick-rotary){ visibility:hidden; }
 
     /* PULLED BACK UP. The mirror of the jolt, shorter and without the reels -
        releasing is a smaller event than committing and should not read like one. */
@@ -383,22 +420,46 @@
       border-color:var(--cfp-gold);
       box-shadow:0 0 0 1px var(--cfp-gold) inset, 0 6px 20px -10px rgba(218,165,32,.8);
     }
-    .pick-game.is-slotted .pick-at{ color:transparent; position:relative; }
-    .pick-game.is-slotted .pick-at::after{
-      content:'🎰';
-      position:absolute; inset:0; display:grid; place-items:center;
-      font-size:1.05rem; color:var(--cfp-ivory);
-      animation:slot-idle 2.6s ease-in-out infinite;
+    /* 4. The reel divider. A machine does not put a glyph between its reels, it
+          puts a strip of chrome there - and drawing that is both more honest
+          than an emoji and sharper at this size, because it is a gradient rather
+          than somebody else's font.
+
+          This replaces a slot-machine emoji that was doing the job badly: it
+          rendered differently on every platform and read as a piece of clip art
+          dropped on a card that is otherwise drawn. */
+    .pick-game.is-slotted .pick-at{
+      position:relative; align-self:stretch; width:9px;
+      color:transparent; user-select:none;
     }
-    /* A slow tick rather than a spin: it runs for as long as the card is on
-       screen, and anything faster would be a nuisance beside three other games. */
-    @keyframes slot-idle{
-      0%, 100% { transform:translateY(0) rotate(0deg);  opacity:.85; }
-      45%      { transform:translateY(-2px) rotate(-7deg); opacity:1; }
-      70%      { transform:translateY(0) rotate(5deg);  opacity:.95; }
+    .pick-game.is-slotted .pick-at::after{
+      content:''; position:absolute; inset:.15rem 0;
+      border-radius:2px;
+      background:linear-gradient(90deg,
+        rgba(0,0,0,.75), #5f646a 30%, #cbd0d6 50%, #5f646a 70%, rgba(0,0,0,.75));
+      box-shadow:0 0 5px rgba(0,0,0,.85), inset 0 0 0 1px rgba(0,0,0,.4);
+    }
+
+    /* 5. Glass. A sweep of light travelling across the window, which is what
+          tells you at a glance there is something in front of the reels - and,
+          slow as it is, doubles as the sign that the card is live. It replaced a
+          bobbing emoji doing the same job far more loudly. */
+    .pick-game.is-slotted .pick-window::before{
+      content:''; position:absolute; inset:0; border-radius:.35rem;
+      pointer-events:none;
+      background:linear-gradient(102deg,
+        transparent 32%, rgba(255,255,255,.07) 44%, rgba(255,255,255,.15) 50%,
+        rgba(255,255,255,.07) 56%, transparent 68%);
+      background-size:260% 100%;
+      animation:glass-sweep 6s ease-in-out infinite;
+    }
+    @keyframes glass-sweep{
+      0%        { background-position:190% 0; }
+      60%, 100% { background-position:-70% 0; }
     }
     @media (prefers-reduced-motion: reduce){
-      .pick-game.is-slotted .pick-at::after{ animation:none; }
+      .pick-game.is-slotted .pick-window::before{ animation:none; }
+    }
     }
 
     /* Where a slotted game says what it is waiting for. Full width under the
@@ -1573,58 +1634,111 @@
     const REEL_TINTS = ['radioactive','negative','ghost','oldtimey','xray','hot'];
     const reelPick = a => a[Math.floor(Math.random() * a.length)];
 
+    // Their branch, kept for their reason: blur is too slow on Firefox, so it
+    // gets the ghost cells without the filter on top.
+    const NO_BLUR = /firefox/i.test(navigator.userAgent || '');
+
+    /**
+     * Turn both team tiles into rotary reels and spin them.
+     *
+     * Symbols sit at i * alpha degrees around a disc and the disc turns, which is
+     * slotjs's arrangement rather than a scrolling strip. Ghost copies are
+     * interpolated between the real ones at falling opacity to smear the motion,
+     * because a rotating element is not something the browser will motion-blur.
+     *
+     * Each disc gets its own turn count from johakr's factor, so the near one
+     * settles first and the far one a beat later - two reels landing together
+     * read as two animations rather than one machine.
+     *
+     * THEY DO NOT LAND ON A TEAM. Nothing is decided when the lever is pulled -
+     * the coin is flipped in Postgres at kickoff - so cell zero is a question
+     * mark and every spin is a whole number of turns, which parks it under the
+     * pointer. A disc that stopped on a crest would be inventing a result days
+     * early and the player would believe it.
+     */
+    const ROTARY_CELLS = 6;          // one question mark, five crests
+    const ROTARY_GHOSTS = 3;         // copies between each pair, fading out
+
     function spinTiles(card){
       if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
 
-      const logos = [...card.querySelectorAll('.pick-side .pick-logo')]
-        .filter(img => img.tagName === 'IMG' && img.src);
-      if (logos.length < 2) return;               // a side with no crest: leave it
-      const srcs = logos.map(img => img.currentSrc || img.src);
+      const tiles = [...card.querySelectorAll('.pick-side')];
+      const srcs = tiles
+        .map(t => t.querySelector('.pick-logo'))
+        .filter(img => img && img.tagName === 'IMG' && img.src)
+        .map(img => img.currentSrc || img.src);
+      if (srcs.length < 2) return;                 // a side with no crest
 
+      const alpha = 360 / ROTARY_CELLS;
       const done = [];
-      logos.forEach((img, idx) => {
-        // Their factor, unchanged. Two reels give 1.00 and 1.25.
-        const factor = 1 + Math.pow(idx / 2, 2);
-        const turns = Math.round(14 * factor);
-        const h = Math.round(img.getBoundingClientRect().height) || 46;
 
-        const strip = document.createElement('div');
-        strip.className = 'pick-reel-strip';
-        for (let i = 0; i < turns; i++){
-          const sym = document.createElement('img');
-          sym.src = srcs[i % 2];
-          sym.alt = '';
-          sym.className = 'pick-reel-sym';
-          sym.style.height = h + 'px';
-          if (Math.random() < 0.8)  sym.classList.add('slot-warp-' + reelPick(REEL_WARPS));
-          if (Math.random() < 0.5)  sym.classList.add('slot-tint-' + reelPick(REEL_TINTS));
-          strip.appendChild(sym);
+      // Releasing and re-arming quickly starts a second spin while the first is
+      // still turning, and both discs would sit on the tile at once. The newest
+      // pull is the one that counts, so any disc still going is taken off first.
+      card.querySelectorAll('.pick-rotary').forEach(r => r.remove());
+
+      tiles.forEach((tile, idx) => {
+        const dial = document.createElement('div');
+        dial.className = 'pick-rotary-dial';
+
+        const cellAt = (deg, node, opacity, blur) => {
+          const cell = document.createElement('div');
+          cell.className = 'pick-rotary-cell' + (opacity != null ? ' is-ghost' : '')
+                         + (blur ? ' is-blur' : '');
+          // Cell 0 points left at 0deg, so everything is offset a quarter turn
+          // to bring it under the pointer at the top.
+          cell.style.transform = 'rotate(' + (deg - 90) + 'deg)';
+          if (opacity != null) cell.style.opacity = String(opacity);
+          cell.appendChild(node);
+          dial.appendChild(cell);
+        };
+
+        const symbolAt = i => {
+          if (i === 0) {
+            const q = document.createElement('span');
+            q.className = 'pick-rotary-q';
+            q.textContent = '?';
+            return q;
+          }
+          const img = document.createElement('img');
+          img.src = srcs[i % 2];
+          img.alt = '';
+          if (Math.random() < 0.55) img.classList.add('slot-warp-' + reelPick(REEL_WARPS));
+          if (Math.random() < 0.4)  img.classList.add('slot-tint-' + reelPick(REEL_TINTS));
+          return img;
+        };
+
+        for (let i = 0; i < ROTARY_CELLS; i++){
+          cellAt(i * alpha, symbolAt(i));
+          // The smear: copies between this symbol and the next, fading as they
+          // trail away from it.
+          for (let g = 1; g < ROTARY_GHOSTS; g++){
+            const frac = g / ROTARY_GHOSTS;
+            cellAt(alpha * (i + frac), symbolAt(i), 1 - frac, !NO_BLUR);
+          }
         }
-        const q = document.createElement('div');
-        q.className = 'pick-reel-q';
-        q.textContent = '?';
-        q.style.height = h + 'px';
-        strip.appendChild(q);
 
-        const box = document.createElement('div');
-        box.className = 'pick-reel';
-        box.style.height = h + 'px';
-        box.appendChild(strip);
-        img.replaceWith(box);
+        const rotary = document.createElement('div');
+        rotary.className = 'pick-rotary';
+        rotary.appendChild(dial);
+        tile.appendChild(rotary);
+        tile.classList.add('is-spinning');
 
-        const anim = strip.animate(
-          [
-            { top: '0px',              filter: 'blur(0px)' },
-            {                          filter: 'blur(3px)', offset: 0.45 },
-            { top: (-turns * h) + 'px', filter: 'blur(0px)' }
-          ],
-          { duration: Math.round(factor * 1100), easing: 'cubic-bezier(.16,.62,.18,1)', fill: 'forwards' }
+        const factor = 1 + Math.pow(idx / 2, 2);
+        const turns = Math.round(4 * factor);      // whole turns: lands on the '?'
+        const anim = dial.animate(
+          [{ transform: 'rotate(0deg)' },
+           { transform: 'rotate(' + (turns * 360) + 'deg)' }],
+          { duration: Math.round(factor * 1400), easing: 'cubic-bezier(.17,.67,.14,1)', fill: 'forwards' }
         );
-        done.push(anim.finished.catch(() => {}).then(() => box.replaceWith(img)));
+        done.push(anim.finished.catch(() => {}).then(() => {
+          rotary.remove();
+          tile.classList.remove('is-spinning');
+        }));
       });
 
-      // The reference flips the machine when it pays out. Here it marks the
-      // moment both reels have stopped and the game is officially the house's.
+      // johakr flips the machine when it pays out. Here it marks both discs
+      // having stopped and the game being the house's.
       Promise.all(done).then(() => {
         card.classList.add('is-jackpot');
         setTimeout(() => card.classList.remove('is-jackpot'), 220);
