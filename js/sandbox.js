@@ -283,7 +283,6 @@ function mountLabPanel() {
     labSpeed = Number(e.target.value) / 100;
     p.querySelector('[data-speed-out]').innerHTML = labSpeed.toFixed(2) + '&times;';
   });
-  });
 }
 
 function initSlotLab() {
