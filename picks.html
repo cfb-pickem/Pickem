@@ -264,7 +264,7 @@
        Everything below only applies once the lever is down, so a card nobody
        has slotted is untouched. Three pieces, and they are the three a cabinet
        actually has: a lit marquee across the top, a recessed window with a
-       bezel round it, and a payline through the middle of the reels. */
+       bezel round it, and reels sunk behind glass. */
 
     /* 1. The marquee. A machine is lit from the top, and on a board of four
           this is the part you see first without reading anything. */
@@ -309,27 +309,13 @@
       box-shadow:inset 0 2px 9px rgba(0,0,0,.9);
     }
 
-    /* 3. The payline. The one horizontal rule every slot machine has, drawn
-          across both reels at the height the symbol stops. */
-    .pick-game.is-slotted .pick-window::after{
-      content:''; position:absolute; left:0; right:0; top:50%;
-      height:9px; margin-top:-4.5px;
-      pointer-events:none; opacity:.75;
-      /* The rule itself, plus the two markers every machine aims at it - a
-         triangle biting in from each side, level with the middle symbol. */
-      background:
-        linear-gradient(90deg, transparent 3%, rgba(218,165,32,.85) 8%,
-                        rgba(218,165,32,.85) 92%, transparent 97%)
-          center / 100% 2px no-repeat,
-        conic-gradient(from 45deg at 0 50%, var(--cfp-gold-2) 0 90deg, transparent 0)
-          left center / 7px 9px no-repeat,
-        conic-gradient(from 225deg at 100% 50%, var(--cfp-gold-2) 0 90deg, transparent 0)
-          right center / 7px 9px no-repeat;
-    }
-    /* Brighter for the moment the reels are actually running past it. */
-    .pick-game.is-pulling .pick-window::after{
-      opacity:1; box-shadow:0 0 10px rgba(218,165,32,.9);
-    }
+    /* 3. No payline. A real machine rules one across its reels, and this had
+          one - but it crossed the crests at exactly the height they sit at, so
+          what you saw while the lever came down was a gold line drawn through
+          both logos. The markers at the edges went with it; they were only ever
+          pointing at the line. The middle band is still where the reel stops -
+          that is in spinTiles, not in a decoration - so nothing about how the
+          machine behaves changed with it. */
 
     @media (prefers-reduced-motion: reduce){
       .pick-game.is-pulling::before{ animation:none; }
@@ -484,6 +470,26 @@
     }
     .pick-slots-note b{ font-weight:600; color:var(--cfp-ivory); }
 
+    /* The headline reads like the strip above a machine: condensed, spaced and
+       shouting. The line under it is ordinary prose, because it is the half that
+       has to be believed rather than enjoyed. */
+    .slot-note-head{
+      display:block;
+      font-family:'Oswald',sans-serif; font-size:.68rem; font-weight:700;
+      letter-spacing:.14em; text-transform:uppercase;
+      color:var(--cfp-gold-2);
+      text-shadow:0 0 10px rgba(218,165,32,.55);
+    }
+    .slot-note-sub{
+      display:block; margin-top:.15rem;
+      font-size:.66rem; color:#c9ccd1;
+    }
+    .pick-slots-note.is-unsaved .slot-note-head{ color:#f0b46a; text-shadow:none; }
+    .pick-slots-note.is-stale   .slot-note-head{ color:#f0b46a; text-shadow:none; }
+    /* The chip's tick is centred on the headline, not on both lines. */
+    .pick-slots-note.is-in{ align-items:flex-start; }
+    .pick-slots-note.is-in::before{ margin-top:.1rem; }
+
     /* Saved. Loud on purpose: this is the only card on the board with no team
        lit up, and the player needs to finish the week certain a pick is in. */
     .pick-slots-note.is-in{
@@ -567,7 +573,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=265268cd">
+  <link rel="stylesheet" href="./css/tailwind.css?v=9ce0780e">
 </head>
 <body data-page="picks">
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
@@ -1594,7 +1600,8 @@
           if (savedSlots) {
             note.hidden = false;
             note.classList.add('is-stale');
-            note.innerHTML = 'Your saved slots pick is <b>still in</b>. Pick a team to replace it, or pull the lever again.';
+            note.innerHTML = slotNote('Saved slot pick still stands',
+              'Pick a team to replace it, or pull the lever again.');
           } else {
             note.hidden = true; note.textContent = '';
           }
@@ -1610,14 +1617,21 @@
 
         note.hidden = false;
         if (!savedSlots) {
+          // The headline is the fun part and the line under it is the true part.
+          // "Pick revealed at kickoff" on its own would be a claim about a row
+          // that does not exist yet - nothing is written until Save is pressed -
+          // so the sub-line carries that and the headline stays out of its way.
           note.classList.add('is-unsaved');
-          note.innerHTML = 'Slots armed. <b>Hit Save</b> to record it — nothing is stored yet.';
+          note.innerHTML = slotNote('Slot mode · pick revealed at kickoff',
+            '<b>Not saved yet</b> — hit Save to lock it in.');
         } else if (resolved) {
           note.classList.add('is-in');
-          note.innerHTML = 'The slots chose <b>' + escapeHtml(resolved) + '</b>.';
+          note.innerHTML = slotNote('Slot mode · the slots chose ' + escapeHtml(resolved),
+            'It is on the board with everyone else’s.');
         } else {
           note.classList.add('is-in');
-          note.innerHTML = '<b>Your pick is in — the slots are holding it.</b> No team chosen yet: they spin at kickoff and you will see it on the leaderboard with everyone else.';
+          note.innerHTML = slotNote('Slot mode · pick revealed at kickoff',
+            'Locked in. No team chosen yet — the reels spin on the leaderboard.');
         }
       });
     }
@@ -1639,6 +1653,12 @@
     const REEL_WARPS = ['squash','stretch','flip','upside','tipsy','huge','tiny','melt','wobble'];
     const REEL_TINTS = ['radioactive','negative','ghost','oldtimey','xray','hot'];
     const reelPick = a => a[Math.floor(Math.random() * a.length)];
+
+    /** Marquee headline over a plain-English line about where the pick stands. */
+    function slotNote(headline, detail){
+      return '<span class="slot-note-head">' + headline + '</span>' +
+             '<span class="slot-note-sub">' + detail + '</span>';
+    }
 
     /**
      * Spin both reels.
