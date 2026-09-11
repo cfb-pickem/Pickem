@@ -78,7 +78,7 @@
     .pick-lockstate{ color:#8b9099; }
 
     .pick-sides{
-      display:grid; grid-template-columns:1fr auto 1fr; align-items:stretch; gap:.5rem;
+      display:grid; grid-template-columns:1fr auto 1fr auto; align-items:stretch; gap:.5rem;
     }
     .pick-at{
       align-self:center; font-family:'Teko','Oswald',sans-serif; font-size:1.1rem;
@@ -142,42 +142,138 @@
       .pick-side, .pick-check{ transition:none; }
     }
 
-    /* --- Let the slots decide ------------------------------------------
-       A third option under the two sides, full width. Gold rather than a team
-       colour, because the point is that no team has been chosen yet - colouring
-       it after either side would be a lie about what was picked. */
-    .pick-slots{
-      position:relative; display:flex; align-items:center; justify-content:center;
-      gap:.45rem; margin-top:.5rem; padding:.5rem .6rem; flex-wrap:wrap;
-      border:1px dashed rgba(218,165,32,.35);
-      background:linear-gradient(180deg, rgba(218,165,32,.05), transparent);
-      cursor:pointer; text-align:center;
-      font-family:'Oswald',sans-serif; font-size:.72rem; font-weight:600;
-      letter-spacing:.06em; text-transform:uppercase; color:#9aa0a8;
-      transition:border-color .18s ease, background .18s ease, color .18s ease;
-    }
-    .pick-slots:hover:not(.selected){ border-color:rgba(218,165,32,.7); color:var(--cfp-ivory); }
-    .pick-slots-icon{ font-size:.95rem; line-height:1; filter:grayscale(.55); transition:filter .18s ease; }
+    /* --- Let the slots decide: the lever ---------------------------------
+       A right-hand rail beside the two teams, so a card reads as one machine:
+       two reels and a handle. It sits in the height the tiles already occupy,
+       so nothing on the page got taller.
 
-    /* Solid once chosen: a dashed border reads as "not decided yet", which is
-       true of the pick but not of the choice. */
-    .pick-slots.selected{
-      border-style:solid; border-color:var(--cfp-gold);
-      background:linear-gradient(180deg, rgba(218,165,32,.22), transparent 78%);
-      color:#fff;
-      box-shadow:0 0 0 1px var(--cfp-gold) inset, 0 6px 18px -6px rgba(218,165,32,.7);
+       The radio inside it is the real control and the lever only drives it.
+       That is deliberate: keeping a radio in the same group as the two teams is
+       what lets selections(), the local draft and the lock-time disabled sweep
+       carry on working without knowing any of this exists — and it is what
+       makes the thing keyboard-operable for free, because tabbing to it and
+       pressing space fires the same change event a pull does. */
+    .pick-lever{
+      --pull: 0;
+      --knob: 22px;
+      position:relative; width:38px; align-self:stretch;
+      display:flex; flex-direction:column; align-items:center; gap:.3rem;
+      padding:.35rem 0 .2rem;
+      cursor:grab;
+      /* The browser must not claim the vertical drag for scrolling. */
+      touch-action:none;
+      -webkit-user-select:none; user-select:none;
     }
-    .pick-slots.selected .pick-slots-icon{ filter:none; }
+    .pick-lever:active{ cursor:grabbing; }
 
-    .locked .pick-slots{ opacity:.5; cursor:not-allowed; }
-    .locked .pick-slots.selected{ opacity:.72; box-shadow:0 0 0 1px var(--cfp-gold) inset; }
-
-    /* Between kickoff and the cron flipping the coin the pick genuinely does
-       not exist yet. Say so rather than showing an empty card. */
-    .pick-slots-pending{
-      flex:0 0 100%; margin-top:.15rem;
-      font-size:.62rem; letter-spacing:.04em; color:var(--cfp-gold-2); text-transform:none;
+    .lever-track{
+      position:relative; flex:1 1 auto; width:12px; border-radius:999px;
+      background:linear-gradient(180deg, rgba(0,0,0,.45), rgba(255,255,255,.03));
+      border:1px solid rgba(231,231,231,.12);
+      box-shadow:inset 0 1px 3px rgba(0,0,0,.6);
     }
+    /* Shaft and knob are positioned from --pull alone, so the drag handler only
+       ever writes one number and the CSS decides what that looks like. */
+    .lever-shaft{
+      position:absolute; left:50%; top:calc(var(--knob) / 2); width:5px;
+      transform:translateX(-50%);
+      height:calc(var(--pull) * (100% - var(--knob)));
+      background:linear-gradient(90deg,#5a5f66,#cfd4da 45%,#5a5f66);
+      border-radius:3px;
+    }
+    .lever-knob{
+      position:absolute; left:50%; transform:translateX(-50%);
+      top:calc(var(--pull) * (100% - var(--knob)));
+      width:var(--knob); height:var(--knob); border-radius:50%;
+      background:radial-gradient(circle at 34% 28%, #ff7b7b, #c02626 62%, #7d1414);
+      box-shadow:0 2px 6px rgba(0,0,0,.55), inset 0 -2px 4px rgba(0,0,0,.4);
+      border:1px solid rgba(0,0,0,.35);
+    }
+    .pick-lever.is-dragging .lever-knob,
+    .pick-lever.is-dragging .lever-shaft{ transition:none; }
+    .lever-knob, .lever-shaft{
+      transition:top .32s cubic-bezier(.2,1.4,.4,1), height .32s cubic-bezier(.2,1.4,.4,1);
+    }
+
+    .lever-cap{
+      font-family:'Oswald',sans-serif; font-size:.5rem; font-weight:600;
+      letter-spacing:.1em; text-transform:uppercase; color:#6f757b;
+      transition:color .18s ease;
+    }
+    .pick-lever:hover .lever-cap{ color:var(--cfp-gold-2); }
+
+    /* Pulled. The knob stays down and the rail lights, so a slotted game is
+       obvious at a glance from across the page. */
+    .pick-lever.selected{ --pull: 1; }
+    .pick-lever.selected .lever-track{
+      border-color:var(--cfp-gold);
+      box-shadow:inset 0 1px 3px rgba(0,0,0,.6), 0 0 10px -2px rgba(218,165,32,.8);
+      background:linear-gradient(180deg, rgba(218,165,32,.3), rgba(218,165,32,.05));
+    }
+    .pick-lever.selected .lever-cap{ color:var(--cfp-gold-2); }
+
+    /* Both teams recede when the house is deciding — nobody picked a side. */
+    .pick-game.is-slotted .pick-side{ opacity:.4; }
+
+    .locked .pick-lever{ opacity:.5; cursor:not-allowed; }
+    .locked .pick-lever.selected{ opacity:.72; }
+
+    /* A pull is a gesture; without it the control still works, it just snaps. */
+    @media (prefers-reduced-motion: reduce){
+      .lever-knob, .lever-shaft{ transition:none; }
+    }
+
+    /* THE PULL. Three things at once, for about half a second: the machine
+       jolts, the two tiles blur past each other like reels that have not settled
+       yet, and the rail flashes. It is the only moment in the week where nothing
+       is being decided by the player, so it is worth marking. */
+    @keyframes lever-jolt{
+      0%   { transform:translateY(0); }
+      18%  { transform:translateY(3px); }
+      38%  { transform:translateY(-2px); }
+      60%  { transform:translateY(1px); }
+      100% { transform:translateY(0); }
+    }
+    @keyframes lever-reel{
+      0%   { filter:blur(0);     opacity:1;   transform:translateY(0); }
+      22%  { filter:blur(3px);   opacity:.55; transform:translateY(-10px); }
+      55%  { filter:blur(3px);   opacity:.55; transform:translateY(10px); }
+      78%  { filter:blur(1px);   opacity:.8;  transform:translateY(-3px); }
+      100% { filter:blur(0);     opacity:.4;  transform:translateY(0); }
+    }
+    @keyframes lever-flash{
+      0%   { box-shadow:inset 0 1px 3px rgba(0,0,0,.6), 0 0 0 0 rgba(218,165,32,.9); }
+      35%  { box-shadow:inset 0 1px 3px rgba(0,0,0,.6), 0 0 26px 6px rgba(218,165,32,.85); }
+      100% { box-shadow:inset 0 1px 3px rgba(0,0,0,.6), 0 0 10px -2px rgba(218,165,32,.8); }
+    }
+    .pick-game.is-pulling{ animation:lever-jolt .45s ease-out both; }
+    .pick-game.is-pulling .pick-side{ animation:lever-reel .55s ease-in-out both; }
+    .pick-game.is-pulling .pick-side:nth-of-type(3){ animation-delay:.06s; }
+    .pick-game.is-pulling .lever-track{ animation:lever-flash .55s ease-out both; }
+
+    /* The gesture is the decoration; the state it sets is the point. */
+    @media (prefers-reduced-motion: reduce){
+      .pick-game.is-pulling,
+      .pick-game.is-pulling .pick-side,
+      .pick-game.is-pulling .lever-track{ animation:none; }
+    }
+
+    /* Where a slotted game says what it is waiting for. Full width under the
+       tiles, because the rail is 38px and a sentence does not fit in it. */
+    .pick-slots-note{
+      margin-top:.45rem; padding:.35rem .55rem;
+      border-left:2px solid var(--cfp-gold);
+      background:rgba(218,165,32,.08);
+      font-size:.68rem; line-height:1.35; color:var(--cfp-gold-2);
+    }
+    /* Armed but not saved. Amber rather than gold, and it says so, because the
+       pick is not recorded anywhere until the Save button has been pressed and
+       claiming otherwise would be a lie about the database. */
+    .pick-slots-note.is-unsaved{
+      border-left-color:#e0912f; background:rgba(224,145,47,.09); color:#f0b46a;
+    }
+    .pick-slots-note b{ font-weight:600; color:var(--cfp-ivory); }
+    .pick-slots-note[hidden]{ display:none; }
 
     /* Pick buttons.
        These used to be gold text pills. The gold `.selected` fill fought the new
@@ -657,12 +753,18 @@
       // what keeps it nearly free everywhere else: selections(), the local draft
       // and the lock-time disabled sweep all operate on the group rather than on
       // the two teams, so none of them need to know this exists.
+      // The lever. A radio in the SAME group as the two sides, wrapped in a
+      // handle you can pull — see the CSS for why the radio stays the real
+      // control rather than being replaced by the gesture.
       const slots = (
-        '<label class="pick-label pick-slots">' +
-          '<input type="radio" name="' + name + '" value="' + SLOTS_VALUE + '">' +
-          '<span class="pick-slots-icon" aria-hidden="true">🎰</span>' +
-          '<span>Let the slots decide</span>' +
-          '<span class="pick-check" aria-hidden="true">✓</span>' +
+        '<label class="pick-label pick-lever" title="Let the slots decide">' +
+          '<input type="radio" name="' + name + '" value="' + SLOTS_VALUE + '"' +
+                ' aria-label="Let the slots decide this game">' +
+          '<span class="lever-track" aria-hidden="true">' +
+            '<span class="lever-shaft"></span>' +
+            '<span class="lever-knob"></span>' +
+          '</span>' +
+          '<span class="lever-cap" aria-hidden="true">Slots</span>' +
         '</label>'
       );
 
@@ -676,8 +778,9 @@
             side(g.away, hasLine ? fmt(-g.line) : null) +
             '<span class="pick-at" aria-hidden="true">@</span>' +
             side(g.home, hasLine ? fmt(g.line)  : null) +
+            slots +
           '</div>' +
-          slots +
+          '<div class="pick-slots-note" data-slots-note hidden></div>' +
         '</div>'
       );
     }
@@ -913,6 +1016,7 @@
       renderGameCards(regularGames);
       renderTiebreakerCards(tiebreakerGames);
       addPickHighlighting();
+      initLevers();
 
       // Apply per-game locks for tiebreakers immediately
       applyTiebreakerLocksRegular();
@@ -990,6 +1094,7 @@
       renderGameCards(regularGames);
       renderTiebreakerCards(tiebreakerGames);
       addPickHighlighting();
+      initLevers();
       applyPerGameLocks();
 
       const totalGames = getAllGames().length;
@@ -1230,19 +1335,132 @@
      * the one page the player came to for their own picks would just be coy.
      */
     function paintSlotsState(){
-      resolvedSlots.forEach((team, gameId) => {
-        const input = document.querySelector(
-          'input[name="game_' + gameId + '"][value="' + CSS.escape(SLOTS_VALUE) + '"]');
-        const label = input && input.parentElement;
-        if (!label) return;
-        const existing = label.querySelector('.pick-slots-pending');
-        if (existing) existing.remove();
-        const note = document.createElement('span');
-        note.className = 'pick-slots-pending';
-        note.textContent = team ? ('The slots chose ' + team) : 'Decided at kickoff';
-        label.appendChild(note);
+      document.querySelectorAll('.pick-game').forEach(card => {
+        const lever = card.querySelector('.pick-lever');
+        if (!lever) return;
+        const input = lever.querySelector('input[type="radio"]');
+        const note  = card.querySelector('[data-slots-note]');
+        const gameId = card.dataset.gameId;
+
+        const armed = !!(input && input.checked);
+        lever.classList.toggle('selected', armed);
+        card.classList.toggle('is-slotted', armed);
+        if (!note) return;
+
+        if (!armed) { note.hidden = true; note.textContent = ''; return; }
+
+        // THREE DIFFERENT TRUTHS, and saying the wrong one is the whole risk
+        // here. The lever being down means the player has chosen; it does not
+        // mean anything has been written. existingPicks is what the database
+        // actually holds, so it - not the lever - decides which of these the
+        // card is allowed to claim.
+        const saved    = existingPicks.get(String(gameId)) === SLOTS_VALUE;
+        const resolved = resolvedSlots.get(String(gameId));
+
+        note.hidden = false;
+        note.classList.toggle('is-unsaved', !saved);
+
+        if (!saved) {
+          note.innerHTML = 'Slots armed. <b>Hit Save</b> to record it — nothing is stored yet.';
+        } else if (resolved) {
+          note.innerHTML = 'The slots chose <b>' + escapeHtml(resolved) + '</b>.';
+        } else {
+          note.innerHTML = '<b>Pick recorded.</b> No team is chosen yet — the slots spin at kickoff, and you will see the result on the leaderboard with everyone else.';
+        }
       });
     }
+
+    /**
+     * Make the handle pullable.
+     *
+     * The radio stays the control and this only drives it, so everything else on
+     * the page - selections(), the draft, the lock sweep, keyboard users - keeps
+     * working without knowing the lever exists. A pull sets the radio and fires
+     * the same change event a click or a spacebar would.
+     */
+    function initLevers(){
+      document.querySelectorAll('.pick-lever').forEach(lever => {
+        if (lever.dataset.wired) return;
+        lever.dataset.wired = '1';
+
+        const input = lever.querySelector('input[type="radio"]');
+        const track = lever.querySelector('.lever-track');
+        const card  = lever.closest('.pick-game');
+        if (!input || !track) return;
+
+        let dragging = false, startY = 0, travel = 1, moved = false;
+        const setPull = v => lever.style.setProperty('--pull', String(Math.max(0, Math.min(1, v))));
+
+        lever.addEventListener('pointerdown', e => {
+          if (input.disabled) return;
+          dragging = true; moved = false;
+          startY = e.clientY;
+          const knob = parseFloat(getComputedStyle(lever).getPropertyValue('--knob')) || 22;
+          travel = Math.max(1, track.getBoundingClientRect().height - knob);
+          lever.classList.add('is-dragging');
+          try { lever.setPointerCapture(e.pointerId); } catch {}
+        });
+
+        lever.addEventListener('pointermove', e => {
+          if (!dragging) return;
+          const dy = e.clientY - startY;
+          if (Math.abs(dy) > 3) moved = true;
+          setPull((input.checked ? 1 : 0) + dy / travel);
+        });
+
+        const release = () => {
+          if (!dragging) return;
+          dragging = false;
+          lever.classList.remove('is-dragging');
+          const pulled = parseFloat(getComputedStyle(lever).getPropertyValue('--pull')) || 0;
+          lever.style.removeProperty('--pull');     // hand position back to the class
+          // Past halfway commits. Short of it, the handle springs back to
+          // whatever the radio already said, so an abandoned pull changes nothing.
+          if (moved && pulled >= 0.5 && !input.checked) select();
+          else if (!moved && !input.checked) select();   // a plain click still works
+          else paintSlotsState();
+        };
+        lever.addEventListener('pointerup', release);
+        lever.addEventListener('pointercancel', release);
+
+        // A drag must not also arrive as a click on the label, or the radio
+        // would be toggled a second time after we have already settled it.
+        lever.addEventListener('click', e => { if (moved) e.preventDefault(); });
+
+        // Setting the radio is ALL this does. Everything the pull looks like -
+        // the handle staying down, the teams dimming, the note appearing - hangs
+        // off the change event below, so a pull, a click and a spacebar all
+        // produce exactly the same result through exactly the same path.
+        function select(){
+          input.checked = true;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        function playPull(){
+          if (!card) return;
+          card.classList.remove('is-pulling');
+          void card.offsetWidth;                   // restart the animation
+          card.classList.add('is-pulling');
+          setTimeout(() => card.classList.remove('is-pulling'), 600);
+        }
+
+        // The single place the page reacts to this game being slotted, whichever
+        // way it happened. Without the repaint the handle stayed down but the
+        // teams never dimmed and the note never appeared.
+        input.addEventListener('change', () => {
+          if (input.checked) playPull();
+          paintSlotsState();
+        });
+      });
+
+      // Picking a team un-arms the lever on that card, so it has to repaint.
+      document.querySelectorAll('.pick-side input[type="radio"]').forEach(r => {
+        if (r.dataset.leverWired) return;
+        r.dataset.leverWired = '1';
+        r.addEventListener('change', paintSlotsState);
+      });
+    }
+
 
     function overlayDraft(){
       const draft = loadDraft();
