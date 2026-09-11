@@ -45,6 +45,10 @@ export function initPrefetch() {
         where: { and: [
           { href_matches: '/Pickem/*.html' },
           { not: { href_matches: '/Pickem/commissioner.html' } },
+          // The sandbox is index.html plus an overlay, so it matches the rule
+          // above. Prerendering it would run somebody's half-written experiment
+          // in a hidden tab they never asked for.
+          { not: { href_matches: '/Pickem/index.html?sandbox=*' } },
         ]},
         eagerness: 'moderate',   // fires on hover / pointerdown, not on sight
       }],

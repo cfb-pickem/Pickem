@@ -1,0 +1,81 @@
+/* css/sandbox.css — styling for the commissioner's sandbox overlay.
+ *
+ * Loaded by js/sandbox.js and only for the commissioner, so nothing here can
+ * reach the league's leaderboard. Write experiments as rules scoped under
+ * [data-sandbox="on"]; that keeps them switched off by construction and makes
+ * them easy to lift back into base.css when one is worth shipping.
+ *
+ * The banner below is the only thing that ships with it. Everything else is
+ * yours. */
+
+.sandbox-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 60;
+
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+
+  padding: .5rem .75rem .5rem .875rem;
+  border: 1px solid rgba(218, 165, 32, .45);
+  border-radius: 999px;
+  background: rgba(10, 11, 13, .92);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .5);
+
+  font-family: 'Oswald', sans-serif;
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--cfp-ivory);
+
+  /* A banner that sits over the standings must never be the reason you cannot
+     read one. Pointer events come back for the exit link alone. */
+  pointer-events: none;
+}
+
+.sandbox-banner-dot {
+  width: .5rem;
+  height: .5rem;
+  border-radius: 50%;
+  background: var(--cfp-gold);
+  box-shadow: 0 0 8px rgba(218, 165, 32, .8);
+  animation: sandbox-pulse 2.4s ease-in-out infinite;
+}
+
+.sandbox-banner-text { white-space: nowrap; }
+
+.sandbox-banner-exit {
+  pointer-events: auto;
+  padding: .125rem .5rem;
+  border-radius: 999px;
+  background: rgba(218, 165, 32, .14);
+  color: var(--cfp-gold-2);
+  text-decoration: none;
+  transition: background .15s ease, color .15s ease;
+}
+.sandbox-banner-exit:hover {
+  background: rgba(218, 165, 32, .26);
+  color: var(--cfp-ivory);
+}
+
+@keyframes sandbox-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
+
+/* The pulse is decoration, and decoration is the first thing to go. */
+@media (prefers-reduced-motion: reduce) {
+  .sandbox-banner-dot { animation: none; }
+}
+
+/* On a narrow screen the standings are already tight — shrink to the dot and
+   the exit, and drop the words. */
+@media (max-width: 480px) {
+  .sandbox-banner-text { display: none; }
+}

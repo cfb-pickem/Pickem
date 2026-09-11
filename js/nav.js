@@ -1,5 +1,6 @@
 // /js/nav.js
 import { supabase } from './supabaseClient.js';
+import { sessionInfo } from './session.js';
 import { initPrefetch } from './prefetch.js';
 
 const LINKS = [
@@ -7,7 +8,10 @@ const LINKS = [
   { href: './picks.html',        key: 'picks',        label: 'Make Picks', authOnly: true, id: 'nav-picks' },
   { href: './cfb-genius.html',   key: 'genius',       label: 'League Info' },
   { href: './stats.html',        key: 'stats',        label: 'Stats' },
-  { href: './commissioner.html', key: 'commissioner', label: 'Commissioner', authOnly: true, id: 'nav-commissioner' }
+  { href: './commissioner.html', key: 'commissioner', label: 'Commissioner', authOnly: true, id: 'nav-commissioner', commissionerOnly: true },
+  // The sandbox is index.html with an overlay switched on, not a second copy of
+  // the leaderboard — see js/sandbox.js.
+  { href: './index.html?sandbox=1', key: 'sandbox', label: 'Sandbox', authOnly: true, id: 'nav-sandbox', commissionerOnly: true }
 ];
 
 function clsActive(isActive){
@@ -22,35 +26,31 @@ export default async function initNav(){
   const mount = document.getElementById('site-nav');
   if (!mount) return;
 
-  const current = document.body?.dataset?.page || '';
+  const { signedIn, isCommissioner } = await sessionInfo();
+
+  // WHICH PAGE ARE WE ON. The sandbox has no page of its own: it is index.html
+  // with an overlay switched on, so the body still reports "leaderboard". Relabel
+  // it here so the nav highlights Sandbox and the mobile bar names the mode you
+  // are actually in — which matters precisely because the two look alike.
+  //
+  // Gated on isCommissioner deliberately. Somebody else arriving with the
+  // parameter gets an ordinary leaderboard, nav included, with nothing to notice.
+  const rawPage = document.body?.dataset?.page || '';
+  const inSandbox = rawPage === 'leaderboard'
+    && isCommissioner
+    && new URLSearchParams(location.search).has('sandbox');
+  const current = inSandbox ? 'sandbox' : rawPage;
+
   const PAGE_LABELS = {
     leaderboard: 'Leaderboard', picks: 'Make Picks', genius: 'League Info',
-    stats: 'Stats', commissioner: 'Commissioner', tiebreakers: 'Tiebreakers'
+    stats: 'Stats', commissioner: 'Commissioner', tiebreakers: 'Tiebreakers',
+    sandbox: 'Sandbox'
   };
   const currentLabel = PAGE_LABELS[current] || 'CFB Pick&rsquo;em';
-  const { data: { session } } = await supabase.auth.getSession();
-  const signedIn = !!session;
-  const user = session?.user;
-
-  // Check commissioner status
-  let isCommissioner = false;
-  if (signedIn && user) {
-    const { data, error } = await supabase
-      .from('teams')
-      .select('commissioner')
-      .eq('user_id', user.id)
-      .single();
-
-    if (error) {
-      console.error('Error fetching commissioner status:', error.message);
-    } else {
-      isCommissioner = !!data?.commissioner;
-    }
-  }
 
   // Build nav items
   const visibleLinks = LINKS.filter(l => {
-    if (l.key === 'commissioner' && !isCommissioner) return false;
+    if (l.commissionerOnly && !isCommissioner) return false;
     return !l.authOnly || signedIn;
   });
 

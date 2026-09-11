@@ -2927,5 +2927,18 @@
       });
     }
   </script>
+
+  <!-- SANDBOX OVERLAY — commissioner-only scratch area.
+       These four lines are the entire cost of it to this page. Without the
+       parameter nothing is fetched and nothing above is touched, so an ordinary
+       visit to the leaderboard is byte-for-byte the page it was. The overlay
+       gates itself again on teams.commissioner; see js/sandbox.js. -->
+  <script type="module">
+    if (new URLSearchParams(location.search).has('sandbox')) {
+      // Timestamped so an edit to the overlay is never served stale — see the
+      // note in js/sandbox.js. Only the commissioner ever takes this branch.
+      import(`./js/sandbox.js?v=${Date.now()}`).catch(e => console.warn('sandbox overlay failed:', e));
+    }
+  </script>
 </body>
 </html>
