@@ -102,8 +102,13 @@ function spinCell(cell, order) {
   // symbols drifting past instead of a reel running. Roughly 8.5 symbols a
   // second is the pace that reads as a slot machine, so more time buys
   // proportionally more strip and the speed stays put.
-  const turns = 16 + order * 6;
-  const duration = 1900 + order * 560;
+  //
+  // Doubled from 1.9s/2.5s/3.0s. This is the reveal rather than the choosing:
+  // the player has been waiting since Thursday to find out what the house did
+  // with their game, and the board is worth holding on for a moment longer than
+  // the lever was.
+  const turns = 32 + order * 12;
+  const duration = 3800 + order * 1120;
 
   const strip = document.createElement('div');
   strip.className = 'slot-strip';
