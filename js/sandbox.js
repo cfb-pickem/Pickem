@@ -137,8 +137,8 @@ const LAB_SEEN_PREFIX = 'cfb-slots-seen';
 let labPanel = null;
 let labCells = 3;
 let labSpeed = 1;
-let labMark = 'felt';
-const MARKS = ['felt', 'roulette', 'neon', 'none'];
+let labMark = 'chip';
+const MARKS = ['chip', 'felt', 'neon', 'none'];
 
 function labNote(text) {
   const n = labPanel && labPanel.querySelector('.slot-panel-note');
@@ -195,9 +195,10 @@ function labReset() {
  * fact about the pick. These borrow the table instead: felt green, roulette
  * red, black.
  *
- *   felt     — a thin felt-green edge, the quietest of the three
- *   roulette — red and black segments around the cell, the wheel's own rhythm
- *   neon     — a red sign outline, the loudest, for when it should be obvious
+ *   chip — the edge of a poker chip: red, black, white and blue spots
+ *          running round the cell the way they run round a chip
+ *   felt — a thin baize edge, the quiet one
+ *   neon — a red sign outline, the loud one, for when it should be obvious
  *
  * Each is an inset overlay rather than a border on the cell itself, so none of
  * them changes the column's box or costs the crest a pixel.
