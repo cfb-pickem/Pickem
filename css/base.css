@@ -295,6 +295,25 @@ header.cfp-card {
   white-space: nowrap;
 }
 
+/* The away block, the clock and the home block. Split out from .game-hdr so the
+   live-line banner can sit under all three - on a desktop these are a flex row,
+   and a fourth child would otherwise land beside them rather than beneath.
+
+   RESTORED. 7bb4977 removed this rule while taking out the header pulse and left
+   only the two overrides inside the 640px block, so above that width the three
+   blocks fell back to display:block and stacked vertically - the away team above
+   the clock above the home team. Phones were untouched, because that block sets
+   display:block deliberately, which is why it looked right on a phone and wrong
+   on everything else. The `gap: 4px` still sitting in the phone block is the
+   tell: it was written to override the 5px here. */
+.game-hdr-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
 .game-hdr-logo {
   width: 34px; height: 34px;
   object-fit: contain;
