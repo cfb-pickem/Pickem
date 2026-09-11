@@ -205,6 +205,23 @@ export function buildTrainingRows(games, picks) {
   for (const p of picks) {
     const g = byId.get(p.game_id);
     if (!g || !g.picked || g.line == null) continue;
+
+    // A SLOT PICK IS NOT A PICK. When somebody chooses "let the slots decide"
+    // the database flips a coin for them at kickoff, and the row that lands in
+    // `picks` is indistinguishable from a considered one - same shape, same
+    // team, same everything. Trained on, it would be read as evidence about how
+    // that person thinks, which it is the precise opposite of.
+    //
+    // It would land hardest on exactly the feature least able to survive it.
+    // Personal lay-rate already has split-half reliability r=0.117 at ~60 picks
+    // a season (see the header); salting that with coin flips would push the
+    // weakest signal here toward noise while looking like more data. The brand
+    // and conference terms would take the same contamination more slowly.
+    //
+    // So they are dropped before the model ever sees them. They still count for
+    // points, they still show on the board, and they still spin - they are just
+    // not evidence.
+    if (p.by_slots) continue;
     const line = Number(g.line);
     if (!Number.isFinite(line) || Math.abs(line) < 0.5) continue; // pick'em: no favourite
 

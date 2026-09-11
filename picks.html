@@ -53,7 +53,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=2f6e2f3d">
+  <link rel="stylesheet" href="./css/base.css?v=c0110662">
   <link rel="stylesheet" href="./css/theme-halloween.css?v=c39d5271">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=c3815cb1">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=23a99229">
@@ -140,6 +140,43 @@
     }
     @media (prefers-reduced-motion: reduce){
       .pick-side, .pick-check{ transition:none; }
+    }
+
+    /* --- Let the slots decide ------------------------------------------
+       A third option under the two sides, full width. Gold rather than a team
+       colour, because the point is that no team has been chosen yet - colouring
+       it after either side would be a lie about what was picked. */
+    .pick-slots{
+      position:relative; display:flex; align-items:center; justify-content:center;
+      gap:.45rem; margin-top:.5rem; padding:.5rem .6rem; flex-wrap:wrap;
+      border:1px dashed rgba(218,165,32,.35);
+      background:linear-gradient(180deg, rgba(218,165,32,.05), transparent);
+      cursor:pointer; text-align:center;
+      font-family:'Oswald',sans-serif; font-size:.72rem; font-weight:600;
+      letter-spacing:.06em; text-transform:uppercase; color:#9aa0a8;
+      transition:border-color .18s ease, background .18s ease, color .18s ease;
+    }
+    .pick-slots:hover:not(.selected){ border-color:rgba(218,165,32,.7); color:var(--cfp-ivory); }
+    .pick-slots-icon{ font-size:.95rem; line-height:1; filter:grayscale(.55); transition:filter .18s ease; }
+
+    /* Solid once chosen: a dashed border reads as "not decided yet", which is
+       true of the pick but not of the choice. */
+    .pick-slots.selected{
+      border-style:solid; border-color:var(--cfp-gold);
+      background:linear-gradient(180deg, rgba(218,165,32,.22), transparent 78%);
+      color:#fff;
+      box-shadow:0 0 0 1px var(--cfp-gold) inset, 0 6px 18px -6px rgba(218,165,32,.7);
+    }
+    .pick-slots.selected .pick-slots-icon{ filter:none; }
+
+    .locked .pick-slots{ opacity:.5; cursor:not-allowed; }
+    .locked .pick-slots.selected{ opacity:.72; box-shadow:0 0 0 1px var(--cfp-gold) inset; }
+
+    /* Between kickoff and the cron flipping the coin the pick genuinely does
+       not exist yet. Say so rather than showing an empty card. */
+    .pick-slots-pending{
+      flex:0 0 100%; margin-top:.15rem;
+      font-size:.62rem; letter-spacing:.04em; color:var(--cfp-gold-2); text-transform:none;
     }
 
     /* Pick buttons.
@@ -577,6 +614,11 @@
       }catch{}
     }
 
+    // The radio value that means "no team, let the house choose". Double
+    // underscores so it can never collide with a real team name, and a single
+    // constant so the picks page and the save path cannot drift apart on it.
+    const SLOTS_VALUE = '__slots__';
+
     // One card builder for both the regular slate and the tiebreakers - they were
     // two identical copies of the same template.
     function gameCardHtml(g, { playoffMode }){
@@ -611,6 +653,19 @@
         ? '<a href="' + escapeHtml(g.espn_url) + '" target="_blank" rel="noopener" class="pick-espn">Matchup&nbsp;↗</a>'
         : '';
 
+      // The third way out. A radio in the SAME group as the two sides, which is
+      // what keeps it nearly free everywhere else: selections(), the local draft
+      // and the lock-time disabled sweep all operate on the group rather than on
+      // the two teams, so none of them need to know this exists.
+      const slots = (
+        '<label class="pick-label pick-slots">' +
+          '<input type="radio" name="' + name + '" value="' + SLOTS_VALUE + '">' +
+          '<span class="pick-slots-icon" aria-hidden="true">🎰</span>' +
+          '<span>Let the slots decide</span>' +
+          '<span class="pick-check" aria-hidden="true">✓</span>' +
+        '</label>'
+      );
+
       return (
         '<div class="cfp-card game-card pick-game" data-game-id="' + g.game_id + '">' +
           '<div class="pick-game-head">' +
@@ -622,9 +677,14 @@
             '<span class="pick-at" aria-hidden="true">@</span>' +
             side(g.home, hasLine ? fmt(g.line)  : null) +
           '</div>' +
+          slots +
         '</div>'
       );
     }
+
+    // game_id -> the team the coin landed on, or null while it is still pending.
+    // Only ever read to label the card; the pick itself lives in existingPicks.
+    const resolvedSlots = new Map();
 
     function selections(){
       const picks = [];
@@ -943,7 +1003,7 @@
 
       let query = supabase
         .from('picks')
-        .select('game_id, pick')
+        .select('game_id, pick, by_slots')
         .eq('team_id', selectedTeamId)
         .in('game_id', gameIds);
 
@@ -954,7 +1014,14 @@
       const { data, error } = await query;
       if (error) return;
 
-      (data||[]).forEach(r => existingPicks.set(String(r.game_id), r.pick));
+      // A slots pick has no team in it until kickoff, and after kickoff it has
+      // the team the coin chose. Either way the radio to re-check is the slots
+      // one, so the flag decides this and not the pick value - otherwise a
+      // resolved slots pick would come back looking like a pick they made.
+      (data||[]).forEach(r => {
+        existingPicks.set(String(r.game_id), r.by_slots ? SLOTS_VALUE : r.pick);
+        if (r.by_slots) resolvedSlots.set(String(r.game_id), r.pick || null);
+      });
       prefillSelections();
     }
 
@@ -1148,6 +1215,33 @@
           input.parentElement.classList.add('selected');
         }
       });
+      paintSlotsState();
+    }
+
+    /**
+     * Say where a slots pick stands. Between saving and kickoff there is
+     * genuinely no pick to show, and after kickoff there is one the player has
+     * never seen - so the card says which of those is true instead of sitting
+     * there looking like an empty selection.
+     *
+     * The team is named here on purpose even though the leaderboard is about to
+     * spin for it. By the time this can say anything the week has locked and the
+     * board has revealed, so the surprise is already spent; withholding it on
+     * the one page the player came to for their own picks would just be coy.
+     */
+    function paintSlotsState(){
+      resolvedSlots.forEach((team, gameId) => {
+        const input = document.querySelector(
+          'input[name="game_' + gameId + '"][value="' + CSS.escape(SLOTS_VALUE) + '"]');
+        const label = input && input.parentElement;
+        if (!label) return;
+        const existing = label.querySelector('.pick-slots-pending');
+        if (existing) existing.remove();
+        const note = document.createElement('span');
+        note.className = 'pick-slots-pending';
+        note.textContent = team ? ('The slots chose ' + team) : 'Decided at kickoff';
+        label.appendChild(note);
+      });
     }
 
     function overlayDraft(){
@@ -1247,10 +1341,21 @@
           if (weekLockedNow) continue;
         }
 
+        // A slots pick is an INTENT, not a pick: it is saved with nothing in it
+        // and the database flips the coin at kickoff. Writing a team here would
+        // hand the player their own answer days early and let them re-save
+        // until they liked it, which is the opposite of leaving it to chance.
+        const isSlots = p.pick === SLOTS_VALUE;
+
         rows.push({
           team_id: Number(selectedTeamId),
           game_id: gameIdNum,
-          pick: p.pick,
+          pick: isSlots ? null : p.pick,
+          // Sent explicitly on EVERY row, never only on the slots ones. Without
+          // the false, changing a slots pick back to a real one would leave the
+          // flag set and the leaderboard would spin a slot machine for a pick
+          // the player made themselves.
+          by_slots: isSlots,
           week: Number(game.week ?? currentWeek)
         });
       }
@@ -1274,7 +1379,11 @@
         showToast('Error saving picks: ' + error.message, 'error');
       } else {
         setStatus('Picks saved!');
-        rows.forEach(r => existingPicks.set(String(r.game_id), r.pick));
+        rows.forEach(r => {
+          existingPicks.set(String(r.game_id), r.by_slots ? SLOTS_VALUE : r.pick);
+          if (r.by_slots) resolvedSlots.set(String(r.game_id), null);
+          else resolvedSlots.delete(String(r.game_id));
+        });
         clearDraft();
         prefillSelections();
         renderSaved();

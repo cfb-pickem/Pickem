@@ -64,7 +64,7 @@ function toGame(r) {
 }
 
 const games = await get('all_games?select=GameId,week,winner,picked,Away,Home,line,line_open,cfb_season,fpi_margin&limit=5000');
-const picks = await get('picks?select=team_id,game_id,pick&limit=20000');
+const picks = await get('picks?select=team_id,game_id,pick,by_slots&limit=20000');
 const rows = buildTrainingRows(games, picks);
 console.log(`training rows: ${rows.length}`);
 if (rows.length < 200) { console.error('FAIL: too little data to evaluate'); process.exit(1); }

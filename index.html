@@ -70,7 +70,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=2f6e2f3d">
+  <link rel="stylesheet" href="./css/base.css?v=c0110662">
   <link rel="stylesheet" href="./css/theme-halloween.css?v=c39d5271">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=c3815cb1">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=23a99229">
@@ -520,7 +520,7 @@
     // Only exports that have existed for months. A NEW named export here is the
     // thing that broke the page: assets carry max-age=600, so a browser holding
     // the previous utils.js cannot satisfy it and the whole module dies.
-    import { sameTeam, escapeHtml, buildPickMap, getTeamColor } from './js/utils.js';
+    import { sameTeam, escapeHtml, buildPickMap, buildSlotsMap, getTeamColor } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
 
@@ -562,6 +562,9 @@
 
     let lastTeams = [];
     let lastPickMap = {};
+    // Which cells the slots decided. Read by the reveal in js/slots.js; see
+    // buildSlotsMap for why it is not folded into lastPickMap.
+    let lastSlotsMap = {};
     let lastGames = [];
 
     // kickoff times
@@ -1025,7 +1028,7 @@
       let picks = [];
       if (ids.length){
         const { data: p, error: pErr } = await supabase
-          .from('picks').select('team_id, game_id, pick').in('game_id', ids);
+          .from('picks').select('team_id, game_id, pick, by_slots').in('game_id', ids);
         if (pErr){ status('Could not load picks.', true); return null; }
         picks = p || [];
       }
@@ -1044,7 +1047,7 @@
       const tbIds = (tbGames || []).map(g => g.GameId);
       if (tbIds.length) {
         const { data: tp } = await supabase
-          .from('picks').select('team_id, game_id, pick').in('game_id', tbIds);
+          .from('picks').select('team_id, game_id, pick, by_slots').in('game_id', tbIds);
         tbPicks = tp || [];
       }
 
@@ -1342,6 +1345,7 @@
       const pickRows = picksForGames(gameIds);
 
       const pickMap = buildPickMap(pickRows);
+      lastSlotsMap = buildSlotsMap(pickRows);
 
       // ✅ Points for non-playoff view already computed through currentWeek
       const pointsMap = winsByTeamRegular;
@@ -1449,6 +1453,7 @@
       const pickRows = picksForGames(gameIds);
 
       const pickMap = buildPickMap(pickRows);
+      lastSlotsMap = buildSlotsMap(pickRows);
 
       const pointsMap = winsByTeamPlayoff;
       const teamsSorted = [...playoffTeams].sort((a,b)=>{
@@ -1546,6 +1551,7 @@
       const want = new Set(gameIds.map(Number));
       const pickRows = (cache.tbPicks || []).filter(p => want.has(Number(p.game_id)));
       const pickMap = buildPickMap(pickRows);
+      lastSlotsMap = buildSlotsMap(pickRows);
 
       // Tiebreaker points: correct tiebreaker calls, and nothing else. Kept in a
       // local so it can never be mistaken for winsByTeamRegular.
@@ -2509,6 +2515,13 @@
           }
 
           if(hasPick){
+            // Tag the cells the slots decided. The reveal in js/slots.js reads
+            // this and nothing else - which is what makes it real rather than a
+            // mock: no sampling, no guessing, just what the database says.
+            if (lastSlotsMap?.[team.team_id]?.[id]) {
+              td.dataset.slots = String(id);
+              td.dataset.slotsTeam = String(team.team_id);
+            }
             if(lonely.has(`${team.team_id}:${id}`)) td.classList.add('pick-lonely');
             // Registered even for a settled game: paintCovers() is what decides
             // there is nothing live to show and leaves the final shading alone.
@@ -2692,7 +2705,7 @@
       if (pickReloadFor === key) return;
 
       const { data, error } = await supabase
-        .from('picks').select('team_id, game_id, pick').in('game_id', gameIds);
+        .from('picks').select('team_id, game_id, pick, by_slots').in('game_id', gameIds);
       if (error || !data) return;            // leave it unset so the next tick retries
 
       // Do not latch on an unconvincing answer. The browser's idea of kickoff
@@ -2716,6 +2729,7 @@
       ];
 
       lastPickMap = buildPickMap(data);
+      lastSlotsMap = buildSlotsMap(data);
       renderTable(lastTeams, lastPickMap, winnerMap, showPicks, getPointsMapForCurrentView(), isPlayoffView);
       await renderWeeklySubmissions(lastTeams, lastPickMap);
     }
@@ -2739,6 +2753,11 @@
       renderTable(lastTeams, lastPickMap, winnerMap, showPicks, pointsMap, isPlayoffView);
       playRevealAnimation();
       status(`Kickoff! Picks are in for Season ${currentSeason} • Week ${currentWeek}.`);
+      // The cron flips slot coins every minute; this covers the minute it might
+      // be late by, which happens to be the exact minute this page cares about.
+      // Idempotent and signed-in only - see resolve_slot_picks() in the
+      // migration. Failure is silently fine: the next cron tick gets it.
+      supabase.rpc('resolve_slot_picks').catch(() => {});
       // Then go and get what the database was hiding a second ago.
       chaseRevealedPicks();
     }
@@ -2926,6 +2945,14 @@
         scrollWrap.classList.toggle('scrolled-end', atEnd);
       });
     }
+  </script>
+
+  <!-- The slot-machine reveal. Self-gating: it does nothing at all unless the
+       board actually contains a cell the slots decided, which is almost every
+       week, so it is loaded rather than conditionally imported. -->
+  <script type="module">
+    import initSlots from './js/slots.js';
+    initSlots();
   </script>
 
   <!-- SANDBOX OVERLAY — commissioner-only scratch area.
