@@ -234,21 +234,12 @@
       60%  { transform:translateY(1px); }
       100% { transform:translateY(0); }
     }
-    @keyframes lever-reel{
-      0%   { filter:blur(0);     opacity:1;   transform:translateY(0); }
-      22%  { filter:blur(3px);   opacity:.55; transform:translateY(-10px); }
-      55%  { filter:blur(3px);   opacity:.55; transform:translateY(10px); }
-      78%  { filter:blur(1px);   opacity:.8;  transform:translateY(-3px); }
-      100% { filter:blur(0);     opacity:.4;  transform:translateY(0); }
-    }
     @keyframes lever-flash{
       0%   { box-shadow:inset 0 1px 3px rgba(0,0,0,.6), 0 0 0 0 rgba(218,165,32,.9); }
       35%  { box-shadow:inset 0 1px 3px rgba(0,0,0,.6), 0 0 26px 6px rgba(218,165,32,.85); }
       100% { box-shadow:inset 0 1px 3px rgba(0,0,0,.6), 0 0 10px -2px rgba(218,165,32,.8); }
     }
     .pick-game.is-pulling{ animation:lever-jolt .45s ease-out both; }
-    .pick-game.is-pulling .pick-side{ animation:lever-reel .55s ease-in-out both; }
-    .pick-game.is-pulling .pick-side:nth-of-type(3){ animation-delay:.06s; }
     .pick-game.is-pulling .lever-track{ animation:lever-flash .55s ease-out both; }
 
     /* The gesture is the decoration; the state it sets is the point. */
@@ -256,6 +247,51 @@
       .pick-game.is-pulling,
       .pick-game.is-pulling .pick-side,
       .pick-game.is-pulling .lever-track{ animation:none; }
+    }
+
+    /* THE REELS. Straight from johakr/html5-slot-machine: a strip of symbols in
+       an overflow-hidden box, driven by the Web Animations API, blur peaking
+       mid-spin, and the last symbol sitting at the END of the strip so the reel
+       ARRIVES on it rather than being snapped into place.
+       js/slots.js does the same thing on the leaderboard, and the funhouse warps
+       both of them use live in css/base.css so there is one set, not two.
+
+       What is different here, and it is the whole point: these reels must not
+       land on a team. Nothing has been decided when you pull this - the coin is
+       flipped in Postgres at kickoff - so they settle on a question mark. A reel
+       that stopped on a name would be inventing a result days early. */
+    .pick-reel{
+      position:relative; overflow:hidden; width:46px; height:46px; flex:none;
+      contain:layout paint;
+    }
+    .pick-reel-strip{
+      position:absolute; top:0; left:0; right:0;
+      display:flex; flex-direction:column; align-items:center;
+      will-change:top, filter;
+    }
+    .pick-reel-sym{
+      width:46px; height:46px; object-fit:contain; flex:none;
+      /* Their comment, and worth keeping: this fixes flicker on iOS. */
+      transform:translate3d(0,0,0);
+    }
+    .pick-reel-q{
+      width:46px; height:46px; flex:none;
+      display:grid; place-items:center;
+      font-family:'Teko','Oswald',sans-serif; font-size:2rem; font-weight:700;
+      color:var(--cfp-gold-2);
+      text-shadow:0 0 14px rgba(218,165,32,.8);
+    }
+
+    /* The reference flips the whole machine on a win. Borrowed for the instant
+       the reels stop, because that is the moment worth marking. */
+    .pick-game.is-jackpot .pick-reel{ transform:scaleY(-1); }
+    .pick-game.is-jackpot .pick-reel-sym,
+    .pick-game.is-jackpot .pick-reel-q{ transform:scaleY(-1); }
+
+    @media (prefers-reduced-motion: reduce){
+      .pick-game.is-jackpot .pick-reel,
+      .pick-game.is-jackpot .pick-reel-sym,
+      .pick-game.is-jackpot .pick-reel-q{ transform:none; }
     }
 
     /* PULLED BACK UP. The mirror of the jolt, shorter and without the reels -
@@ -1445,6 +1481,82 @@
     }
 
     /**
+     * Spin the two team tiles like real reels.
+     *
+     * The technique is johakr/html5-slot-machine's, and so is the detail that
+     * makes several reels feel like a machine rather than two animations: each
+     * one gets its own duration from `1 + (idx/2)^2`, so the near reel lands
+     * first and the far one a beat later.
+     *
+     * THEY DO NOT LAND ON A TEAM. Nothing is decided when the lever is pulled -
+     * the coin is flipped in Postgres at kickoff - so the strips run through
+     * both sides, mangled the way the leaderboard mangles them, and settle on a
+     * question mark. A reel that stopped on a name would be inventing a result
+     * days early and the player would believe it.
+     */
+    const REEL_WARPS = ['squash','stretch','flip','upside','tipsy','huge','tiny','melt','wobble'];
+    const REEL_TINTS = ['radioactive','negative','ghost','oldtimey','xray','hot'];
+    const reelPick = a => a[Math.floor(Math.random() * a.length)];
+
+    function spinTiles(card){
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+
+      const logos = [...card.querySelectorAll('.pick-side .pick-logo')]
+        .filter(img => img.tagName === 'IMG' && img.src);
+      if (logos.length < 2) return;               // a side with no crest: leave it
+      const srcs = logos.map(img => img.currentSrc || img.src);
+
+      const done = [];
+      logos.forEach((img, idx) => {
+        // Their factor, unchanged. Two reels give 1.00 and 1.25.
+        const factor = 1 + Math.pow(idx / 2, 2);
+        const turns = Math.round(14 * factor);
+        const h = Math.round(img.getBoundingClientRect().height) || 46;
+
+        const strip = document.createElement('div');
+        strip.className = 'pick-reel-strip';
+        for (let i = 0; i < turns; i++){
+          const sym = document.createElement('img');
+          sym.src = srcs[i % 2];
+          sym.alt = '';
+          sym.className = 'pick-reel-sym';
+          sym.style.height = h + 'px';
+          if (Math.random() < 0.8)  sym.classList.add('slot-warp-' + reelPick(REEL_WARPS));
+          if (Math.random() < 0.5)  sym.classList.add('slot-tint-' + reelPick(REEL_TINTS));
+          strip.appendChild(sym);
+        }
+        const q = document.createElement('div');
+        q.className = 'pick-reel-q';
+        q.textContent = '?';
+        q.style.height = h + 'px';
+        strip.appendChild(q);
+
+        const box = document.createElement('div');
+        box.className = 'pick-reel';
+        box.style.height = h + 'px';
+        box.appendChild(strip);
+        img.replaceWith(box);
+
+        const anim = strip.animate(
+          [
+            { top: '0px',              filter: 'blur(0px)' },
+            {                          filter: 'blur(3px)', offset: 0.45 },
+            { top: (-turns * h) + 'px', filter: 'blur(0px)' }
+          ],
+          { duration: Math.round(factor * 1100), easing: 'cubic-bezier(.16,.62,.18,1)', fill: 'forwards' }
+        );
+        done.push(anim.finished.catch(() => {}).then(() => box.replaceWith(img)));
+      });
+
+      // The reference flips the machine when it pays out. Here it marks the
+      // moment both reels have stopped and the game is officially the house's.
+      Promise.all(done).then(() => {
+        card.classList.add('is-jackpot');
+        setTimeout(() => card.classList.remove('is-jackpot'), 220);
+      });
+    }
+
+    /**
      * Make the handle pullable.
      *
      * The radio stays the control and this only drives it, so everything else on
@@ -1564,6 +1676,7 @@
           void card.offsetWidth;                   // restart the animation
           card.classList.add('is-pulling');
           setTimeout(() => card.classList.remove('is-pulling'), 600);
+          spinTiles(card);
         }
 
         // The single place the page reacts to this game being slotted, whichever
