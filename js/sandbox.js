@@ -50,6 +50,7 @@ import { sessionInfo } from './session.js';
 import { runSlots, setRevealSpeed, forgetSpins } from './slots.js';
 import { markSlotCell } from './utils.js';
 import { previewJackpot } from './jackpot.js';
+import { lever, unlock } from './slotsound.js';
 
 // KEEP THE GATE AT THE BOTTOM OF THIS FILE. Function declarations hoist but
 // `const` and `let` do not, so calling enableSandbox() from up here would reach
@@ -226,6 +227,11 @@ function labMarkCell(td) {
 }
 
 async function labRun() {
+  // Roll is a real click, which is the gesture a browser wants before it will
+  // let a page make any noise at all. Unlocking here means the lab is the one
+  // place the sound is guaranteed to work on the first try.
+  unlock();
+  lever();
   labReset();
   labForget();
 

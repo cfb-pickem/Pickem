@@ -64,6 +64,7 @@
 
 import { markSlotCell } from './utils.js';
 import { ensureStrip, deflateJackpot } from './jackpot.js';
+import { scheduleClick, scheduleStop, strainStart, strainStop, pop, hold } from './slotsound.js';
 
 // One transform and/or one tint per symbol, combined at random, so a dozen
 // classes give plenty of distinct nonsense without needing a dozen more. The
@@ -83,6 +84,65 @@ export function setRevealSpeed(x) {
   revealSpeed = Number.isFinite(n) && n > 0 ? n : 1;
 }
 const wait = ms => new Promise(r => setTimeout(r, ms / revealSpeed));
+
+// The reel's easing, named rather than written inline, because the click track
+// below has to invert THIS EXACT CURVE. Two copies of it would have gone out of
+// step the first time either was nudged, and the failure would be a reel whose
+// clicks slowly stop matching the symbols going past - which is precisely the
+// thing that reads as fake.
+const REEL_EASE = [0.16, 0.62, 0.18, 1];
+
+/** A cubic-bezier's y for a given parameter t. P0 and P3 are fixed at 0 and 1. */
+function bezAt(t, a, b) {
+  const u = 1 - t;
+  return 3 * u * u * t * a + 3 * u * t * t * b + t * t * t;
+}
+
+/**
+ * Where in the SPIN a given fraction of the DISTANCE happens.
+ *
+ * The timing function maps time to progress; a click track needs the opposite,
+ * because a detent happens when a symbol passes the window - a fact about
+ * distance - and it has to be scheduled at a time. Bisection is plenty: the
+ * curve is monotonic and twenty steps put it inside a thousandth.
+ */
+function timeOfProgress(y, [x1, y1, x2, y2]) {
+  let lo = 0, hi = 1, t = y;
+  for (let i = 0; i < 20; i++) {
+    t = (lo + hi) / 2;
+    if (bezAt(t, y1, y2) < y) lo = t; else hi = t;
+  }
+  return bezAt(t, x1, x2);
+}
+
+/**
+ * Schedule one reel's worth of detent clicks, decelerating with the reel.
+ *
+ * ALL AT ONCE, against the audio clock, rather than fired from timers as the
+ * spin goes. A click track driven by setTimeout drifts by a few milliseconds a
+ * time under load, and drift is exactly what stops it sounding mechanical.
+ *
+ * The fast part of a real reel is a rattle rather than countable clicks, so
+ * anything closer than MIN_GAP is dropped and the survivors get quieter the
+ * faster they are - which is what makes the slowdown at the end audible as a
+ * slowdown rather than just fewer noises.
+ */
+function scheduleReelSound(turns, duration) {
+  const MIN_GAP = 0.045;
+  let last = -1;
+  // Stops one short of the landing symbol on purpose: scheduleStop() rings its
+  // own click on top of the thunk, and three noises at the same instant is a
+  // splat rather than an arrival.
+  for (let k = 1; k < turns; k++) {
+    const at = timeOfProgress(k / turns, REEL_EASE) * duration / 1000;
+    const gap = at - last;
+    if (last >= 0 && gap < MIN_GAP) continue;
+    // Louder as the gaps open up: a slow, deliberate click near the stop.
+    scheduleClick(at, Math.min(1, 0.45 + gap * 4));
+    last = at;
+  }
+  scheduleStop(duration / 1000);
+}
 
 function reducedMotion() {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
@@ -244,14 +304,28 @@ function spinCell(cell, order) {
 
   // `top`, not `transform`, and the blur as its own midpoint keyframe — see the
   // note at the top of this file.
+  //
+  // THE LAST 6px ARE THE MECHANICAL BIT. The reel comes up a symbol-edge SHORT
+  // and then drops the rest of the way, so it arrives at a detent instead of
+  // gliding to a halt. It is six pixels and about a tenth of a second and it is
+  // most of the difference between a reel and a scrolling div.
+  //
+  // Short rather than past: the landing symbol is the LAST thing on the strip,
+  // so overshooting it would show the empty box behind.
+  const stop = -turns * h;
   const anim = strip.animate(
     [
-      { top: '0px',               filter: 'blur(0px)' },
-      {                           filter: 'blur(2.5px)', offset: 0.45 },
-      { top: (-turns * h) + 'px', filter: 'blur(0px)' }
+      { top: '0px',             filter: 'blur(0px)',   offset: 0 },
+      {                         filter: 'blur(2.5px)', offset: 0.45 },
+      { top: (stop + 6) + 'px', filter: 'blur(0px)',   offset: 0.93,
+        easing: 'cubic-bezier(.16,.62,.18,1)' },
+      { top: stop + 'px',       offset: 1,
+        easing: 'cubic-bezier(.5,0,.75,1.4)' }
     ],
     { duration, easing: 'cubic-bezier(.16,.62,.18,1)', fill: 'forwards' }
   );
+
+  scheduleReelSound(turns, duration);
 
   return anim.finished.catch(() => {}).then(land);
 }
@@ -274,6 +348,7 @@ async function footballAct(popped) {
   const done = () => {
     delete strip.dataset.beat;
     say('');
+    strainStop();          // never leave the drone running if a beat threw
   };
 
   // If the page is scrolled down the board the ball sits above it, so bring it
@@ -284,6 +359,7 @@ async function footballAct(popped) {
   // Reduced motion: the outcome, and none of the seven seconds.
   if (reducedMotion()) {
     strip.dataset.beat = popped ? 'burst' : 'settle';
+    if (popped) pop(); else hold();
     say(popped ? 'The football popped. Automatic win.' : 'The football held.');
     await wait(1400);
     done();
@@ -308,6 +384,12 @@ async function footballAct(popped) {
   strip.dataset.beat = 'idle';
   await wait(30);       // one frame, so the first transition actually runs
 
+  // One held note climbing for exactly as long as the strain lasts, which is the
+  // sound every machine ever built uses to say something is about to happen. It
+  // is doing the same job as the tremor, in the other channel: where it has got
+  // to IS how close the ball is.
+  strainStart(beats.reduce((a, b) => a + b[1], 0) / 1000 / revealSpeed);
+
   for (const [beat, ms] of beats) {
     strip.dataset.beat = beat;
     if (beat === 'pump') say('The house takes a breath…');
@@ -318,11 +400,13 @@ async function footballAct(popped) {
   if (popped) {
     strip.dataset.beat = 'burst';
     say('POP. The house pays.');
+    pop();
     deflateJackpot();
     await wait(2200);
   } else {
     strip.dataset.beat = 'settle';
     say('It held. This time.');
+    hold();
     await wait(1300);
   }
 

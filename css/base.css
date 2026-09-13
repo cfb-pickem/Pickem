@@ -1853,30 +1853,106 @@ td.slot-cell .slot-was{ opacity:0; }
 
 /* ---------- The strip, on the leaderboard and the picks page ------------ */
 
+/* A CABINET, not a bordered bar. A machine reads as a machine because of the
+   box it is in: a dark metal face, a bevel catching light along the top edge,
+   bulbs chasing across the marquee, and the number on a lit panel rather than
+   set as text. None of it is decoration for its own sake - it is the frame that
+   tells you the football inside is a mechanism. */
 .jp-strip{
+  position:relative;
+  margin:0 0 .75rem;
+  padding:.55rem .7rem .5rem;
+  border:1px solid #2b2f38;
+  border-radius:4px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0) 42%),
+    linear-gradient(180deg, #23262d 0%, #15171c 55%, #0e1014 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.14),
+    inset 0 -1px 0 rgba(0,0,0,.6),
+    0 2px 10px rgba(0,0,0,.45);
+  transition:padding .5s ease;
+}
+
+/* The marquee. Real bulbs as elements, because they have to chase - a gradient
+   can only slide. */
+.jp-bulbs{
+  position:absolute;
+  top:3px; left:8px; right:8px;
+  display:flex;
+  justify-content:space-between;
+  pointer-events:none;
+}
+.jp-bulbs i{
+  width:3px; height:3px;
+  border-radius:50%;
+  background:#5a4412;
+  animation: jp-chase 1.62s linear infinite;
+}
+@keyframes jp-chase{
+  0%, 88%, 100% { background:#5a4412; box-shadow:none; }
+  6%            { background:#ffd97a; box-shadow:0 0 5px 1px rgba(255,200,80,.85); }
+}
+
+.jp-cab{
   display:flex;
   align-items:center;
   gap:.7rem;
-  margin:0 0 .75rem;
-  padding:.4rem .7rem;
-  border:1px solid rgba(201,146,16,.22);
-  background:rgba(201,146,16,.05);
-  transition:padding .5s ease;
+  padding-top:.25rem;
 }
 .jp-strip .jp-ball{
   width:58px;
   flex:0 0 auto;
   transition:width .8s cubic-bezier(.2,.8,.25,1);
+  filter:drop-shadow(0 3px 5px rgba(0,0,0,.55));
 }
 .jp-text{ display:flex; flex-direction:column; line-height:1.2; min-width:0; }
-.jp-pct{
+.jp-label{
   font-family:'Oswald', sans-serif;
-  font-size:1rem;
+  font-size:.55rem;
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:#8d7233;
+}
+/* The meter reads as an instrument because it is one: an inset dark panel with
+   the digits glowing off it. It is the only part of this that states a fact, so
+   it is the part that should look measured rather than drawn. */
+.jp-pct{
+  align-self:flex-start;
+  margin:.1rem 0 .12rem;
+  padding:.05rem .38rem;
+  border-radius:2px;
+  background:#07090c;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.9), 0 0 0 1px #2b2f38;
+  font-family:'Oswald', sans-serif;
+  font-size:1.02rem;
   font-weight:600;
-  color:var(--cfp-ivory);
+  letter-spacing:.04em;
+  color:#ffc65a;
+  text-shadow:0 0 7px rgba(255,180,60,.75);
   font-variant-numeric:tabular-nums;
 }
-.jp-sub{ font-size:.7rem; color:#b9bcc4; }
+.jp-sub{ font-size:.68rem; color:#8c919c; }
+
+/* The switch. Off by default and it stays wherever it is put - a leaderboard
+   that starts making casino noises because you opened it is hostile, and
+   browsers block unprompted audio anyway. */
+.jp-sound{
+  margin-left:auto;
+  flex:0 0 auto;
+  width:30px; height:30px;
+  display:grid; place-items:center;
+  border:1px solid #2b2f38;
+  border-radius:3px;
+  background:#15171c;
+  color:#6f7480;
+  cursor:pointer;
+  transition:color .2s ease, border-color .2s ease;
+}
+.jp-sound svg{ width:16px; height:16px; fill:currentColor; stroke:currentColor; }
+.jp-sound:hover{ color:#b9bcc4; border-color:#3a3f49; }
+.jp-sound[aria-pressed="true"]{ color:#ffc65a; border-color:#5a4412; }
+.jp-sound:focus-visible{ outline:2px solid #ffc65a; outline-offset:2px; }
 .jp-note{
   font-family:'Oswald', sans-serif;
   font-size:.8rem;
@@ -1923,12 +1999,20 @@ td.slot-cell .slot-was{ opacity:0; }
 /* The ball grows out of the strip and the strip grows with it, so the page is
    pushed down rather than covered. Nothing is ever hidden behind it. */
 .jp-strip[data-beat]{
-  padding:1.1rem .9rem;
-  border-color:rgba(201,146,16,.5);
-  background:rgba(201,146,16,.09);
+  padding:1.2rem .9rem 1rem;
+  border-color:#5a4412;
+}
+/* The marquee goes frantic while the reels are turning, which is what a machine
+   does the moment it has something to tell you. */
+.jp-strip[data-beat] .jp-bulbs i{ animation-duration:.54s; }
+.jp-strip[data-beat="bulge2"] .jp-bulbs i{ animation-duration:.3s; }
+.jp-strip[data-beat="burst"] .jp-bulbs i{
+  animation:none;
+  background:#ffd97a;
+  box-shadow:0 0 7px 2px rgba(255,200,80,.95);
 }
 .jp-strip[data-beat] .jp-ball{ width:min(42vw, 168px); }
-.jp-strip[data-beat="exit"]{ padding:.4rem .7rem; }
+.jp-strip[data-beat="exit"]{ padding:.55rem .7rem .5rem; }
 .jp-strip[data-beat="exit"] .jp-ball{ width:58px; }
 
 /* THE BEATS. Every one of these is identical whether the ball is about to pop
@@ -2003,8 +2087,8 @@ td.slot-cell .slot-was{ opacity:0; }
   100% { transform:scale(2.3, 2.1) rotate(8deg); opacity:0; filter:brightness(1); }
 }
 @keyframes jp-flare{
-  0%   { background:var(--jp-flash); }
-  100% { background:rgba(201,146,16,.09); }
+  0%   { box-shadow:inset 0 0 0 2px var(--jp-flash), 0 0 40px 6px rgba(255,214,122,.6); }
+  100% { box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 2px 10px rgba(0,0,0,.45); }
 }
 
 /* ---------- The cell that popped --------------------------------------- */
@@ -2055,6 +2139,7 @@ td[data-slots]{ cursor:pointer; }
   .jp-strip[data-beat="burst"],
   .jp-strip[data-beat="burst"] .jp-shell,
   .jp-strip[data-beat] .jp-ball,
+  .jp-bulbs i,
   .auto-win-landing{ animation:none; }
   .jp-strip,
   .jp-strip .jp-ball,

@@ -30,6 +30,7 @@
 // counter anybody can run to 10%.
 
 import { supabase } from './supabaseClient.js';
+import { soundEnabled, setSoundEnabled, unlock, lever } from './slotsound.js';
 
 // Mirrors slots_jackpot_odds() in the migration. Duplicated deliberately and
 // narrowly: the page draws the meter long before it would be worth a round trip
@@ -135,6 +136,29 @@ export function ballSvg(ns = 'jp') {
   );
 }
 
+/**
+ * The marquee bulbs along the top of the cabinet.
+ *
+ * Real ones, as elements, rather than a repeating-linear-gradient - because they
+ * have to chase, and a gradient can only slide. Each carries its own delay so
+ * the light runs along the row.
+ */
+function bulbs(count) {
+  let out = '<span class="jp-bulbs" aria-hidden="true">';
+  for (let i = 0; i < count; i++) {
+    out += '<i style="animation-delay:' + (i * 0.09).toFixed(2) + 's"></i>';
+  }
+  return out + '</span>';
+}
+
+const SPEAKER_ON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/>' +
+  '<path d="M16 8.5a4.5 4.5 0 010 7" fill="none" stroke-width="2"/>' +
+  '<path d="M18.5 6a8 8 0 010 12" fill="none" stroke-width="2"/></svg>';
+const SPEAKER_OFF =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/>' +
+  '<path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke-width="2"/></svg>';
+
 function render(el, pulls) {
   const odds = jackpotOdds(pulls);
   const n = Number(pulls) || 0;
@@ -142,13 +166,37 @@ function render(el, pulls) {
 
   el.dataset.strain = strainLevel(odds);
   el.innerHTML =
-    ballSvg() +
-    '<span class="jp-text">' +
-      '<b class="jp-pct">' + pct + '</b>' +
-      '<span class="jp-sub">' + n + (n === 1 ? ' pull' : ' pulls') + ' since the last pop</span>' +
-      // Written to by the reveal. Empty and collapsed the rest of the time.
-      '<span class="jp-note" aria-live="polite"></span>' +
+    bulbs(18) +
+    '<span class="jp-cab">' +
+      ballSvg() +
+      '<span class="jp-text">' +
+        '<span class="jp-label">Jackpot</span>' +
+        // An inset, glowing panel rather than plain text: a progressive meter on
+        // a real machine is a lit display, and it is the one part of this that
+        // states a fact, so it is the part that should look instrumented.
+        '<b class="jp-pct">' + pct + '</b>' +
+        '<span class="jp-sub">' + n + (n === 1 ? ' pull' : ' pulls') + ' since the last pop</span>' +
+        // Written to by the reveal. Empty and collapsed the rest of the time.
+        '<span class="jp-note" aria-live="polite"></span>' +
+      '</span>' +
+      '<button type="button" class="jp-sound" data-act="sound" aria-pressed="' +
+        (soundEnabled() ? 'true' : 'false') + '" title="Slot machine sound">' +
+        (soundEnabled() ? SPEAKER_ON : SPEAKER_OFF) +
+      '</button>' +
     '</span>';
+
+  const btn = el.querySelector('.jp-sound');
+  if (btn) btn.addEventListener('click', e => {
+    e.stopPropagation();
+    // The click IS the gesture that unlocks the audio context, so it has to do
+    // the turning-on and the unlocking in the same handler. Done later - on the
+    // first spin, say - the browser has forgotten there was ever a gesture and
+    // refuses, silently.
+    const on = setSoundEnabled(!soundEnabled());
+    if (on) { unlock(); lever(); }
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.innerHTML = on ? SPEAKER_ON : SPEAKER_OFF;
+  });
 
   // Said in full to a screen reader, which gets none of the wobbling.
   el.setAttribute('aria-label',
