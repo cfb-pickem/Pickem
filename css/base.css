@@ -2296,9 +2296,39 @@ td.slot-cell .slot-was{ opacity:0; }
   100% { transform:scale(1); filter:brightness(1); }
 }
 
-/* The decoy the reel landed on, still sitting there while the football decides
-   whether to take it away. */
-.slot-box-decoy{ opacity:.9; }
+/* ---------- The football, as a reel symbol ------------------------------ */
+
+/* It goes past on every spin, which is the point: you have to have SEEN the
+   thing you did not get. Flat, because there are eight of these per reel at
+   under thirty pixels and the marquee ball's four gradients would be two dozen
+   copies of detail nobody can see. */
+.slot-sym-ball{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.slot-sym-ball svg{ height:100%; width:auto; overflow:visible; }
+.slot-sym-ball .ss-hide{ fill:#7e4018; stroke:#2c1409; stroke-width:5; stroke-linejoin:round; }
+.slot-sym-ball .ss-stripe{ fill:#f1ece0; }
+.slot-sym-ball .ss-laces path{ stroke:#fbf6ea; stroke-width:7; stroke-linecap:round; }
+
+/* Landed on. It sits there for a beat so you can read what stopped, then goes. */
+.slot-ball-landed{
+  animation: slot-ball-arrive .4s cubic-bezier(.2,1.5,.4,1);
+}
+@keyframes slot-ball-arrive{
+  0%   { transform:scale(.72); }
+  60%  { transform:scale(1.14); }
+  100% { transform:scale(1); }
+}
+.slot-ball-bursting{
+  animation: slot-ball-burst .42s cubic-bezier(.2,.9,.3,1) forwards;
+}
+@keyframes slot-ball-burst{
+  0%   { transform:scale(1);   opacity:1; filter:brightness(1); }
+  35%  { transform:scale(1.5); opacity:1; filter:brightness(5); }
+  100% { transform:scale(2.1); opacity:0; filter:brightness(1); }
+}
 
 /* A slots cell can be replayed by clicking it, in any week, forever. Saying so
    with the cursor is the only affordance it gets - a button in every cell would
@@ -2318,6 +2348,8 @@ td[data-slots]{ cursor:pointer; }
   .jp-strip[data-beat="burst"] .jp-shell,
   .jp-strip[data-beat] .jp-ball,
   .jp-bulbs i,
+  .slot-ball-landed,
+  .slot-ball-bursting,
   .auto-win-landing{ animation:none; }
   .jp-strip,
   .jp-strip .jp-ball,

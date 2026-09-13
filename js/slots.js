@@ -30,6 +30,19 @@
 // on the way past — squashed, upside down, radioactive, melting — and landing on
 // a clean, correct one. The joke is that the punchline is sober.
 //
+// AND THE THIRD SYMBOL: THE FOOTBALL. It is on the reel, it goes past on EVERY
+// spin, and landing on it is the jackpot - at which point it bursts, in the
+// square, and leaves AUTO WIN behind.
+//
+// That replaces an arrangement where the reel landed on a TEAM and the marquee
+// football then reached down and swapped it for AUTO WIN. Two events describing
+// one outcome, and for a second and a half the reel was showing a pick that was
+// never made.
+//
+// Having it fly past a losing spin four or five times is not decoration either.
+// It is the whole reason a slot machine is tense: you have to have SEEN the
+// thing you did not get.
+//
 // ----------------------------------------------------------------------------
 // AND THEN THE FOOTBALL.
 //
@@ -84,6 +97,14 @@ export function setRevealSpeed(x) {
   revealSpeed = Number.isFinite(n) && n > 0 ? n : 1;
 }
 const wait = ms => new Promise(r => setTimeout(r, ms / revealSpeed));
+
+// How long the landed football sits there before it goes, and how long the going
+// takes. Exported to nobody, but footballAct waits MORPH_TOTAL before it says
+// the payoff line - the marquee must not announce AUTO WIN while the square it
+// is talking about is still showing a football.
+const MORPH_HOLD = 700;
+const MORPH_BURST = 420;
+const MORPH_TOTAL = MORPH_HOLD + MORPH_BURST;
 
 // The reel's easing, named rather than written inline, because the click track
 // below has to invert THIS EXACT CURVE. Two copies of it would have gone out of
@@ -223,6 +244,51 @@ function dueCells({ only = null } = {}) {
  * football — but it has to be SOMETHING, because a reel that visibly declines to
  * land is a reel announcing the jackpot before the ball has even appeared.
  */
+/** One team crest on the reel, mangled or not. */
+function teamSymbol(src, h, clean) {
+  const sym = document.createElement('img');
+  sym.src = src;
+  sym.alt = '';
+  sym.className = 'slot-sym';
+  sym.style.height = h + 'px';
+  if (!clean) {
+    // Not every symbol is warped. An unbroken run of distortions stops reading
+    // as distortion and starts reading as the design.
+    if (Math.random() < 0.82) sym.classList.add('slot-warp-' + pick1(WARPS));
+    if (Math.random() < 0.55) sym.classList.add('slot-tint-' + pick1(TINTS));
+  }
+  return sym;
+}
+
+/**
+ * The jackpot symbol: a football.
+ *
+ * A FLAT one, not the marquee's. That ball carries four gradients and a pattern
+ * behind namespaced ids, and there are eight of these on every reel and three
+ * reels on screen - two dozen copies of all that, at 28 pixels, where none of it
+ * would be visible anyway. This is five elements and no ids at all.
+ *
+ * Never mangled, either. It is the one thing on the reel that is worth
+ * something, and a melting one would read as another joke.
+ */
+function ballSymbol(h) {
+  const sym = document.createElement('span');
+  sym.className = 'slot-sym slot-sym-ball';
+  sym.style.height = h + 'px';
+  sym.innerHTML =
+    '<svg viewBox="0 0 200 120" aria-hidden="true" focusable="false">' +
+      '<path class="ss-hide" d="M6,60 C36,6 164,6 194,60 C164,114 36,114 6,60 Z"/>' +
+      '<path class="ss-stripe" d="M44,14 C38,40 38,80 44,106 L52,106 C46,80 46,40 52,14 Z"/>' +
+      '<path class="ss-stripe" d="M156,14 C162,40 162,80 156,106 L148,106 C154,80 154,40 148,14 Z"/>' +
+      '<g class="ss-laces">' +
+        '<path d="M84,60 L116,60"/>' +
+        '<path d="M88,52 L88,68"/><path d="M96,51 L96,69"/>' +
+        '<path d="M104,51 L104,69"/><path d="M112,52 L112,68"/>' +
+      '</g>' +
+    '</svg>';
+  return sym;
+}
+
 function spinCell(cell, order) {
   const { td, img, tag, jackpot, sides } = cell;
 
@@ -231,7 +297,7 @@ function spinCell(cell, order) {
   const probe = img || tag;
   const h = Math.round(probe.getBoundingClientRect().height) || 32;
 
-  const landingSrc = img ? (img.currentSrc || img.src) : pick1(sides).src;
+  const landingSrc = img ? (img.currentSrc || img.src) : null;
   const landingAlt = img ? (img.alt || '') : '';
 
   // A longer strip and a longer spin for each successive cell, so a board with
@@ -253,25 +319,26 @@ function spinCell(cell, order) {
   strip.className = 'slot-strip';
 
   // The nonsense, then the truth. Sides alternate, so it reads as a decision
-  // between these two and nobody else.
+  // between these two and nobody else - with the football coming round every
+  // seventh symbol or so, offset per reel so the cells do not flash it in unison.
+  //
+  // Seven is chosen to be SEEN rather than counted: often enough to go past four
+  // or five times in a six-second spin, rare enough that it still registers as
+  // the odd one out every time it does.
+  const BALL_EVERY = 7;
+  const offset = Math.floor(Math.random() * BALL_EVERY);
+  let side = 0;
   for (let i = 0; i < turns; i++) {
-    const sym = document.createElement('img');
-    sym.src = sides[i % 2].src;
-    sym.alt = '';
-    sym.className = 'slot-sym';
-    sym.style.height = h + 'px';
-    // Not every symbol is warped. An unbroken run of distortions stops reading
-    // as distortion and starts reading as the design.
-    if (Math.random() < 0.82) sym.classList.add('slot-warp-' + pick1(WARPS));
-    if (Math.random() < 0.55) sym.classList.add('slot-tint-' + pick1(TINTS));
-    strip.appendChild(sym);
+    strip.appendChild(i % BALL_EVERY === offset
+      ? ballSymbol(h)
+      : teamSymbol(sides[side++ % 2].src, h, false));
   }
 
-  const finalSym = document.createElement('img');
-  finalSym.src = landingSrc;
-  finalSym.alt = landingAlt;
-  finalSym.className = 'slot-sym slot-sym-final';
-  finalSym.style.height = h + 'px';
+  // The landing symbol, and the only one on the reel that is clean. A popped
+  // pick has no team behind it, so the reel stops on the football itself.
+  const finalSym = jackpot ? ballSymbol(h) : teamSymbol(landingSrc, h, true);
+  finalSym.classList.add('slot-sym-final');
+  if (!jackpot) finalSym.alt = landingAlt;
   strip.appendChild(finalSym);
 
   const box = document.createElement('div');
@@ -294,10 +361,25 @@ function spinCell(cell, order) {
   const land = () => {
     td.classList.remove('slot-cell');
     td.classList.add('slot-landed');
-    // The reel leaves the crest behind for an ordinary pick. For a popped one it
-    // leaves the decoy, which the football is about to take away.
-    if (img) box.replaceWith(img);
-    else box.classList.add('slot-box-decoy');
+    if (img) {
+      box.replaceWith(img);
+    } else {
+      // It stopped on the football. Leave it sitting there for a beat - long
+      // enough to read what it stopped on - and then let it go, and what is
+      // underneath is AUTO WIN.
+      const ball = ballSymbol(h);
+      ball.classList.add('slot-ball-landed');
+      box.replaceWith(ball);
+      setTimeout(() => {
+        ball.classList.add('slot-ball-bursting');
+        setTimeout(() => {
+          ball.replaceWith(tag);
+          tag.hidden = false;
+          tag.classList.add('auto-win-landing');
+          setTimeout(() => tag.classList.remove('auto-win-landing'), 1600);
+        }, MORPH_BURST / revealSpeed);
+      }, MORPH_HOLD / revealSpeed);
+    }
     setTimeout(() => td.classList.remove('slot-landed'), 900);
   };
 
@@ -435,7 +517,12 @@ async function footballAct(popped, reels) {
   say('Reels coming down\u2026');
   await reels;
 
-  // And only now, with the cells actually showing it, the payoff.
+  // A popped cell is still showing the football it stopped on for another beat
+  // while that bursts into AUTO WIN. Saying the payoff over it would put the
+  // marquee back in front of the board, which is the whole thing this sequence
+  // was rebuilt to stop doing.
+  if (popped) await wait(MORPH_TOTAL);
+
   say(popped ? 'THE HOUSE PAYS. That one is an automatic win.'
              : 'The reels have it. Straight fifty-fifty, as ever.');
   await wait(popped ? 2600 : 1600);
@@ -443,17 +530,6 @@ async function footballAct(popped, reels) {
   strip.dataset.beat = 'exit';
   await wait(600);
   done();
-}
-
-/** Put a popped cell into its final state: no team, AUTO WIN, and it scores. */
-function finishJackpotCell(td) {
-  td.querySelectorAll('.slot-box').forEach(b => b.remove());
-  const tag = td.querySelector('.auto-win');
-  if (tag) {
-    tag.hidden = false;
-    tag.classList.add('auto-win-landing');
-    setTimeout(() => tag.classList.remove('auto-win-landing'), 1600);
-  }
 }
 
 /**
@@ -476,7 +552,6 @@ export async function runSlots(opts = {}) {
   const ball  = footballAct(popped.length > 0, reels);
 
   await reels;
-  popped.forEach(c => finishJackpotCell(c.td));
 
   // The chip edge, so an ordinary slots pick still says whose choice it was a
   // week later. A popped cell says AUTO WIN in plain words and needs no border
