@@ -43,6 +43,14 @@
 // so a shared ball is also the truer picture: that is not your football, it is
 // everybody's.
 //
+// IT STRAINS WHILE THE REELS ARE STILL TURNING, and resolves before they stop.
+// Running it afterwards meant the reels landed, everything went still, and only
+// then did the ball turn up - two sequences queueing politely, with a dead beat
+// in between. Now the ball is already shaking as the first reel starts, it pops
+// or holds while they are all still spinning, and the cells land into the
+// answer. If it popped, the reel underneath lands on a team nobody will ever
+// see, and the square turns over to AUTO WIN.
+//
 // AND IT IS THE BALL THAT IS ALREADY THERE. The reveal does not build a football
 // and it does not take over the screen - it grows the one sitting in the strip
 // at the top of the page, then puts it back. The board underneath is never
@@ -284,13 +292,17 @@ async function footballAct(popped) {
 
   // Every beat below is identical in both branches. Only `burst` differs, and
   // only at the very end.
+  // TIMED AGAINST THE REELS. The first cell lands at 3800ms, so everything up to
+  // the resolution has to fit inside that - the whole point is that the ball
+  // answers while they are still spinning. It comes to about 3.4 seconds, which
+  // leaves the aftermath to play out over the cells landing one by one.
   const beats = [
-    ['rise',    900],   // it swells up out of the strip
-    ['pump',    900],   // hiss — one more notch of air
-    ['creak',  1100],   // the seam whitens, a flinch
-    ['bulge1', 1200],   // swells hard, holds far too long...
-    ['ease',    700],   // ...and eases back. A squeak of escaping air.
-    ['bulge2', 1500],   // bigger, faster, laces visibly separating
+    ['rise',    450],   // it swells up out of the strip as the reels start
+    ['pump',    500],   // hiss — one more notch of air
+    ['creak',   600],   // the seam whitens, a flinch
+    ['bulge1',  700],   // swells hard, holds far too long...
+    ['ease',    350],   // ...and eases back. A squeak of escaping air.
+    ['bulge2',  800],   // bigger, faster, laces visibly separating
   ];
 
   strip.dataset.beat = 'idle';
@@ -341,16 +353,24 @@ export async function runSlots(opts = {}) {
   if (!due.length) return 0;
   due.forEach(c => spunThisLoad.add(cellKey(c.td)));
 
-  await Promise.all(due.map((c, i) => spinCell(c, i)));
-
   const popped = due.filter(c => c.jackpot);
-  await footballAct(popped.length > 0);
+
+  // Both at once, deliberately. The ball is shaking before the first reel has
+  // got going and has answered before the first one lands.
+  const reels = Promise.all(due.map((c, i) => spinCell(c, i)));
+  const ball  = footballAct(popped.length > 0);
+
+  await reels;
   popped.forEach(c => finishJackpotCell(c.td));
 
   // The chip edge, so an ordinary slots pick still says whose choice it was a
   // week later. A popped cell says AUTO WIN in plain words and needs no border
   // to explain itself.
   due.forEach(c => { if (!c.jackpot) markSlotCell(c.td); });
+
+  // The reels are done but the ball may still be deflating. Waited on so that a
+  // second Roll cannot start on top of the first one's aftermath.
+  await ball;
 
   return due.length;
 }

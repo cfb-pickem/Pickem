@@ -1957,6 +1957,37 @@ td.slot-cell .slot-was{ opacity:0; }
   50%     { transform:scale(1.10, .965) translateX(2px); }
 }
 
+/* THE TREMOR. The ball shakes for the whole time the reels are turning, getting
+   worse as it goes - that is the part that says "about to pop", and the scale
+   beats above cannot carry it on their own because a transition is still
+   between two resting states.
+
+   It rides on .jp-ball while the beats ride on .jp-shell inside it, so the two
+   compose instead of overwriting each other: one element is being squashed, the
+   element around it is being rattled. */
+.jp-strip[data-beat] .jp-ball{
+  --tq:.8px;
+  animation: jp-tremor 200ms linear infinite;
+}
+.jp-strip[data-beat="rise"]   .jp-ball{ --tq:.5px;  animation-duration:280ms; }
+.jp-strip[data-beat="pump"]   .jp-ball{ --tq:1px;   animation-duration:230ms; }
+.jp-strip[data-beat="creak"]  .jp-ball{ --tq:1.5px; animation-duration:180ms; }
+.jp-strip[data-beat="bulge1"] .jp-ball{ --tq:2.2px; animation-duration:130ms; }
+.jp-strip[data-beat="ease"]   .jp-ball{ --tq:1.2px; animation-duration:210ms; }
+.jp-strip[data-beat="bulge2"] .jp-ball{ --tq:3.4px; animation-duration:85ms;  }
+
+/* It stops the instant the ball answers. The stillness is the punctuation. */
+.jp-strip[data-beat="settle"] .jp-ball,
+.jp-strip[data-beat="burst"]  .jp-ball,
+.jp-strip[data-beat="exit"]   .jp-ball{ animation:none; }
+
+@keyframes jp-tremor{
+  0%, 100% { transform:translate(0, 0); }
+  25%      { transform:translate(var(--tq), calc(var(--tq) * -.6)); }
+  50%      { transform:translate(calc(var(--tq) * -1), var(--tq)); }
+  75%      { transform:translate(calc(var(--tq) * .5), calc(var(--tq) * .8)); }
+}
+
 /* The pop. The strip flares rather than the page - a whole-page shake for a
    thing living in a 40px bar reads as a rendering fault. */
 .jp-strip[data-beat="burst"]{
@@ -2023,6 +2054,7 @@ td[data-slots]{ cursor:pointer; }
   .jp-strip[data-beat] .jp-shell,
   .jp-strip[data-beat="burst"],
   .jp-strip[data-beat="burst"] .jp-shell,
+  .jp-strip[data-beat] .jp-ball,
   .auto-win-landing{ animation:none; }
   .jp-strip,
   .jp-strip .jp-ball,
