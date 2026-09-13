@@ -308,12 +308,18 @@ function spinCell(cell, order) {
   // symbols drifting past instead of a reel running. Roughly 8.5 symbols a
   // second is the pace that reads as a slot machine, so more time buys
   // proportionally more strip and the speed stays put.
-  // LONGER. The two numbers move together, as the note above says: roughly 8.5
-  // symbols a second is the pace that reads as a slot machine, so more time has
-  // to buy proportionally more strip or the reel just gets slower rather than
-  // longer. 51 over six seconds is the same pace the 32-over-3.8s was.
-  const turns = 51 + order * 15;
-  const duration = 6000 + order * 1800;
+  // LONGER, AND LANDING CLOSER TOGETHER. The two numbers move together, as the
+  // note above says: roughly 8.5 symbols a second is the pace that reads as a
+  // slot machine, so more time has to buy proportionally more strip or the reel
+  // gets slower rather than longer. 76 over nine seconds is that same pace.
+  //
+  // The stagger came DOWN while the length went up - 900ms between cells instead
+  // of 1800. A long tail of reels trickling in one every two seconds is not
+  // suspense, it is waiting. The suspense is the nine seconds before any of them
+  // lands; once the first one goes the rest should come down on top of each
+  // other.
+  const turns = 76 + order * 8;
+  const duration = 9000 + order * 900;
 
   const strip = document.createElement('div');
   strip.className = 'slot-strip';
@@ -463,23 +469,25 @@ async function footballAct(popped, reels) {
     return;
   }
 
-  // TIMED AGAINST THE REELS. The first cell lands at 6000ms, so everything up to
-  // the resolution has to fit inside that - the whole point is that the ball
-  // answers while they are still spinning.
+  // TIMED AGAINST THE REELS. The first cell lands at 9000ms and everything up to
+  // the resolution has to fit inside that, because the whole point is that the
+  // ball answers while they are all still spinning.
   //
-  // TWO FAKE-OUTS, which is where the suspense actually lives. A single build to
-  // a single peak is over the moment you can see the peak coming. It swells,
-  // holds far too long, and RELAXES - it held, you think - and then goes again,
-  // bigger, and relaxes again. By the third time nobody knows which way it ends,
-  // which is the only state worth being in.
+  // THREE BULGES, TWO RELIEFS, over eight and a half seconds. The old version
+  // ran this in five and it was over before it had started: a build only works
+  // if it outlasts your patience for it. Each bulge goes further than the last
+  // and each relief lands higher than the last, so the trend is relentlessly
+  // upward even while it is backing down - and by the third one nobody knows
+  // which way it ends, which is the only state worth being in.
   const beats = [
-    ['rise',    700, ''],
-    ['pump',    800, 'The house puts more air in it\u2026'],
-    ['creak',   900, 'That seam is not happy.'],
-    ['bulge1', 1000, 'Oh. Oh no.'],
-    ['hold1',   600, '\u2026it is holding.'],
-    ['bulge2',  900, 'No \u2014 there it goes\u2014'],
-    ['ease',    500, '\u2026not yet.'],
+    ['rise',    900],
+    ['pump',   1000],
+    ['creak',  1200],
+    ['bulge1', 1300],
+    ['hold1',   900],   // it held, you think
+    ['bulge2', 1200],
+    ['ease',    800],   // ...it held again?
+    ['bulge3', 1200],
   ];
 
   strip.dataset.beat = 'idle';
@@ -491,9 +499,13 @@ async function footballAct(popped, reels) {
   // to IS how close the ball is.
   strainStart(beats.reduce((a, b) => a + b[1], 0) / 1000 / revealSpeed);
 
-  for (const [beat, ms, line] of beats) {
+  // NOTHING IS SAID WHILE IT STRAINS. There was a line of commentary on every
+  // beat - "Oh. Oh no.", "...it is holding." - and it was doing the tension's job
+  // for it, badly. A machine does not narrate itself. The ball is shaking, the
+  // seam is splitting, the reels are roaring: if that is not enough then more
+  // words will not fix it, and if it is enough then the words are in the way.
+  for (const [beat, ms] of beats) {
     strip.dataset.beat = beat;
-    say(line);
     await wait(ms);
   }
 
@@ -501,20 +513,22 @@ async function footballAct(popped, reels) {
   // announce the payoff here: the AUTO WIN square does not exist until the reel
   // above it lands, and a marquee that says "the house pays" over a board still
   // spinning is the machine talking about something nobody can see yet.
+  // It answers here, with the reels still turning. The only things said out loud
+  // in the whole sequence are this and the payoff, and both are for screen
+  // readers - the note is off-screen unless somebody has asked for reduced
+  // motion, in which case it is all they are getting.
   if (popped) {
     strip.dataset.beat = 'burst';
-    say('IT WENT.');
+    say('The football went. Automatic win.');
     pop();
     deflateJackpot();
   } else {
     strip.dataset.beat = 'settle';
-    say('It held.');
+    say('The football held.');
     hold();
   }
   await wait(900);
 
-  // Now wait for the board to catch up, and say so while it does.
-  say('Reels coming down\u2026');
   await reels;
 
   // A popped cell is still showing the football it stopped on for another beat
@@ -523,8 +537,8 @@ async function footballAct(popped, reels) {
   // was rebuilt to stop doing.
   if (popped) await wait(MORPH_TOTAL);
 
-  say(popped ? 'THE HOUSE PAYS. That one is an automatic win.'
-             : 'The reels have it. Straight fifty-fifty, as ever.');
+  say(popped ? 'The house pays. That pick is an automatic win.'
+             : 'The reels decided it, fifty-fifty.');
   await wait(popped ? 2600 : 1600);
 
   strip.dataset.beat = 'exit';

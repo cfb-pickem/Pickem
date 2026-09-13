@@ -2034,13 +2034,14 @@ td.slot-cell .slot-was{ opacity:0; }
   .jp-pay-desc{ font-size:.68rem; }
 }
 .jp-note{
-  font-family:'Oswald', sans-serif;
-  font-size:.8rem;
-  letter-spacing:.03em;
-  color:#f0b46a;
-  margin-top:.2rem;
+  position:absolute;
+  width:1px; height:1px;
+  margin:-1px; padding:0; border:0;
+  overflow:hidden;
+  clip:rect(0 0 0 0);
+  clip-path:inset(50%);
+  white-space:nowrap;
 }
-.jp-note:empty{ display:none; }
 
 /* THE FOUR REST STATES. The ball is drawn taut at every one of them - what
    changes is how badly it is behaving, not how big it is. A ball that has
@@ -2086,6 +2087,7 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-beat] .jp-bulbs i{ animation-duration:.54s; }
 .jp-strip[data-beat="bulge2"] .jp-bulbs i{ animation-duration:.3s; }
 .jp-strip[data-beat="ease"]   .jp-bulbs i{ animation-duration:.24s; }
+.jp-strip[data-beat="bulge3"] .jp-bulbs i{ animation-duration:.16s; }
 .jp-strip[data-beat="burst"] .jp-bulbs i{
   animation:none;
   background:#ffd97a;
@@ -2205,12 +2207,16 @@ td.slot-cell .slot-was{ opacity:0; }
 /* And the second. Higher than the first relief, lower than the bulge it came
    off, so the trend is still upward even while it is backing down. */
 .jp-strip[data-beat="ease"]   .jp-shell{ transform:scale(1.14, .97); transition-duration:.6s; }
+/* The third and last. Further than either before it, and it does not come back. */
+.jp-strip[data-beat="bulge3"] .jp-shell{ transform:scale(1.42, .86); transition-duration:.5s; animation: jp-crit .22s ease-in-out infinite .3s; }
 .jp-strip[data-beat="settle"] .jp-shell{ transform:scale(1); transition-duration:.9s; }
 
 .jp-strip[data-beat="creak"]  .jp-seam,
 .jp-strip[data-beat="hold1"]  .jp-seam,
 .jp-strip[data-beat="bulge1"] .jp-seam{ opacity:.75; stroke-width:2.4; }
 .jp-strip[data-beat="bulge2"] .jp-seam{ opacity:1; stroke-width:3.4; stroke:var(--jp-flash); }
+.jp-strip[data-beat="bulge3"] .jp-seam{ opacity:1; stroke-width:4.6; stroke:var(--jp-flash); }
+.jp-strip[data-beat="bulge3"] .jp-laces path{ stroke-width:2.2; }
 .jp-strip[data-beat="bulge2"] .jp-laces path{ stroke-width:2.6; }
 
 @keyframes jp-flinch{
@@ -2237,6 +2243,7 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-beat="hold1"]  .jp-ball{ --tq:1.1px; animation-duration:240ms; }
 .jp-strip[data-beat="ease"]   .jp-ball{ --tq:1.6px; animation-duration:190ms; }
 .jp-strip[data-beat="bulge2"] .jp-ball{ --tq:3.4px; animation-duration:85ms;  }
+.jp-strip[data-beat="bulge3"] .jp-ball{ --tq:5px;   animation-duration:62ms;  }
 
 /* It stops the instant the ball answers. The stillness is the punctuation. */
 .jp-strip[data-beat="settle"] .jp-ball,
@@ -2342,6 +2349,17 @@ td[data-slots]{ cursor:pointer; }
 }
 
 @media (prefers-reduced-motion: reduce){
+  /* No ball to watch here, so the words come back - they are all that is left. */
+  .jp-note{
+    position:static;
+    width:auto; height:auto;
+    margin:.25rem 0 0; overflow:visible;
+    clip:auto; clip-path:none;
+    white-space:normal;
+    font-family:'Oswald', sans-serif;
+    font-size:.85rem;
+    color:#f0b46a;
+  }
   .jp-strip .jp-shell,
   .jp-strip[data-beat] .jp-shell,
   .jp-strip[data-beat="burst"],
