@@ -53,8 +53,23 @@ export function strainLevel(odds) {
   return 'calm';
 }
 
-function fmtPct(odds) {
-  return (odds * 100).toFixed(odds < 0.01 ? 2 : 1) + '%';
+/**
+ * How full the gauge reads, 0..1. NOT the odds, and deliberately not.
+ *
+ * The league is never told its chance of popping. What they get is a needle
+ * that has been climbing since the last one went, which is the same information
+ * in the only form that creates any tension: you can see it is worse than it was
+ * on Tuesday and you cannot work out how much worse.
+ *
+ * It is eased rather than linear, so the early pulls move it visibly - a gauge
+ * that sits dead still for the first fortnight is a gauge nobody looks at twice -
+ * and it is capped short of the end so it never reads FULL, because a full gauge
+ * is a promise and this thing must never make one.
+ */
+function gaugeFill(pulls) {
+  const n = Math.max(Number(pulls) || 0, 0);
+  const CAP = 65;                       // where the odds hit their ceiling
+  return Math.min(Math.pow(Math.min(n / CAP, 1), 0.62), 1) * 0.92;
 }
 
 // The silhouette. A football is a prolate spheroid, which side-on means two arcs
@@ -159,10 +174,46 @@ const SPEAKER_OFF =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/>' +
   '<path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke-width="2"/></svg>';
 
+/**
+ * What a pop DOES. Never what it is worth in odds.
+ *
+ * A real machine puts its paytable on the glass, and the first version of this
+ * did the same - the outcomes with their true percentages beside them. That went
+ * because the not-knowing is the entire product here. A league that can read
+ * "2.8%" off the cabinet has a statistic; a league that can only see the needle
+ * has been climbing since Tuesday has a thing to argue about.
+ *
+ * What stays is the part nobody can guess and everybody needs: that a pop is an
+ * automatic win, and that it is the whole league's football rather than yours.
+ * Explaining the rules is not the same as publishing the odds.
+ */
+function paytable() {
+  return (
+    '<div class="jp-paytable" hidden>' +
+      '<div class="jp-pay-row">' +
+        '<b class="jp-pay-sym">POP</b>' +
+        '<span class="jp-pay-desc">The football goes and that pick is an ' +
+          '<b>automatic win</b> \u2014 one point, whatever the game does. ' +
+          'No team, no crest, just AUTO WIN in the square.</span>' +
+      '</div>' +
+      '<div class="jp-pay-row">' +
+        '<b class="jp-pay-sym">HOLD</b>' +
+        '<span class="jp-pay-desc">It holds, and the reels decide your team the ' +
+          'way they always have \u2014 straight fifty-fifty.</span>' +
+      '</div>' +
+      '<p class="jp-pay-note">' +
+        'One football, the whole league. Every "let the slots decide" pull by ' +
+        'anybody puts more air in it, and it stays where it is until somebody ' +
+        'pops it \u2014 then it is back to a new ball for everyone. ' +
+        '<b>Nobody is told how close it is.</b> That is the point of it.' +
+      '</p>' +
+    '</div>'
+  );
+}
+
 function render(el, pulls) {
   const odds = jackpotOdds(pulls);
   const n = Number(pulls) || 0;
-  const pct = fmtPct(odds);
 
   el.dataset.strain = strainLevel(odds);
   el.innerHTML =
@@ -170,20 +221,42 @@ function render(el, pulls) {
     '<span class="jp-cab">' +
       ballSvg() +
       '<span class="jp-text">' +
-        '<span class="jp-label">Jackpot</span>' +
-        // An inset, glowing panel rather than plain text: a progressive meter on
-        // a real machine is a lit display, and it is the one part of this that
-        // states a fact, so it is the part that should look instrumented.
-        '<b class="jp-pct">' + pct + '</b>' +
-        '<span class="jp-sub">' + n + (n === 1 ? ' pull' : ' pulls') + ' since the last pop</span>' +
+        '<span class="jp-label">Pressure</span>' +
+        // A gauge rather than a readout. A progressive meter on a real machine is
+        // a lit display, so this is one too - it just measures instead of stating.
+        '<span class="jp-gauge" aria-hidden="true">' +
+          '<i style="width:' + (gaugeFill(n) * 100).toFixed(1) + '%"></i>' +
+        '</span>' +
+        '<span class="jp-sub">' + n + (n === 1 ? ' pull' : ' pulls') + ' since it last blew</span>' +
         // Written to by the reveal. Empty and collapsed the rest of the time.
         '<span class="jp-note" aria-live="polite"></span>' +
       '</span>' +
+      '<button type="button" class="jp-pays" data-act="pays" aria-expanded="false">Pays</button>' +
       '<button type="button" class="jp-sound" data-act="sound" aria-pressed="' +
         (soundEnabled() ? 'true' : 'false') + '" title="Slot machine sound">' +
         (soundEnabled() ? SPEAKER_ON : SPEAKER_OFF) +
       '</button>' +
-    '</span>';
+    '</span>' +
+    paytable();
+
+  const pays = el.querySelector('.jp-pays');
+  const panel = el.querySelector('.jp-paytable');
+  if (pays && panel) {
+    // render() runs again every time the meter moves, so the panel has to be put
+    // back the way the reader left it. Re-collapsing it under somebody mid-read
+    // is the kind of small rudeness that makes a thing feel broken.
+    if (el.dataset.paysOpen === '1') {
+      panel.hidden = false;
+      pays.setAttribute('aria-expanded', 'true');
+    }
+    pays.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = panel.hidden;
+      panel.hidden = !open;
+      pays.setAttribute('aria-expanded', open ? 'true' : 'false');
+      el.dataset.paysOpen = open ? '1' : '0';
+    });
+  }
 
   const btn = el.querySelector('.jp-sound');
   if (btn) btn.addEventListener('click', e => {
@@ -198,11 +271,13 @@ function render(el, pulls) {
     btn.innerHTML = on ? SPEAKER_ON : SPEAKER_OFF;
   });
 
-  // Said in full to a screen reader, which gets none of the wobbling.
+  // A screen reader gets the same thing everybody else does, and no more. Putting
+  // the real odds in here because "nobody reads it" would be both a leak and the
+  // exact contempt this label exists to avoid.
   el.setAttribute('aria-label',
-    'Jackpot football: ' + pct + ' chance the next slots pull pops it. ' +
-    n + (n === 1 ? ' pull' : ' pulls') + ' since the last pop.');
-  el.title = 'Every "let the slots decide" pull inflates it. Pop it and that pick is an automatic win.';
+    'The league football. ' + n + (n === 1 ? ' pull' : ' pulls') +
+    ' since it last blew, and getting tighter.');
+  el.title = 'Every "let the slots decide" pull puts more air in it. Nobody knows when it goes.';
 }
 
 /**

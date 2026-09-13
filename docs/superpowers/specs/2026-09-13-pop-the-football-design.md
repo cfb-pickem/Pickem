@@ -32,9 +32,32 @@ it is behaving at rest**:
 | 10% | Barely containing itself. Continuous strain, seam split white, the whole thing vibrating. |
 
 A ball that has looked about to burst for six weeks is funny rather than
-dishonest, which is the effect we want. The honest channel is the hover: **"17
-pulls since the last pop — 2.8%."** Anyone who wants the real number can have it,
-so the drawing is free to be pure theatre.
+dishonest, which is the effect we want.
+
+### The league is never told how close it is
+
+An earlier draft put the real number on the cabinet — *"17 pulls since the last
+pop — 2.8%"* — on the reasoning that anyone who wanted it could have it, which
+freed the drawing to be theatre. That is backwards. **The not-knowing is the
+product.** A league that can read 2.8% off the glass has a statistic; a league
+that can only see a needle which has been climbing since Tuesday has something
+to argue about.
+
+So there is no percentage anywhere: not on the cabinet, not in the `title`, not
+in the `aria-label`. What shows instead is a **pressure gauge** and a pull count.
+The gauge is eased rather than linear so the early pulls visibly move it — a
+gauge that sits dead still for a fortnight is one nobody looks at twice — and it
+is capped short of the end so it never reads FULL, because a full gauge is a
+promise and this thing must never make one.
+
+The gauge is deliberately **not** derived from `jackpotOdds()`. If it were, then
+reading the bar off the screen and inverting the ramp would hand back the exact
+number being withheld.
+
+**This is a UI decision, not a secret.** The repo is public: `slots_jackpot_odds()`
+is in the migration and `jackpotOdds()` is in `js/jackpot.js`, so anyone who goes
+looking can compute the exact chance. It is hidden from the board, not from the
+determined.
 
 ## The numbers
 
@@ -138,6 +161,25 @@ The meter increments **when a slots pick is saved**, by trigger — that is the
 lever pull the league watches all week, and it has to be server-side because the
 repo is public and the key is anon. Nothing in the browser decides anything,
 same rule as the existing migration.
+
+## What the glass says
+
+Borrowed from [OpenSourceCasino](https://github.com/LucasHazardous/OpenSourceCasino),
+which is a fixed-odds toy with no progressive mechanics and a reel that is a
+100ms text swap — but which does put its paytable on the glass, the way a real
+machine has to.
+
+A collapsed **Pays** panel on the cabinet, and it explains the rules without
+publishing the odds:
+
+- **POP** — the football goes and that pick is an automatic win. One point,
+  whatever the game does. No team, no crest, just AUTO WIN in the square.
+- **HOLD** — it holds, and the reels decide your team the way they always have.
+- One football, the whole league. Every pull by anybody puts more air in it, and
+  it stays where it is until somebody pops it. **Nobody is told how close it is.
+  That is the point of it.**
+
+Explaining what a thing does is not the same as publishing what it pays.
 
 ## The seven seconds
 
