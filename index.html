@@ -1035,8 +1035,8 @@
       const ids = (games || []).map(g => g.GameId);
       let picks = [];
       if (ids.length){
-        const { data: p, error: pErr } = await supabase
-          .from('picks').select('team_id, game_id, pick, by_slots, jackpot').in('game_id', ids);
+        const { data: p, error: pErr } = await selectPicks(cols =>
+          supabase.from('picks').select(cols).in('game_id', ids));
         if (pErr){ status('Could not load picks.', true); return null; }
         picks = p || [];
       }
@@ -1054,8 +1054,8 @@
       let tbPicks = [];
       const tbIds = (tbGames || []).map(g => g.GameId);
       if (tbIds.length) {
-        const { data: tp } = await supabase
-          .from('picks').select('team_id, game_id, pick, by_slots, jackpot').in('game_id', tbIds);
+        const { data: tp } = await selectPicks(cols =>
+          supabase.from('picks').select(cols).in('game_id', tbIds));
         tbPicks = tp || [];
       }
 
@@ -1072,6 +1072,27 @@
     }
 
     // Picks for a given set of games, from the cache.
+    // THE PAGE AND THE DATABASE SHIP SEPARATELY, and this is where that bites.
+    // GitHub Pages serves this file the moment it is pushed; a migration lands
+    // whenever somebody runs it. So a select naming a column the database has
+    // not got yet is not a hypothetical - it is the normal state of affairs for
+    // the minutes in between, and it used to take the entire leaderboard down
+    // with it, because a failed picks query means no picks at all.
+    //
+    // Ask for the column. If it is not there yet, ask again without it and
+    // remember, so the whole page pays for the discovery once. Rows that come
+    // back without `jackpot` read as undefined, which is falsy, which is exactly
+    // what a board with no jackpots in it should do.
+    let pickCols = 'team_id, game_id, pick, by_slots, jackpot';
+    async function selectPicks(build){
+      let res = await build(pickCols);
+      if (res.error && /jackpot/i.test(res.error.message || '')) {
+        pickCols = 'team_id, game_id, pick, by_slots';
+        res = await build(pickCols);
+      }
+      return res;
+    }
+
     function picksForGames(ids){
       const want = new Set(ids.map(Number));
       return (seasonCache.picks || []).filter(p => want.has(Number(p.game_id)));
@@ -1240,10 +1261,8 @@
         return;
       }
 
-      const { data: allPicks, error: pErr } = await supabase
-        .from('picks')
-        .select('team_id, game_id, pick, jackpot')
-        .in('game_id', gameIdsPo);
+      const { data: allPicks, error: pErr } = await selectPicks(cols =>
+        supabase.from('picks').select(cols).in('game_id', gameIdsPo));
       if(pErr){ status(pErr.message, true); return; }
 
       const map = Object.create(null);
@@ -2757,8 +2776,8 @@
       const key = gameIds.join(',');
       if (pickReloadFor === key) return;
 
-      const { data, error } = await supabase
-        .from('picks').select('team_id, game_id, pick, by_slots, jackpot').in('game_id', gameIds);
+      const { data, error } = await selectPicks(cols =>
+        supabase.from('picks').select(cols).in('game_id', gameIds));
       if (error || !data) return;            // leave it unset so the next tick retries
 
       // Do not latch on an unconvincing answer. The browser's idea of kickoff
