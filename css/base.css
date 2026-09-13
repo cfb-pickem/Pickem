@@ -1814,3 +1814,224 @@ td.slot-cell .slot-was{ opacity:0; }
 @media (prefers-reduced-motion: reduce){
   .slot-was{ transition:none; }
 }
+
+/* ======================================================================
+ * POP THE FOOTBALL — the jackpot meter, and the reveal it pays out in.
+ * ====================================================================== */
+
+:root{
+  --jp-leather-edge: #3b1c0c;
+  --jp-seam:         #efe6d2;
+  --jp-flash:        #fff6de;
+}
+
+/* ---------- The ball itself, shared by the header and the reveal ------- */
+
+.jp-ball{ display:block; overflow:visible; }
+.jp-shell{ transform-origin:32px 20px; }
+.jp-hide{ stroke:var(--jp-leather-edge); stroke-width:1.2; }
+.jp-seam{
+  stroke:var(--jp-seam);
+  stroke-width:1.1;
+  opacity:.55;
+}
+.jp-laces line{ stroke:var(--jp-seam); stroke-width:1.5; stroke-linecap:round; opacity:.9; }
+.jp-gloss{ fill:#fff; opacity:.17; }
+.jp-gloss-2{ opacity:.10; }
+
+/* ---------- The header strip, on the leaderboard and the picks page ---- */
+
+.jp-strip{
+  display:flex;
+  align-items:center;
+  gap:.6rem;
+  margin:0 0 .75rem;
+  padding:.45rem .7rem;
+  border:1px solid rgba(201,146,16,.22);
+  background:rgba(201,146,16,.05);
+}
+.jp-strip .jp-ball{ width:52px; flex:0 0 auto; }
+.jp-text{ display:flex; flex-direction:column; line-height:1.15; }
+.jp-pct{
+  font-family:'Oswald', sans-serif;
+  font-size:1rem;
+  font-weight:600;
+  color:var(--cfp-ivory);
+  font-variant-numeric:tabular-nums;
+}
+.jp-sub{ font-size:.7rem; color:#b9bcc4; }
+
+/* THE FOUR REST STATES. The ball is drawn taut at every one of them - what
+   changes is how badly it is behaving, not how big it is. A ball that has
+   looked about to burst for six weeks is the joke; a ball that inflated from
+   new to bursting would be a promise about a number, and it would be lying. */
+.jp-strip[data-strain="calm"]     .jp-shell{ animation: jp-calm 9s ease-in-out infinite; }
+.jp-strip[data-strain="stirring"] .jp-shell{ animation: jp-stir 3.4s ease-in-out infinite; }
+.jp-strip[data-strain="high"]     .jp-shell{ animation: jp-high 1.5s ease-in-out infinite; }
+.jp-strip[data-strain="critical"] .jp-shell{ animation: jp-crit .42s ease-in-out infinite; }
+
+.jp-strip[data-strain="high"]     .jp-seam{ opacity:.8;  stroke-width:1.4; }
+.jp-strip[data-strain="critical"] .jp-seam{ opacity:1;   stroke-width:1.9; }
+.jp-strip[data-strain="critical"] .jp-pct{ color:#f0b46a; }
+
+@keyframes jp-calm{
+  0%, 92%, 100% { transform:scale(1); }
+  95%           { transform:scale(1.018, .99); }
+}
+@keyframes jp-stir{
+  0%, 78%, 100% { transform:scale(1); }
+  85%           { transform:scale(1.03, .978) rotate(.5deg); }
+  92%           { transform:scale(.995, 1.008); }
+}
+@keyframes jp-high{
+  0%, 100% { transform:scale(1.01, .995); }
+  35%      { transform:scale(1.05, .96) rotate(-.8deg); }
+  70%      { transform:scale(1.0, 1.02) rotate(.6deg); }
+}
+@keyframes jp-crit{
+  0%, 100% { transform:scale(1.05, .95) rotate(-1deg); }
+  50%      { transform:scale(1.08, .93) rotate(1.2deg); }
+}
+
+.jp-just-popped{ animation: jp-relief 2.4s ease-out; }
+@keyframes jp-relief{
+  0%   { box-shadow:0 0 0 3px var(--jp-flash) inset; }
+  100% { box-shadow:0 0 0 0 transparent inset; }
+}
+
+/* ---------- The reveal: one ball, over the whole board ----------------- */
+
+.jp-stage{
+  position:fixed;
+  inset:0;
+  z-index:80;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  pointer-events:none;
+  background:rgba(6,7,10,0);
+  transition:background .7s ease;
+}
+.jp-stage-inner{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:1rem;
+  transform:translateY(40vh) scale(.6);
+  opacity:0;
+  transition:transform .85s cubic-bezier(.2,.8,.25,1), opacity .6s ease;
+}
+.jp-stage .jp-ball{ width:min(52vw, 320px); }
+.jp-stage-note{
+  font-family:'Oswald', sans-serif;
+  font-size:clamp(.95rem, 3.4vw, 1.4rem);
+  letter-spacing:.04em;
+  color:var(--cfp-ivory);
+  text-align:center;
+  min-height:1.4em;
+  text-shadow:0 2px 10px rgba(0,0,0,.8);
+}
+
+.jp-stage[data-beat]:not([data-beat="idle"]):not([data-beat="exit"]){
+  background:rgba(6,7,10,.82);
+}
+.jp-stage[data-beat]:not([data-beat="idle"]) .jp-stage-inner{
+  transform:translateY(0) scale(1);
+  opacity:1;
+}
+
+/* THE BEATS. Every one of these is identical whether the ball is about to pop
+   or not - only `burst` differs, and only at the very end. If the pop version
+   strained harder the league would learn to read it in three weeks and the
+   whole tease would be dead. */
+.jp-stage .jp-shell{ transition:transform .5s cubic-bezier(.3,1.4,.4,1); }
+.jp-stage[data-beat="rise"]   .jp-shell{ transform:scale(1); }
+.jp-stage[data-beat="pump"]   .jp-shell{ transform:scale(1.09, .97); }
+.jp-stage[data-beat="creak"]  .jp-shell{ transform:scale(1.10, .965); animation: jp-flinch .5s steps(2) 2; }
+.jp-stage[data-beat="bulge1"] .jp-shell{ transform:scale(1.20, .93); transition-duration:.55s; }
+.jp-stage[data-beat="ease"]   .jp-shell{ transform:scale(1.12, .975); transition-duration:.6s; }
+.jp-stage[data-beat="bulge2"] .jp-shell{ transform:scale(1.30, .90); transition-duration:.4s; animation: jp-crit .3s ease-in-out infinite .4s; }
+.jp-stage[data-beat="settle"] .jp-shell{ transform:scale(1); transition-duration:.9s; }
+
+.jp-stage[data-beat="creak"]  .jp-seam,
+.jp-stage[data-beat="bulge1"] .jp-seam{ opacity:.9; stroke-width:1.6; }
+.jp-stage[data-beat="bulge2"] .jp-seam{ opacity:1; stroke-width:2.6; stroke:var(--jp-flash); }
+
+@keyframes jp-flinch{
+  0%,100% { transform:scale(1.10, .965) translateX(0); }
+  50%     { transform:scale(1.10, .965) translateX(2px); }
+}
+
+/* The pop. */
+.jp-stage[data-beat="burst"]{ background:rgba(6,7,10,.82); }
+.jp-stage[data-beat="burst"] .jp-shell{
+  animation: jp-burst .55s cubic-bezier(.2,.9,.3,1) forwards;
+}
+.jp-stage[data-beat="burst"] .jp-stage-inner{ animation: jp-flash .45s ease-out; }
+@keyframes jp-burst{
+  0%   { transform:scale(1.30, .90); opacity:1; }
+  18%  { transform:scale(1.75, 1.6); opacity:1; }
+  100% { transform:scale(2.6, 2.4) rotate(9deg); opacity:0; }
+}
+@keyframes jp-flash{
+  0%   { filter:brightness(6) saturate(0); }
+  100% { filter:brightness(1) saturate(1); }
+}
+
+.jp-stage[data-beat="exit"]{ background:rgba(6,7,10,0); }
+.jp-stage[data-beat="exit"] .jp-stage-inner{ opacity:0; transform:translateY(-8vh) scale(.9); }
+
+.jp-shake{ animation: jp-shake .55s cubic-bezier(.36,.07,.19,.97); }
+@keyframes jp-shake{
+  10%, 90% { transform:translate3d(-2px,0,0); }
+  30%, 70% { transform:translate3d(5px,0,0); }
+  50%      { transform:translate3d(-7px,0,0); }
+}
+
+/* ---------- The cell that popped -------------------------------------- */
+
+/* No crest, because there is no team behind it - the house paid this one, and a
+   logo would be the cell claiming a pick that was never made. Plain words
+   instead, which also saves the board from ever showing a crest that plainly
+   lost and scored anyway. */
+.auto-win{
+  display:inline-block;
+  padding:.1rem .3rem;
+  font-family:'Oswald', sans-serif;
+  font-size:.62rem;
+  font-weight:600;
+  letter-spacing:.06em;
+  line-height:1.5;
+  white-space:nowrap;
+  color:#12202f;
+  background:linear-gradient(180deg, #f3d27a, #c99210);
+  border:1px solid #8a640a;
+}
+.auto-win[hidden]{ display:none; }
+.auto-win-landing{ animation: jp-paid 1.5s ease-out; }
+@keyframes jp-paid{
+  0%   { transform:scale(2.4); filter:brightness(4); }
+  40%  { transform:scale(1); filter:brightness(1.6); }
+  100% { transform:scale(1); filter:brightness(1); }
+}
+
+/* The decoy the reel landed on, still sitting there while the football decides
+   whether to take it away. */
+.slot-box-decoy{ opacity:.9; }
+
+/* A slots cell can be replayed by clicking it, in any week, forever. Saying so
+   with the cursor is the only affordance it gets - a button in every cell would
+   be louder than the board. */
+td[data-slots]{ cursor:pointer; }
+
+@media (prefers-reduced-motion: reduce){
+  .jp-strip .jp-shell,
+  .jp-stage .jp-shell,
+  .jp-stage[data-beat="burst"] .jp-shell,
+  .jp-stage[data-beat="burst"] .jp-stage-inner,
+  .auto-win-landing,
+  .jp-just-popped,
+  .jp-shake{ animation:none; }
+  .jp-stage .jp-shell,
+  .jp-stage-inner{ transition:none; }
+}

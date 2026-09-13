@@ -47,7 +47,7 @@
 // an Edge Function — not a page and not a query parameter.
 
 import { sessionInfo } from './session.js';
-import { runSlots } from './slots.js';
+import { runSlots, setRevealSpeed, forgetSpins } from './slots.js';
 import { markSlotCell } from './utils.js';
 
 // KEEP THE GATE AT THE BOTTOM OF THIS FILE. Function declarations hoist but
@@ -138,6 +138,11 @@ const LAB_SEEN_PREFIX = 'cfb-slots-seen';
 let labPanel = null;
 let labCells = 3;
 let labSpeed = 1;
+let labPop = false;
+// The crest pulled out of a forced-pop cell, so Clear can put it back. A popped
+// cell has no team in it, and the lab has to be able to undo that completely -
+// a scratch area that cannot restore the board is not a scratch area.
+const labStashedCrest = new WeakMap();
 
 function labNote(text) {
   const n = labPanel && labPanel.querySelector('.slot-panel-note');
@@ -158,8 +163,16 @@ function labCandidates() {
   return out;
 }
 
-/** Forget every reveal this browser has watched, so they can all run again. */
+/**
+ * Forget every reveal this page has shown, so they can all run again.
+ *
+ * The reveal now replays on each page LOAD and suppresses itself within one, so
+ * the thing to clear is that set rather than localStorage. The old keys are
+ * swept too: a browser that watched a reveal under the previous rule should not
+ * carry that around forever.
+ */
 function labForget() {
+  forgetSpins();
   try {
     for (const k of Object.keys(localStorage)) {
       if (k.indexOf(LAB_SEEN_PREFIX) === 0) localStorage.removeItem(k);
@@ -174,6 +187,12 @@ function labReset() {
     delete td.dataset.slots;
     delete td.dataset.slotsTeam;
     td.classList.remove('slot-cell', 'slot-landed');
+  });
+  document.querySelectorAll('[data-jackpot]').forEach(td => {
+    td.querySelectorAll('.auto-win').forEach(t => t.remove());
+    delete td.dataset.jackpot;
+    const crest = labStashedCrest.get(td);
+    if (crest) { td.appendChild(crest); labStashedCrest.delete(td); }
   });
   document.querySelectorAll('[data-slot-marked]').forEach(td => {
     td.querySelectorAll('.slot-was').forEach(m => m.remove());
@@ -229,11 +248,31 @@ async function labRun() {
     c.td.dataset.slotsTeam = String(8000 + i);
   });
 
+  // FORCING THE POP. A real jackpot lands about twice a season, so without this
+  // the only way to see the thing the whole feature is built around is to wait
+  // for one - which is exactly the problem the lab exists to solve.
+  //
+  // It builds the cell the way renderTable builds a popped one: the crest comes
+  // out, because there is no team behind an AUTO WIN, and the tag goes in.
+  if (labPop && chosen.length) {
+    const c = chosen[0];
+    c.td.dataset.jackpot = '1';
+    const crest = c.td.querySelector('img.logo');
+    if (crest) { labStashedCrest.set(c.td, crest); crest.remove(); }
+    const tag = document.createElement('span');
+    tag.className = 'auto-win';
+    tag.textContent = 'AUTO WIN';
+    c.td.appendChild(tag);
+  }
+
   labNote('Rolling ' + chosen.length + ' cell' + (chosen.length === 1 ? '' : 's') + '…');
 
   // Start the real reveal, then bend the animations that are now running. The
   // spin keeps its own easing curve and only the rate changes, so a slow pass
   // is this animation slowed down rather than a different one.
+  // The football's beats are timers rather than animations, so the slider has
+  // to be handed to them directly - playbackRate only ever reached the reels.
+  setRevealSpeed(labSpeed);
   const spinning = runSlots();
   if (labSpeed !== 1) {
     requestAnimationFrame(() => {
@@ -244,7 +283,9 @@ async function labRun() {
   }
 
   const n = await spinning;
-  chosen.forEach(c => labMarkCell(c.td));
+  // Not the popped one: it says AUTO WIN in words, and a chip edge round it
+  // would be the board explaining the same fact twice in two different codes.
+  chosen.forEach(c => { if (c.td.dataset.jackpot !== '1') labMarkCell(c.td); });
   labNote('Landed. ' + n + ' cell' + (n === 1 ? '' : 's') + ' decided by the house.');
 }
 
@@ -263,6 +304,9 @@ function mountLabPanel() {
     '<label class="slot-panel-field">Speed <span data-speed-out>1.0&times;</span>' +
       '<input type="range" min="25" max="200" step="5" value="100" class="slot-range" data-act="speed">' +
     '</label>' +
+    '<label class="slot-panel-field slot-panel-check">' +
+      '<input type="checkbox" class="slot-check" data-act="pop"> Force the football to pop' +
+    '</label>' +
     '<div class="slot-panel-note">&nbsp;</div>' +
     '<div class="slot-panel-foot">Drives the real reveal in js/slots.js. Nothing is written to the database.</div>';
   document.body.appendChild(p);
@@ -274,6 +318,9 @@ function mountLabPanel() {
   });
   p.querySelector('[data-act="cells"]').addEventListener('change', e => {
     labCells = Math.max(1, Math.min(8, Number(e.target.value) || 1));
+  });
+  p.querySelector('[data-act="pop"]').addEventListener('change', e => {
+    labPop = !!e.target.checked;
   });
   p.querySelector('[data-act="speed"]').addEventListener('input', e => {
     labSpeed = Number(e.target.value) / 100;

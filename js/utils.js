@@ -93,6 +93,25 @@ export function getTeamColor(teamName) {
  * no interest in. This is read by one thing - the reveal - so it lives on its
  * own and costs the rest of the page nothing.
  */
+/**
+ * Which cells the football paid for, as {team_id: {game_id: true}}.
+ *
+ * Separate from buildSlotsMap even though both read the same rows, because they
+ * answer different questions and the board does different things with each: a
+ * slots pick still has a team and a crest and a chip edge, and a popped one has
+ * no team at all. Folding them together would mean every caller re-deriving
+ * which kind it was holding.
+ */
+export function buildJackpotMap(rows) {
+  const map = {};
+  (rows || []).forEach(r => {
+    if (!r.jackpot) return;
+    if (!map[r.team_id]) map[r.team_id] = {};
+    map[r.team_id][r.game_id] = true;
+  });
+  return map;
+}
+
 export function buildSlotsMap(rows) {
   const map = {};
   (rows || []).forEach(r => {

@@ -1,9 +1,9 @@
 // js/slots.js — the slot-machine reveal on the leaderboard.
 //
 // When somebody chooses "let the slots decide" on the picks page, no team is
-// saved: the row goes in as an intent, and the database flips the coin at
-// kickoff (resolve_slot_picks, in the 20260911 migration). The first time that
-// cell is seen afterwards, it spins.
+// saved: the row goes in as an intent, and the database settles it at kickoff
+// (resolve_slot_picks, in the 20260911 and 20260913 migrations). The first time
+// that cell is seen afterwards, it spins.
 //
 // THE ANIMATION IS THEATRE OVER A SETTLED RESULT, and that is the only honest
 // way to build it. The coin landed in Postgres, once, minutes or hours ago; the
@@ -29,8 +29,27 @@
 // once and misleading afterwards. The comedy is in mangling the two real logos
 // on the way past — squashed, upside down, radioactive, melting — and landing on
 // a clean, correct one. The joke is that the punchline is sober.
+//
+// ----------------------------------------------------------------------------
+// AND THEN THE FOOTBALL.
+//
+// Behind every coin flip there is a jackpot (see the 20260913 migration). When
+// it hits, that player gets no team at all — the cell says AUTO WIN and scores a
+// point whatever the game does. So after the reels land, the league's football
+// rises over the board and strains, and either settles or bursts.
+//
+// ONE BALL PER BATCH, not one per cell. Eight cells each running a seven-second
+// strain would be punishing, and the meter is shared by the whole league anyway,
+// so a shared ball is also the truer picture: that is not your football, it is
+// everybody's.
+//
+// THE RULE THAT MAKES IT WORK: every frame before the last moment is identical
+// whether it pops or not. If the pop version strained even slightly harder the
+// league would learn to read it within three weeks and the tease would be dead.
+// Nothing below branches on the outcome until `burst`.
 
-const SEEN_PREFIX = 'cfb-slots-seen';
+import { markSlotCell } from './utils.js';
+import { ballSvg, deflateJackpot } from './jackpot.js';
 
 // One transform and/or one tint per symbol, combined at random, so a dozen
 // classes give plenty of distinct nonsense without needing a dozen more. The
@@ -40,8 +59,40 @@ const TINTS = ['radioactive', 'negative', 'ghost', 'oldtimey', 'xray', 'hot'];
 
 const pick1 = a => a[Math.floor(Math.random() * a.length)];
 
+// The football's beats are setTimeout rather than the Web Animations API, so
+// they are deaf to playbackRate - which would have left the sandbox's speed
+// slider silently bending the reels and not the ball. One factor, applied to
+// every wait below, keeps the whole sequence under one control.
+let revealSpeed = 1;
+export function setRevealSpeed(x) {
+  const n = Number(x);
+  revealSpeed = Number.isFinite(n) && n > 0 ? n : 1;
+}
+const wait = ms => new Promise(r => setTimeout(r, ms / revealSpeed));
+
 function reducedMotion() {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+}
+
+// Replaces the old `cfb-slots-seen` localStorage keys, which showed each reveal
+// exactly once per person per game and therefore ate any spin you happened not
+// to be looking at. Now it replays on every page LOAD — but not on every render,
+// because the board rebuilds itself every minute on live scores and reels
+// spinning continuously all Saturday is nobody's idea of a leaderboard. A Set
+// that dies with the page is precisely that distinction, expressed.
+const spunThisLoad = new Set();
+
+const cellKey = td => `${td.dataset.slotsTeam}:${td.dataset.slots}`;
+
+/**
+ * Forget every spin this page has shown, so they can all run again.
+ *
+ * For the sandbox's Roll button, which exists to watch the reveal on demand -
+ * and which silently did nothing the second time you pressed it until this
+ * existed, because the set above had already recorded the cells.
+ */
+export function forgetSpins() {
+  spunThisLoad.clear();
 }
 
 /**
@@ -58,25 +109,33 @@ function columnTeams() {
 }
 
 /**
- * Every cell the slots decided that this browser has not already watched.
+ * Every cell the slots decided that is ready to be watched.
  *
  * `data-slots` is set by renderTable from what the database said, so there is no
- * sampling and no guessing here — the board is the source of truth.
+ * sampling and no guessing here — the board is the source of truth. A cell that
+ * popped carries `data-jackpot` and has an AUTO WIN tag where the crest would
+ * be; it spins like any other and simply never lands on a team.
  */
-function dueCells() {
+function dueCells({ only = null } = {}) {
   const cols = columnTeams();
   const out = [];
   document.querySelectorAll('tbody tr').forEach(tr => {
     if (tr.classList.contains('playoff-divider')) return;
     [...tr.children].forEach((td, col) => {
       if (!td.dataset?.slots || !cols[col]) return;
+      if (only && td !== only) return;
+      if (!only && spunThisLoad.has(cellKey(td))) return;
+      if (td.querySelector('.slot-box')) return;          // already mid-spin
+
+      const jackpot = td.dataset.jackpot === '1';
       const img = td.querySelector('img.logo');
-      if (!img) return;                       // coin not flipped yet; next load
-      const key = `${SEEN_PREFIX}:${td.dataset.slotsTeam}:${td.dataset.slots}`;
-      let seen = false;
-      try { seen = !!localStorage.getItem(key); } catch {}
-      if (seen) return;
-      out.push({ td, img, sides: cols[col], key });
+      const tag = td.querySelector('.auto-win');
+      // Not settled yet: no crest and no tag means the coin has not been
+      // flipped. Leave it for the next load rather than spinning on nothing.
+      if (!jackpot && !img) return;
+      if (jackpot && !tag) return;
+
+      out.push({ td, img, tag, jackpot, sides: cols[col] });
     });
   });
   return out;
@@ -84,15 +143,22 @@ function dueCells() {
 
 /**
  * Replace one cell's logo with a reel and spin it onto the logo already there.
+ *
+ * A popped cell has no logo to spin onto, so it lands on one of the two sides at
+ * random. That symbol is never the answer and is about to be destroyed by the
+ * football — but it has to be SOMETHING, because a reel that visibly declines to
+ * land is a reel announcing the jackpot before the ball has even appeared.
  */
 function spinCell(cell, order) {
-  const { td, img, sides } = cell;
-  const landingSrc = img.currentSrc || img.src;
-  const landingAlt = img.alt || '';
+  const { td, img, tag, jackpot, sides } = cell;
 
   // Measured rather than hard-coded at 32px, because the same cell is 24px on a
   // phone and a reel built to the wrong height shows two symbols at once.
-  const h = Math.round(img.getBoundingClientRect().height) || 32;
+  const probe = img || tag;
+  const h = Math.round(probe.getBoundingClientRect().height) || 32;
+
+  const landingSrc = img ? (img.currentSrc || img.src) : pick1(sides).src;
+  const landingAlt = img ? (img.alt || '') : '';
 
   // A longer strip and a longer spin for each successive cell, so a board with
   // several of them lands one after another instead of all at once.
@@ -102,11 +168,6 @@ function spinCell(cell, order) {
   // symbols drifting past instead of a reel running. Roughly 8.5 symbols a
   // second is the pace that reads as a slot machine, so more time buys
   // proportionally more strip and the speed stays put.
-  //
-  // Doubled from 1.9s/2.5s/3.0s. This is the reveal rather than the choosing:
-  // the player has been waiting since Thursday to find out what the house did
-  // with their game, and the board is worth holding on for a moment longer than
-  // the lever was.
   const turns = 32 + order * 12;
   const duration = 3800 + order * 1120;
 
@@ -140,13 +201,25 @@ function spinCell(cell, order) {
   box.style.height = h + 'px';
   box.appendChild(strip);
 
-  img.replaceWith(box);
+  // A popped cell's AUTO WIN tag is HIDDEN rather than removed, and the reel is
+  // slid in beside it. The tag is what the board already rendered from what the
+  // database said; putting it back at the end is the reveal. Building a second
+  // one here would be a second source of truth for the only fact that scores.
+  if (img) {
+    img.replaceWith(box);
+  } else {
+    tag.hidden = true;
+    td.insertBefore(box, tag);
+  }
   td.classList.add('slot-cell');
 
   const land = () => {
     td.classList.remove('slot-cell');
     td.classList.add('slot-landed');
-    box.replaceWith(img);
+    // The reel leaves the crest behind for an ordinary pick. For a popped one it
+    // leaves the decoy, which the football is about to take away.
+    if (img) box.replaceWith(img);
+    else box.classList.add('slot-box-decoy');
     setTimeout(() => td.classList.remove('slot-landed'), 900);
   };
 
@@ -170,20 +243,109 @@ function spinCell(cell, order) {
 }
 
 /**
- * Spin whatever is due.
+ * THE FOOTBALL. Rises over the board once the reels have stopped, strains for
+ * far longer than is comfortable, and then either settles or bursts.
  *
- * The seen-record is written BEFORE the spin rather than after. If the tab is
- * closed mid-spin the player misses it, which is a smaller wrong than a cell
- * that spins again on every load because nothing ever got as far as recording
- * it.
+ * The stages are plain classes on a timer rather than one long keyframe set,
+ * because the interesting part is the RHYTHM — a bulge that holds too long, a
+ * settle, a squeak, a bigger bulge — and a rhythm is much easier to tune as a
+ * list of beats than as percentages of a single animation.
  */
-export async function runSlots() {
-  const due = dueCells();
-  if (!due.length) return 0;
-  for (const c of due) {
-    try { localStorage.setItem(c.key, String(Date.now())); } catch {}
+async function footballAct(popped) {
+  const stage = document.createElement('div');
+  stage.className = 'jp-stage';
+  stage.setAttribute('role', 'status');
+  stage.innerHTML =
+    '<div class="jp-stage-inner">' +
+      ballSvg() +
+      '<div class="jp-stage-note" aria-live="polite"></div>' +
+    '</div>';
+  document.body.appendChild(stage);
+
+  const note = stage.querySelector('.jp-stage-note');
+  const say = t => { note.textContent = t; };
+
+  // Reduced motion: the outcome, and none of the seven seconds.
+  if (reducedMotion()) {
+    stage.dataset.beat = popped ? 'burst' : 'settle';
+    say(popped ? 'The football popped. Automatic win.' : 'The football held.');
+    await wait(1400);
+    stage.remove();
+    return;
   }
+
+  // Every beat below is identical in both branches. Only `burst` differs, and
+  // only at the very end.
+  const beats = [
+    ['rise',    900],   // it comes up over the board
+    ['pump',    900],   // hiss — one more notch of air
+    ['creak',  1100],   // the seam whitens, a 2px flinch
+    ['bulge1', 1200],   // swells hard, holds far too long...
+    ['ease',    700],   // ...and eases back. A squeak of escaping air.
+    ['bulge2', 1500],   // bigger, faster, laces visibly separating
+  ];
+
+  stage.dataset.beat = 'idle';
+  await wait(30);       // one frame, so the first transition actually runs
+
+  for (const [beat, ms] of beats) {
+    stage.dataset.beat = beat;
+    if (beat === 'pump') say('The house takes a breath…');
+    if (beat === 'bulge2') say('Oh, that is not good.');
+    await wait(ms);
+  }
+
+  if (popped) {
+    stage.dataset.beat = 'burst';
+    say('POP. The house pays.');
+    document.body.classList.add('jp-shake');
+    setTimeout(() => document.body.classList.remove('jp-shake'), 700);
+    deflateJackpot();
+    await wait(2200);
+  } else {
+    stage.dataset.beat = 'settle';
+    say('It held. This time.');
+    await wait(1300);
+  }
+
+  stage.dataset.beat = 'exit';
+  await wait(500);
+  stage.remove();
+}
+
+/** Put a popped cell into its final state: no team, AUTO WIN, and it scores. */
+function finishJackpotCell(td) {
+  td.querySelectorAll('.slot-box').forEach(b => b.remove());
+  const tag = td.querySelector('.auto-win');
+  if (tag) {
+    tag.hidden = false;
+    tag.classList.add('auto-win-landing');
+    setTimeout(() => tag.classList.remove('auto-win-landing'), 1600);
+  }
+}
+
+/**
+ * Spin whatever is due, then run the football over the whole batch.
+ *
+ * The spun-record is written BEFORE the spin rather than after, so that a
+ * re-render arriving mid-spin cannot start a second one on the same cell.
+ */
+export async function runSlots(opts = {}) {
+  const due = dueCells(opts);
+  if (!due.length) return 0;
+  due.forEach(c => spunThisLoad.add(cellKey(c.td)));
+
   await Promise.all(due.map((c, i) => spinCell(c, i)));
+
+  const popped = due.filter(c => c.jackpot);
+  await footballAct(popped.length > 0);
+  popped.forEach(c => finishJackpotCell(c.td));
+
+  // The chip edge, so an ordinary slots pick still says whose choice it was a
+  // week later. A popped cell says AUTO WIN in plain words and needs no border
+  // to explain itself.
+  due.forEach(c => { if (!c.jackpot) markSlotCell(c.td); });
+
   return due.length;
 }
 
@@ -191,8 +353,18 @@ export async function runSlots() {
  * The board re-renders whenever a score moves, which rebuilds every cell — so a
  * one-shot call on load would miss a slots cell that arrived with the reveal,
  * and re-running blindly would fight the render. Watching the table and asking
- * again is the honest way round it: runSlots() is idempotent because the
- * seen-record is already written by the time anything re-renders.
+ * again is the honest way round it: runSlots() is idempotent within a page load
+ * because `spunThisLoad` is already written by the time anything re-renders.
+ *
+ * AUTO-REPLAY IS BOUNDED TO THE WEEK BEING PLAYED. Unbounded, opening the board
+ * in week 12 would mean forty cells spinning at once and a minute of football
+ * before anybody could read a score. index.html sets `data-live-week` when the
+ * week on screen is the live one.
+ *
+ * Which is only safe because of the second half: ANY slots cell can be replayed
+ * on demand by clicking it, in any week, forever. Nothing is ever lost — it just
+ * waits to be asked for. That is the half that means you cannot miss a spin
+ * again.
  */
 export default function initSlots() {
   const board = document.getElementById('table-scroll-wrap');
@@ -201,6 +373,7 @@ export default function initSlots() {
   let queued = false;
   const ask = () => {
     if (queued) return;
+    if (document.body.dataset.liveWeek !== '1') return;
     queued = true;
     // One frame plus a beat: lazily-loaded logos have no measurable height the
     // instant they are inserted, and a reel built to a height of zero shows
@@ -210,4 +383,13 @@ export default function initSlots() {
 
   ask();
   new MutationObserver(ask).observe(board, { childList: true, subtree: true });
+
+  // Click to watch it again. Delegated, because the board replaces its own rows
+  // every minute and a listener bound to a cell would not survive the week.
+  board.addEventListener('click', e => {
+    const td = e.target?.closest?.('td[data-slots]');
+    if (!td || td.querySelector('.slot-box')) return;
+    if (document.querySelector('.jp-stage')) return;   // one football at a time
+    runSlots({ only: td });
+  });
 }

@@ -70,7 +70,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=8b641d68">
+  <link rel="stylesheet" href="./css/base.css?v=28bcfc75">
   <link rel="stylesheet" href="./css/theme-halloween.css?v=c39d5271">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=c3815cb1">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=23a99229">
@@ -520,7 +520,7 @@
     // Only exports that have existed for months. A NEW named export here is the
     // thing that broke the page: assets carry max-age=600, so a browser holding
     // the previous utils.js cannot satisfy it and the whole module dies.
-    import { sameTeam, escapeHtml, buildPickMap, buildSlotsMap, getTeamColor, markSlotCell } from './js/utils.js';
+    import { sameTeam, escapeHtml, buildPickMap, buildSlotsMap, buildJackpotMap, getTeamColor, markSlotCell } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
 
@@ -565,6 +565,14 @@
     // Which cells the slots decided. Read by the reveal in js/slots.js; see
     // buildSlotsMap for why it is not folded into lastPickMap.
     let lastSlotsMap = {};
+    // Which cells the football paid for. Kept beside lastSlotsMap rather than
+    // folded into it: a popped pick has no team, so the board draws it as words
+    // rather than a crest and scores it without consulting the winner.
+    let lastJackpotMap = {};
+    // Whether the week on screen is the one being played. The reveal replays on
+    // every page load, but only for the live week - unbounded, week 12 would mean
+    // forty cells spinning before anybody could read a score.
+    let liveWeek = null;
     let lastGames = [];
 
     // kickoff times
@@ -1028,7 +1036,7 @@
       let picks = [];
       if (ids.length){
         const { data: p, error: pErr } = await supabase
-          .from('picks').select('team_id, game_id, pick, by_slots').in('game_id', ids);
+          .from('picks').select('team_id, game_id, pick, by_slots, jackpot').in('game_id', ids);
         if (pErr){ status('Could not load picks.', true); return null; }
         picks = p || [];
       }
@@ -1047,7 +1055,7 @@
       const tbIds = (tbGames || []).map(g => g.GameId);
       if (tbIds.length) {
         const { data: tp } = await supabase
-          .from('picks').select('team_id, game_id, pick, by_slots').in('game_id', tbIds);
+          .from('picks').select('team_id, game_id, pick, by_slots, jackpot').in('game_id', tbIds);
         tbPicks = tp || [];
       }
 
@@ -1094,6 +1102,11 @@
 
       const uniqueWeeks = [...new Set(cache.games
         .map(r => Number(r.week)).filter(Number.isFinite))].sort((a,b)=>a-b);
+
+      // The furthest week with games picked for it IS the week being played.
+      // Remembered here because it is the only place that already knows, and
+      // renderTable needs it to decide whether the reveal may replay itself.
+      liveWeek = uniqueWeeks.length ? uniqueWeeks[uniqueWeeks.length - 1] : null;
 
       if (!uniqueWeeks.length){
         weeks = [];
@@ -1195,8 +1208,11 @@
       const map = Object.create(null);
       (allPicks||[]).forEach(p=>{
         const winner = winnerByGame[p.game_id];
+        // The point lands when the game does, popped or not. `winner` being the
+        // gate is what makes an AUTO WIN score on Saturday night rather than the
+        // moment the ball burst at kickoff.
         if(!winner) return;
-        if(sameTeam(p.pick, winner)){
+        if(p.jackpot || sameTeam(p.pick, winner)){
           map[p.team_id] = (map[p.team_id] || 0) + 1;
         }
       });
@@ -1226,15 +1242,18 @@
 
       const { data: allPicks, error: pErr } = await supabase
         .from('picks')
-        .select('team_id, game_id, pick')
+        .select('team_id, game_id, pick, jackpot')
         .in('game_id', gameIdsPo);
       if(pErr){ status(pErr.message, true); return; }
 
       const map = Object.create(null);
       (allPicks||[]).forEach(p=>{
         const winner = winnerByGame[p.game_id];
+        // The point lands when the game does, popped or not. `winner` being the
+        // gate is what makes an AUTO WIN score on Saturday night rather than the
+        // moment the ball burst at kickoff.
         if(!winner) return;
-        if(sameTeam(p.pick, winner)){
+        if(p.jackpot || sameTeam(p.pick, winner)){
           map[p.team_id] = (map[p.team_id] || 0) + 1;
         }
       });
@@ -1346,6 +1365,7 @@
 
       const pickMap = buildPickMap(pickRows);
       lastSlotsMap = buildSlotsMap(pickRows);
+      lastJackpotMap = buildJackpotMap(pickRows);
 
       // ✅ Points for non-playoff view already computed through currentWeek
       const pointsMap = winsByTeamRegular;
@@ -1454,6 +1474,7 @@
 
       const pickMap = buildPickMap(pickRows);
       lastSlotsMap = buildSlotsMap(pickRows);
+      lastJackpotMap = buildJackpotMap(pickRows);
 
       const pointsMap = winsByTeamPlayoff;
       const teamsSorted = [...playoffTeams].sort((a,b)=>{
@@ -1552,6 +1573,7 @@
       const pickRows = (cache.tbPicks || []).filter(p => want.has(Number(p.game_id)));
       const pickMap = buildPickMap(pickRows);
       lastSlotsMap = buildSlotsMap(pickRows);
+      lastJackpotMap = buildJackpotMap(pickRows);
 
       // Tiebreaker points: correct tiebreaker calls, and nothing else. Kept in a
       // local so it can never be mistaken for winsByTeamRegular.
@@ -2385,6 +2407,11 @@
     }
 
     function renderTable(teams, pickMap, winnerMap, revealPicks, pointsMap, playoffMode){
+      // Read by js/slots.js, which replays the reveal on every page load but only
+      // for the week being played. Looking back at week 3 in November should not
+      // set forty cells spinning before the board can be read.
+      document.body.dataset.liveWeek =
+        (!playoffMode && liveWeek != null && currentWeek === liveWeek) ? '1' : '0';
       tbody.innerHTML = '';
       coverCells.clear();
       const lonely = lonelyPicks(teams, pickMap, gameIds);
@@ -2487,6 +2514,27 @@
           const pick   = pickMap[team.team_id]?.[id];
           const winner = winnerMap[id];
           const hasPick = !!(pick && String(pick).trim() !== '');
+
+          // THE FOOTBALL POPPED ON THIS ONE. There is no team behind it - the
+          // house paid it - so the cell says so in words rather than borrowing a
+          // crest it never earned. It also means the board never shows a logo
+          // that plainly lost sitting in a cell that scored.
+          //
+          // It still carries data-slots, because it still spins: js/slots.js
+          // reels it like any other and the ball takes the decoy away at the end.
+          if (lastJackpotMap?.[team.team_id]?.[id]) {
+            td.classList.add(winner ? 'pick-win' : 'pick-empty');
+            td.dataset.slots = String(id);
+            td.dataset.slotsTeam = String(team.team_id);
+            td.dataset.jackpot = '1';
+            const tag = document.createElement('span');
+            tag.className = 'auto-win';
+            tag.textContent = 'AUTO WIN';
+            tag.title = 'The football popped. This one is on the house.';
+            td.appendChild(tag);
+            tr.appendChild(td);
+            return;
+          }
 
           if(hasPick){
             if(winner && sameTeam(pick, winner)){
@@ -2710,7 +2758,7 @@
       if (pickReloadFor === key) return;
 
       const { data, error } = await supabase
-        .from('picks').select('team_id, game_id, pick, by_slots').in('game_id', gameIds);
+        .from('picks').select('team_id, game_id, pick, by_slots, jackpot').in('game_id', gameIds);
       if (error || !data) return;            // leave it unset so the next tick retries
 
       // Do not latch on an unconvincing answer. The browser's idea of kickoff
@@ -2735,6 +2783,7 @@
 
       lastPickMap = buildPickMap(data);
       lastSlotsMap = buildSlotsMap(data);
+      lastJackpotMap = buildJackpotMap(data);
       renderTable(lastTeams, lastPickMap, winnerMap, showPicks, getPointsMapForCurrentView(), isPlayoffView);
       await renderWeeklySubmissions(lastTeams, lastPickMap);
     }
@@ -2957,6 +3006,8 @@
        week, so it is loaded rather than conditionally imported. -->
   <script type="module">
     import initSlots from './js/slots.js';
+    import initJackpot from './js/jackpot.js';
+    initJackpot();
     initSlots();
   </script>
 

@@ -1,6 +1,6 @@
 # Pop the football
 
-**Status:** designed, not built
+**Status:** built and pushed, 2026-09-13
 **Date:** 2026-09-13
 **Builds on:** [Let the slots decide](2026-09-11-let-the-slots-decide-design.md)
 
@@ -70,21 +70,32 @@ The pop is decided at **kickoff**, and the game has not been played yet — so a
 automatic win cannot be implemented as *set the pick to the winning team*. There
 is no winner to set it to.
 
-So it is a flag on the pick row that the leaderboard's scoring honours: this
-pick counts correct regardless of the result. One condition in one place, but
-worth stating plainly that **this is the first time the slots feature touches
-scoring at all.** Today it only ever writes a team name into a column that was
-already there.
+So a popped row keeps `pick` null forever and carries a flag the leaderboard's
+scoring honours. One condition in one place, but worth stating plainly that
+**this is the first time the slots feature touches scoring at all.** Today it
+only ever writes a team name into a column that was already there.
 
-### Which makes the mark load-bearing
+The point still lands when the game does, not when the ball bursts: both scoring
+paths gate on `winner` before they look at anything else, so an AUTO WIN scores
+on Saturday night alongside every ordinary pick.
 
-A popped pick will sometimes show a crest that plainly lost and still score. The
-board has to say why on its face, or it reads as a bug.
+### And the cell says AUTO WIN, in words
 
-The popped cell wears a **gold** chip edge instead of the red/black/white/blue
-one — same mark, same mechanism as `markSlotCell()` in `js/utils.js`, one variant
-class. A week later you look at the cell, see gold, and know the house paid that
-one.
+There is no team behind a popped pick, so the cell does not draw one. It says
+**AUTO WIN** where the crest would be.
+
+This started as a gold chip edge around the crest — the board needed to explain
+why a cell showing a plainly losing team had scored. Dropping the crest deletes
+the problem instead of decorating it: a cell with no logo in it cannot show a
+logo that lost. The mark from `markSlotCell()` stays exactly as it was, for
+ordinary slots picks, and a popped cell gets none — it already says what happened
+in plain words, and a border would be the board explaining the same fact twice
+in two different codes.
+
+The reel still runs on a popped cell. It lands on one of the two teams at
+random — a decoy, never the answer — and the football takes it away at the end.
+A reel that visibly declined to land would announce the jackpot before the ball
+had even appeared.
 
 ## Where the roll lives
 
@@ -130,28 +141,43 @@ same rule as the existing migration.
 
 ## The seven seconds
 
-At kickoff, one unbroken sequence, straight out of the existing reel:
+At kickoff, one unbroken sequence: the reels land as they always have, and then
+the league's football rises over the board.
+
+**One ball per batch, not one per cell.** Eight cells each running a seven-second
+strain would be punishing, and the meter is shared by the whole league anyway —
+so a shared ball is also the truer picture. That is not your football, it is
+everybody's.
 
 | | |
 |---|---|
-| 0.0-1.4s | Reels spin, land on the team. Exactly as today. |
-| 1.4s | Crest settles. A beat. The league's football rises into the cell. |
-| 1.6-2.4s | **The pump.** Hiss. It swells a notch. Laces stretch, the highlight slides tight, the pebbling goes thin at the widest point. |
-| 2.4-7.0s | **The strain.** A creak, the seam whitening. A 2px flinch. A bulge — swells hard over half a second, holds far too long, eases back. A squeak of escaping air and it shrinks a hair. Then a second bulge, bigger, faster, laces visibly separating, a hairline of white running the seam. Hold. |
-| ~7.0s | Resolution. |
+| — | Reels spin and land, staggered, exactly as today. |
+| 0.9s | **Rise.** The ball comes up over the board, the page dimming behind it. |
+| 0.9s | **Pump.** Hiss. One more notch of air. |
+| 1.1s | **Creak.** The seam whitens. A 2px flinch, twice. |
+| 1.2s | **Bulge.** It swells hard and holds far too long… |
+| 0.7s | **Ease.** …and settles back. A squeak of escaping air. |
+| 1.5s | **Bulge again.** Bigger, faster, laces separating, the seam split white. |
+| — | Resolution. |
 
-**No pop:** the crack seals, it settles with a defeated little *pfff*, sinks
-away, and the crest takes its chip edge as it does today.
+**No pop:** it settles, the note reads *"It held. This time."*, and the ordinary
+slots cells take their chip edge.
 
-**Pop:** white flash, screen shake, leather panels blowing apart with the laces
-spinning off, the crest behind it coming back gold. *"THE HOUSE PAYS — Charlie
-popped it at 9.1%."* The board's football deflates to a fresh one.
+**Pop:** white flash, screen shake, the shell blowing apart — *"POP. The house
+pays."* The popped cell's AUTO WIN tag flares in where the decoy was, and the
+football in the header deflates to the floor without waiting for a round trip.
 
-**The rule that makes or breaks it:** every frame before the last ~200ms is
-identical in both branches. If the pop version strains even slightly harder, the
-league learns to read it within three weeks and the tease is dead.
+**The rule that makes or breaks it:** every beat above is identical whether it
+pops or not. Nothing branches until `burst`. If the pop version strained even
+slightly harder the league would learn to read it within three weeks and the
+tease would be dead.
 
-Reduced motion gets the outcome with no strain, as the reveal already does.
+Reduced motion gets the outcome and none of the seven seconds.
+
+The whole sequence runs on timers rather than the Web Animations API, which
+means `playbackRate` cannot reach it — so there is a `setRevealSpeed()` the
+sandbox slider drives, and without it the lab would have been bending the reels
+and not the ball.
 
 ## Replay
 
@@ -177,13 +203,14 @@ so nothing is ever lost, it just waits to be asked for.
 
 | File | Change |
 |---|---|
-| new migration | `slots_jackpot`, `picks.jackpot`, the increment trigger, `resolve_slot_picks()` rewritten row-by-row |
-| `js/slots.js` | the football sequence; seen-keys removed; click-to-replay |
-| `js/utils.js` | gold variant on `markSlotCell()` |
-| `css/base.css` | the ball, the strain animation, the gold chip edge |
-| `index.html` | header football; scoring honours `jackpot` |
+| `supabase/migrations/20260913120000_pop_the_football.sql` | `slots_jackpot`, `slots_jackpot_odds()`, `picks.jackpot`, the pull trigger, `resolve_slot_picks()` rewritten row-by-row, the index rebuilt on the new guard, two RLS policies |
+| `js/jackpot.js` (new) | the football component, its four rest states, and the odds mirrored from SQL |
+| `js/slots.js` | the football sequence; seen-keys replaced by a per-load Set; click-to-replay; `setRevealSpeed()`, `forgetSpins()` |
+| `js/utils.js` | `buildJackpotMap()` |
+| `css/base.css` | the ball, the rest states, the reveal, the AUTO WIN tag |
+| `index.html` | header football; the AUTO WIN cell; `jackpot` honoured in both scoring paths and selected in all four pick queries; `data-live-week` |
 | `picks.html` | header football |
-| new shared module | the football component, used by both pages |
+| `js/sandbox.js`, `css/sandbox.css` | a force-pop switch, because a real jackpot lands twice a season and the lab exists to watch it on a Tuesday |
 
 ## Open
 

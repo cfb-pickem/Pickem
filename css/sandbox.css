@@ -185,3 +185,18 @@
   letter-spacing:.08em; text-transform:uppercase; color:#9aa0a6;
 }
 .slot-range{ width:7.5rem; accent-color:var(--cfp-gold); }
+
+/* The force-pop switch. A real jackpot lands about twice a season, so the lab
+   needs a way to watch the payoff without waiting for one. */
+[data-sandbox="on"] .slot-panel-check{
+  flex-direction:row;
+  align-items:center;
+  gap:.45rem;
+  cursor:pointer;
+}
+[data-sandbox="on"] .slot-check{
+  width:14px;
+  height:14px;
+  accent-color:#c99210;
+  cursor:pointer;
+}
