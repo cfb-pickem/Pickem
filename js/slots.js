@@ -242,8 +242,12 @@ function spinCell(cell, order) {
   // symbols drifting past instead of a reel running. Roughly 8.5 symbols a
   // second is the pace that reads as a slot machine, so more time buys
   // proportionally more strip and the speed stays put.
-  const turns = 32 + order * 12;
-  const duration = 3800 + order * 1120;
+  // LONGER. The two numbers move together, as the note above says: roughly 8.5
+  // symbols a second is the pace that reads as a slot machine, so more time has
+  // to buy proportionally more strip or the reel just gets slower rather than
+  // longer. 51 over six seconds is the same pace the 32-over-3.8s was.
+  const turns = 51 + order * 15;
+  const duration = 6000 + order * 1800;
 
   const strip = document.createElement('div');
   strip.className = 'slot-strip';
@@ -339,14 +343,20 @@ function spinCell(cell, order) {
  * settle, a squeak, a bigger bulge — and a rhythm is much easier to tune as a
  * list of beats than as percentages of a single animation.
  */
-async function footballAct(popped) {
+async function footballAct(popped, reels) {
   // The marquee, on the page that has one: for the length of this roll the
   // football stands where "CFB Pick'em Leaderboard" is.
   const strip = ensureStage();
-  if (!strip) return;                       // nowhere to play; skip quietly
+  if (!strip) { await reels; return; }      // nowhere to play; still wait it out
 
-  const note = strip.querySelector('.jp-note');
-  const say = t => { if (note) note.textContent = t; };
+  // Looked up per call rather than captured once. Anything that re-renders the
+  // strip mid-reveal swaps this element out underneath us, and a held reference
+  // would then be writing the whole back half of the sequence into a node that
+  // is no longer on the page.
+  const say = t => {
+    const n = strip.querySelector('.jp-note');
+    if (n) n.textContent = t;
+  };
   const done = () => {
     delete strip.dataset.beat;
     say('');
@@ -354,34 +364,40 @@ async function footballAct(popped) {
     dismissStage();        // and give the title back; it was only ever borrowed
   };
 
-  // If the page is scrolled down the board the ball sits above it, so bring it
+  // If the page is scrolled down the board, the marquee is above it. Bring it
   // into view - gently, and only as far as it takes. A reveal nobody can see is
   // the problem this whole thing was built to fix.
   try { strip.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); } catch {}
 
-  // Reduced motion: the outcome, and none of the seven seconds.
+  // Reduced motion: the outcome, and none of the theatre. It still waits for the
+  // reels, because saying what happened before the board shows it is the one
+  // thing this sequence must never do.
   if (reducedMotion()) {
     strip.dataset.beat = popped ? 'burst' : 'settle';
     if (popped) pop(); else hold();
     say(popped ? 'The football popped. Automatic win.' : 'The football held.');
-    await wait(1400);
+    await reels;
     done();
     return;
   }
 
-  // Every beat below is identical in both branches. Only `burst` differs, and
-  // only at the very end.
-  // TIMED AGAINST THE REELS. The first cell lands at 3800ms, so everything up to
+  // TIMED AGAINST THE REELS. The first cell lands at 6000ms, so everything up to
   // the resolution has to fit inside that - the whole point is that the ball
-  // answers while they are still spinning. It comes to about 3.4 seconds, which
-  // leaves the aftermath to play out over the cells landing one by one.
+  // answers while they are still spinning.
+  //
+  // TWO FAKE-OUTS, which is where the suspense actually lives. A single build to
+  // a single peak is over the moment you can see the peak coming. It swells,
+  // holds far too long, and RELAXES - it held, you think - and then goes again,
+  // bigger, and relaxes again. By the third time nobody knows which way it ends,
+  // which is the only state worth being in.
   const beats = [
-    ['rise',    450],   // it swells up out of the strip as the reels start
-    ['pump',    500],   // hiss — one more notch of air
-    ['creak',   600],   // the seam whitens, a flinch
-    ['bulge1',  700],   // swells hard, holds far too long...
-    ['ease',    350],   // ...and eases back. A squeak of escaping air.
-    ['bulge2',  800],   // bigger, faster, laces visibly separating
+    ['rise',    700, ''],
+    ['pump',    800, 'The house puts more air in it\u2026'],
+    ['creak',   900, 'That seam is not happy.'],
+    ['bulge1', 1000, 'Oh. Oh no.'],
+    ['hold1',   600, '\u2026it is holding.'],
+    ['bulge2',  900, 'No \u2014 there it goes\u2014'],
+    ['ease',    500, '\u2026not yet.'],
   ];
 
   strip.dataset.beat = 'idle';
@@ -393,28 +409,39 @@ async function footballAct(popped) {
   // to IS how close the ball is.
   strainStart(beats.reduce((a, b) => a + b[1], 0) / 1000 / revealSpeed);
 
-  for (const [beat, ms] of beats) {
+  for (const [beat, ms, line] of beats) {
     strip.dataset.beat = beat;
-    if (beat === 'pump') say('The house takes a breath…');
-    if (beat === 'bulge2') say('Oh, that is not good.');
+    say(line);
     await wait(ms);
   }
 
+  // It answers here, with the reels still turning. What it must NOT do is
+  // announce the payoff here: the AUTO WIN square does not exist until the reel
+  // above it lands, and a marquee that says "the house pays" over a board still
+  // spinning is the machine talking about something nobody can see yet.
   if (popped) {
     strip.dataset.beat = 'burst';
-    say('POP. The house pays.');
+    say('IT WENT.');
     pop();
     deflateJackpot();
-    await wait(2200);
   } else {
     strip.dataset.beat = 'settle';
-    say('It held. This time.');
+    say('It held.');
     hold();
-    await wait(1300);
   }
+  await wait(900);
+
+  // Now wait for the board to catch up, and say so while it does.
+  say('Reels coming down\u2026');
+  await reels;
+
+  // And only now, with the cells actually showing it, the payoff.
+  say(popped ? 'THE HOUSE PAYS. That one is an automatic win.'
+             : 'The reels have it. Straight fifty-fifty, as ever.');
+  await wait(popped ? 2600 : 1600);
 
   strip.dataset.beat = 'exit';
-  await wait(500);
+  await wait(600);
   done();
 }
 
@@ -443,9 +470,10 @@ export async function runSlots(opts = {}) {
   const popped = due.filter(c => c.jackpot);
 
   // Both at once, deliberately. The ball is shaking before the first reel has
-  // got going and has answered before the first one lands.
+  // got going and has answered before the first one lands - and it is handed the
+  // reels so it can hold its tongue until the board can back it up.
   const reels = Promise.all(due.map((c, i) => spinCell(c, i)));
-  const ball  = footballAct(popped.length > 0);
+  const ball  = footballAct(popped.length > 0, reels);
 
   await reels;
   popped.forEach(c => finishJackpotCell(c.td));

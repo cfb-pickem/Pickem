@@ -2085,6 +2085,7 @@ td.slot-cell .slot-was{ opacity:0; }
    does the moment it has something to tell you. */
 .jp-strip[data-beat] .jp-bulbs i{ animation-duration:.54s; }
 .jp-strip[data-beat="bulge2"] .jp-bulbs i{ animation-duration:.3s; }
+.jp-strip[data-beat="ease"]   .jp-bulbs i{ animation-duration:.24s; }
 .jp-strip[data-beat="burst"] .jp-bulbs i{
   animation:none;
   background:#ffd97a;
@@ -2196,11 +2197,18 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-beat="pump"]   .jp-shell{ transform:scale(1.09, .97); }
 .jp-strip[data-beat="creak"]  .jp-shell{ transform:scale(1.10, .965); animation: jp-flinch .5s steps(2) 2; }
 .jp-strip[data-beat="bulge1"] .jp-shell{ transform:scale(1.20, .93); transition-duration:.55s; }
-.jp-strip[data-beat="ease"]   .jp-shell{ transform:scale(1.12, .975); transition-duration:.6s; }
-.jp-strip[data-beat="bulge2"] .jp-shell{ transform:scale(1.30, .90); transition-duration:.4s; animation: jp-crit .3s ease-in-out infinite .4s; }
+/* The first fake-out. It relaxes almost all the way back, which is the only way
+   the next one lands - a single build to a single peak is over the moment you
+   can see the peak coming. */
+.jp-strip[data-beat="hold1"]  .jp-shell{ transform:scale(1.06, .985); transition-duration:.7s; }
+.jp-strip[data-beat="bulge2"] .jp-shell{ transform:scale(1.32, .89); transition-duration:.4s; animation: jp-crit .3s ease-in-out infinite .4s; }
+/* And the second. Higher than the first relief, lower than the bulge it came
+   off, so the trend is still upward even while it is backing down. */
+.jp-strip[data-beat="ease"]   .jp-shell{ transform:scale(1.14, .97); transition-duration:.6s; }
 .jp-strip[data-beat="settle"] .jp-shell{ transform:scale(1); transition-duration:.9s; }
 
 .jp-strip[data-beat="creak"]  .jp-seam,
+.jp-strip[data-beat="hold1"]  .jp-seam,
 .jp-strip[data-beat="bulge1"] .jp-seam{ opacity:.75; stroke-width:2.4; }
 .jp-strip[data-beat="bulge2"] .jp-seam{ opacity:1; stroke-width:3.4; stroke:var(--jp-flash); }
 .jp-strip[data-beat="bulge2"] .jp-laces path{ stroke-width:2.6; }
@@ -2226,7 +2234,8 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-beat="pump"]   .jp-ball{ --tq:1px;   animation-duration:230ms; }
 .jp-strip[data-beat="creak"]  .jp-ball{ --tq:1.5px; animation-duration:180ms; }
 .jp-strip[data-beat="bulge1"] .jp-ball{ --tq:2.2px; animation-duration:130ms; }
-.jp-strip[data-beat="ease"]   .jp-ball{ --tq:1.2px; animation-duration:210ms; }
+.jp-strip[data-beat="hold1"]  .jp-ball{ --tq:1.1px; animation-duration:240ms; }
+.jp-strip[data-beat="ease"]   .jp-ball{ --tq:1.6px; animation-duration:190ms; }
 .jp-strip[data-beat="bulge2"] .jp-ball{ --tq:3.4px; animation-duration:85ms;  }
 
 /* It stops the instant the ball answers. The stillness is the punctuation. */

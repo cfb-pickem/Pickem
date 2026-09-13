@@ -452,10 +452,16 @@ export function deflateJackpot() {
   // class hands back whichever parsed first, and the football that just burst
   // is not necessarily it.
   meterPulls = 0;                           // it is a new ball for everybody now
-  const strip = document.querySelector('.jp-strip[data-takeover]')
-             || document.querySelector('.jp-strip');
-  if (!strip) return;
-  const beat = strip.dataset.beat;          // the reveal may still be mid-sequence
-  render(strip, 0);
-  if (beat) strip.dataset.beat = beat;
+
+  // NOT WHILE IT IS PLAYING. Re-rendering a strip mid-reveal replaces its
+  // innerHTML, which orphans the note element footballAct is holding - so every
+  // line after the pop was written to a detached node and the marquee went blank
+  // for the one outcome anybody cares about. It also restarted the burst
+  // animation from its first frame on a brand-new element.
+  //
+  // There is nothing to redraw there anyway: that ball is bursting and the strip
+  // is about to be torn down. What matters is the ambient one on the picks page,
+  // which is showing a count that just became wrong.
+  const ambient = document.querySelector('.jp-strip:not([data-takeover])');
+  if (ambient && !ambient.dataset.beat) render(ambient, 0);
 }
