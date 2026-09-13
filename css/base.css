@@ -1817,41 +1817,58 @@ td.slot-cell .slot-was{ opacity:0; }
 
 /* ======================================================================
  * POP THE FOOTBALL — the jackpot meter, and the reveal it pays out in.
+ *
+ * ONE BALL, ONE PLACE. The kickoff reveal is not a screen of its own: it
+ * grows the football already sitting in the strip at the top of the page
+ * and then puts it back. The board underneath is never covered by the
+ * thing describing it.
  * ====================================================================== */
 
 :root{
-  --jp-leather-edge: #3b1c0c;
-  --jp-seam:         #efe6d2;
-  --jp-flash:        #fff6de;
+  --jp-seam:  #efe6d2;
+  --jp-flash: #fff6de;
+  --jp-rim:   #2c1409;
 }
 
-/* ---------- The ball itself, shared by the header and the reveal ------- */
+/* ---------- The ball ---------------------------------------------------- */
 
 .jp-ball{ display:block; overflow:visible; }
-.jp-shell{ transform-origin:32px 20px; }
-.jp-hide{ stroke:var(--jp-leather-edge); stroke-width:1.2; }
-.jp-seam{
-  stroke:var(--jp-seam);
-  stroke-width:1.1;
-  opacity:.55;
-}
-.jp-laces line{ stroke:var(--jp-seam); stroke-width:1.5; stroke-linecap:round; opacity:.9; }
-.jp-gloss{ fill:#fff; opacity:.17; }
-.jp-gloss-2{ opacity:.10; }
+.jp-shell{ transform-origin:100px 60px; }
 
-/* ---------- The header strip, on the leaderboard and the picks page ---- */
+/* The tips are the whole difference between a football and an egg, so the rim
+   is stroked on top of everything and stays crisp however hard the shell under
+   it is being stretched. */
+.jp-rim{ stroke:var(--jp-rim); stroke-width:2.4; stroke-linejoin:round; opacity:.85; }
+.jp-hide{ stroke:none; }
+.jp-stripe{ fill:#f1ece0; opacity:.92; }
+.jp-seam{ stroke:#2c1409; stroke-width:2; opacity:.4; stroke-linecap:round; }
+.jp-laces path{
+  stroke:#fbf6ea;
+  stroke-width:3.4;
+  stroke-linecap:round;
+  filter:drop-shadow(0 1px 0 rgba(0,0,0,.45));
+}
+.jp-lace-band{ stroke-width:2.6; opacity:.95; }
+.jp-gloss{ fill:#fff; opacity:.20; }
+
+/* ---------- The strip, on the leaderboard and the picks page ------------ */
 
 .jp-strip{
   display:flex;
   align-items:center;
-  gap:.6rem;
+  gap:.7rem;
   margin:0 0 .75rem;
-  padding:.45rem .7rem;
+  padding:.4rem .7rem;
   border:1px solid rgba(201,146,16,.22);
   background:rgba(201,146,16,.05);
+  transition:padding .5s ease;
 }
-.jp-strip .jp-ball{ width:52px; flex:0 0 auto; }
-.jp-text{ display:flex; flex-direction:column; line-height:1.15; }
+.jp-strip .jp-ball{
+  width:58px;
+  flex:0 0 auto;
+  transition:width .8s cubic-bezier(.2,.8,.25,1);
+}
+.jp-text{ display:flex; flex-direction:column; line-height:1.2; min-width:0; }
 .jp-pct{
   font-family:'Oswald', sans-serif;
   font-size:1rem;
@@ -1860,6 +1877,14 @@ td.slot-cell .slot-was{ opacity:0; }
   font-variant-numeric:tabular-nums;
 }
 .jp-sub{ font-size:.7rem; color:#b9bcc4; }
+.jp-note{
+  font-family:'Oswald', sans-serif;
+  font-size:.8rem;
+  letter-spacing:.03em;
+  color:#f0b46a;
+  margin-top:.2rem;
+}
+.jp-note:empty{ display:none; }
 
 /* THE FOUR REST STATES. The ball is drawn taut at every one of them - what
    changes is how badly it is behaving, not how big it is. A ball that has
@@ -1870,8 +1895,8 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-strain="high"]     .jp-shell{ animation: jp-high 1.5s ease-in-out infinite; }
 .jp-strip[data-strain="critical"] .jp-shell{ animation: jp-crit .42s ease-in-out infinite; }
 
-.jp-strip[data-strain="high"]     .jp-seam{ opacity:.8;  stroke-width:1.4; }
-.jp-strip[data-strain="critical"] .jp-seam{ opacity:1;   stroke-width:1.9; }
+.jp-strip[data-strain="high"]     .jp-seam{ opacity:.65; }
+.jp-strip[data-strain="critical"] .jp-seam{ opacity:1; stroke:var(--jp-flash); stroke-width:2.6; }
 .jp-strip[data-strain="critical"] .jp-pct{ color:#f0b46a; }
 
 @keyframes jp-calm{
@@ -1893,102 +1918,65 @@ td.slot-cell .slot-was{ opacity:0; }
   50%      { transform:scale(1.08, .93) rotate(1.2deg); }
 }
 
-.jp-just-popped{ animation: jp-relief 2.4s ease-out; }
-@keyframes jp-relief{
-  0%   { box-shadow:0 0 0 3px var(--jp-flash) inset; }
-  100% { box-shadow:0 0 0 0 transparent inset; }
-}
+/* ---------- The reveal, in that same strip ------------------------------ */
 
-/* ---------- The reveal: one ball, over the whole board ----------------- */
-
-.jp-stage{
-  position:fixed;
-  inset:0;
-  z-index:80;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  pointer-events:none;
-  background:rgba(6,7,10,0);
-  transition:background .7s ease;
+/* The ball grows out of the strip and the strip grows with it, so the page is
+   pushed down rather than covered. Nothing is ever hidden behind it. */
+.jp-strip[data-beat]{
+  padding:1.1rem .9rem;
+  border-color:rgba(201,146,16,.5);
+  background:rgba(201,146,16,.09);
 }
-.jp-stage-inner{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:1rem;
-  transform:translateY(40vh) scale(.6);
-  opacity:0;
-  transition:transform .85s cubic-bezier(.2,.8,.25,1), opacity .6s ease;
-}
-.jp-stage .jp-ball{ width:min(52vw, 320px); }
-.jp-stage-note{
-  font-family:'Oswald', sans-serif;
-  font-size:clamp(.95rem, 3.4vw, 1.4rem);
-  letter-spacing:.04em;
-  color:var(--cfp-ivory);
-  text-align:center;
-  min-height:1.4em;
-  text-shadow:0 2px 10px rgba(0,0,0,.8);
-}
-
-.jp-stage[data-beat]:not([data-beat="idle"]):not([data-beat="exit"]){
-  background:rgba(6,7,10,.82);
-}
-.jp-stage[data-beat]:not([data-beat="idle"]) .jp-stage-inner{
-  transform:translateY(0) scale(1);
-  opacity:1;
-}
+.jp-strip[data-beat] .jp-ball{ width:min(42vw, 168px); }
+.jp-strip[data-beat="exit"]{ padding:.4rem .7rem; }
+.jp-strip[data-beat="exit"] .jp-ball{ width:58px; }
 
 /* THE BEATS. Every one of these is identical whether the ball is about to pop
    or not - only `burst` differs, and only at the very end. If the pop version
    strained harder the league would learn to read it in three weeks and the
    whole tease would be dead. */
-.jp-stage .jp-shell{ transition:transform .5s cubic-bezier(.3,1.4,.4,1); }
-.jp-stage[data-beat="rise"]   .jp-shell{ transform:scale(1); }
-.jp-stage[data-beat="pump"]   .jp-shell{ transform:scale(1.09, .97); }
-.jp-stage[data-beat="creak"]  .jp-shell{ transform:scale(1.10, .965); animation: jp-flinch .5s steps(2) 2; }
-.jp-stage[data-beat="bulge1"] .jp-shell{ transform:scale(1.20, .93); transition-duration:.55s; }
-.jp-stage[data-beat="ease"]   .jp-shell{ transform:scale(1.12, .975); transition-duration:.6s; }
-.jp-stage[data-beat="bulge2"] .jp-shell{ transform:scale(1.30, .90); transition-duration:.4s; animation: jp-crit .3s ease-in-out infinite .4s; }
-.jp-stage[data-beat="settle"] .jp-shell{ transform:scale(1); transition-duration:.9s; }
+.jp-strip[data-beat] .jp-shell{
+  animation:none;
+  transition:transform .5s cubic-bezier(.3,1.4,.4,1);
+}
+.jp-strip[data-beat="rise"]   .jp-shell{ transform:scale(1); }
+.jp-strip[data-beat="pump"]   .jp-shell{ transform:scale(1.09, .97); }
+.jp-strip[data-beat="creak"]  .jp-shell{ transform:scale(1.10, .965); animation: jp-flinch .5s steps(2) 2; }
+.jp-strip[data-beat="bulge1"] .jp-shell{ transform:scale(1.20, .93); transition-duration:.55s; }
+.jp-strip[data-beat="ease"]   .jp-shell{ transform:scale(1.12, .975); transition-duration:.6s; }
+.jp-strip[data-beat="bulge2"] .jp-shell{ transform:scale(1.30, .90); transition-duration:.4s; animation: jp-crit .3s ease-in-out infinite .4s; }
+.jp-strip[data-beat="settle"] .jp-shell{ transform:scale(1); transition-duration:.9s; }
 
-.jp-stage[data-beat="creak"]  .jp-seam,
-.jp-stage[data-beat="bulge1"] .jp-seam{ opacity:.9; stroke-width:1.6; }
-.jp-stage[data-beat="bulge2"] .jp-seam{ opacity:1; stroke-width:2.6; stroke:var(--jp-flash); }
+.jp-strip[data-beat="creak"]  .jp-seam,
+.jp-strip[data-beat="bulge1"] .jp-seam{ opacity:.75; stroke-width:2.4; }
+.jp-strip[data-beat="bulge2"] .jp-seam{ opacity:1; stroke-width:3.4; stroke:var(--jp-flash); }
+.jp-strip[data-beat="bulge2"] .jp-laces path{ stroke-width:2.6; }
 
 @keyframes jp-flinch{
   0%,100% { transform:scale(1.10, .965) translateX(0); }
   50%     { transform:scale(1.10, .965) translateX(2px); }
 }
 
-/* The pop. */
-.jp-stage[data-beat="burst"]{ background:rgba(6,7,10,.82); }
-.jp-stage[data-beat="burst"] .jp-shell{
-  animation: jp-burst .55s cubic-bezier(.2,.9,.3,1) forwards;
+/* The pop. The strip flares rather than the page - a whole-page shake for a
+   thing living in a 40px bar reads as a rendering fault. */
+.jp-strip[data-beat="burst"]{
+  animation: jp-flare .6s ease-out;
+  border-color:var(--jp-flash);
 }
-.jp-stage[data-beat="burst"] .jp-stage-inner{ animation: jp-flash .45s ease-out; }
+.jp-strip[data-beat="burst"] .jp-shell{
+  animation: jp-burst .6s cubic-bezier(.2,.9,.3,1) forwards;
+}
 @keyframes jp-burst{
   0%   { transform:scale(1.30, .90); opacity:1; }
-  18%  { transform:scale(1.75, 1.6); opacity:1; }
-  100% { transform:scale(2.6, 2.4) rotate(9deg); opacity:0; }
+  16%  { transform:scale(1.7, 1.55); opacity:1; filter:brightness(4); }
+  100% { transform:scale(2.3, 2.1) rotate(8deg); opacity:0; filter:brightness(1); }
 }
-@keyframes jp-flash{
-  0%   { filter:brightness(6) saturate(0); }
-  100% { filter:brightness(1) saturate(1); }
-}
-
-.jp-stage[data-beat="exit"]{ background:rgba(6,7,10,0); }
-.jp-stage[data-beat="exit"] .jp-stage-inner{ opacity:0; transform:translateY(-8vh) scale(.9); }
-
-.jp-shake{ animation: jp-shake .55s cubic-bezier(.36,.07,.19,.97); }
-@keyframes jp-shake{
-  10%, 90% { transform:translate3d(-2px,0,0); }
-  30%, 70% { transform:translate3d(5px,0,0); }
-  50%      { transform:translate3d(-7px,0,0); }
+@keyframes jp-flare{
+  0%   { background:var(--jp-flash); }
+  100% { background:rgba(201,146,16,.09); }
 }
 
-/* ---------- The cell that popped -------------------------------------- */
+/* ---------- The cell that popped --------------------------------------- */
 
 /* No crest, because there is no team behind it - the house paid this one, and a
    logo would be the cell claiming a pick that was never made. Plain words
@@ -2024,14 +2012,19 @@ td.slot-cell .slot-was{ opacity:0; }
    be louder than the board. */
 td[data-slots]{ cursor:pointer; }
 
+@media (max-width:640px){
+  .jp-strip .jp-ball{ width:46px; }
+  .jp-strip[data-beat] .jp-ball{ width:min(50vw, 150px); }
+  .jp-strip[data-beat="exit"] .jp-ball{ width:46px; }
+}
+
 @media (prefers-reduced-motion: reduce){
   .jp-strip .jp-shell,
-  .jp-stage .jp-shell,
-  .jp-stage[data-beat="burst"] .jp-shell,
-  .jp-stage[data-beat="burst"] .jp-stage-inner,
-  .auto-win-landing,
-  .jp-just-popped,
-  .jp-shake{ animation:none; }
-  .jp-stage .jp-shell,
-  .jp-stage-inner{ transition:none; }
+  .jp-strip[data-beat] .jp-shell,
+  .jp-strip[data-beat="burst"],
+  .jp-strip[data-beat="burst"] .jp-shell,
+  .auto-win-landing{ animation:none; }
+  .jp-strip,
+  .jp-strip .jp-ball,
+  .jp-strip[data-beat] .jp-shell{ transition:none; }
 }

@@ -43,13 +43,19 @@
 // so a shared ball is also the truer picture: that is not your football, it is
 // everybody's.
 //
+// AND IT IS THE BALL THAT IS ALREADY THERE. The reveal does not build a football
+// and it does not take over the screen - it grows the one sitting in the strip
+// at the top of the page, then puts it back. The board underneath is never
+// covered by the thing describing it, and the object the league has been
+// watching all week is the object that strains.
+//
 // THE RULE THAT MAKES IT WORK: every frame before the last moment is identical
 // whether it pops or not. If the pop version strained even slightly harder the
 // league would learn to read it within three weeks and the tease would be dead.
 // Nothing below branches on the outcome until `burst`.
 
 import { markSlotCell } from './utils.js';
-import { ballSvg, deflateJackpot } from './jackpot.js';
+import { ensureStrip, deflateJackpot } from './jackpot.js';
 
 // One transform and/or one tint per symbol, combined at random, so a dozen
 // classes give plenty of distinct nonsense without needing a dozen more. The
@@ -252,65 +258,65 @@ function spinCell(cell, order) {
  * list of beats than as percentages of a single animation.
  */
 async function footballAct(popped) {
-  const stage = document.createElement('div');
-  stage.className = 'jp-stage';
-  stage.setAttribute('role', 'status');
-  stage.innerHTML =
-    '<div class="jp-stage-inner">' +
-      ballSvg() +
-      '<div class="jp-stage-note" aria-live="polite"></div>' +
-    '</div>';
-  document.body.appendChild(stage);
+  const strip = ensureStrip();
+  if (!strip) return;                       // no header to play in; skip quietly
 
-  const note = stage.querySelector('.jp-stage-note');
-  const say = t => { note.textContent = t; };
+  const note = strip.querySelector('.jp-note');
+  const say = t => { if (note) note.textContent = t; };
+  const done = () => {
+    delete strip.dataset.beat;
+    say('');
+  };
+
+  // If the page is scrolled down the board the ball sits above it, so bring it
+  // into view - gently, and only as far as it takes. A reveal nobody can see is
+  // the problem this whole thing was built to fix.
+  try { strip.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); } catch {}
 
   // Reduced motion: the outcome, and none of the seven seconds.
   if (reducedMotion()) {
-    stage.dataset.beat = popped ? 'burst' : 'settle';
+    strip.dataset.beat = popped ? 'burst' : 'settle';
     say(popped ? 'The football popped. Automatic win.' : 'The football held.');
     await wait(1400);
-    stage.remove();
+    done();
     return;
   }
 
   // Every beat below is identical in both branches. Only `burst` differs, and
   // only at the very end.
   const beats = [
-    ['rise',    900],   // it comes up over the board
+    ['rise',    900],   // it swells up out of the strip
     ['pump',    900],   // hiss — one more notch of air
-    ['creak',  1100],   // the seam whitens, a 2px flinch
+    ['creak',  1100],   // the seam whitens, a flinch
     ['bulge1', 1200],   // swells hard, holds far too long...
     ['ease',    700],   // ...and eases back. A squeak of escaping air.
     ['bulge2', 1500],   // bigger, faster, laces visibly separating
   ];
 
-  stage.dataset.beat = 'idle';
+  strip.dataset.beat = 'idle';
   await wait(30);       // one frame, so the first transition actually runs
 
   for (const [beat, ms] of beats) {
-    stage.dataset.beat = beat;
+    strip.dataset.beat = beat;
     if (beat === 'pump') say('The house takes a breath…');
     if (beat === 'bulge2') say('Oh, that is not good.');
     await wait(ms);
   }
 
   if (popped) {
-    stage.dataset.beat = 'burst';
+    strip.dataset.beat = 'burst';
     say('POP. The house pays.');
-    document.body.classList.add('jp-shake');
-    setTimeout(() => document.body.classList.remove('jp-shake'), 700);
     deflateJackpot();
     await wait(2200);
   } else {
-    stage.dataset.beat = 'settle';
+    strip.dataset.beat = 'settle';
     say('It held. This time.');
     await wait(1300);
   }
 
-  stage.dataset.beat = 'exit';
+  strip.dataset.beat = 'exit';
   await wait(500);
-  stage.remove();
+  done();
 }
 
 /** Put a popped cell into its final state: no team, AUTO WIN, and it scores. */
@@ -389,7 +395,7 @@ export default function initSlots() {
   board.addEventListener('click', e => {
     const td = e.target?.closest?.('td[data-slots]');
     if (!td || td.querySelector('.slot-box')) return;
-    if (document.querySelector('.jp-stage')) return;   // one football at a time
+    if (document.querySelector('.jp-strip[data-beat]')) return;  // one football at a time
     runSlots({ only: td });
   });
 }

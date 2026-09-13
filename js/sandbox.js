@@ -49,6 +49,7 @@
 import { sessionInfo } from './session.js';
 import { runSlots, setRevealSpeed, forgetSpins } from './slots.js';
 import { markSlotCell } from './utils.js';
+import { previewJackpot } from './jackpot.js';
 
 // KEEP THE GATE AT THE BOTTOM OF THIS FILE. Function declarations hoist but
 // `const` and `let` do not, so calling enableSandbox() from up here would reach
@@ -307,6 +308,9 @@ function mountLabPanel() {
     '<label class="slot-panel-field slot-panel-check">' +
       '<input type="checkbox" class="slot-check" data-act="pop"> Force the football to pop' +
     '</label>' +
+    '<label class="slot-panel-field">Meter <span data-meter-out>0.25%</span>' +
+      '<input type="range" min="0" max="70" step="1" value="0" class="slot-range" data-act="meter">' +
+    '</label>' +
     '<div class="slot-panel-note">&nbsp;</div>' +
     '<div class="slot-panel-foot">Drives the real reveal in js/slots.js. Nothing is written to the database.</div>';
   document.body.appendChild(p);
@@ -319,6 +323,14 @@ function mountLabPanel() {
   p.querySelector('[data-act="cells"]').addEventListener('change', e => {
     labCells = Math.max(1, Math.min(8, Number(e.target.value) || 1));
   });
+  // The real meter sits on one number for weeks, so the only way to judge how
+  // the ball behaves as it climbs is to drive it by hand.
+  p.querySelector('[data-act="meter"]').addEventListener('input', e => {
+    const pulls = Number(e.target.value) || 0;
+    previewJackpot(pulls);
+    const pct = Math.min(0.0025 + 0.0015 * pulls, 0.10) * 100;
+    p.querySelector('[data-meter-out]').textContent = pct.toFixed(pct < 1 ? 2 : 1) + '%';
+  });
   p.querySelector('[data-act="pop"]').addEventListener('change', e => {
     labPop = !!e.target.checked;
   });
@@ -330,6 +342,10 @@ function mountLabPanel() {
 
 function initSlotLab() {
   mountLabPanel();
+  // The strip is normally gated on the database having a meter in it. In here it
+  // is drawn unconditionally, because judging how the ball looks is half of what
+  // this lab is for and the commissioner is the only one who can see it anyway.
+  previewJackpot(0);
   labNote('Roll it to watch a kickoff reveal.');
 }
 

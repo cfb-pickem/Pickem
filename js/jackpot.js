@@ -1,5 +1,5 @@
-// js/jackpot.js — the league's football, drawn at the top of the leaderboard
-// and the picks page.
+// js/jackpot.js — the league's football, at the top of the leaderboard and the
+// picks page.
 //
 // It is the jackpot meter made visible, and that is the whole idea. A
 // progressive jackpot is a number, and a number nobody looks at is not a
@@ -16,6 +16,13 @@
 // The honest channel is the label: "17 pulls since the last pop - 2.8%". Anyone
 // who wants the real number can have it, which is exactly what frees the drawing
 // to be pure theatre.
+//
+// ONE BALL, ONE PLACE. The kickoff reveal does not build a football of its own
+// and it does not take over the screen: it grows THIS one, in the strip it
+// already occupies at the top of the page. That is the whole point of a shared
+// meter - the ball the league has been watching all week is the ball that
+// strains - and it means the board underneath is never covered by the thing
+// describing it.
 //
 // READ ONLY. This module never writes. The meter is moved by a trigger in
 // Postgres when a slots pick is saved (20260913 migration), because this repo is
@@ -49,40 +56,80 @@ function fmtPct(odds) {
   return (odds * 100).toFixed(odds < 0.01 ? 2 : 1) + '%';
 }
 
+// The silhouette. A football is a prolate spheroid, which side-on means two arcs
+// meeting at POINTS - not an ellipse, which is what the first version drew and
+// which read as a rugby ball at best and an egg at worst. The tips are the whole
+// difference, so they are the part with the tightest control points.
+const BALL = 'M6,60 C36,6 164,6 194,60 C164,114 36,114 6,60 Z';
+
 /**
  * The ball itself. Inline SVG so it can be styled and animated by CSS alone.
  *
- * Exported because the reveal in js/slots.js draws the same ball, large, over the
- * board. Two hand-written footballs would drift apart the first time either was
- * touched, and the whole point is that the thing straining over the board is the
- * one that has been sitting in the header all week.
+ * Exported because the reveal in js/slots.js grows this same markup rather than
+ * drawing a second football. Two hand-written balls would drift apart the first
+ * time either was touched.
+ *
+ * The ids inside are namespaced per instance: two of these on one page - the
+ * header and, briefly, anything else - would otherwise both resolve every
+ * `url(#...)` to whichever was parsed first, and the second ball would silently
+ * borrow the first one's gradients.
  */
-export function ballSvg() {
+export function ballSvg(ns = 'jp') {
+  const id = s => ns + '-' + s;
   return (
-    '<svg class="jp-ball" viewBox="0 0 64 40" aria-hidden="true" focusable="false">' +
+    '<svg class="jp-ball" viewBox="0 0 200 120" aria-hidden="true" focusable="false">' +
       '<defs>' +
-        '<radialGradient id="jp-leather" cx="38%" cy="32%" r="72%">' +
-          '<stop offset="0%" stop-color="#9c5a2a"/>' +
-          '<stop offset="55%" stop-color="#7a3f18"/>' +
-          '<stop offset="100%" stop-color="#4a2410"/>' +
+        // Leather: warm on top where the light is, cooling and darkening into
+        // the underside. A flat fill is what made the first one look like a
+        // sticker.
+        '<linearGradient id="' + id('lea') + '" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0%"   stop-color="#a46130"/>' +
+          '<stop offset="42%"  stop-color="#7e4018"/>' +
+          '<stop offset="100%" stop-color="#40200d"/>' +
+        '</linearGradient>' +
+        // A second, off-centre light so the ball reads as round rather than as a
+        // shape with a gradient in it.
+        '<radialGradient id="' + id('lit') + '" cx="34%" cy="24%" r="62%">' +
+          '<stop offset="0%"   stop-color="#fff" stop-opacity=".38"/>' +
+          '<stop offset="55%"  stop-color="#fff" stop-opacity=".06"/>' +
+          '<stop offset="100%" stop-color="#fff" stop-opacity="0"/>' +
         '</radialGradient>' +
+        // Pebbling. Two offset dots per tile is enough grain at this size, and
+        // costs one paint rather than the hundreds of circles it looks like.
+        '<pattern id="' + id('peb') + '" width="7" height="7" patternUnits="userSpaceOnUse">' +
+          '<circle cx="1.8" cy="1.8" r="1.05" fill="#2a1408" opacity=".26"/>' +
+          '<circle cx="5.3" cy="5.3" r="1.05" fill="#2a1408" opacity=".26"/>' +
+          '<circle cx="5.3" cy="1.8" r=".55" fill="#f4d8b6" opacity=".10"/>' +
+        '</pattern>' +
+        '<clipPath id="' + id('clip') + '"><path d="' + BALL + '"/></clipPath>' +
       '</defs>' +
-      // The shell. Scaled by CSS, so the strain reads as the ball straining
-      // rather than the whole graphic zooming.
       '<g class="jp-shell">' +
-        '<ellipse class="jp-hide" cx="32" cy="20" rx="29" ry="17" fill="url(#jp-leather)"/>' +
-        // The seam, which whitens and splits as the meter climbs.
-        '<path class="jp-seam" d="M8 20 Q32 11 56 20 Q32 29 8 20Z" fill="none"/>' +
-        '<g class="jp-laces">' +
-          '<line x1="26" y1="20" x2="38" y2="20"/>' +
-          '<line x1="28" y1="16.4" x2="28" y2="23.6"/>' +
-          '<line x1="32" y1="15.8" x2="32" y2="24.2"/>' +
-          '<line x1="36" y1="16.4" x2="36" y2="23.6"/>' +
+        '<path class="jp-hide" d="' + BALL + '" fill="url(#' + id('lea') + ')"/>' +
+        '<g clip-path="url(#' + id('clip') + ')">' +
+          '<rect x="0" y="0" width="200" height="120" fill="url(#' + id('peb') + ')"/>' +
+          // The two white bands near the tips. Curved, not straight, because
+          // they wrap a round thing.
+          '<path class="jp-stripe" d="M44,10 C38,38 38,82 44,110 L53,110 C47,82 47,38 53,10 Z"/>' +
+          '<path class="jp-stripe" d="M156,10 C162,38 162,82 156,110 L147,110 C153,82 153,38 147,10 Z"/>' +
+          '<rect x="0" y="0" width="200" height="120" fill="url(#' + id('lit') + ')"/>' +
+          // One hard specular, small and high. Real leather gives a tight
+          // highlight, not a wash.
+          '<ellipse class="jp-gloss" cx="74" cy="30" rx="30" ry="9"/>' +
         '</g>' +
-        // Two hard highlights, because one reads as a sticker and two read as
-        // something inflated.
-        '<ellipse class="jp-gloss" cx="22" cy="12" rx="9" ry="4"/>' +
-        '<ellipse class="jp-gloss jp-gloss-2" cx="45" cy="27" rx="6" ry="2.4"/>' +
+        // The panel seam, sitting just above the waist the way it does when a
+        // ball is held laces-up.
+        '<path class="jp-seam" d="M16,56 C60,38 140,38 184,56" fill="none"/>' +
+        '<g class="jp-laces">' +
+          '<path class="jp-lace-band" d="M84,60 L116,60"/>' +
+          '<path d="M86,52 L86,68"/>' +
+          '<path d="M93,51 L93,69"/>' +
+          '<path d="M100,50.6 L100,69.4"/>' +
+          '<path d="M107,51 L107,69"/>' +
+          '<path d="M114,52 L114,68"/>' +
+        '</g>' +
+        // Drawn last and on top, so the tips stay crisp however hard the shell
+        // is being stretched underneath.
+        '<path class="jp-rim" d="' + BALL + '" fill="none"/>' +
       '</g>' +
     '</svg>'
   );
@@ -90,16 +137,17 @@ export function ballSvg() {
 
 function render(el, pulls) {
   const odds = jackpotOdds(pulls);
-  const level = strainLevel(odds);
-  const pct = fmtPct(odds);
   const n = Number(pulls) || 0;
+  const pct = fmtPct(odds);
 
-  el.dataset.strain = level;
+  el.dataset.strain = strainLevel(odds);
   el.innerHTML =
     ballSvg() +
     '<span class="jp-text">' +
       '<b class="jp-pct">' + pct + '</b>' +
       '<span class="jp-sub">' + n + (n === 1 ? ' pull' : ' pulls') + ' since the last pop</span>' +
+      // Written to by the reveal. Empty and collapsed the rest of the time.
+      '<span class="jp-note" aria-live="polite"></span>' +
     '</span>';
 
   // Said in full to a screen reader, which gets none of the wobbling.
@@ -110,21 +158,51 @@ function render(el, pulls) {
 }
 
 /**
+ * The strip, made if it is not there yet.
+ *
+ * The reveal needs somewhere to play even when the meter could not be read - a
+ * migration not yet run, a dropped request - and a kickoff with no football at
+ * all would be a worse answer than a football with no number on it. So this
+ * always returns an element, and initJackpot() fills in the number when it can.
+ */
+export function ensureStrip() {
+  let strip = document.querySelector('.jp-strip');
+  if (strip) return strip;
+
+  const anchor = document.getElementById('site-nav');
+  if (!anchor) return null;
+
+  strip = document.createElement('div');
+  strip.className = 'jp-strip';
+  strip.setAttribute('role', 'status');
+  render(strip, 0);
+  anchor.after(strip);
+  return strip;
+}
+
+/**
+ * Draw the ball at a given meter reading, without asking the database.
+ *
+ * For the sandbox, which needs to show all four rest states on a Tuesday - the
+ * real meter sits at one number for weeks at a time, so it is no use at all for
+ * judging whether the ball looks right as it climbs.
+ */
+export function previewJackpot(pulls) {
+  const strip = ensureStrip();
+  if (strip) render(strip, pulls);
+  return strip;
+}
+
+/**
  * Draw the football into the top of whatever page called this.
  *
- * Fails silently and completely. This is decoration on a page whose job is
- * picks and standings: if the meter cannot be read, the right outcome is a
- * leaderboard with no football, not a leaderboard with an error on it.
+ * Fails quietly. This is furniture on a page whose job is picks and standings:
+ * if the meter cannot be read, the right outcome is a leaderboard with no
+ * football, not a leaderboard with an error on it.
  */
 export default async function initJackpot() {
   const anchor = document.getElementById('site-nav');
   if (!anchor || document.querySelector('.jp-strip')) return null;
-
-  const strip = document.createElement('div');
-  strip.className = 'jp-strip';
-  strip.setAttribute('role', 'status');
-  strip.hidden = true;
-  anchor.after(strip);
 
   try {
     const { data, error } = await supabase
@@ -132,12 +210,11 @@ export default async function initJackpot() {
       .select('pulls_since_pop, last_pop_at')
       .eq('id', 1)
       .maybeSingle();
-    if (error || !data) { strip.remove(); return null; }
-    render(strip, data.pulls_since_pop);
-    strip.hidden = false;
+    if (error || !data) return null;
+    const strip = ensureStrip();
+    if (strip) render(strip, data.pulls_since_pop);
     return strip;
   } catch {
-    strip.remove();
     return null;
   }
 }
@@ -151,7 +228,7 @@ export default async function initJackpot() {
 export function deflateJackpot() {
   const strip = document.querySelector('.jp-strip');
   if (!strip) return;
-  strip.classList.add('jp-just-popped');
+  const beat = strip.dataset.beat;          // the reveal may still be mid-sequence
   render(strip, 0);
-  setTimeout(() => strip.classList.remove('jp-just-popped'), 2600);
+  if (beat) strip.dataset.beat = beat;
 }
