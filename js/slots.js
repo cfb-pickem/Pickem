@@ -63,7 +63,7 @@
 // Nothing below branches on the outcome until `burst`.
 
 import { markSlotCell } from './utils.js';
-import { ensureStrip, deflateJackpot } from './jackpot.js';
+import { ensureStage, dismissStage, deflateJackpot } from './jackpot.js';
 import { scheduleClick, scheduleStop, strainStart, strainStop, pop, hold } from './slotsound.js';
 
 // One transform and/or one tint per symbol, combined at random, so a dozen
@@ -340,8 +340,10 @@ function spinCell(cell, order) {
  * list of beats than as percentages of a single animation.
  */
 async function footballAct(popped) {
-  const strip = ensureStrip();
-  if (!strip) return;                       // no header to play in; skip quietly
+  // The marquee, on the page that has one: for the length of this roll the
+  // football stands where "CFB Pick'em Leaderboard" is.
+  const strip = ensureStage();
+  if (!strip) return;                       // nowhere to play; skip quietly
 
   const note = strip.querySelector('.jp-note');
   const say = t => { if (note) note.textContent = t; };
@@ -349,6 +351,7 @@ async function footballAct(popped) {
     delete strip.dataset.beat;
     say('');
     strainStop();          // never leave the drone running if a beat threw
+    dismissStage();        // and give the title back; it was only ever borrowed
   };
 
   // If the page is scrolled down the board the ball sits above it, so bring it

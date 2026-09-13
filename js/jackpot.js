@@ -17,12 +17,22 @@
 // who wants the real number can have it, which is exactly what frees the drawing
 // to be pure theatre.
 //
-// ONE BALL, ONE PLACE. The kickoff reveal does not build a football of its own
-// and it does not take over the screen: it grows THIS one, in the strip it
-// already occupies at the top of the page. That is the whole point of a shared
-// meter - the ball the league has been watching all week is the ball that
-// strains - and it means the board underneath is never covered by the thing
-// describing it.
+// WHERE IT LIVES, WHICH IS TWO PLACES FOR ONE REASON.
+//
+// On the leaderboard the football is not furniture. It TAKES THE MARQUEE: for
+// the length of a roll it stands where the "CFB Pick'em Leaderboard" heading is,
+// between the two mascots, and when the roll is done it is gone and the title is
+// back. That band is already drawn as an LED panel, which makes it the one place
+// on the page a slot machine belongs - and a football that is only ever there
+// during a roll is an event rather than a widget.
+//
+// On the picks page there is nothing to roll, so it sits as the ambient meter it
+// always was. That is where the lever is, and watching the thing tighten while
+// you decide whether to hand a game to the house is the entire reason to pull
+// it.
+//
+// Either way it is never a screen of its own: the board underneath is never
+// covered by the thing describing it.
 //
 // READ ONLY. This module never writes. The meter is moved by a trigger in
 // Postgres when a slots pick is saved (20260913 migration), because this repo is
@@ -280,38 +290,81 @@ function render(el, pulls) {
   el.title = 'Every "let the slots decide" pull puts more air in it. Nobody knows when it goes.';
 }
 
-/**
- * The strip, made if it is not there yet.
- *
- * The reveal needs somewhere to play even when the meter could not be read - a
- * migration not yet run, a dropped request - and a kickoff with no football at
- * all would be a worse answer than a football with no number on it. So this
- * always returns an element, and initJackpot() fills in the number when it can.
- */
-export function ensureStrip() {
-  let strip = document.querySelector('.jp-strip');
-  if (strip) return strip;
+/** Is this the page with the board on it? Static markup, so it is true early. */
+function isBoardPage() {
+  return !!document.getElementById('table-scroll-wrap');
+}
 
-  const anchor = document.getElementById('site-nav');
-  if (!anchor) return null;
-
-  strip = document.createElement('div');
+function buildStrip(pulls) {
+  const strip = document.createElement('div');
   strip.className = 'jp-strip';
   strip.setAttribute('role', 'status');
-  render(strip, 0);
+  render(strip, pulls);
+  return strip;
+}
+
+/**
+ * The ambient meter, under the nav. Made if it is not there yet.
+ *
+ * This is the picks page's football, and the sandbox's. The leaderboard does not
+ * get one - see ensureStage().
+ */
+export function ensureStrip(pulls = 0) {
+  const existing = document.querySelector('.jp-strip');
+  if (existing) return existing;
+  const anchor = document.getElementById('site-nav');
+  if (!anchor) return null;
+  const strip = buildStrip(pulls);
   anchor.after(strip);
   return strip;
+}
+
+/**
+ * Where the reveal plays: the marquee, if this page has one.
+ *
+ * Takes over `.jumbotron-title` by hiding the heading and standing in its place,
+ * so the football is literally where the words were. Falls back to the ambient
+ * strip on any page without a jumbotron, and to nothing at all if there is
+ * nowhere at all to put it - a kickoff with no football is a poor answer, but a
+ * thrown error in the middle of a reveal is a worse one.
+ */
+export function ensureStage() {
+  const title = document.querySelector('.jumbotron-title');
+  if (!title) return ensureStrip();
+
+  const already = title.querySelector('.jp-strip');
+  if (already) return already;
+
+  const text = title.querySelector('.jumbotron-title-text');
+  if (text) text.hidden = true;
+
+  const strip = buildStrip(0);
+  strip.dataset.takeover = '1';
+  title.appendChild(strip);
+  return strip;
+}
+
+/** Give the marquee back. Safe to call when nothing was ever taken. */
+export function dismissStage() {
+  const strip = document.querySelector('.jp-strip[data-takeover]');
+  if (!strip) return;
+  const title = strip.parentNode;
+  strip.remove();
+  const text = title && title.querySelector('.jumbotron-title-text');
+  if (text) text.hidden = false;
 }
 
 /**
  * Draw the ball at a given meter reading, without asking the database.
  *
  * For the sandbox, which needs to show all four rest states on a Tuesday - the
- * real meter sits at one number for weeks at a time, so it is no use at all for
- * judging whether the ball looks right as it climbs.
+ * real meter sits on one number for weeks at a time, so it is no use at all for
+ * judging how the ball looks as it climbs. It is also the only way an ambient
+ * strip appears on the leaderboard at all, where the league's football is an
+ * event rather than furniture.
  */
 export function previewJackpot(pulls) {
-  const strip = ensureStrip();
+  const strip = ensureStrip(pulls);
   if (strip) render(strip, pulls);
   return strip;
 }
@@ -327,6 +380,10 @@ export default async function initJackpot() {
   const anchor = document.getElementById('site-nav');
   if (!anchor || document.querySelector('.jp-strip')) return null;
 
+  // Not on the leaderboard. There the football is an event, not furniture: it
+  // appears in the marquee for the length of a roll and then it is gone.
+  if (isBoardPage()) return null;
+
   try {
     const { data, error } = await supabase
       .from('slots_jackpot')
@@ -334,9 +391,7 @@ export default async function initJackpot() {
       .eq('id', 1)
       .maybeSingle();
     if (error || !data) return null;
-    const strip = ensureStrip();
-    if (strip) render(strip, data.pulls_since_pop);
-    return strip;
+    return ensureStrip(data.pulls_since_pop);
   } catch {
     return null;
   }
@@ -349,7 +404,12 @@ export default async function initJackpot() {
  * with the board underneath it. The next page load reads the real number.
  */
 export function deflateJackpot() {
-  const strip = document.querySelector('.jp-strip');
+  // The one in play first. With an ambient strip AND a marquee takeover on the
+  // page - which is exactly what the sandbox produces - querying for the plain
+  // class hands back whichever parsed first, and the football that just burst
+  // is not necessarily it.
+  const strip = document.querySelector('.jp-strip[data-takeover]')
+             || document.querySelector('.jp-strip');
   if (!strip) return;
   const beat = strip.dataset.beat;          // the reveal may still be mid-sequence
   render(strip, 0);

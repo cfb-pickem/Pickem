@@ -2094,6 +2094,55 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-beat="exit"]{ padding:.55rem .7rem .5rem; }
 .jp-strip[data-beat="exit"] .jp-ball{ width:58px; }
 
+/* ---------- Standing in for the marquee -------------------------------- */
+
+/* On the leaderboard the football has no bar of its own. It stands where the
+   "CFB Pick'em Leaderboard" heading is, inside the jumbotron - which is already
+   drawn as an LED panel, so the cabinet chrome would be a box inside a box.
+   Strip it all off and let the band it is sitting in do that work. */
+.jp-strip[data-takeover]{
+  margin:0;
+  padding:0;
+  border:none;
+  border-radius:0;
+  background:none;
+  box-shadow:none;
+}
+.jp-strip[data-takeover] .jp-bulbs,
+.jp-strip[data-takeover] .jp-sound,
+.jp-strip[data-takeover] .jp-pays,
+.jp-strip[data-takeover] .jp-paytable,
+.jp-strip[data-takeover] .jp-label,
+.jp-strip[data-takeover] .jp-gauge,
+.jp-strip[data-takeover] .jp-sub{ display:none; }
+
+/* Centred under the title's own alignment, ball over caption, because this is
+   the one moment it is the biggest thing on the page. */
+.jp-strip[data-takeover] .jp-cab{
+  flex-direction:column;
+  align-items:center;
+  gap:.3rem;
+  padding:0;
+}
+.jp-strip[data-takeover] .jp-ball,
+.jp-strip[data-takeover][data-beat] .jp-ball{
+  width:min(34vw, 190px);
+}
+.jp-strip[data-takeover] .jp-text{ align-items:center; }
+.jp-strip[data-takeover] .jp-note{
+  margin:0;
+  font-size:clamp(.8rem, 2.6vw, 1.05rem);
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  text-shadow:0 0 14px rgba(255,180,60,.45), 0 2px 4px rgba(0,0,0,.6);
+}
+
+
+@media (max-width:640px){
+  .jp-strip[data-takeover] .jp-ball,
+  .jp-strip[data-takeover][data-beat] .jp-ball{ width:min(46vw, 150px); }
+}
+
 /* THE BEATS. Every one of these is identical whether the ball is about to pop
    or not - only `burst` differs, and only at the very end. If the pop version
    strained harder the league would learn to read it in three weeks and the
