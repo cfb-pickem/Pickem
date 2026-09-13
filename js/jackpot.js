@@ -17,22 +17,28 @@
 // who wants the real number can have it, which is exactly what frees the drawing
 // to be pure theatre.
 //
-// WHERE IT LIVES, WHICH IS TWO PLACES FOR ONE REASON.
+// IT IS ONLY EVER THERE DURING A ROLL.
 //
-// On the leaderboard the football is not furniture. It TAKES THE MARQUEE: for
-// the length of a roll it stands where the "CFB Pick'em Leaderboard" heading is,
-// between the two mascots, and when the roll is done it is gone and the title is
-// back. That band is already drawn as an LED panel, which makes it the one place
-// on the page a slot machine belongs - and a football that is only ever there
-// during a roll is an event rather than a widget.
+// There is no football sitting at the top of any page. For the length of a roll
+// it stands where the "CFB Pick'em Leaderboard" heading is - between the two
+// mascots, in a band already drawn as an LED panel, which is the one place on
+// this site a slot machine belongs - and the moment the roll is over it is gone
+// and the heading is back.
 //
-// On the picks page there is nothing to roll, so it sits as the ambient meter it
-// always was. That is where the lever is, and watching the thing tighten while
-// you decide whether to hand a game to the house is the entire reason to pull
-// it.
+// A football that is only there during a roll is an event. A football that is
+// always there is furniture, and furniture stops being looked at in about a
+// week.
 //
-// Either way it is never a screen of its own: the board underneath is never
-// covered by the thing describing it.
+// THE PICKS PAGE IS THE EXCEPTION, and for the opposite reason. Nothing rolls
+// there, so there is no event to have - but that is where the lever is, and the
+// whole argument for pulling it is the thing sitting at the top of the page
+// getting tighter. So it keeps an animated football, centred, over a plain count
+// of what the league has put into it.
+//
+// WHICH MAKES THE METER SOMETHING THAT HAS TO BE FETCHED. Nothing draws it at
+// rest any more, so nothing was loading it either, and the ball would have taken
+// the marquee at zero pressure every single time however long the drought had
+// run. primeMeter() reads it once on load and the reveal uses what arrived.
 //
 // READ ONLY. This module never writes. The meter is moved by a trigger in
 // Postgres when a slots pick is saved (20260913 migration), because this repo is
@@ -176,6 +182,8 @@ function bulbs(count) {
   return out + '</span>';
 }
 
+let ballSeq = 0;
+
 const SPEAKER_ON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/>' +
   '<path d="M16 8.5a4.5 4.5 0 010 7" fill="none" stroke-width="2"/>' +
@@ -226,10 +234,15 @@ function render(el, pulls) {
   const n = Number(pulls) || 0;
 
   el.dataset.strain = strainLevel(odds);
+  // A namespace per strip, because ballSvg() takes one and never getting a
+  // distinct one defeats the point of it: the sandbox puts a preview ball and a
+  // marquee ball on the page at once, and two SVGs sharing gradient ids both
+  // resolve every url(#...) to whichever parsed first.
+  el.dataset.ns = el.dataset.ns || ('jp' + (++ballSeq));
   el.innerHTML =
     bulbs(18) +
     '<span class="jp-cab">' +
-      ballSvg() +
+      ballSvg(el.dataset.ns) +
       '<span class="jp-text">' +
         '<span class="jp-label">Pressure</span>' +
         // A gauge rather than a readout. A progressive meter on a real machine is
@@ -237,7 +250,8 @@ function render(el, pulls) {
         '<span class="jp-gauge" aria-hidden="true">' +
           '<i style="width:' + (gaugeFill(n) * 100).toFixed(1) + '%"></i>' +
         '</span>' +
-        '<span class="jp-sub">' + n + (n === 1 ? ' pull' : ' pulls') + ' since it last blew</span>' +
+        '<span class="jp-sub">' + n + (n === 1 ? ' slot pull' : ' slot pulls') +
+          ' since the last jackpot</span>' +
         // Written to by the reveal. Empty and collapsed the rest of the time.
         '<span class="jp-note" aria-live="polite"></span>' +
       '</span>' +
@@ -285,14 +299,34 @@ function render(el, pulls) {
   // the real odds in here because "nobody reads it" would be both a leak and the
   // exact contempt this label exists to avoid.
   el.setAttribute('aria-label',
-    'The league football. ' + n + (n === 1 ? ' pull' : ' pulls') +
-    ' since it last blew, and getting tighter.');
+    'The league football. ' + n + (n === 1 ? ' slot pull' : ' slot pulls') +
+    ' since the last jackpot, and getting tighter.');
   el.title = 'Every "let the slots decide" pull puts more air in it. Nobody knows when it goes.';
 }
 
-/** Is this the page with the board on it? Static markup, so it is true early. */
-function isBoardPage() {
-  return !!document.getElementById('table-scroll-wrap');
+// What the league has done to the football, read once and kept. Zero is the
+// honest default: a ball drawn at the floor is wrong by less than a ball drawn
+// at a number we never actually asked for.
+let meterPulls = 0;
+
+/**
+ * Read the meter, once, so the reveal has something true to draw.
+ *
+ * Fire-and-forget on page load. If it never arrives the ball is simply drawn
+ * slack, which is a worse picture than the truth but not a broken one - and a
+ * leaderboard that will not render because a decoration could not read a counter
+ * would be far worse than both.
+ */
+export async function primeMeter() {
+  try {
+    const { data, error } = await supabase
+      .from('slots_jackpot')
+      .select('pulls_since_pop')
+      .eq('id', 1)
+      .maybeSingle();
+    if (!error && data) meterPulls = Number(data.pulls_since_pop) || 0;
+  } catch {}
+  return meterPulls;
 }
 
 function buildStrip(pulls) {
@@ -338,7 +372,9 @@ export function ensureStage() {
   const text = title.querySelector('.jumbotron-title-text');
   if (text) text.hidden = true;
 
-  const strip = buildStrip(0);
+  // At whatever the league has actually got it up to. This is the only moment
+  // anybody sees the football, so it is the only moment the pressure can show.
+  const strip = buildStrip(meterPulls);
   strip.dataset.takeover = '1';
   title.appendChild(strip);
   return strip;
@@ -370,28 +406,35 @@ export function previewJackpot(pulls) {
 }
 
 /**
- * Draw the football into the top of whatever page called this.
+ * The picks page's football: centred at the top, animated, over the count.
  *
- * Fails quietly. This is furniture on a page whose job is picks and standings:
- * if the meter cannot be read, the right outcome is a leaderboard with no
- * football, not a leaderboard with an error on it.
+ * Read straight from the database rather than from primeMeter()'s cache, because
+ * this is the number somebody is looking at while they decide whether to hand a
+ * game to the house. It should be what the meter actually says, not what it said
+ * when the tab was opened.
+ *
+ * Fails quietly and completely. This is the reason to pull the lever, not the
+ * lever itself: if the meter cannot be read the right outcome is a picks page
+ * with no football, never a picks page with an error on it.
  */
 export default async function initJackpot() {
   const anchor = document.getElementById('site-nav');
   if (!anchor || document.querySelector('.jp-strip')) return null;
-
-  // Not on the leaderboard. There the football is an event, not furniture: it
-  // appears in the marquee for the length of a roll and then it is gone.
-  if (isBoardPage()) return null;
+  // Not the leaderboard. There it is an event, and it takes the marquee.
+  if (document.getElementById('table-scroll-wrap')) return null;
 
   try {
     const { data, error } = await supabase
       .from('slots_jackpot')
-      .select('pulls_since_pop, last_pop_at')
+      .select('pulls_since_pop')
       .eq('id', 1)
       .maybeSingle();
     if (error || !data) return null;
-    return ensureStrip(data.pulls_since_pop);
+
+    const strip = buildStrip(Number(data.pulls_since_pop) || 0);
+    strip.dataset.center = '1';
+    anchor.after(strip);
+    return strip;
   } catch {
     return null;
   }
@@ -408,6 +451,7 @@ export function deflateJackpot() {
   // page - which is exactly what the sandbox produces - querying for the plain
   // class hands back whichever parsed first, and the football that just burst
   // is not necessarily it.
+  meterPulls = 0;                           // it is a new ball for everybody now
   const strip = document.querySelector('.jp-strip[data-takeover]')
              || document.querySelector('.jp-strip');
   if (!strip) return;

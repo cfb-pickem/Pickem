@@ -63,7 +63,7 @@
 // Nothing below branches on the outcome until `burst`.
 
 import { markSlotCell } from './utils.js';
-import { ensureStage, dismissStage, deflateJackpot } from './jackpot.js';
+import { ensureStage, dismissStage, deflateJackpot, primeMeter } from './jackpot.js';
 import { scheduleClick, scheduleStop, strainStart, strainStop, pop, hold } from './slotsound.js';
 
 // One transform and/or one tint per symbol, combined at random, so a dozen
@@ -482,6 +482,12 @@ export async function runSlots(opts = {}) {
 export default function initSlots() {
   const board = document.getElementById('table-scroll-wrap');
   if (!board) return;
+
+  // Nothing draws the meter at rest any more, so nothing else would load it -
+  // and the ball would take the marquee at zero pressure however long the
+  // drought had run. Fired and forgotten: the reveal is seconds away at the
+  // earliest, and if it never lands the ball is just drawn slack.
+  primeMeter();
 
   let queued = false;
   const ask = () => {

@@ -2094,6 +2094,47 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-beat="exit"]{ padding:.55rem .7rem .5rem; }
 .jp-strip[data-beat="exit"] .jp-ball{ width:58px; }
 
+/* ---------- The picks page: centred, over the count --------------------- */
+
+/* Nothing rolls on the picks page, so there is no event to have - but that is
+   where the lever is, and the whole argument for pulling it is this thing at the
+   top of the page getting tighter. Centred and stripped of the cabinet chrome,
+   because here it is the reason rather than the machine. */
+.jp-strip[data-center]{
+  padding:.9rem .7rem .8rem;
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(201,146,16,.10), transparent 62%),
+    linear-gradient(180deg, #23262d 0%, #15171c 55%, #0e1014 100%);
+}
+.jp-strip[data-center] .jp-cab{
+  flex-direction:column;
+  align-items:center;
+  gap:.35rem;
+  padding-top:.35rem;
+}
+.jp-strip[data-center] .jp-ball{ width:min(30vw, 118px); }
+.jp-strip[data-center] .jp-text{ align-items:center; text-align:center; }
+.jp-strip[data-center] .jp-label{ order:-1; }
+.jp-strip[data-center] .jp-sub{
+  font-family:'Oswald', sans-serif;
+  font-size:.86rem;
+  letter-spacing:.03em;
+  color:var(--cfp-ivory);
+}
+.jp-strip[data-center] .jp-gauge{ width:150px; }
+/* No speaker here: there is nothing on this page that makes a noise. */
+.jp-strip[data-center] .jp-sound{ display:none; }
+.jp-strip[data-center] .jp-pays{
+  margin:.45rem 0 0;
+  align-self:center;
+}
+.jp-strip[data-center] .jp-paytable{ text-align:left; }
+
+@media (max-width:640px){
+  .jp-strip[data-center] .jp-ball{ width:min(42vw, 104px); }
+  .jp-strip[data-center] .jp-sub{ font-size:.78rem; }
+}
+
 /* ---------- Standing in for the marquee -------------------------------- */
 
 /* On the leaderboard the football has no bar of its own. It stands where the
