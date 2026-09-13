@@ -532,37 +532,75 @@ async function footballAct(popped, reels) {
   done();
 }
 
+// ONE REVEAL AT A TIME, and this is not a nicety.
+//
+// There is a single marquee. Two footballAct()s running together both write
+// data-beat and both write the note, on the same element - so the ball jumps
+// between their two sequences and the caption contradicts itself. Watched in a
+// real browser it read:
+//
+//   rise -> pump -> hold1 -> bulge2 -> creak -> ease -> bulge1 -> settle ->
+//   hold1 -> bulge2 -> ease -> burst
+//
+// with "It held." and "The reels have it, straight fifty-fifty" arriving three
+// seconds before "IT WENT." That is two reveals interleaved, and it is what
+// "the jackpot does not line up with how they roll" looks like from the outside.
+//
+// It is easy to hit: the board re-renders every minute on live scores, and any
+// re-render that brings a cell the previous one did not have starts a second
+// run while the first is still going.
+//
+// So runs are CHAINED rather than dropped. The cells are claimed immediately -
+// nothing can pick them up twice - and their reveal waits its turn.
+let revealChain = Promise.resolve();
+let revealing = false;
+
+async function performReveal(due) {
+  revealing = true;
+  try {
+    const popped = due.filter(c => c.jackpot);
+
+    // Both at once, deliberately. The ball is shaking before the first reel has
+    // got going and has answered before the first one lands - and it is handed
+    // the reels so it can hold its tongue until the board can back it up.
+    const reels = Promise.all(due.map((c, i) => spinCell(c, i)));
+    const ball  = footballAct(popped.length > 0, reels);
+
+    await reels;
+
+    // The chip edge, so an ordinary slots pick still says whose choice it was a
+    // week later. A popped cell says AUTO WIN in plain words and needs no border
+    // to explain itself.
+    due.forEach(c => { if (!c.jackpot) markSlotCell(c.td); });
+
+    // The reels are done but the ball may still be deflating.
+    await ball;
+  } finally {
+    revealing = false;
+  }
+  return due.length;
+}
+
 /**
  * Spin whatever is due, then run the football over the whole batch.
  *
- * The spun-record is written BEFORE the spin rather than after, so that a
- * re-render arriving mid-spin cannot start a second one on the same cell.
+ * The spun-record is written BEFORE anything starts, so a re-render arriving
+ * mid-spin cannot queue the same cell a second time.
  */
-export async function runSlots(opts = {}) {
+export function runSlots(opts = {}) {
   const due = dueCells(opts);
-  if (!due.length) return 0;
+  if (!due.length) return Promise.resolve(0);
   due.forEach(c => spunThisLoad.add(cellKey(c.td)));
 
-  const popped = due.filter(c => c.jackpot);
+  revealChain = revealChain
+    .catch(() => {})                       // one bad run must not stop the next
+    .then(() => performReveal(due));
+  return revealChain;
+}
 
-  // Both at once, deliberately. The ball is shaking before the first reel has
-  // got going and has answered before the first one lands - and it is handed the
-  // reels so it can hold its tongue until the board can back it up.
-  const reels = Promise.all(due.map((c, i) => spinCell(c, i)));
-  const ball  = footballAct(popped.length > 0, reels);
-
-  await reels;
-
-  // The chip edge, so an ordinary slots pick still says whose choice it was a
-  // week later. A popped cell says AUTO WIN in plain words and needs no border
-  // to explain itself.
-  due.forEach(c => { if (!c.jackpot) markSlotCell(c.td); });
-
-  // The reels are done but the ball may still be deflating. Waited on so that a
-  // second Roll cannot start on top of the first one's aftermath.
-  await ball;
-
-  return due.length;
+/** Is a reveal on screen right now? For the sandbox, and for click-to-replay. */
+export function isRevealing() {
+  return revealing;
 }
 
 /**
@@ -611,7 +649,7 @@ export default function initSlots() {
   board.addEventListener('click', e => {
     const td = e.target?.closest?.('td[data-slots]');
     if (!td || td.querySelector('.slot-box')) return;
-    if (document.querySelector('.jp-strip[data-beat]')) return;  // one football at a time
+    if (revealing) return;                 // one football at a time
     runSlots({ only: td });
   });
 }
