@@ -48,24 +48,48 @@
 import { supabase } from './supabaseClient.js';
 import { soundEnabled, setSoundEnabled, unlock, lever } from './slotsound.js';
 
-// Mirrors slots_jackpot_odds() in the migration. Duplicated deliberately and
-// narrowly: the page draws the meter long before it would be worth a round trip
-// to ask Postgres to do arithmetic. If the ramp is retuned, both move.
+// THE RAMP, mirroring slots_jackpot_odds() in the 20260914 migration.
+// Duplicated deliberately and narrowly: the page draws the meter long before it
+// would be worth a round trip to ask Postgres to do arithmetic. If it is
+// retuned, both move.
+//
+// Tuned to one auto win a season against a MEASURED pull rate rather than a
+// guessed one - 2 slotted picks out of 168 this season, over a 20-week season
+// with 4 games and 14 players, comes to about thirteen pulls. A mean of thirteen
+// pulls between pops makes that one auto win.
+// MUST HIT BY, which is the casino mechanic for "this pays out about once per
+// X". Flat and tiny for nearly a whole season's worth of pulls, then climbing
+// hard. A straight ramp cannot hit one-a-season at 420 pulls: averaging one pop
+// per 420 means averaging a quarter of a percent, and any ramp that spends real
+// time at five or ten per cent ends its cycle immediately.
+const RAMP = { floor: 0.0005, quietUntil: 445, slope: 0.0025, ceiling: 0.10 };
+
+// Where the odds stop climbing. Derived rather than written down, so the gauge
+// and the ball cannot go on implying rising pressure after it has levelled off.
+const CAP_AT = RAMP.quietUntil + Math.ceil((RAMP.ceiling - RAMP.floor) / RAMP.slope);
+
 export function jackpotOdds(pulls) {
-  return Math.min(0.0025 + 0.0015 * Math.max(Number(pulls) || 0, 0), 0.10);
+  const n = Math.max(Number(pulls) || 0, 0);
+  return Math.min(RAMP.floor + Math.max(n - RAMP.quietUntil, 0) * RAMP.slope, RAMP.ceiling);
 }
 
 /**
  * Which of the four rest states the ball is in.
  *
- * Banded rather than continuous because the difference between 3.1% and 3.4%
- * is not something an animation can express, and pretending otherwise just
+ * DRIVEN BY HOW FAR THROUGH THE CYCLE IT IS, not by the odds. The odds are flat
+ * at five hundredths of a percent for the first four hundred and forty-five
+ * pulls and then run away, so a ball driven by them would sit perfectly still
+ * for almost the entire season and then go berserk in a fortnight. What the
+ * league should be able to see is the thing filling up all year.
+ *
+ * Banded rather than continuous because the difference between 31% and 34% of a
+ * cycle is not something an animation can express, and pretending otherwise
  * produces four indistinguishable wobbles.
  */
-export function strainLevel(odds) {
-  if (odds >= 0.085) return 'critical';
-  if (odds >= 0.055) return 'high';
-  if (odds >= 0.025) return 'stirring';
+export function strainLevel(fill) {
+  if (fill >= 0.80) return 'critical';
+  if (fill >= 0.55) return 'high';
+  if (fill >= 0.25) return 'stirring';
   return 'calm';
 }
 
@@ -99,8 +123,15 @@ function swell(pulls) {
 
 function gaugeFill(pulls) {
   const n = Math.max(Number(pulls) || 0, 0);
-  const CAP = 65;                       // where the odds hit their ceiling
-  return Math.min(Math.pow(Math.min(n / CAP, 1), 0.62), 1) * 0.92;
+  // Progress through the cycle, not probability. It spans the whole thing -
+  // from a new ball to the pull at which the odds are pinned at their ceiling -
+  // so it climbs visibly all season instead of sitting dead still and then
+  // leaping, which is what a needle driven by the odds themselves would do.
+  //
+  // Eased so the early pulls move it: a gauge that is flat for a month is a
+  // gauge nobody looks at twice. And capped short of the end, because a full
+  // gauge is a promise and this thing must never make one.
+  return Math.min(Math.pow(Math.min(n / CAP_AT, 1), 0.62), 1) * 0.92;
 }
 
 // THE SILHOUETTE IS A FUNCTION, NOT A STRING.
@@ -348,7 +379,7 @@ function render(el, pulls) {
   const odds = jackpotOdds(pulls);
   const n = Number(pulls) || 0;
 
-  el.dataset.strain = strainLevel(odds);
+  el.dataset.strain = strainLevel(gaugeFill(n));
   // Read by the width rules for both the marquee and the picks page, so the one
   // number drives the size wherever the ball happens to be drawn.
   el.style.setProperty('--jp-swell', swell(n).toFixed(3));
