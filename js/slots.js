@@ -76,7 +76,7 @@
 // Nothing below branches on the outcome until `burst`.
 
 import { markSlotCell } from './utils.js';
-import { ensureStage, dismissStage, deflateJackpot, primeMeter } from './jackpot.js';
+import { ensureStage, dismissStage, deflateJackpot, primeMeter, ballRig } from './jackpot.js';
 import { scheduleClick, scheduleStop, strainStart, strainStop, pop, hold, fanfare } from './slotsound.js';
 import celebrateJackpot, { playerNameFor } from './celebrate.js';
 
@@ -215,7 +215,7 @@ function reelFrames(turns, h) {
 function scheduleReelSound(turns, duration) {
   const MIN_GAP = 0.045;
   let last = -1;
-  // Stops one short of the landing symbol on purpose: scheduleStop() rings its
+  // Stops one short of the landing symbol on purpose: scheduleStop() sounds its
   // own click on top of the thunk, and three noises at one instant is a splat
   // rather than an arrival.
   for (let k = 1; k < turns; k++) {
@@ -494,6 +494,8 @@ async function footballAct(popped, reels, poppedCells = []) {
   const strip = ensureStage();
   if (!strip) { await reels; return; }      // nowhere to play; still wait it out
 
+  let rig = null;
+
   // Looked up per call rather than captured once. Anything that re-renders the
   // strip mid-reveal swaps this element out underneath us, and a held reference
   // would then be writing the whole back half of the sequence into a node that
@@ -506,6 +508,7 @@ async function footballAct(popped, reels, poppedCells = []) {
     delete strip.dataset.beat;
     say('');
     strainStop();          // never leave the drone running if a beat threw
+    rig?.stop();           // and stop driving a ball that is no longer there
     dismissStage();        // and give the title back; it was only ever borrowed
   };
 
@@ -536,16 +539,23 @@ async function footballAct(popped, reels, poppedCells = []) {
   // and each relief lands higher than the last, so the trend is relentlessly
   // upward even while it is backing down - and by the third one nobody knows
   // which way it ends, which is the only state worth being in.
+  // Beat, how long it lasts, how hard the skin is stretched, and how big a
+  // shove the membrane gets going into it. The pressure is what the ball's
+  // GEOMETRY is driven from - the waist swells, the tips draw in, the laces
+  // separate - and the kick is what makes it resonate afterwards instead of
+  // gliding between two resting shapes.
   const beats = [
-    ['rise',    900],
-    ['pump',   1000],
-    ['creak',  1200],
-    ['bulge1', 1300],
-    ['hold1',   900],   // it held, you think
-    ['bulge2', 1200],
-    ['ease',    800],   // ...it held again?
-    ['bulge3', 1200],
+    ['rise',    900, 0.16, 0.4],
+    ['pump',   1000, 0.38, 1.1],
+    ['creak',  1200, 0.45, 0.5],
+    ['bulge1', 1300, 0.70, 1.7],
+    ['hold1',   900, 0.50, 0.9],   // it held, you think
+    ['bulge2', 1200, 0.82, 2.0],
+    ['ease',    800, 0.63, 1.0],   // ...it held again?
+    ['bulge3', 1200, 1.00, 2.6],
   ];
+
+  rig = ballRig(strip);
 
   strip.dataset.beat = 'idle';
   await wait(30);       // one frame, so the first transition actually runs
@@ -561,8 +571,10 @@ async function footballAct(popped, reels, poppedCells = []) {
   // for it, badly. A machine does not narrate itself. The ball is shaking, the
   // seam is splitting, the reels are roaring: if that is not enough then more
   // words will not fix it, and if it is enough then the words are in the way.
-  for (const [beat, ms] of beats) {
+  for (const [beat, ms, press, kick] of beats) {
     strip.dataset.beat = beat;
+    rig?.set(press);
+    rig?.kick(kick);
     await wait(ms);
   }
 
@@ -579,6 +591,10 @@ async function footballAct(popped, reels, poppedCells = []) {
   // readers - the note is off-screen unless somebody has asked for reduced
   // motion, in which case it is all they are getting.
   if (popped) {
+    // Freeze the shape it had reached and hand the two halves to the shards, so
+    // what tears apart is the ball that was actually on screen rather than a
+    // generic one.
+    rig?.rupture();
     strip.dataset.beat = 'burst';
     say('The football went. Automatic win.');
     pop();
@@ -587,6 +603,8 @@ async function footballAct(popped, reels, poppedCells = []) {
   } else {
     strip.dataset.beat = 'settle';
     say('The football held.');
+    rig?.set(0.08);
+    rig?.kick(1.4);          // the air going out of it, and the skin flexing
     hold();
   }
 

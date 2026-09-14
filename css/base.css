@@ -1834,22 +1834,39 @@ td.slot-cell .slot-was{ opacity:0; }
 
 .jp-ball{ display:block; overflow:visible; }
 .jp-shell{ transform-origin:100px 60px; }
+.jp-shard, .jp-shock{ transform-origin:100px 60px; }
 
 /* The tips are the whole difference between a football and an egg, so the rim
    is stroked on top of everything and stays crisp however hard the shell under
    it is being stretched. */
-.jp-rim{ stroke:var(--jp-rim); stroke-width:2.4; stroke-linejoin:round; opacity:.85; }
+.jp-rim{ stroke:var(--jp-rim); stroke-width:2.2; stroke-linejoin:round; opacity:.9; }
+.jp-rimlit{ stroke-width:3.4; stroke-linejoin:round; }
 .jp-hide{ stroke:none; }
-.jp-stripe{ fill:#f1ece0; opacity:.92; }
-.jp-seam{ stroke:#2c1409; stroke-width:2; opacity:.4; stroke-linecap:round; }
+.jp-stripe{ fill:#efe8d8; opacity:.94; }
+.jp-seam{ stroke:#1d0d04; stroke-width:2.2; opacity:.45; stroke-linecap:round; }
 .jp-laces path{
-  stroke:#fbf6ea;
-  stroke-width:3.4;
+  stroke:#fdf8ee;
+  stroke-width:3.6;
   stroke-linecap:round;
-  filter:drop-shadow(0 1px 0 rgba(0,0,0,.45));
+  /* Two shadows: one tight and dark so the stitch sits IN the leather, one soft
+     and wide so it casts onto it. A single flat stroke reads as a sticker. */
+  filter:drop-shadow(0 1px 0 rgba(40,18,4,.85)) drop-shadow(0 2px 3px rgba(0,0,0,.45));
 }
-.jp-lace-band{ stroke-width:2.6; opacity:.95; }
-.jp-gloss{ fill:#fff; opacity:.20; }
+.jp-gloss{ fill:#fff; opacity:.17; }
+.jp-gloss-2{ fill:#ffd9a8; opacity:.09; }
+
+/* ---- what is left when it lets go ------------------------------------ */
+.jp-shards{ opacity:0; pointer-events:none; }
+/* The fill comes from the ball's own leather gradient, set on the element. What
+   is here is the torn edge - bright, because it has just been lit by the flash
+   that tore it. */
+.jp-shard{
+  stroke:#ffe0b0;
+  stroke-width:2.2;
+  stroke-linejoin:round;
+  filter:drop-shadow(0 3px 6px rgba(0,0,0,.7));
+}
+.jp-shock{ fill:none; stroke:#fff1d8; stroke-width:3; opacity:0; }
 
 /* ---------- The strip, on the leaderboard and the picks page ------------ */
 
@@ -1864,14 +1881,32 @@ td.slot-cell .slot-was{ opacity:0; }
   padding:.55rem .7rem .5rem;
   border:1px solid #2b2f38;
   border-radius:4px;
+  overflow:hidden;
   background:
     linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0) 42%),
-    linear-gradient(180deg, #23262d 0%, #15171c 55%, #0e1014 100%);
+    linear-gradient(180deg, #262a32 0%, #171a20 52%, #0b0d11 100%);
+  /* A machined edge rather than a drawn one: a bright top lip, a gold hairline
+     inside it, a dark undercut, and the whole thing sitting on a shadow. Four
+     shadows is what separates a cabinet from a div with a border. */
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.14),
-    inset 0 -1px 0 rgba(0,0,0,.6),
-    0 2px 10px rgba(0,0,0,.45);
+    inset 0 1px 0 rgba(255,255,255,.20),
+    inset 0 2px 0 rgba(201,146,16,.14),
+    inset 0 -2px 0 rgba(0,0,0,.75),
+    inset 0 0 32px rgba(0,0,0,.5),
+    0 3px 14px rgba(0,0,0,.55);
   transition:padding .5s ease;
+}
+/* Glass. One diagonal sheen across the top corner, which is the thing every
+   photograph of a real machine has and no flat panel does. */
+.jp-strip::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:linear-gradient(112deg,
+    rgba(255,255,255,.10) 0%,
+    rgba(255,255,255,.04) 22%,
+    rgba(255,255,255,0) 46%);
 }
 
 /* The marquee. Real bulbs as elements, because they have to chase - a gradient
@@ -1884,14 +1919,18 @@ td.slot-cell .slot-was{ opacity:0; }
   pointer-events:none;
 }
 .jp-bulbs i{
-  width:3px; height:3px;
+  width:3.5px; height:3.5px;
   border-radius:50%;
-  background:#5a4412;
+  background:#4a3a12;
+  box-shadow:0 0 0 1px rgba(0,0,0,.5);
   animation: jp-chase 1.62s linear infinite;
 }
 @keyframes jp-chase{
-  0%, 88%, 100% { background:#5a4412; box-shadow:none; }
-  6%            { background:#ffd97a; box-shadow:0 0 5px 1px rgba(255,200,80,.85); }
+  0%, 88%, 100% { background:#4a3a12; box-shadow:0 0 0 1px rgba(0,0,0,.5); }
+  6%            { background:#fff0c0;
+                  box-shadow:0 0 0 1px rgba(120,80,10,.6),
+                             0 0 7px 2px rgba(255,200,80,.9),
+                             0 0 16px 5px rgba(255,170,40,.35); }
 }
 
 .jp-cab{
@@ -2199,42 +2238,26 @@ td.slot-cell .slot-was{ opacity:0; }
   .jp-strip[data-takeover][data-beat] .jp-ball{ width:calc(min(46vw, 150px) * var(--jp-swell, 1)); }
 }
 
-/* THE BEATS. Every one of these is identical whether the ball is about to pop
-   or not - only `burst` differs, and only at the very end. If the pop version
-   strained harder the league would learn to read it in three weeks and the
-   whole tease would be dead. */
-.jp-strip[data-beat] .jp-shell{
-  animation:none;
-  transition:transform .5s cubic-bezier(.3,1.4,.4,1);
-}
-.jp-strip[data-beat="rise"]   .jp-shell{ transform:scale(1); }
-.jp-strip[data-beat="pump"]   .jp-shell{ transform:scale(1.09, .97); }
-.jp-strip[data-beat="creak"]  .jp-shell{ transform:scale(1.10, .965); animation: jp-flinch .5s steps(2) 2; }
-.jp-strip[data-beat="bulge1"] .jp-shell{ transform:scale(1.20, .93); transition-duration:.55s; }
-/* The first fake-out. It relaxes almost all the way back, which is the only way
-   the next one lands - a single build to a single peak is over the moment you
-   can see the peak coming. */
-.jp-strip[data-beat="hold1"]  .jp-shell{ transform:scale(1.06, .985); transition-duration:.7s; }
-.jp-strip[data-beat="bulge2"] .jp-shell{ transform:scale(1.32, .89); transition-duration:.4s; animation: jp-crit .3s ease-in-out infinite .4s; }
-/* And the second. Higher than the first relief, lower than the bulge it came
-   off, so the trend is still upward even while it is backing down. */
-.jp-strip[data-beat="ease"]   .jp-shell{ transform:scale(1.14, .97); transition-duration:.6s; }
-/* The third and last. Further than either before it, and it does not come back. */
-.jp-strip[data-beat="bulge3"] .jp-shell{ transform:scale(1.42, .86); transition-duration:.5s; animation: jp-crit .22s ease-in-out infinite .3s; }
-.jp-strip[data-beat="settle"] .jp-shell{ transform:scale(1); transition-duration:.9s; }
+/* THE BEATS ARE GEOMETRY NOW, not a transform. js/jackpot.js rebuilds the
+   outline, the seam and the laces from one pressure value every frame, with a
+   spring behind it - so the waist swells, the tips are drawn in, the stitches
+   separate, and the skin RINGS when it is let go. Scaling a rigid shape did
+   none of that: the middle and the tips grew by the same amount, which is the
+   one thing an inflating ball never does.
+
+   What is left here is everything the geometry cannot carry - the seam
+   brightening, the marquee, the tremor, and the burst. Every one of them is
+   still identical whether it pops or not; only `burst` differs, and only at
+   the very end. */
+.jp-strip[data-beat] .jp-shell{ animation:none; }
 
 .jp-strip[data-beat="creak"]  .jp-seam,
 .jp-strip[data-beat="hold1"]  .jp-seam,
-.jp-strip[data-beat="bulge1"] .jp-seam{ opacity:.75; stroke-width:2.4; }
+.jp-strip[data-beat="bulge1"] .jp-seam{ opacity:.75; stroke-width:2.6; }
 .jp-strip[data-beat="bulge2"] .jp-seam{ opacity:1; stroke-width:3.4; stroke:var(--jp-flash); }
 .jp-strip[data-beat="bulge3"] .jp-seam{ opacity:1; stroke-width:4.6; stroke:var(--jp-flash); }
-.jp-strip[data-beat="bulge3"] .jp-laces path{ stroke-width:2.2; }
-.jp-strip[data-beat="bulge2"] .jp-laces path{ stroke-width:2.6; }
+.jp-strip[data-beat="bulge3"] .jp-rimlit{ stroke-width:5; }
 
-@keyframes jp-flinch{
-  0%,100% { transform:scale(1.10, .965) translateX(0); }
-  50%     { transform:scale(1.10, .965) translateX(2px); }
-}
 
 /* THE TREMOR. The ball shakes for the whole time the reels are turning, getting
    worse as it goes - that is the part that says "about to pop", and the scale
@@ -2269,19 +2292,55 @@ td.slot-cell .slot-was{ opacity:0; }
   75%      { transform:translate(calc(var(--tq) * .5), calc(var(--tq) * .8)); }
 }
 
-/* The pop. The strip flares rather than the page - a whole-page shake for a
-   thing living in a 40px bar reads as a rendering fault. */
+/* THE POP. It tears along the waist: the shell vanishes, the two panels it was
+   made of fly apart and tumble, and the shock goes out from where it was. The
+   shapes are the ones the ball had actually reached, handed over by the rig at
+   the moment it ruptured - so what comes apart is the ball that was on screen
+   rather than a generic one.
+
+   The strip flares rather than the page: a whole-document shake for something
+   living in a 40px bar reads as a rendering fault. */
 .jp-strip[data-beat="burst"]{
   animation: jp-flare .6s ease-out;
   border-color:var(--jp-flash);
 }
 .jp-strip[data-beat="burst"] .jp-shell{
-  animation: jp-burst .6s cubic-bezier(.2,.9,.3,1) forwards;
+  animation: jp-shell-gone .34s ease-out forwards;
 }
-@keyframes jp-burst{
-  0%   { transform:scale(1.30, .90); opacity:1; }
-  16%  { transform:scale(1.7, 1.55); opacity:1; filter:brightness(4); }
-  100% { transform:scale(2.3, 2.1) rotate(8deg); opacity:0; filter:brightness(1); }
+@keyframes jp-shell-gone{
+  0%   { opacity:1; filter:brightness(1); transform:scale(1); }
+  30%  { opacity:1; filter:brightness(7); transform:scale(1.14); }
+  100% { opacity:0; filter:brightness(7); transform:scale(1.2); }
+}
+.jp-strip[data-beat="burst"] .jp-shards{ opacity:1; }
+.jp-strip[data-beat="burst"] .jp-shard-top{
+  animation: jp-tear-up 1.5s cubic-bezier(.12,.7,.25,1) forwards;
+}
+.jp-strip[data-beat="burst"] .jp-shard-bot{
+  animation: jp-tear-down 1.7s cubic-bezier(.12,.7,.25,1) forwards;
+}
+.jp-strip[data-beat="burst"] .jp-shock{
+  animation: jp-shock .85s cubic-bezier(.1,.8,.3,1) forwards;
+}
+/* The panels stay in frame long enough to be panels. They were translated far
+   enough to leave the band inside two hundred milliseconds, which reads as the
+   ball simply vanishing. */
+@keyframes jp-tear-up{
+  0%   { transform:translate(0,0) rotate(0deg) scale(1); opacity:1; filter:brightness(3.5) drop-shadow(0 3px 6px rgba(0,0,0,.7)); }
+  18%  { filter:brightness(1.3) drop-shadow(0 3px 6px rgba(0,0,0,.7)); }
+  25%  { transform:translate(-6px,-16px) rotate(-11deg) scale(1.04); opacity:1; }
+  100% { transform:translate(-30px,-52px) rotate(-34deg) scale(.86); opacity:0; }
+}
+@keyframes jp-tear-down{
+  0%   { transform:translate(0,0) rotate(0deg) scale(1); opacity:1; filter:brightness(3.5) drop-shadow(0 3px 6px rgba(0,0,0,.7)); }
+  18%  { filter:brightness(1.3) drop-shadow(0 3px 6px rgba(0,0,0,.7)); }
+  25%  { transform:translate(8px,18px) rotate(13deg) scale(1.04); opacity:1; }
+  100% { transform:translate(38px,58px) rotate(40deg) scale(.82); opacity:0; }
+}
+@keyframes jp-shock{
+  0%   { r:24; opacity:0; stroke-width:6; }
+  12%  { r:34; opacity:1; stroke-width:6; }
+  100% { r:150; opacity:0; stroke-width:0.5; }
 }
 @keyframes jp-flare{
   0%   { box-shadow:inset 0 0 0 2px var(--jp-flash), 0 0 40px 6px rgba(255,214,122,.6); }
@@ -2423,6 +2482,24 @@ td[data-slots]{ cursor:pointer; }
   transform:scale(.86);
   transition:transform .7s cubic-bezier(.2,1.5,.4,1);
 }
+/* Light rays, turning slowly behind the type. A conic gradient is one paint and
+   one transform, where forty positioned wedges would be forty of each. */
+.jp-party-mid::before{
+  content:"";
+  position:absolute;
+  left:50%; top:44%;
+  width:190vmax; height:190vmax;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  z-index:-1;
+  background:repeating-conic-gradient(from 0deg,
+    rgba(255,200,90,.13) 0deg 5deg,
+    rgba(255,200,90,0) 5deg 16deg);
+  mask-image:radial-gradient(circle, #000 6%, transparent 46%);
+  -webkit-mask-image:radial-gradient(circle, #000 6%, transparent 46%);
+  animation: jp-rays 34s linear infinite;
+}
+@keyframes jp-rays{ to { transform:translate(-50%,-50%) rotate(360deg); } }
 .jp-party[data-state="in"] .jp-party-mid{ transform:scale(1); }
 
 .jp-party-kicker{
@@ -2434,17 +2511,44 @@ td[data-slots]{ cursor:pointer; }
   margin-bottom:.5rem;
 }
 .jp-party-title{
+  position:relative;
   font-family:'Teko', 'Oswald', sans-serif;
   font-size:clamp(3.2rem, 17vw, 11rem);
   font-weight:700;
   line-height:.9;
   letter-spacing:.04em;
-  background:linear-gradient(180deg, #fff6de 10%, #ffc65a 55%, #8a640a 100%);
+  /* Struck metal: a hard bright band across the upper third, a dark seam through
+     the middle, and a deep base. Three stops make a gradient; seven make gold. */
+  background:linear-gradient(177deg,
+    #fffaf0 0%, #ffe6ae 18%, #ffc65a 34%,
+    #a8760f 50%, #ffd98a 62%, #ffb63c 78%, #7a5406 100%);
+  background-size:100% 100%;
   -webkit-background-clip:text;
   background-clip:text;
   color:transparent;
-  filter:drop-shadow(0 4px 24px rgba(255,180,60,.5));
+  filter:drop-shadow(0 2px 0 rgba(90,60,8,.9)) drop-shadow(0 6px 28px rgba(255,180,60,.55));
   animation: jp-party-thump 2.6s ease-out infinite;
+}
+/* And a sheen crossing it, which is the thing that makes metal look like metal
+   rather than like a gradient. */
+.jp-party-title::after{
+  content:attr(data-text);
+  position:absolute;
+  inset:0;
+  background:linear-gradient(112deg,
+    rgba(255,255,255,0) 38%,
+    rgba(255,255,255,.85) 48%,
+    rgba(255,255,255,0) 58%);
+  background-size:260% 100%;
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  animation: jp-sheen 3.1s ease-in-out infinite;
+}
+@keyframes jp-sheen{
+  0%   { background-position:150% 0; }
+  55%  { background-position:-60% 0; }
+  100% { background-position:-60% 0; }
 }
 @keyframes jp-party-thump{
   0%, 100% { transform:scale(1); }
@@ -2469,5 +2573,7 @@ td[data-slots]{ cursor:pointer; }
 @media (prefers-reduced-motion: reduce){
   .jp-party,
   .jp-party-mid{ transition:none; }
+  .jp-party-mid::before,
+  .jp-party-title::after,
   .jp-party-title{ animation:none; }
 }

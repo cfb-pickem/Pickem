@@ -109,7 +109,7 @@ export default function celebrateJackpot(name) {
     '<canvas class="jp-party-confetti" aria-hidden="true"></canvas>' +
     '<div class="jp-party-mid">' +
       '<div class="jp-party-kicker">The football finally went</div>' +
-      '<div class="jp-party-title">AUTO WIN</div>' +
+      '<div class="jp-party-title" data-text="AUTO WIN">AUTO WIN</div>' +
       (name ? '<div class="jp-party-name">' + name + '</div>' : '') +
       '<div class="jp-party-sub">The house pays. That pick is good whatever the game does.</div>' +
     '</div>';

@@ -103,84 +103,81 @@ function gaugeFill(pulls) {
   return Math.min(Math.pow(Math.min(n / CAP, 1), 0.62), 1) * 0.92;
 }
 
-// The silhouette. A football is a prolate spheroid, which side-on means two arcs
-// meeting at POINTS - not an ellipse, which is what the first version drew and
-// which read as a rugby ball at best and an egg at worst. The tips are the whole
+// THE SILHOUETTE IS A FUNCTION, NOT A STRING.
+//
+// A football is a prolate spheroid, which side-on means two arcs meeting at
+// POINTS - not an ellipse, which is what the first version drew and which read
+// as a rugby ball at best and an egg at worst. The tips are the whole
 // difference, so they are the part with the tightest control points.
-const BALL = 'M6,60 C36,6 164,6 194,60 C164,114 36,114 6,60 Z';
+//
+// But the bigger thing is that it BENDS. Everything before this scaled a rigid
+// shape, and a rigid shape scaled is a photograph being zoomed: the middle and
+// the tips grew by the same amount, which is the one thing an inflating ball
+// never does. Under pressure the waist swells hard, the tips are drawn IN as the
+// skin is pulled around the bulge, and the whole thing resonates like a membrane
+// when it is let go.
+//
+// So the path is generated per frame from one number. At pressure 0 it is
+// exactly the outline this file used to carry as a constant.
+const CX = 100, CY = 60;
 
-/**
- * The ball itself. Inline SVG so it can be styled and animated by CSS alone.
- *
- * Exported because the reveal in js/slots.js grows this same markup rather than
- * drawing a second football. Two hand-written balls would drift apart the first
- * time either was touched.
- *
- * The ids inside are namespaced per instance: two of these on one page - the
- * header and, briefly, anything else - would otherwise both resolve every
- * `url(#...)` to whichever was parsed first, and the second ball would silently
- * borrow the first one's gradients.
- */
-export function ballSvg(ns = 'jp') {
-  const id = s => ns + '-' + s;
-  return (
-    '<svg class="jp-ball" viewBox="0 0 200 120" aria-hidden="true" focusable="false">' +
-      '<defs>' +
-        // Leather: warm on top where the light is, cooling and darkening into
-        // the underside. A flat fill is what made the first one look like a
-        // sticker.
-        '<linearGradient id="' + id('lea') + '" x1="0" y1="0" x2="0" y2="1">' +
-          '<stop offset="0%"   stop-color="#a46130"/>' +
-          '<stop offset="42%"  stop-color="#7e4018"/>' +
-          '<stop offset="100%" stop-color="#40200d"/>' +
-        '</linearGradient>' +
-        // A second, off-centre light so the ball reads as round rather than as a
-        // shape with a gradient in it.
-        '<radialGradient id="' + id('lit') + '" cx="34%" cy="24%" r="62%">' +
-          '<stop offset="0%"   stop-color="#fff" stop-opacity=".38"/>' +
-          '<stop offset="55%"  stop-color="#fff" stop-opacity=".06"/>' +
-          '<stop offset="100%" stop-color="#fff" stop-opacity="0"/>' +
-        '</radialGradient>' +
-        // Pebbling. Two offset dots per tile is enough grain at this size, and
-        // costs one paint rather than the hundreds of circles it looks like.
-        '<pattern id="' + id('peb') + '" width="7" height="7" patternUnits="userSpaceOnUse">' +
-          '<circle cx="1.8" cy="1.8" r="1.05" fill="#2a1408" opacity=".26"/>' +
-          '<circle cx="5.3" cy="5.3" r="1.05" fill="#2a1408" opacity=".26"/>' +
-          '<circle cx="5.3" cy="1.8" r=".55" fill="#f4d8b6" opacity=".10"/>' +
-        '</pattern>' +
-        '<clipPath id="' + id('clip') + '"><path d="' + BALL + '"/></clipPath>' +
-      '</defs>' +
-      '<g class="jp-shell">' +
-        '<path class="jp-hide" d="' + BALL + '" fill="url(#' + id('lea') + ')"/>' +
-        '<g clip-path="url(#' + id('clip') + ')">' +
-          '<rect x="0" y="0" width="200" height="120" fill="url(#' + id('peb') + ')"/>' +
-          // The two white bands near the tips. Curved, not straight, because
-          // they wrap a round thing.
-          '<path class="jp-stripe" d="M44,10 C38,38 38,82 44,110 L53,110 C47,82 47,38 53,10 Z"/>' +
-          '<path class="jp-stripe" d="M156,10 C162,38 162,82 156,110 L147,110 C153,82 153,38 147,10 Z"/>' +
-          '<rect x="0" y="0" width="200" height="120" fill="url(#' + id('lit') + ')"/>' +
-          // One hard specular, small and high. Real leather gives a tight
-          // highlight, not a wash.
-          '<ellipse class="jp-gloss" cx="74" cy="30" rx="30" ry="9"/>' +
-        '</g>' +
-        // The panel seam, sitting just above the waist the way it does when a
-        // ball is held laces-up.
-        '<path class="jp-seam" d="M16,56 C60,38 140,38 184,56" fill="none"/>' +
-        '<g class="jp-laces">' +
-          '<path class="jp-lace-band" d="M84,60 L116,60"/>' +
-          '<path d="M86,52 L86,68"/>' +
-          '<path d="M93,51 L93,69"/>' +
-          '<path d="M100,50.6 L100,69.4"/>' +
-          '<path d="M107,51 L107,69"/>' +
-          '<path d="M114,52 L114,68"/>' +
-        '</g>' +
-        // Drawn last and on top, so the tips stay crisp however hard the shell
-        // is being stretched underneath.
-        '<path class="jp-rim" d="' + BALL + '" fill="none"/>' +
-      '</g>' +
-    '</svg>'
-  );
+export function ballPath(pressure = 0, wobble = 0) {
+  const p = Math.max(0, Math.min(1, pressure));
+  // Half-length shrinks as the waist grows: the skin has to come from somewhere.
+  const a = 94 - 6 * p;
+  // The waist. Top and bottom flex in opposite directions, which is what makes
+  // the wobble read as a membrane rather than a pulsing logo.
+  //
+  // It stops at ±70 against a half-length of 88 - an aspect of 1.26, which is a
+  // fat football. It used to reach 1.01, which is a sphere, and a sphere is not
+  // a football under pressure; it is a beach ball.
+  const top = 54 + 16 * p + wobble * 9;
+  const bot = 54 + 16 * p - wobble * 9;
+  // Control points slide toward the tips under pressure, which is what rounds
+  // the middle out and sharpens the ends.
+  const sx = 0.319 - 0.05 * p;
+  const x1 = CX - a, x2 = CX + a;
+  const c1 = x1 + a * sx, c2 = x2 - a * sx;
+  const r = n => Math.round(n * 100) / 100;
+  return `M${r(x1)},${CY} C${r(c1)},${r(CY - top)} ${r(c2)},${r(CY - top)} ${r(x2)},${CY}` +
+         ` C${r(c2)},${r(CY + bot)} ${r(c1)},${r(CY + bot)} ${r(x1)},${CY} Z`;
 }
+
+/** The two halves, for when it lets go. Each closes along the waist. */
+export function ballHalves(pressure = 0) {
+  const p = Math.max(0, Math.min(1, pressure));
+  const a = 94 - 6 * p, lift = 54 + 16 * p, sx = 0.319 - 0.05 * p;
+  const x1 = CX - a, x2 = CX + a, c1 = x1 + a * sx, c2 = x2 - a * sx;
+  return [
+    `M${x1},${CY} C${c1},${CY - lift} ${c2},${CY - lift} ${x2},${CY} Z`,
+    `M${x1},${CY} C${c1},${CY + lift} ${c2},${CY + lift} ${x2},${CY} Z`,
+  ];
+}
+
+/** The laces spread as the skin under them is stretched. */
+export function lacePaths(pressure = 0) {
+  const p = Math.max(0, Math.min(1, pressure));
+  const half = 16 + 7 * p;                     // the band gets longer
+  const gap = 7 + 2.6 * p;                     // and the stitches separate
+  const rise = 8 + 3.5 * p;                    // and stand further off the skin
+  const out = [`M${CX - half},${CY} L${CX + half},${CY}`];
+  for (let i = -2; i <= 2; i++) {
+    const x = CX + i * gap;
+    const r = rise - Math.abs(i) * 0.6;        // shorter at the ends, as on a ball
+    out.push(`M${x},${CY - r} L${x},${CY + r}`);
+  }
+  return out;
+}
+
+/** The panel seam, riding up over the bulge. */
+export function seamPath(pressure = 0) {
+  const p = Math.max(0, Math.min(1, pressure));
+  const lift = 22 + 16 * p;
+  return `M${CX - 84},${CY - 4 - 2 * p} C${CX - 40},${CY - lift} ${CX + 40},${CY - lift} ${CX + 84},${CY - 4 - 2 * p}`;
+}
+
+// Kept for anything that wants a static one.
+const BALL = ballPath(0);
 
 /**
  * The marquee bulbs along the top of the cabinet.
@@ -241,6 +238,109 @@ function paytable() {
         '<b>Nobody is told how close it is.</b> That is the point of it.' +
       '</p>' +
     '</div>'
+  );
+}
+
+/**
+ * The ball itself. Inline SVG so it can be styled and animated by CSS alone.
+ *
+ * Exported because the reveal in js/slots.js grows this same markup rather than
+ * drawing a second football. Two hand-written balls would drift apart the first
+ * time either was touched.
+ *
+ * The ids inside are namespaced per instance: two of these on one page - the
+ * header and, briefly, anything else - would otherwise both resolve every
+ * `url(#...)` to whichever was parsed first, and the second ball would silently
+ * borrow the first one's gradients.
+ */
+export function ballSvg(ns = 'jp') {
+  const id = s => ns + '-' + s;
+  const u = s => 'url(#' + id(s) + ')';
+  return (
+    '<svg class="jp-ball" viewBox="0 0 200 120" aria-hidden="true" focusable="false">' +
+      '<defs>' +
+        // LEATHER, in five stops rather than three. The difference between a
+        // three-stop gradient and a five is the difference between a shape with
+        // a gradient on it and a thing made of something.
+        '<linearGradient id="' + id('lea') + '" x1="0" y1="0" x2="0.15" y2="1">' +
+          '<stop offset="0%"   stop-color="#b4703a"/>' +
+          '<stop offset="22%"  stop-color="#98552a"/>' +
+          '<stop offset="48%"  stop-color="#7c3f19"/>' +
+          '<stop offset="78%"  stop-color="#5a2b10"/>' +
+          '<stop offset="100%" stop-color="#341a08"/>' +
+        '</linearGradient>' +
+        // THE EDGE DARKENING. One radial, transparent through the middle and
+        // dark at the rim, and the ball stops being a silhouette and starts
+        // being round. It is the single cheapest three-dimensional cue there is.
+        '<radialGradient id="' + id('ao') + '" cx="46%" cy="42%" r="62%">' +
+          '<stop offset="0%"   stop-color="#000" stop-opacity="0"/>' +
+          '<stop offset="62%"  stop-color="#000" stop-opacity="0"/>' +
+          '<stop offset="88%"  stop-color="#1a0c04" stop-opacity=".55"/>' +
+          '<stop offset="100%" stop-color="#0d0602" stop-opacity=".85"/>' +
+        '</radialGradient>' +
+        // The key light, off-centre and soft.
+        '<radialGradient id="' + id('lit') + '" cx="33%" cy="20%" r="58%">' +
+          '<stop offset="0%"   stop-color="#ffe9c8" stop-opacity=".46"/>' +
+          '<stop offset="45%"  stop-color="#ffd9a8" stop-opacity=".10"/>' +
+          '<stop offset="100%" stop-color="#fff" stop-opacity="0"/>' +
+        '</radialGradient>' +
+        // A RIM LIGHT along the far edge. Bright where the light wraps round the
+        // bottom right, gone by the top left. This is what makes it read as lit
+        // from somewhere rather than shaded by hand.
+        '<linearGradient id="' + id('rimlit') + '" x1="0.1" y1="0" x2="0.9" y2="1">' +
+          '<stop offset="0%"   stop-color="#ffcf92" stop-opacity="0"/>' +
+          '<stop offset="55%"  stop-color="#ffcf92" stop-opacity="0"/>' +
+          '<stop offset="88%"  stop-color="#ffd9a8" stop-opacity=".75"/>' +
+          '<stop offset="100%" stop-color="#fff1d8" stop-opacity=".95"/>' +
+        '</linearGradient>' +
+        // Pebbling: a shadow dot, a lit dot and a fine one, so the grain has a
+        // direction instead of being noise.
+        '<pattern id="' + id('peb') + '" width="7" height="7" patternUnits="userSpaceOnUse">' +
+          '<circle cx="1.8" cy="1.8" r="1.05" fill="#2a1408" opacity=".30"/>' +
+          '<circle cx="1.5" cy="1.5" r=".45" fill="#f4d8b6" opacity=".13"/>' +
+          '<circle cx="5.3" cy="5.3" r="1.05" fill="#2a1408" opacity=".30"/>' +
+          '<circle cx="5.0" cy="5.0" r=".45" fill="#f4d8b6" opacity=".13"/>' +
+        '</pattern>' +
+        '<clipPath id="' + id('clip') + '"><path d="' + BALL + '"/></clipPath>' +
+      '</defs>' +
+      '<g class="jp-shell">' +
+        '<path class="jp-hide" d="' + BALL + '" fill="' + u('lea') + '"/>' +
+        '<g clip-path="' + u('clip') + '">' +
+          '<rect x="0" y="0" width="200" height="120" fill="' + u('peb') + '"/>' +
+          // The two white bands near the tips, each with its own shading so they
+          // sit on the leather rather than on top of the picture.
+          '<path class="jp-stripe" d="M44,10 C38,38 38,82 44,110 L53,110 C47,82 47,38 53,10 Z"/>' +
+          '<path class="jp-stripe" d="M156,10 C162,38 162,82 156,110 L147,110 C153,82 153,38 147,10 Z"/>' +
+          '<rect x="0" y="0" width="200" height="120" fill="' + u('ao') + '"/>' +
+          '<rect x="0" y="0" width="200" height="120" fill="' + u('lit') + '"/>' +
+          // One tight specular. Real leather gives a small hard highlight, not a
+          // wash - the wash is already doing its job above.
+          '<ellipse class="jp-gloss" cx="70" cy="27" rx="21" ry="7"/>' +
+          '<ellipse class="jp-gloss jp-gloss-2" cx="128" cy="90" rx="26" ry="8"/>' +
+        '</g>' +
+        // The panel seam, riding up over the bulge.
+        '<path class="jp-seam" d="' + seamPath(0) + '" fill="none"/>' +
+        '<g class="jp-laces">' +
+          lacePaths(0).map(d => '<path d="' + d + '"/>').join('') +
+        '</g>' +
+        // The rim light goes UNDER the outline, so the dark edge still frames it.
+        '<path class="jp-rimlit" d="' + BALL + '" fill="none" stroke="' + u('rimlit') + '"/>' +
+        // Drawn last and on top, so the tips stay crisp however hard the shell
+        // is being stretched underneath.
+        '<path class="jp-rim" d="' + BALL + '" fill="none"/>' +
+      '</g>' +
+      // What is left when it lets go: the two panels it tears into along the
+      // waist, and the shock going out from where it was. Empty and invisible
+      // until the moment it bursts.
+      '<g class="jp-shards" aria-hidden="true">' +
+        '<circle class="jp-shock" cx="100" cy="60" r="30"/>' +
+        // Made of the same leather as the ball they came off. Filled flat they
+        // were all but black against a dark cabinet, which read as the ball
+        // simply disappearing rather than coming apart.
+        '<path class="jp-shard jp-shard-top" d="" fill="' + u('lea') + '"/>' +
+        '<path class="jp-shard jp-shard-bot" d="" fill="' + u('lea') + '"/>' +
+      '</g>' +
+    '</svg>'
   );
 }
 
@@ -345,6 +445,79 @@ export async function primeMeter() {
     if (!error && data) meterPulls = Number(data.pulls_since_pop) || 0;
   } catch {}
   return meterPulls;
+}
+
+/**
+ * Drive one ball's geometry from a pressure value.
+ *
+ * A spring rather than a transition, because a transition only ever travels
+ * between two resting states and an inflating ball does not rest - it overshoots
+ * and resonates. `kick()` is what the reveal calls on each bulge, and the wobble
+ * that follows is the ball settling rather than an animation ending.
+ *
+ * Returns null if there is nothing to drive, so callers can ignore it entirely.
+ */
+export function ballRig(root) {
+  const svg = root?.querySelector?.('.jp-ball');
+  if (!svg) return null;
+
+  const hide = svg.querySelector('.jp-hide');
+  const rim = svg.querySelector('.jp-rim');
+  const rimlit = svg.querySelector('.jp-rimlit');
+  const clip = svg.querySelector('clipPath path');
+  const inner = svg.querySelector('[clip-path]');
+  const seam = svg.querySelector('.jp-seam');
+  const laces = [...svg.querySelectorAll('.jp-laces path')];
+  const shardTop = svg.querySelector('.jp-shard-top');
+  const shardBot = svg.querySelector('.jp-shard-bot');
+
+  let pressure = 0, vel = 0, target = 0;
+  let wob = 0, wobVel = 0;
+  let raf = 0, running = true;
+
+  function draw() {
+    const d = ballPath(pressure, wob);
+    hide?.setAttribute('d', d);
+    rim?.setAttribute('d', d);
+    rimlit?.setAttribute('d', d);
+    clip?.setAttribute('d', d);
+    seam?.setAttribute('d', seamPath(pressure));
+    const lp = lacePaths(pressure);
+    laces.forEach((el, i) => { if (lp[i]) el.setAttribute('d', lp[i]); });
+    // The pebbling and the stripes are painted inside the outline, so they have
+    // to stretch with it or the leather slides under its own edge.
+    inner?.setAttribute('transform',
+      `translate(${CX} ${CY}) scale(${1 - 0.03 * pressure} ${1 + 0.28 * pressure}) translate(${-CX} ${-CY})`);
+  }
+
+  function step() {
+    if (!running) return;
+    // Spring toward the target, then let the wobble decay on its own.
+    vel = (vel + (target - pressure) * 0.14) * 0.78;
+    pressure += vel;
+    wobVel = (wobVel - wob * 0.30) * 0.94;
+    wob += wobVel;
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  draw();
+  raf = requestAnimationFrame(step);
+
+  return {
+    set(p) { target = Math.max(0, Math.min(1, p)); },
+    kick(a = 1) { wobVel += a; },
+    /** Freeze where it is and hand back the shape, for the burst to tear up. */
+    rupture() {
+      running = false;
+      cancelAnimationFrame(raf);
+      const [t, b] = ballHalves(pressure);
+      shardTop?.setAttribute('d', t);
+      shardBot?.setAttribute('d', b);
+      return pressure;
+    },
+    stop() { running = false; cancelAnimationFrame(raf); },
+  };
 }
 
 /**
