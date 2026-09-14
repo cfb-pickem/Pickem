@@ -2425,6 +2425,30 @@
       refreshLiveTag();
     }
 
+    // A REVEAL AND A RE-RENDER CANNOT BOTH HAVE THE TABLE.
+    //
+    // renderTable() replaces every cell in the tbody. The reveal is spinning
+    // some of those cells, and a reel is a box inside one of them - so whichever
+    // lands second wins, and when it is the re-render the reels simply vanish
+    // and the football is left performing on its own over a board that has gone
+    // still. Measured in a browser: reels killed at 4.5s of a 15s reveal, which
+    // is exactly "I get the football but the roll does not play".
+    //
+    // So the AUTOMATIC repaints wait. A live score fifteen seconds stale is not
+    // a problem worth having; a reveal that eats itself is. Anything the user
+    // actually asked for - a week change, a season change - still renders at
+    // once, and the reveal being cut short by that is the right outcome.
+    let deferredRepaint = null;
+    function repaintOrDefer(fn){
+      if (document.body.dataset.slotsRevealing === '1') { deferredRepaint = fn; return; }
+      fn();
+    }
+    document.addEventListener('slots:idle', () => {
+      const fn = deferredRepaint;
+      deferredRepaint = null;
+      if (fn) fn();
+    });
+
     function renderTable(teams, pickMap, winnerMap, revealPicks, pointsMap, playoffMode){
       // Read by js/slots.js, which replays the reveal on every page load but only
       // for the week being played. Looking back at week 3 in November should not
@@ -2803,8 +2827,10 @@
       lastPickMap = buildPickMap(data);
       lastSlotsMap = buildSlotsMap(data);
       lastJackpotMap = buildJackpotMap(data);
-      renderTable(lastTeams, lastPickMap, winnerMap, showPicks, getPointsMapForCurrentView(), isPlayoffView);
-      await renderWeeklySubmissions(lastTeams, lastPickMap);
+      repaintOrDefer(() => {
+        renderTable(lastTeams, lastPickMap, winnerMap, showPicks, getPointsMapForCurrentView(), isPlayoffView);
+        renderWeeklySubmissions(lastTeams, lastPickMap);
+      });
     }
 
     // Kickoff is the one moment of the week this page cannot afford to be lazy
@@ -3002,9 +3028,11 @@
           return a.team_name.localeCompare(b.team_name);
         });
 
-        renderTable(lastTeams, lastPickMap, winnerMap, showPicks, pointsMap, isPlayoffView);
-        playRevealAnimation();
-        await renderWeeklySubmissions(lastTeams, lastPickMap);
+        repaintOrDefer(() => {
+          renderTable(lastTeams, lastPickMap, winnerMap, showPicks, pointsMap, isPlayoffView);
+          playRevealAnimation();
+          renderWeeklySubmissions(lastTeams, lastPickMap);
+        });
       }
 
       paintCovers();

@@ -588,6 +588,11 @@ let revealing = false;
 
 async function performReveal(due) {
   revealing = true;
+  // Announced on the body rather than through an import, so index.html can hold
+  // its automatic repaints back without either file having to know about the
+  // other's internals. A re-render replaces every cell in the table, including
+  // the ones being spun - see the note on 'slots:idle' below.
+  try { document.body.dataset.slotsRevealing = '1'; } catch {}
   try {
     const popped = due.filter(c => c.jackpot);
 
@@ -608,6 +613,11 @@ async function performReveal(due) {
     await ball;
   } finally {
     revealing = false;
+    try {
+      delete document.body.dataset.slotsRevealing;
+      // Whoever held a repaint back can run it now.
+      document.dispatchEvent(new CustomEvent('slots:idle'));
+    } catch {}
   }
   return due.length;
 }
