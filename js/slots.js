@@ -77,7 +77,8 @@
 
 import { markSlotCell } from './utils.js';
 import { ensureStage, dismissStage, deflateJackpot, primeMeter } from './jackpot.js';
-import { scheduleClick, scheduleStop, strainStart, strainStop, pop, hold } from './slotsound.js';
+import { scheduleClick, scheduleStop, strainStart, strainStop, pop, hold, fanfare } from './slotsound.js';
+import celebrateJackpot, { playerNameFor } from './celebrate.js';
 
 // One transform and/or one tint per symbol, combined at random, so a dozen
 // classes give plenty of distinct nonsense without needing a dozen more. The
@@ -106,12 +107,27 @@ const MORPH_HOLD = 700;
 const MORPH_BURST = 420;
 const MORPH_TOTAL = MORPH_HOLD + MORPH_BURST;
 
-// The reel's easing, named rather than written inline, because the click track
-// below has to invert THIS EXACT CURVE. Two copies of it would have gone out of
-// step the first time either was nudged, and the failure would be a reel whose
-// clicks slowly stop matching the symbols going past - which is precisely the
-// thing that reads as fake.
-const REEL_EASE = [0.16, 0.62, 0.18, 1];
+// THE REEL'S SHAPE, in one place, because the motion and the sound both have to
+// come out of it. A click happens when a symbol passes the window - a fact about
+// DISTANCE - and it has to be scheduled as a TIME, so anything that changes how
+// the reel moves has to change the click track by exactly as much or the two
+// come apart. Two descriptions of the same curve is two things to keep in step;
+// this is one.
+// Gentle on purpose. The old curve decelerated so hard that its LAST symbol took
+// 1340ms and the crawl then restarted at 229 - a stall followed by a speed-up,
+// right at the moment the reel is supposed to be settling. This hands over at
+// 196ms into a 229ms first crawl step, so the slowdown is one continuous thing.
+const FAST_EASE = [0.3, 0.3, 0.7, 0.9];
+
+// THE CRAWL. The last six symbols take the final forty per cent of the spin,
+// each one slower than the one before, so the reel stops creeping rather than
+// gliding. This is the part a real machine has and a scrolling div does not: by
+// the last two symbols they are arriving one at a time, slowly enough to read,
+// and you know what is coming before it gets there.
+const CRAWL = 6;
+const CRAWL_AT = 0.60;                          // when the creeping starts
+const CRAWL_WEIGHTS = [1, 1.35, 1.85, 2.6, 3.7, 5.2];
+const CRAWL_TOTAL = CRAWL_WEIGHTS.reduce((a, b) => a + b, 0);
 
 /** A cubic-bezier's y for a given parameter t. P0 and P3 are fixed at 0 and 1. */
 function bezAt(t, a, b) {
@@ -122,10 +138,8 @@ function bezAt(t, a, b) {
 /**
  * Where in the SPIN a given fraction of the DISTANCE happens.
  *
- * The timing function maps time to progress; a click track needs the opposite,
- * because a detent happens when a symbol passes the window - a fact about
- * distance - and it has to be scheduled at a time. Bisection is plenty: the
- * curve is monotonic and twenty steps put it inside a thousandth.
+ * The timing function maps time to progress; this needs the opposite. Bisection
+ * is plenty: the curve is monotonic and twenty steps put it inside a thousandth.
  */
 function timeOfProgress(y, [x1, y1, x2, y2]) {
   let lo = 0, hi = 1, t = y;
@@ -137,29 +151,82 @@ function timeOfProgress(y, [x1, y1, x2, y2]) {
 }
 
 /**
- * Schedule one reel's worth of detent clicks, decelerating with the reel.
+ * The fraction of the spin at which symbol `k` of `turns` reaches the window.
+ *
+ * Piecewise on purpose: everything up to the last CRAWL symbols is the ordinary
+ * decelerating sweep, and the last few are handed a fixed, widening slice of
+ * what is left. THE SAME FUNCTION lays out the keyframes and schedules the
+ * clicks, which is the only way they cannot drift apart.
+ */
+function symbolTime(k, turns) {
+  const fast = turns - CRAWL;
+  if (k <= fast) {
+    return CRAWL_AT * timeOfProgress(k / fast, FAST_EASE);
+  }
+  let w = 0;
+  for (let i = 0; i < k - fast; i++) w += CRAWL_WEIGHTS[i];
+  return CRAWL_AT + (1 - CRAWL_AT) * (w / CRAWL_TOTAL);
+}
+
+/**
+ * The keyframes, built from that same schedule.
+ *
+ * A keyframe per crawl symbol is what makes the creeping visible: without them
+ * the browser interpolates straight through the last six and they slide past as
+ * one movement, however slow the easing is.
+ */
+function reelFrames(turns, h) {
+  const stop = -turns * h;
+  const fast = turns - CRAWL;
+  const frames = [
+    { top: '0px', filter: 'blur(0px)', offset: 0, easing: 'cubic-bezier(.28,.05,.5,.7)' },
+    { filter: 'blur(3px)', offset: 0.3 },
+    { top: (-fast * h) + 'px', filter: 'blur(1px)', offset: CRAWL_AT, easing: 'linear' },
+  ];
+  // One per crawl symbol, each easing to a near-stop before the next begins.
+  for (let k = 1; k <= CRAWL - 1; k++) {
+    frames.push({
+      top: (-(fast + k) * h) + 'px',
+      filter: 'blur(0px)',
+      offset: symbolTime(fast + k, turns),
+      easing: 'cubic-bezier(.2,.7,.25,1)',
+    });
+  }
+  // THE DETENT. It comes up a symbol-edge short and then drops the rest of the
+  // way, so it arrives at a stop instead of gliding to one. Six pixels and a
+  // tenth of a second, and most of the difference between a reel and a div.
+  frames.push({ top: (stop + 6) + 'px', offset: 0.965, easing: 'cubic-bezier(.3,.6,.4,1)' });
+  frames.push({ top: stop + 'px', offset: 1, easing: 'cubic-bezier(.5,0,.7,1.5)' });
+  return frames;
+}
+
+/**
+ * Schedule one reel's worth of detent clicks, from the same schedule.
  *
  * ALL AT ONCE, against the audio clock, rather than fired from timers as the
  * spin goes. A click track driven by setTimeout drifts by a few milliseconds a
  * time under load, and drift is exactly what stops it sounding mechanical.
  *
  * The fast part of a real reel is a rattle rather than countable clicks, so
- * anything closer than MIN_GAP is dropped and the survivors get quieter the
- * faster they are - which is what makes the slowdown at the end audible as a
- * slowdown rather than just fewer noises.
+ * anything closer than MIN_GAP is dropped and the survivors get louder the
+ * slower they are - which is what turns the crawl into six deliberate, separate
+ * clunks instead of just fewer noises.
  */
 function scheduleReelSound(turns, duration) {
   const MIN_GAP = 0.045;
   let last = -1;
   // Stops one short of the landing symbol on purpose: scheduleStop() rings its
-  // own click on top of the thunk, and three noises at the same instant is a
-  // splat rather than an arrival.
+  // own click on top of the thunk, and three noises at one instant is a splat
+  // rather than an arrival.
   for (let k = 1; k < turns; k++) {
-    const at = timeOfProgress(k / turns, REEL_EASE) * duration / 1000;
+    const at = symbolTime(k, turns) * duration / 1000;
     const gap = at - last;
     if (last >= 0 && gap < MIN_GAP) continue;
-    // Louder as the gaps open up: a slow, deliberate click near the stop.
-    scheduleClick(at, Math.min(1, 0.45 + gap * 4));
+    // Fatness is simply how slow this click is, normalised against the longest
+    // gap the crawl produces. It is the same number twice - louder AND lower -
+    // because that is what a decelerating mechanism actually does.
+    const fat = Math.max(0, Math.min(1, (gap - 0.08) / 0.9));
+    scheduleClick(at, Math.min(1, 0.45 + gap * 4), fat);
     last = at;
   }
   scheduleStop(duration / 1000);
@@ -402,28 +469,10 @@ function spinCell(cell, order) {
   // first thing that should go.
   if (reducedMotion()) { land(); return Promise.resolve(); }
 
-  // `top`, not `transform`, and the blur as its own midpoint keyframe — see the
-  // note at the top of this file.
-  //
-  // THE LAST 6px ARE THE MECHANICAL BIT. The reel comes up a symbol-edge SHORT
-  // and then drops the rest of the way, so it arrives at a detent instead of
-  // gliding to a halt. It is six pixels and about a tenth of a second and it is
-  // most of the difference between a reel and a scrolling div.
-  //
-  // Short rather than past: the landing symbol is the LAST thing on the strip,
-  // so overshooting it would show the empty box behind.
-  const stop = -turns * h;
-  const anim = strip.animate(
-    [
-      { top: '0px',             filter: 'blur(0px)',   offset: 0 },
-      {                         filter: 'blur(2.5px)', offset: 0.45 },
-      { top: (stop + 6) + 'px', filter: 'blur(0px)',   offset: 0.93,
-        easing: 'cubic-bezier(.16,.62,.18,1)' },
-      { top: stop + 'px',       offset: 1,
-        easing: 'cubic-bezier(.5,0,.75,1.4)' }
-    ],
-    { duration, easing: 'cubic-bezier(.16,.62,.18,1)', fill: 'forwards' }
-  );
+  // `top`, not `transform`, and the blur as its own keyframe — see the note at
+  // the top of this file. The shape comes from reelFrames(), which is the same
+  // schedule the click track is built from.
+  const anim = strip.animate(reelFrames(turns, h), { duration, fill: 'forwards' });
 
   scheduleReelSound(turns, duration);
 
@@ -439,7 +488,7 @@ function spinCell(cell, order) {
  * settle, a squeak, a bigger bulge — and a rhythm is much easier to tune as a
  * list of beats than as percentages of a single animation.
  */
-async function footballAct(popped, reels) {
+async function footballAct(popped, reels, poppedCells = []) {
   // The marquee, on the page that has one: for the length of this roll the
   // football stands where "CFB Pick'em Leaderboard" is.
   const strip = ensureStage();
@@ -556,7 +605,13 @@ async function footballAct(popped, reels) {
   say(popped ? 'The house pays. That pick is an automatic win.'
              : 'The reels decided it, fifty-fifty.');
 
-  if (popped) await wait(2600);
+  // AND THEN THE WHOLE SCREEN, once a year. Everything else in this reveal is
+  // built to survive being watched fifty times; this is built to be watched once
+  // and remembered, which wants the opposite restraint entirely.
+  if (popped) {
+    fanfare();
+    await celebrateJackpot(playerNameFor(poppedCells[0]?.td));
+  }
 
   strip.dataset.beat = 'exit';
   await wait(popped ? 600 : 400);
@@ -600,7 +655,7 @@ async function performReveal(due) {
     // got going and has answered before the first one lands - and it is handed
     // the reels so it can hold its tongue until the board can back it up.
     const reels = Promise.all(due.map((c, i) => spinCell(c, i)));
-    const ball  = footballAct(popped.length > 0, reels);
+    const ball  = footballAct(popped.length > 0, reels, popped);
 
     await reels;
 

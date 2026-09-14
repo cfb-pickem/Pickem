@@ -2117,7 +2117,11 @@ td.slot-cell .slot-was{ opacity:0; }
 }
 .jp-strip[data-center] .jp-ball{ width:calc(min(30vw, 118px) * var(--jp-swell, 1)); }
 .jp-strip[data-center] .jp-text{ align-items:center; text-align:center; }
-.jp-strip[data-center] .jp-label{ order:-1; }
+.jp-strip[data-center] .jp-label{
+  order:-1;
+  font-size:.6rem;
+  letter-spacing:.26em;
+}
 .jp-strip[data-center] .jp-sub{
   font-family:'Oswald', sans-serif;
   font-size:.86rem;
@@ -2156,9 +2160,17 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-takeover] .jp-sound,
 .jp-strip[data-takeover] .jp-pays,
 .jp-strip[data-takeover] .jp-paytable,
-.jp-strip[data-takeover] .jp-label,
 .jp-strip[data-takeover] .jp-gauge,
 .jp-strip[data-takeover] .jp-sub{ display:none; }
+
+/* The label stays. A roll is the one moment everybody on the page is looking at
+   this thing, so it is the one moment worth saying what it is. */
+.jp-strip[data-takeover] .jp-label{
+  order:-1;
+  font-size:.62rem;
+  letter-spacing:.3em;
+  color:#c9a24a;
+}
 
 /* Centred under the title's own alignment, ball over caption, because this is
    the one moment it is the biggest thing on the page. */
@@ -2372,4 +2384,90 @@ td[data-slots]{ cursor:pointer; }
   .jp-strip,
   .jp-strip .jp-ball,
   .jp-strip[data-beat] .jp-shell{ transition:none; }
+}
+
+/* ======================================================================
+ * THE ONCE-A-YEAR SCREEN.
+ *
+ * Everything else in this feature is built to be watched fifty times
+ * without wearing out. This is built to be watched once and remembered,
+ * which is the opposite problem and wants the opposite restraint - so it
+ * takes the whole screen, says the name, and stays for six seconds.
+ * ====================================================================== */
+
+.jp-party{
+  position:fixed;
+  inset:0;
+  z-index:120;
+  display:grid;
+  place-items:center;
+  pointer-events:none;
+  background:radial-gradient(circle at 50% 40%, rgba(90,60,8,.55), rgba(6,7,10,.92) 70%);
+  opacity:0;
+  transition:opacity .5s ease;
+}
+.jp-party[data-state="in"]{ opacity:1; }
+.jp-party[data-state="out"]{ opacity:0; }
+
+.jp-party-confetti{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+}
+
+.jp-party-mid{
+  position:relative;
+  text-align:center;
+  padding:0 1.2rem;
+  transform:scale(.86);
+  transition:transform .7s cubic-bezier(.2,1.5,.4,1);
+}
+.jp-party[data-state="in"] .jp-party-mid{ transform:scale(1); }
+
+.jp-party-kicker{
+  font-family:'Oswald', sans-serif;
+  font-size:clamp(.7rem, 2.4vw, .95rem);
+  letter-spacing:.32em;
+  text-transform:uppercase;
+  color:#c9a24a;
+  margin-bottom:.5rem;
+}
+.jp-party-title{
+  font-family:'Teko', 'Oswald', sans-serif;
+  font-size:clamp(3.2rem, 17vw, 11rem);
+  font-weight:700;
+  line-height:.9;
+  letter-spacing:.04em;
+  background:linear-gradient(180deg, #fff6de 10%, #ffc65a 55%, #8a640a 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  filter:drop-shadow(0 4px 24px rgba(255,180,60,.5));
+  animation: jp-party-thump 2.6s ease-out infinite;
+}
+@keyframes jp-party-thump{
+  0%, 100% { transform:scale(1); }
+  6%       { transform:scale(1.045); }
+  12%      { transform:scale(1); }
+}
+.jp-party-name{
+  font-family:'Teko', 'Oswald', sans-serif;
+  font-size:clamp(1.6rem, 7vw, 3.4rem);
+  letter-spacing:.06em;
+  color:var(--cfp-ivory);
+  text-shadow:0 2px 18px rgba(0,0,0,.8);
+  margin-top:.2rem;
+}
+.jp-party-sub{
+  margin-top:.9rem;
+  font-size:clamp(.78rem, 2.6vw, 1rem);
+  color:#d8dae0;
+  text-shadow:0 2px 10px rgba(0,0,0,.9);
+}
+
+@media (prefers-reduced-motion: reduce){
+  .jp-party,
+  .jp-party-mid{ transition:none; }
+  .jp-party-title{ animation:none; }
 }

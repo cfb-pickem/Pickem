@@ -93,20 +93,35 @@ function env(c, at, peak, attack, decay) {
  * driven by setTimeout drifts audibly - and drift is the exact thing that stops
  * it sounding mechanical.
  */
-export function scheduleClick(at, gain = 1) {
+export function scheduleClick(at, gain = 1, fatness = 0) {
   const c = live(); if (!c) return;
   try {
     const t = c.currentTime + at;
     const src = c.createBufferSource();
     src.buffer = noise(c);
-    src.playbackRate.value = 1.6;
+    src.playbackRate.value = 1.6 - fatness * 0.7;
     const bp = c.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = 2400;
-    bp.Q.value = 7;
-    const g = env(c, t, 0.5 * gain, 0.001, 0.028);
+    // FATTER AS IT SLOWS. A reel at full speed is a thin rattle; the last few
+    // detents of a real one are lower, rounder and take longer to die away. One
+    // parameter carries all three, and it is the crawl that makes it audible -
+    // six clicks a second apart, each heavier than the one before.
+    bp.frequency.value = 2400 - fatness * 1500;
+    bp.Q.value = 7 - fatness * 3;
+    const g = env(c, t, (0.5 + fatness * 0.45) * gain, 0.001, 0.028 + fatness * 0.09);
     src.connect(bp).connect(g).connect(master);
-    src.start(t); src.stop(t + 0.05);
+    src.start(t); src.stop(t + 0.2);
+
+    // A little pitched body under the slow ones, so the crawl has a note in it
+    // rather than just a knock.
+    if (fatness > 0.45) {
+      const o = c.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(320 - fatness * 140, t);
+      o.frequency.exponentialRampToValueAtTime(120, t + 0.1);
+      o.connect(env(c, t, 0.22 * fatness, 0.002, 0.11)).connect(master);
+      o.start(t); o.stop(t + 0.2);
+    }
   } catch {}
 }
 
@@ -195,7 +210,7 @@ export function hold() {
   } catch {}
 }
 
-/** It went. A burst, then the bell cascade every machine pays out to. */
+/** It went. A burst, a coin shower, and a fanfare that does not apologise. */
 export function pop() {
   const c = live(); if (!c) return;
   strainStop();
@@ -220,11 +235,68 @@ export function pop() {
     o.connect(env(c, t, 1.1, 0.004, 0.4)).connect(master);
     o.start(t); o.stop(t + 0.5);
 
-    // The payout: a rising major arpeggio, rung twice, the way a machine keeps
-    // going long after you know you have won.
-    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5, 1568, 2093];
-    notes.forEach((f, i) => bell(c, t + 0.24 + i * 0.105, f, 0.5));
-    notes.slice(0, 5).forEach((f, i) => bell(c, t + 1.2 + i * 0.085, f * 1.5, 0.34));
+    // THE COIN SHOWER. Forty bright little hits scattered over two seconds,
+    // thickest at the front and thinning out - which is what a payout sounds
+    // like, and what a tidy arpeggio never does.
+    for (let i = 0; i < 40; i++) {
+      const when = t + 0.22 + Math.pow(i / 40, 1.7) * 2.1 + Math.random() * 0.06;
+      coin(c, when, 1400 + Math.random() * 2600, 0.20 + Math.random() * 0.18);
+    }
+
+    // And the fanfare over the top of it: a major triad walked up twice, the
+    // second an octave higher, the way a machine keeps telling you long after
+    // you have worked out that you won.
+    const root = 523.25;
+    const up = [0, 4, 7, 12, 16, 19, 24];               // semitones
+    up.forEach((semi, i) => bell(c, t + 0.24 + i * 0.1, root * Math.pow(2, semi / 12), 0.55));
+    [12, 16, 19, 24, 28].forEach((semi, i) =>
+      bell(c, t + 1.25 + i * 0.085, root * Math.pow(2, semi / 12), 0.4));
+  } catch {}
+}
+
+/**
+ * The once-a-year fanfare, for the celebration that takes the whole screen.
+ *
+ * Longer and harmonically busier than pop(), because it is playing under six
+ * seconds of confetti rather than punctuating a reveal - and because a thing
+ * that happens annually can afford to be the loudest thing on the page.
+ */
+export function fanfare() {
+  const c = live(); if (!c) return;
+  try {
+    const t = c.currentTime;
+    const root = 523.25;
+
+    // A rising run into a held chord, twice.
+    const run = [0, 2, 4, 5, 7, 9, 11, 12];
+    run.forEach((semi, i) => bell(c, t + i * 0.075, root * Math.pow(2, semi / 12), 0.45));
+    [0, 4, 7, 12].forEach(semi => bell(c, t + 0.66, root * Math.pow(2, semi / 12), 0.6));
+
+    run.forEach((semi, i) => bell(c, t + 1.5 + i * 0.07, root * 2 * Math.pow(2, semi / 12), 0.34));
+    [0, 4, 7, 12, 16].forEach(semi => bell(c, t + 2.15, root * Math.pow(2, semi / 12), 0.55));
+
+    // Coins for the whole six seconds, thinning out.
+    for (let i = 0; i < 90; i++) {
+      const when = t + 0.1 + Math.pow(i / 90, 1.5) * 5.2 + Math.random() * 0.08;
+      coin(c, when, 1300 + Math.random() * 3000, 0.16 + Math.random() * 0.16);
+    }
+
+    // One last chord to land on.
+    [0, 4, 7, 12, 19].forEach(semi => bell(c, t + 4.4, root * Math.pow(2, semi / 12), 0.5));
+  } catch {}
+}
+
+/** One coin: a short bright ping with a noise transient on the front of it. */
+function coin(c, t, freq, peak) {
+  try {
+    const o = c.createOscillator();
+    o.type = 'square';
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.55, t + 0.09);
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 4;
+    o.connect(bp).connect(env(c, t, peak, 0.002, 0.1)).connect(master);
+    o.start(t); o.stop(t + 0.16);
   } catch {}
 }
 

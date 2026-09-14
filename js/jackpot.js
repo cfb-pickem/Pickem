@@ -262,7 +262,7 @@ function render(el, pulls) {
     '<span class="jp-cab">' +
       ballSvg(el.dataset.ns) +
       '<span class="jp-text">' +
-        '<span class="jp-label">Pressure</span>' +
+        '<span class="jp-label">Progressive Jackpot</span>' +
         // A gauge rather than a readout. A progressive meter on a real machine is
         // a lit display, so this is one too - it just measures instead of stating.
         '<span class="jp-gauge" aria-hidden="true">' +
