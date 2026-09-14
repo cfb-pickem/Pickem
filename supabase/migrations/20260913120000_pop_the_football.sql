@@ -79,10 +79,13 @@ grant execute on function public.slots_jackpot_odds(integer) to anon, authentica
 -- 3. THE FLAG --------------------------------------------------------------
 
 alter table public.picks
-  add column if not exists jackpot boolean not null default false;
+  add column if not exists jackpot boolean not null default false,
+  add column if not exists slots_pull_counted boolean not null default false;
 
 comment on column public.picks.jackpot is
   'The football popped on this pull. The pick is correct regardless of the result, and `pick` stays null because there is no team behind it.';
+comment on column public.picks.slots_pull_counted is
+  'This row has already put its pull into the meter. One row, one pull, however many times it is edited.';
 
 -- A popped pick is a slots pick that never gets a team. Saying so as a
 -- constraint means no later query has to defend against a row that claims both.
@@ -103,21 +106,37 @@ security definer
 set search_path = public
 as $$
 begin
-  -- Only a fresh intent counts. An UPDATE that leaves an already-slotted pick
-  -- slotted is the picks page re-saving the form, not a second pull.
-  if new.by_slots and new.pick is null
-     and (tg_op = 'INSERT' or not coalesce(old.by_slots, false)) then
+  -- ONE ROW, ONE PULL, and this is not fussiness. A pick can be flipped between
+  -- a team and the slots as often as somebody likes, and counting every flip
+  -- back meant one person could walk the whole league's meter to the ceiling on
+  -- their own. Twelve flips used to read as thirteen pulls.
+  --
+  -- BEFORE rather than AFTER, so the flag can be written onto the row that is
+  -- being saved instead of chasing it with a second UPDATE.
+  if tg_op = 'INSERT' then
+    -- Never trust an inserted value: a client setting it true would skip its own
+    -- pull, and one setting it false is the exploit above.
+    new.slots_pull_counted := false;
+  else
+    -- On an update it can only ever go from false to true, whatever the client
+    -- sent, so a pull cannot be handed back and spent again.
+    new.slots_pull_counted := coalesce(old.slots_pull_counted, false);
+  end if;
+
+  if new.by_slots and new.pick is null and not new.slots_pull_counted then
+    new.slots_pull_counted := true;
     update public.slots_jackpot
        set pulls_since_pop = pulls_since_pop + 1
      where id = 1;
   end if;
+
   return new;
 end;
 $$;
 
 drop trigger if exists trg_slots_jackpot_pull on public.picks;
 create trigger trg_slots_jackpot_pull
-  after insert or update of by_slots, pick on public.picks
+  before insert or update on public.picks
   for each row execute function public.slots_jackpot_pull();
 
 -- 5. THE ROLL --------------------------------------------------------------
@@ -148,10 +167,11 @@ security definer
 set search_path = public
 as $$
 declare
-  r      record;
-  n      integer := 0;
-  pulls  integer;
-  popped boolean;
+  r        record;
+  n        integer := 0;
+  pulls    integer;
+  popped   boolean;
+  paid_out boolean := false;
 begin
   for r in
     select p.id, p.team_id, g."Away" as away, g."Home" as home
@@ -167,7 +187,11 @@ begin
     select pulls_since_pop into pulls
       from public.slots_jackpot where id = 1 for update;
 
-    popped := random() < public.slots_jackpot_odds(pulls);
+    -- AT MOST ONE PER PASS, structurally. Resetting the meter makes a second
+    -- pop in the same batch unlikely - a quarter of a percent - but unlikely is
+    -- not the promise. The promise is that a jackpot is one person, and eight
+    -- picks resolving together must not be able to pay out eight times.
+    popped := (not paid_out) and random() < public.slots_jackpot_odds(pulls);
 
     update public.picks p
        set jackpot = popped,
@@ -183,6 +207,7 @@ begin
     if found then
       n := n + 1;
       if popped then
+        paid_out := true;
         update public.slots_jackpot
            set pulls_since_pop  = 0,
                last_pop_at      = now(),
@@ -197,7 +222,7 @@ end;
 $$;
 
 comment on function public.resolve_slot_picks() is
-  'Resolve every slots pick whose game has locked: roll the jackpot, else flip the coin. One pop per hit, claimed atomically. Idempotent and one-way.';
+  'Resolve every slots pick whose game has locked: roll the jackpot, else flip the coin. At most one pop per pass, claimed atomically. Idempotent and one-way.';
 
 revoke execute on function public.resolve_slot_picks() from public;
 revoke execute on function public.resolve_slot_picks() from anon;
@@ -231,3 +256,7 @@ create policy picks_jackpot_is_the_houses_upd on public.picks
   as restrictive for update to authenticated
   using      (public.is_commissioner() or not jackpot)
   with check (public.is_commissioner() or not jackpot);
+
+-- slots_pull_counted needs no policy of its own: the BEFORE trigger overwrites
+-- whatever a client sends with the row's own history, so it cannot be set or
+-- cleared from outside no matter what the policies say.
