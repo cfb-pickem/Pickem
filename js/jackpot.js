@@ -347,6 +347,22 @@ export async function primeMeter() {
   return meterPulls;
 }
 
+/**
+ * Set what the meter reads, without asking the database.
+ *
+ * For the sandbox's Meter slider. The real meter sits on one number for weeks at
+ * a time, so it is no use for judging how the ball behaves as it swells - and
+ * the only place the ball is ever seen on the leaderboard is mid-roll, so the
+ * slider has to change what the NEXT roll draws rather than anything on screen.
+ */
+export function setMeter(pulls) {
+  meterPulls = Math.max(Number(pulls) || 0, 0);
+  // If a strip is on screen and not mid-reveal, keep it honest.
+  const at_rest = document.querySelector('.jp-strip:not([data-takeover])');
+  if (at_rest && !at_rest.dataset.beat) render(at_rest, meterPulls);
+  return meterPulls;
+}
+
 function buildStrip(pulls) {
   const strip = document.createElement('div');
   strip.className = 'jp-strip';
@@ -417,7 +433,17 @@ export function dismissStage() {
  * strip appears on the leaderboard at all, where the league's football is an
  * event rather than furniture.
  */
-export function previewJackpot(pulls) {
+export function previewJackpot(pulls, mount = null) {
+  if (mount) {
+    let strip = mount.querySelector('.jp-strip');
+    if (!strip) {
+      strip = buildStrip(pulls);
+      strip.dataset.center = '1';
+      mount.appendChild(strip);
+    }
+    render(strip, pulls);
+    return strip;
+  }
   const strip = ensureStrip(pulls);
   if (strip) render(strip, pulls);
   return strip;

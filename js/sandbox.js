@@ -49,7 +49,7 @@
 import { sessionInfo } from './session.js';
 import { runSlots, setRevealSpeed } from './slots.js';
 import { markSlotCell } from './utils.js';
-import { previewJackpot } from './jackpot.js';
+import { previewJackpot, setMeter } from './jackpot.js';
 import { lever, unlock } from './slotsound.js';
 
 // KEEP THE GATE AT THE BOTTOM OF THIS FILE. Function declarations hoist but
@@ -339,9 +339,10 @@ function mountLabPanel() {
     '<label class="slot-panel-field slot-panel-check">' +
       '<input type="checkbox" class="slot-check" data-act="pop"> Force the football to pop' +
     '</label>' +
-    '<label class="slot-panel-field">Meter <span data-meter-out>0.25%</span>' +
+    '<label class="slot-panel-field">Meter <span data-meter-out>0 pulls &middot; 0.25%</span>' +
       '<input type="range" min="0" max="70" step="1" value="0" class="slot-range" data-act="meter">' +
     '</label>' +
+    '<div class="slot-ball-preview" data-ball-preview></div>' +
     '<div class="slot-panel-note">&nbsp;</div>' +
     '<div class="slot-panel-foot">Drives the real reveal in js/slots.js. Nothing is written to the database.</div>';
   document.body.appendChild(p);
@@ -358,9 +359,13 @@ function mountLabPanel() {
   // the ball behaves as it climbs is to drive it by hand.
   p.querySelector('[data-act="meter"]').addEventListener('input', e => {
     const pulls = Number(e.target.value) || 0;
-    previewJackpot(pulls);
+    // Both: the ball in the panel redraws, and the NEXT roll's marquee ball is
+    // drawn at this pressure - which is the only place the league ever sees it.
+    setMeter(pulls);
+    previewJackpot(pulls, p.querySelector('[data-ball-preview]'));
     const pct = Math.min(0.0025 + 0.0015 * pulls, 0.10) * 100;
-    p.querySelector('[data-meter-out]').textContent = pct.toFixed(pct < 1 ? 2 : 1) + '%';
+    p.querySelector('[data-meter-out]').textContent =
+      pulls + ' pulls \u00b7 ' + pct.toFixed(pct < 1 ? 2 : 1) + '%';
   });
   p.querySelector('[data-act="pop"]').addEventListener('change', e => {
     labPop = !!e.target.checked;
@@ -373,10 +378,11 @@ function mountLabPanel() {
 
 function initSlotLab() {
   mountLabPanel();
-  // The strip is normally gated on the database having a meter in it. In here it
-  // is drawn unconditionally, because judging how the ball looks is half of what
-  // this lab is for and the commissioner is the only one who can see it anyway.
-  previewJackpot(0);
+  // The ball preview lives INSIDE the panel now. It used to be drawn at the top
+  // of the board, which put a football and a pull-count back on a leaderboard
+  // that had deliberately stopped having one - the whole point of the marquee
+  // takeover is that the football is an event rather than furniture.
+  previewJackpot(0, labPanel.querySelector('[data-ball-preview]'));
   labNote('Roll it to watch a kickoff reveal.');
 }
 

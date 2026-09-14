@@ -200,3 +200,18 @@
   accent-color:#c99210;
   cursor:pointer;
 }
+
+/* The ball preview, inside the panel. It used to sit at the top of the board,
+   which put a football and a pull-count back on a leaderboard that had
+   deliberately stopped having one. */
+[data-sandbox="on"] .slot-ball-preview{
+  margin-top:.1rem;
+}
+[data-sandbox="on"] .slot-ball-preview .jp-strip{
+  margin:0;
+  padding:.45rem .4rem;
+}
+[data-sandbox="on"] .slot-ball-preview .jp-pays,
+[data-sandbox="on"] .slot-ball-preview .jp-sound,
+[data-sandbox="on"] .slot-ball-preview .jp-bulbs{ display:none; }
+[data-sandbox="on"] .slot-ball-preview .jp-ball{ width:calc(54px * var(--jp-swell, 1)); }
