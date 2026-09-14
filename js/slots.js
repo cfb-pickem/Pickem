@@ -211,7 +211,7 @@ function columnTeams() {
  * popped carries `data-jackpot` and has an AUTO WIN tag where the crest would
  * be; it spins like any other and simply never lands on a team.
  */
-function dueCells({ only = null } = {}) {
+function dueCells({ only = null, replay = false } = {}) {
   const cols = columnTeams();
   const out = [];
   document.querySelectorAll('tbody tr').forEach(tr => {
@@ -219,7 +219,11 @@ function dueCells({ only = null } = {}) {
     [...tr.children].forEach((td, col) => {
       if (!td.dataset?.slots || !cols[col]) return;
       if (only && td !== only) return;
-      if (!only && spunThisLoad.has(cellKey(td))) return;
+      // A deliberate replay ignores the claimed set for THIS call only. Clearing
+      // it globally - which is what the lab used to do - unclaims the cells for
+      // the MutationObserver too, and the observer then queues a second reveal
+      // of its own on top of the one being asked for.
+      if (!only && !replay && spunThisLoad.has(cellKey(td))) return;
       if (td.querySelector('.slot-box')) return;          // already mid-spin
 
       const jackpot = td.dataset.jackpot === '1';
@@ -319,7 +323,11 @@ function spinCell(cell, order) {
   // lands; once the first one goes the rest should come down on top of each
   // other.
   const turns = 76 + order * 8;
-  const duration = 9000 + order * 900;
+  // DIVIDED BY THE SAME FACTOR THE FOOTBALL USES. It was in real milliseconds
+  // while the ball's beats were scaled, so the sandbox's speed slider drove the
+  // two halves at different rates and they came apart - which is precisely what
+  // "the rolling does not match up" looks like. One clock, both halves.
+  const duration = (9000 + order * 900) / revealSpeed;
 
   const strip = document.createElement('div');
   strip.className = 'slot-strip';
@@ -517,32 +525,41 @@ async function footballAct(popped, reels) {
   // in the whole sequence are this and the payoff, and both are for screen
   // readers - the note is off-screen unless somebody has asked for reduced
   // motion, in which case it is all they are getting.
+  // It answers here, with the reels still turning. The only things said out loud
+  // in the whole sequence are this and the payoff, and both are for screen
+  // readers - the note is off-screen unless somebody has asked for reduced
+  // motion, in which case it is all they are getting.
   if (popped) {
     strip.dataset.beat = 'burst';
     say('The football went. Automatic win.');
     pop();
     deflateJackpot();
+    await wait(900);              // the burst needs room to actually burst
   } else {
     strip.dataset.beat = 'settle';
     say('The football held.');
     hold();
   }
-  await wait(900);
 
   await reels;
 
-  // A popped cell is still showing the football it stopped on for another beat
-  // while that bursts into AUTO WIN. Saying the payoff over it would put the
-  // marquee back in front of the board, which is the whole thing this sequence
-  // was rebuilt to stop doing.
+  // NOTHING TO CELEBRATE, SO IT DOES NOT LINGER. When the ball holds, the
+  // football starts leaving the moment the last reel stops - it used to sit
+  // there for another two seconds having a quiet moment about a thing that did
+  // not happen, and that dead air was the longest part of the whole reveal.
+  //
+  // A pop is different: the cell it is talking about is still showing the
+  // football it landed on for another beat while that bursts into AUTO WIN, and
+  // saying the payoff over it would put the marquee back in front of the board.
   if (popped) await wait(MORPH_TOTAL);
 
   say(popped ? 'The house pays. That pick is an automatic win.'
              : 'The reels decided it, fifty-fifty.');
-  await wait(popped ? 2600 : 1600);
+
+  if (popped) await wait(2600);
 
   strip.dataset.beat = 'exit';
-  await wait(600);
+  await wait(popped ? 600 : 400);
   done();
 }
 

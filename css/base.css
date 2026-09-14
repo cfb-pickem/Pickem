@@ -1901,7 +1901,7 @@ td.slot-cell .slot-was{ opacity:0; }
   padding-top:.25rem;
 }
 .jp-strip .jp-ball{
-  width:58px;
+  width:calc(58px * var(--jp-swell, 1));
   flex:0 0 auto;
   transition:width .8s cubic-bezier(.2,.8,.25,1);
   filter:drop-shadow(0 3px 5px rgba(0,0,0,.55));
@@ -2095,7 +2095,7 @@ td.slot-cell .slot-was{ opacity:0; }
 }
 .jp-strip[data-beat] .jp-ball{ width:min(42vw, 168px); }
 .jp-strip[data-beat="exit"]{ padding:.55rem .7rem .5rem; }
-.jp-strip[data-beat="exit"] .jp-ball{ width:58px; }
+.jp-strip[data-beat="exit"] .jp-ball{ width:calc(58px * var(--jp-swell, 1)); }
 
 /* ---------- The picks page: centred, over the count --------------------- */
 
@@ -2115,7 +2115,7 @@ td.slot-cell .slot-was{ opacity:0; }
   gap:.35rem;
   padding-top:.35rem;
 }
-.jp-strip[data-center] .jp-ball{ width:min(30vw, 118px); }
+.jp-strip[data-center] .jp-ball{ width:calc(min(30vw, 118px) * var(--jp-swell, 1)); }
 .jp-strip[data-center] .jp-text{ align-items:center; text-align:center; }
 .jp-strip[data-center] .jp-label{ order:-1; }
 .jp-strip[data-center] .jp-sub{
@@ -2134,7 +2134,7 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-center] .jp-paytable{ text-align:left; }
 
 @media (max-width:640px){
-  .jp-strip[data-center] .jp-ball{ width:min(42vw, 104px); }
+  .jp-strip[data-center] .jp-ball{ width:calc(min(42vw, 104px) * var(--jp-swell, 1)); }
   .jp-strip[data-center] .jp-sub{ font-size:.78rem; }
 }
 
@@ -2170,7 +2170,7 @@ td.slot-cell .slot-was{ opacity:0; }
 }
 .jp-strip[data-takeover] .jp-ball,
 .jp-strip[data-takeover][data-beat] .jp-ball{
-  width:min(34vw, 190px);
+  width:calc(min(34vw, 190px) * var(--jp-swell, 1));
 }
 .jp-strip[data-takeover] .jp-text{ align-items:center; }
 .jp-strip[data-takeover] .jp-note{
@@ -2184,7 +2184,7 @@ td.slot-cell .slot-was{ opacity:0; }
 
 @media (max-width:640px){
   .jp-strip[data-takeover] .jp-ball,
-  .jp-strip[data-takeover][data-beat] .jp-ball{ width:min(46vw, 150px); }
+  .jp-strip[data-takeover][data-beat] .jp-ball{ width:calc(min(46vw, 150px) * var(--jp-swell, 1)); }
 }
 
 /* THE BEATS. Every one of these is identical whether the ball is about to pop

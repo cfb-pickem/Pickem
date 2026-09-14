@@ -47,7 +47,7 @@
 // an Edge Function — not a page and not a query parameter.
 
 import { sessionInfo } from './session.js';
-import { runSlots, setRevealSpeed, forgetSpins } from './slots.js';
+import { runSlots, setRevealSpeed } from './slots.js';
 import { markSlotCell } from './utils.js';
 import { previewJackpot } from './jackpot.js';
 import { lever, unlock } from './slotsound.js';
@@ -166,15 +166,15 @@ function labCandidates() {
 }
 
 /**
- * Forget every reveal this page has shown, so they can all run again.
+ * Sweep the old once-per-person keys.
  *
- * The reveal now replays on each page LOAD and suppresses itself within one, so
- * the thing to clear is that set rather than localStorage. The old keys are
- * swept too: a browser that watched a reveal under the previous rule should not
- * carry that around forever.
+ * It used to call forgetSpins() as well, and that was the bug behind Roll not
+ * lining up: unclaiming the cells globally hands them back to the MutationObserver
+ * too, so the observer queued a reveal of its own on top of the one Roll was
+ * asking for and the board ran two. Roll now asks for a replay explicitly, which
+ * bypasses the claimed set for that call and nothing else.
  */
 function labForget() {
-  forgetSpins();
   try {
     for (const k of Object.keys(localStorage)) {
       if (k.indexOf(LAB_SEEN_PREFIX) === 0) localStorage.removeItem(k);
@@ -182,20 +182,36 @@ function labForget() {
   } catch {}
 }
 
-/** Take the board back to how it looked before the lab touched it. */
+/**
+ * Take the board back to how it looked before the lab touched it.
+ *
+ * SCOPED TO THE LAB'S OWN MARKS. It used to strip data-slots off every cell that
+ * had it, which on a board with real slot pulls on it deleted the real ones -
+ * so Clear quietly destroyed the very thing Roll is now built to replay, until
+ * the next re-render put them back.
+ */
 function labReset() {
   document.querySelectorAll('.slot-box').forEach(b => b.remove());
-  document.querySelectorAll('[data-slots]').forEach(td => {
+
+  document.querySelectorAll('[data-lab-slot]').forEach(td => {
     delete td.dataset.slots;
     delete td.dataset.slotsTeam;
+    delete td.dataset.labSlot;
+  });
+  // Anything still carrying a reel's leftovers, real or invented.
+  document.querySelectorAll('[data-slots], [data-lab-slot]').forEach(td => {
     td.classList.remove('slot-cell', 'slot-landed');
   });
-  document.querySelectorAll('[data-jackpot]').forEach(td => {
-    td.querySelectorAll('.auto-win').forEach(t => t.remove());
+
+  // A forced pop, put back: the crest returns and the AUTO WIN goes.
+  document.querySelectorAll('[data-lab-pop]').forEach(td => {
+    td.querySelectorAll('.auto-win, .slot-sym-ball').forEach(t => t.remove());
     delete td.dataset.jackpot;
+    delete td.dataset.labPop;
     const crest = labStashedCrest.get(td);
     if (crest) { td.appendChild(crest); labStashedCrest.delete(td); }
   });
+
   document.querySelectorAll('[data-slot-marked]').forEach(td => {
     td.querySelectorAll('.slot-was').forEach(m => m.remove());
     delete td.dataset.slotMarked;
@@ -235,25 +251,42 @@ async function labRun() {
   labReset();
   labForget();
 
-  const all = labCandidates();
-  if (!all.length) {
-    labNote('No revealed picks on this board — choose an earlier week, then Roll.');
-    return;
+  // REPLAY WHAT IS ACTUALLY ON THE BOARD. If this week has real slot pulls in
+  // it, those are the cells - the same team, the same game, the same side the
+  // database landed on. Inventing three at random was always a mock of the thing
+  // rather than the thing, and it stopped being necessary the moment the league
+  // started using the lever.
+  const real = [...document.querySelectorAll('td[data-slots]')]
+    .filter(td => !td.dataset.labSlot);
+
+  let chosen;
+  if (real.length) {
+    chosen = real.map(td => ({ td }));
+    labNote('Replaying ' + real.length + ' real slot pull' +
+            (real.length === 1 ? '' : 's') + ' from this week\u2026');
+  } else {
+    // No real ones on this week's board, so borrow some cells. Tagged exactly
+    // the way renderTable tags a real slot pick, because that is the only thing
+    // js/slots.js reads.
+    const all = labCandidates();
+    if (!all.length) {
+      labNote('No revealed picks on this board \u2014 choose an earlier week, then Roll.');
+      return;
+    }
+    // One per row at most, so it reads as "these players used the slots" rather
+    // than something happening to a whole column.
+    const byRow = new Map();
+    for (const c of all) if (!byRow.has(c.row)) byRow.set(c.row, c);
+    chosen = [...byRow.values()].sort(() => Math.random() - 0.5)
+      .slice(0, Math.min(labCells, byRow.size));
+    chosen.forEach((c, i) => {
+      c.td.dataset.slots = String(9000 + i);
+      c.td.dataset.slotsTeam = String(8000 + i);
+      c.td.dataset.labSlot = '1';
+    });
+    labNote('No real pulls this week \u2014 rolling ' + chosen.length +
+            ' borrowed cell' + (chosen.length === 1 ? '' : 's') + '\u2026');
   }
-
-  // One per row at most, so it reads as "these players used the slots" rather
-  // than something happening to a whole column.
-  const byRow = new Map();
-  for (const c of all) if (!byRow.has(c.row)) byRow.set(c.row, c);
-  const chosen = [...byRow.values()].sort(() => Math.random() - 0.5)
-    .slice(0, Math.min(labCells, byRow.size));
-
-  // Tagged exactly the way renderTable tags a real slot pick, because that is
-  // the only thing js/slots.js reads.
-  chosen.forEach((c, i) => {
-    c.td.dataset.slots = String(9000 + i);
-    c.td.dataset.slotsTeam = String(8000 + i);
-  });
 
   // FORCING THE POP. A real jackpot lands about twice a season, so without this
   // the only way to see the thing the whole feature is built around is to wait
@@ -262,34 +295,26 @@ async function labRun() {
   // It builds the cell the way renderTable builds a popped one: the crest comes
   // out, because there is no team behind an AUTO WIN, and the tag goes in.
   if (labPop && chosen.length) {
-    const c = chosen[0];
-    c.td.dataset.jackpot = '1';
-    const crest = c.td.querySelector('img.logo');
-    if (crest) { labStashedCrest.set(c.td, crest); crest.remove(); }
+    const td = chosen[0].td;
+    td.dataset.jackpot = '1';
+    td.dataset.labPop = '1';
+    const crest = td.querySelector('img.logo');
+    if (crest) { labStashedCrest.set(td, crest); crest.remove(); }
     const tag = document.createElement('span');
     tag.className = 'auto-win';
     tag.textContent = 'AUTO WIN';
-    c.td.appendChild(tag);
+    td.appendChild(tag);
   }
 
-  labNote('Rolling ' + chosen.length + ' cell' + (chosen.length === 1 ? '' : 's') + '…');
-
-  // Start the real reveal, then bend the animations that are now running. The
-  // spin keeps its own easing curve and only the rate changes, so a slow pass
-  // is this animation slowed down rather than a different one.
-  // The football's beats are timers rather than animations, so the slider has
-  // to be handed to them directly - playbackRate only ever reached the reels.
+  // One factor for the whole reveal. The reels are scaled by it inside
+  // spinCell() now, the same as the football's beats, so the two halves cannot
+  // come apart the way they did when only one of them was being slowed down.
   setRevealSpeed(labSpeed);
-  const spinning = runSlots();
-  if (labSpeed !== 1) {
-    requestAnimationFrame(() => {
-      document.getAnimations?.().forEach(a => {
-        if (a.effect?.target?.classList?.contains('slot-strip')) a.playbackRate = labSpeed;
-      });
-    });
-  }
 
-  const n = await spinning;
+  // replay: true bypasses the claimed-cell set FOR THIS CALL. It is what stops
+  // the board running two reveals - see labForget above.
+  const n = await runSlots({ replay: true });
+
   // Not the popped one: it says AUTO WIN in words, and a chip edge round it
   // would be the board explaining the same fact twice in two different codes.
   chosen.forEach(c => { if (c.td.dataset.jackpot !== '1') labMarkCell(c.td); });

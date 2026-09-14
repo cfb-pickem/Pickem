@@ -82,6 +82,21 @@ export function strainLevel(odds) {
  * and it is capped short of the end so it never reads FULL, because a full gauge
  * is a promise and this thing must never make one.
  */
+/**
+ * How much bigger the ball is than a new one.
+ *
+ * It starts taut and it does not stop: every pull anybody in the league makes
+ * puts more air in, and the ball on the page is physically larger for it. Same
+ * curve as the gauge, so the two agree - and the same reason for the easing,
+ * that the early pulls have to move it visibly or nobody looks twice.
+ *
+ * Half again at the top. Beyond that it stops reading as a strained football and
+ * starts reading as a different, larger football.
+ */
+function swell(pulls) {
+  return 1 + 0.55 * gaugeFill(pulls);
+}
+
 function gaugeFill(pulls) {
   const n = Math.max(Number(pulls) || 0, 0);
   const CAP = 65;                       // where the odds hit their ceiling
@@ -234,6 +249,9 @@ function render(el, pulls) {
   const n = Number(pulls) || 0;
 
   el.dataset.strain = strainLevel(odds);
+  // Read by the width rules for both the marquee and the picks page, so the one
+  // number drives the size wherever the ball happens to be drawn.
+  el.style.setProperty('--jp-swell', swell(n).toFixed(3));
   // A namespace per strip, because ballSvg() takes one and never getting a
   // distinct one defeats the point of it: the sandbox puts a preview ball and a
   // marquee ball on the page at once, and two SVGs sharing gradient ids both
