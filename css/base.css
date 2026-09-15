@@ -2154,7 +2154,12 @@ td.slot-cell .slot-was{ opacity:0; }
   gap:.35rem;
   padding-top:.35rem;
 }
-.jp-strip[data-center] .jp-ball{ width:calc(min(30vw, 118px) * var(--jp-swell, 1)); }
+/* THE SAME FOOTBALL THE LEADERBOARD DRAWS, at the same size. It used to be
+   smaller here on the reasoning that the marquee ball is an event and this one
+   is furniture - but it is the same league's ball, and a ball that is visibly
+   smaller on the page where you actually pull the lever undersells the only
+   thing this panel is for. Kept in step with the [data-takeover] rule below. */
+.jp-strip[data-center] .jp-ball{ width:calc(min(34vw, 190px) * var(--jp-swell, 1)); }
 .jp-strip[data-center] .jp-text{ align-items:center; text-align:center; }
 .jp-strip[data-center] .jp-label{
   order:-1;
@@ -2177,7 +2182,7 @@ td.slot-cell .slot-was{ opacity:0; }
 .jp-strip[data-center] .jp-paytable{ text-align:left; }
 
 @media (max-width:640px){
-  .jp-strip[data-center] .jp-ball{ width:calc(min(42vw, 104px) * var(--jp-swell, 1)); }
+  .jp-strip[data-center] .jp-ball{ width:calc(min(46vw, 150px) * var(--jp-swell, 1)); }
   .jp-strip[data-center] .jp-sub{ font-size:.78rem; }
 }
 
@@ -2219,6 +2224,8 @@ td.slot-cell .slot-was{ opacity:0; }
   gap:.3rem;
   padding:0;
 }
+/* Kept in step with the [data-center] rule above - one football, one size,
+   whichever page it is standing on. */
 .jp-strip[data-takeover] .jp-ball,
 .jp-strip[data-takeover][data-beat] .jp-ball{
   width:calc(min(34vw, 190px) * var(--jp-swell, 1));
