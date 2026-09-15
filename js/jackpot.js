@@ -48,21 +48,38 @@
 import { supabase } from './supabaseClient.js';
 import { soundEnabled, setSoundEnabled, unlock, lever } from './slotsound.js';
 
-// THE RAMP, mirroring slots_jackpot_odds() in the 20260914 migration.
+// THE RAMP, mirroring slots_jackpot_odds() in the 20260914120000 migration.
 // Duplicated deliberately and narrowly: the page draws the meter long before it
 // would be worth a round trip to ask Postgres to do arithmetic. If it is
 // retuned, both move.
 //
-// Tuned to one auto win a season against a MEASURED pull rate rather than a
-// guessed one - 2 slotted picks out of 168 this season, over a 20-week season
-// with 4 games and 14 players, comes to about thirteen pulls. A mean of thirteen
-// pulls between pops makes that one auto win.
 // MUST HIT BY, which is the casino mechanic for "this pays out about once per
-// X". Flat and tiny for nearly a whole season's worth of pulls, then climbing
-// hard. A straight ramp cannot hit one-a-season at 420 pulls: averaging one pop
-// per 420 means averaging a quarter of a percent, and any ramp that spends real
-// time at five or ten per cent ends its cycle immediately.
-const RAMP = { floor: 0.0005, quietUntil: 445, slope: 0.0025, ceiling: 0.10 };
+// X". Flat and tiny for a long quiet stretch, then climbing hard once the
+// stretch is served. A straight ramp cannot do this: averaging one pop per N
+// pulls means averaging 1/N per pull, and any ramp that spends real time at
+// five or ten per cent ends its cycle immediately, which drags the average far
+// below N.
+//
+// THE QUIET STRETCH IS 200 PULLS, down from 445. The 445 was solved against an
+// invented pull rate - 14 players x ~1.5 a week x 20 weeks - and the league has
+// made two slots picks all season. 200 is still far above the measured rate and
+// is the one number to move when there is a real season of pulls behind it.
+//
+// THE FLOOR IS 0.005%, which is a twentieth of a pop across the whole quiet
+// stretch. It is deliberately nearly nothing: the stretch is there to be served,
+// not to pay out. The cost is the out-of-nowhere pop - it used to fire in one
+// cycle in five and now fires in one in a hundred - so what the league gets is
+// a football that is genuinely safe until it is genuinely not.
+//
+//   pulls 0..200   0.005% each     the quiet stretch
+//   pull  205      1.26%           it starts going off
+//   pull  220      5.01%
+//   pull  240+     10.00%          pinned at the ceiling until it goes
+//
+//   mean pulls between pops        225
+//   median pull of the pop         224
+//   pops early, out of nowhere     1%
+const RAMP = { floor: 0.00005, quietUntil: 200, slope: 0.0025, ceiling: 0.10 };
 
 // Where the odds stop climbing. Derived rather than written down, so the gauge
 // and the ball cannot go on implying rising pressure after it has levelled off.
@@ -77,10 +94,10 @@ export function jackpotOdds(pulls) {
  * Which of the four rest states the ball is in.
  *
  * DRIVEN BY HOW FAR THROUGH THE CYCLE IT IS, not by the odds. The odds are flat
- * at five hundredths of a percent for the first four hundred and forty-five
- * pulls and then run away, so a ball driven by them would sit perfectly still
- * for almost the entire season and then go berserk in a fortnight. What the
- * league should be able to see is the thing filling up all year.
+ * at five thousandths of a percent for the first two hundred pulls and then run
+ * away over forty, so a ball driven by them would sit perfectly still for almost
+ * the whole cycle and then go berserk at the end of it. What the league should
+ * be able to see is the thing filling up the entire time.
  *
  * Banded rather than continuous because the difference between 31% and 34% of a
  * cycle is not something an animation can express, and pretending otherwise
