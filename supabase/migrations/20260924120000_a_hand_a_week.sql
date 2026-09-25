@@ -125,3 +125,68 @@ revoke insert, update, delete on public.blackjack_weeks, public.blackjack_hole,
 grant select on public.blackjack_weeks, public.blackjack_hands to anon, authenticated;
 grant select on public.blackjack_bankrolls to anon, authenticated;
 revoke all on public.blackjack_hole from anon, authenticated;
+
+-- 4. THE ARITHMETIC --------------------------------------------------------
+
+-- Cards are 0..51: rank is card % 13 (0 = ace, 9..12 = ten through king), suit
+-- is card / 13. Drawing uniformly over that range gives the correct
+-- four-in-thirteen chance of a ten-value card, which is why this feature has no
+-- shoe: a shoe exists so cards can be counted, and nobody is counting across
+-- one hand a week.
+create or replace function public.bj_card_value(card smallint)
+returns integer language sql immutable as $$
+  select case
+           when card % 13 = 0  then 11        -- ace, demoted by bj_total
+           when card % 13 >= 9 then 10        -- 10, J, Q, K
+           else (card % 13) + 1
+         end;
+$$;
+
+-- Aces at eleven, demoted ten at a time only while the hand is over 21. The
+-- integer form of "demote ceil((raw - 21) / 10) of them, but never more than we
+-- hold".
+create or replace function public.bj_total(cards smallint[])
+returns integer language sql immutable as $$
+  with s as (
+    select coalesce(sum(public.bj_card_value(c)), 0)::integer            as raw,
+           coalesce(count(*) filter (where c % 13 = 0), 0)::integer      as aces
+      from unnest(coalesce(cards, '{}'::smallint[])) as c
+  )
+  select case when raw <= 21 then raw
+              else raw - 10 * least(aces, ((raw - 21) + 9) / 10)
+         end
+    from s;
+$$;
+
+-- TWO cards to 21. Three cards the hard way is a 21 and pays even money.
+create or replace function public.bj_is_natural(cards smallint[])
+returns boolean language sql immutable as $$
+  select coalesce(array_length(cards, 1), 0) = 2 and public.bj_total(cards) = 21;
+$$;
+
+create or replace function public.bj_draw_card()
+returns smallint language sql volatile as $$
+  select floor(random() * 52)::smallint;
+$$;
+
+grant execute on function public.bj_card_value(smallint) to anon, authenticated;
+grant execute on function public.bj_total(smallint[])    to anon, authenticated;
+grant execute on function public.bj_is_natural(smallint[]) to anon, authenticated;
+revoke execute on function public.bj_draw_card() from public, anon, authenticated;
+
+-- THE SAME VECTORS tools/blackjack.test.mjs asserts in JavaScript. The felt
+-- draws a total in JS and Postgres pays out on a total in SQL; the day those
+-- disagree, somebody is paid wrongly. This block fails the migration rather
+-- than letting that ship.
+do $$
+begin
+  if public.bj_total(array[0,12]::smallint[])      <> 21 then raise exception '[A,K] should be 21'; end if;
+  if public.bj_total(array[0,0,8]::smallint[])     <> 21 then raise exception '[A,A,9] should be 21'; end if;
+  if public.bj_total(array[0,0,0,7]::smallint[])   <> 21 then raise exception '[A,A,A,8] should be 21'; end if;
+  if public.bj_total(array[0,8,4]::smallint[])     <> 15 then raise exception '[A,9,5] should be 15'; end if;
+  if public.bj_total(array[12,4,5]::smallint[])    <> 21 then raise exception '[K,5,6] should be 21'; end if;
+  if public.bj_total(array[12,12,1]::smallint[])   <> 22 then raise exception '[K,K,2] should be 22'; end if;
+  if public.bj_total('{}'::smallint[])             <> 0  then raise exception 'empty hand should be 0'; end if;
+  if not public.bj_is_natural(array[0,10]::smallint[])    then raise exception '[A,J] should be a natural'; end if;
+  if     public.bj_is_natural(array[0,4,5]::smallint[])   then raise exception '[A,5,6] should not be a natural'; end if;
+end $$;
