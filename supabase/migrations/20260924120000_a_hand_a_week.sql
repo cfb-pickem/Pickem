@@ -429,3 +429,103 @@ grant  execute on function public.bj_hit()            to authenticated;
 grant  execute on function public.bj_double()         to authenticated;
 grant  execute on function public.bj_stand()          to authenticated;
 grant  execute on function public.bj_my_team()        to authenticated;
+
+-- 8. SETTLEMENT -----------------------------------------------------------
+
+-- Modelled on resolve_slot_picks(): idempotent, one-way, guarded on
+-- settled_at is null, cron every minute, and called once on leaderboard load so
+-- a dead cron cannot hide a result.
+create or replace function public.bj_settle_week()
+returns integer language plpgsql security definer set search_path = public as $$
+declare
+  w record; h record;
+  dealer smallint[]; d_total integer; d_natural boolean;
+  p_total integer; p_natural boolean; stake integer; pay integer; res text;
+  n integer := 0;
+begin
+  for w in
+    select bw.cfb_season, bw.week, bw.dealer_up, bh.hole
+      from public.blackjack_weeks bw
+      join public.blackjack_hole  bh
+        on bh.cfb_season = bw.cfb_season and bh.week = bw.week
+     where bw.settled_at is null
+       and not public.bj_week_open(bw.cfb_season, bw.week)
+     order by bw.cfb_season, bw.week
+       for update of bw
+  loop
+    dealer    := array[w.dealer_up, w.hole]::smallint[];
+    d_natural := public.bj_is_natural(dealer);
+
+    -- A natural never draws. The week is already over.
+    if not d_natural then
+      while public.bj_total(dealer) < 17 loop      -- stands on all 17s, soft included
+        dealer := dealer || public.bj_draw_card();
+      end loop;
+    end if;
+    d_total := public.bj_total(dealer);
+
+    for h in
+      select id, bet, doubled, cards from public.blackjack_hands
+       where cfb_season = w.cfb_season and week = w.week and settled_at is null
+       order by id
+    loop
+      p_total   := public.bj_total(h.cards);
+      p_natural := public.bj_is_natural(h.cards);
+      stake     := h.bet * (case when h.doubled then 2 else 1 end);
+
+      if d_natural then
+        -- THE PEEK, APPLIED BACKWARDS. A real dealer showing an ace or a ten
+        -- looks and ends the hand on a natural, so nobody can double into a
+        -- hand that was already over. A hole card sealed from Tuesday cannot
+        -- peek, so the week's play is void instead and only the ORIGINAL bet was
+        -- ever at risk: US "original bets only". A player who doubled to 20 on
+        -- Wednesday and a player who busted on Thursday both lose h.bet and no
+        -- more, because neither hand should have existed.
+        if p_natural then pay := 0;           res := 'push';
+        else              pay := -h.bet;      res := 'lose';
+        end if;
+      elsif p_natural then
+        pay := (h.bet * 3) / 2;               res := 'blackjack';   -- 3:2, rounded down
+      elsif p_total > 21 then
+        pay := -stake;                        res := 'lose';
+      elsif d_total > 21 or p_total > d_total then
+        pay := stake;                         res := 'win';
+      elsif p_total = d_total then
+        pay := 0;                             res := 'push';
+      else
+        pay := -stake;                        res := 'lose';
+      end if;
+
+      -- A HAND STILL LIVE AT THE LOCK STANDS WHERE IT IS. You left it on 16, it
+      -- plays as 16. The alternatives are punishing somebody for a hand they
+      -- did start, or letting them act after the lock.
+      update public.blackjack_hands
+         set state = 'settled', outcome = res, payout = pay, settled_at = now()
+       where id = h.id and settled_at is null;
+      if found then n := n + 1; end if;
+    end loop;
+
+    update public.blackjack_weeks
+       set dealer_final = dealer, settled_at = now()
+     where cfb_season = w.cfb_season and week = w.week and settled_at is null;
+  end loop;
+  return n;
+end;
+$$;
+
+comment on function public.bj_settle_week() is
+  'Settle every closed week: flip the hole card, draw to 17, pay the table. A dealer natural voids the week (original bets only). Idempotent and one-way.';
+
+revoke execute on function public.bj_settle_week() from public, anon;
+grant  execute on function public.bj_settle_week() to authenticated;
+
+-- 9. CRON -----------------------------------------------------------------
+
+-- Every minute, for the same reason resolve_slot_picks() runs every minute: the
+-- leaderboard reveals at kickoff and an unsettled table renders as a blank
+-- felt. One job does both halves so they cannot get out of step.
+select cron.unschedule('blackjack-table')
+ where exists (select 1 from cron.job where jobname = 'blackjack-table');
+
+select cron.schedule('blackjack-table', '* * * * *',
+                     $$select public.bj_open_week(); select public.bj_settle_week();$$);
