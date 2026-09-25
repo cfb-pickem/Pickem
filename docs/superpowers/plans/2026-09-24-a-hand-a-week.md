@@ -85,7 +85,7 @@ eq(handTotal([A, KING]), 21, '[A,K] is 21');
 eq(handTotal([A, A, NINE]), 21, '[A,A,9] is 21');
 eq(handTotal([A, A, A, 7]), 21, '[A,A,A,8] is 21');
 eq(handTotal([A, NINE, 4]), 15, '[A,9,5] is 15');
-eq(handTotal([KING, 5, 6]), 21, '[K,6,7] is 21');
+eq(handTotal([KING, 4, 5]), 21, '[K,5,6] is 21');
 eq(handTotal([KING, KING, TWO]), 22, 'a real bust stays over 21');
 eq(handTotal([]), 0, 'an empty hand is 0');
 ok(isSoft([A, 5]), '[A,6] is soft');
@@ -110,8 +110,8 @@ ok(!betIsLegal(200, 150), 'you cannot bet more than you hold');
 ok(!betIsLegal(25.5, 1000), 'chips are integers');
 
 // Dealer play: draw to 17, stand on all 17s, never draw on a natural.
-eq(dealerPlay([TEN, 5], () => TWO).length, 4, 'dealer draws 15 -> 17 in two twos');
-eq(handTotal(dealerPlay([TEN, 5], () => TWO)), 19, 'and stops once at 17 or better');
+eq(dealerPlay([TEN, 2], () => TWO).length, 4, 'dealer draws 13 -> 17 in two twos');
+eq(handTotal(dealerPlay([TEN, 2], () => TWO)), 17, 'and stops the moment it reaches 17');
 eq(dealerPlay([A, 5], () => { throw new Error('drew on soft 17'); }).length, 2,
    'dealer stands on soft 17');
 eq(dealerPlay([A, KING], () => { throw new Error('drew on a natural'); }).length, 2,
@@ -121,9 +121,9 @@ eq(dealerPlay([A, KING], () => { throw new Error('drew on a natural'); }).length
 const hand = (cards, bet = 100, doubled = false) => ({ cards, bet, doubled });
 eq(settleHand(hand([KING, NINE]), [KING, 7]).payout, 100, '19 beats 17');
 eq(settleHand(hand([KING, NINE]), [KING, NINE]).outcome, 'push', 'equal totals push');
-eq(settleHand(hand([KING, 5]), [KING, NINE]).payout, -100, '15 loses to 19');
+eq(settleHand(hand([KING, 5]), [KING, NINE]).payout, -100, '16 loses to 19');
 eq(settleHand(hand([KING, KING, TWO]), [KING, 5]).payout, -100,
-   'a bust loses even though the dealer sat on 15');
+   'a bust loses even though the dealer sat on 16');
 eq(settleHand(hand([KING, NINE]), [KING, 5, NINE]).payout, 100, 'a dealer bust pays');
 eq(settleHand(hand([A, KING]), [KING, NINE]).outcome, 'blackjack', 'a natural is its own outcome');
 eq(settleHand(hand([A, KING]), [KING, NINE]).payout, 150, 'and pays 3:2');
@@ -512,7 +512,7 @@ begin
   if public.bj_total(array[0,0,8]::smallint[])     <> 21 then raise exception '[A,A,9] should be 21'; end if;
   if public.bj_total(array[0,0,0,7]::smallint[])   <> 21 then raise exception '[A,A,A,8] should be 21'; end if;
   if public.bj_total(array[0,8,4]::smallint[])     <> 15 then raise exception '[A,9,5] should be 15'; end if;
-  if public.bj_total(array[12,5,6]::smallint[])    <> 21 then raise exception '[K,6,7] should be 21'; end if;
+  if public.bj_total(array[12,4,5]::smallint[])    <> 21 then raise exception '[K,5,6] should be 21'; end if;
   if public.bj_total(array[12,12,1]::smallint[])   <> 22 then raise exception '[K,K,2] should be 22'; end if;
   if public.bj_total('{}'::smallint[])             <> 0  then raise exception 'empty hand should be 0'; end if;
   if not public.bj_is_natural(array[0,10]::smallint[])    then raise exception '[A,J] should be a natural'; end if;
@@ -739,13 +739,15 @@ $$;
 create or replace function public.bj_hit()
 returns public.blackjack_hands
 language plpgsql security definer set search_path = public as $$
-declare h public.blackjack_hands; cards smallint[]; out_row public.blackjack_hands;
+-- NOT named `cards`: a local with a column's name makes `set cards = cards`
+  -- ambiguous and plpgsql refuses to run it.
+  declare h public.blackjack_hands; new_cards smallint[]; out_row public.blackjack_hands;
 begin
   h := public.bj_my_live_hand();
-  cards := h.cards || public.bj_draw_card();
+  new_cards := h.cards || public.bj_draw_card();
   update public.blackjack_hands
-     set cards = cards,
-         state = case when public.bj_total(cards) > 21 then 'busted' else 'live' end
+     set cards = new_cards,
+         state = case when public.bj_total(new_cards) > 21 then 'busted' else 'live' end
    where id = h.id
   returning * into out_row;
   return out_row;
@@ -755,7 +757,7 @@ $$;
 create or replace function public.bj_double()
 returns public.blackjack_hands
 language plpgsql security definer set search_path = public as $$
-declare h public.blackjack_hands; chips integer; cards smallint[];
+declare h public.blackjack_hands; chips integer; new_cards smallint[];
         out_row public.blackjack_hands;
 begin
   h := public.bj_my_live_hand();
@@ -774,10 +776,10 @@ begin
   if h.bet * 2 > chips then raise exception 'not enough chips to double'; end if;
 
   -- Exactly one card, then the hand is final however it landed.
-  cards := h.cards || public.bj_draw_card();
+  new_cards := h.cards || public.bj_draw_card();
   update public.blackjack_hands
-     set cards = cards, doubled = true,
-         state = case when public.bj_total(cards) > 21 then 'busted' else 'stood' end
+     set cards = new_cards, doubled = true,
+         state = case when public.bj_total(new_cards) > 21 then 'busted' else 'stood' end
    where id = h.id
   returning * into out_row;
   return out_row;
@@ -1526,6 +1528,7 @@ git commit -m "The reveal: the hole card that has been face down since Tuesday"
 **Files:**
 - Modify: `cfb-genius.html` (`cfb-genius.html:97-115`)
 - Modify: `picks.html` (beside the football strip)
+- Modify: `index.html` (select the Tiebreakers view on the `#tiebreakers` hash)
 - Modify: `js/sandbox.js`
 
 **Interfaces:**
