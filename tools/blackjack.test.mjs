@@ -48,7 +48,7 @@ eq(handTotal([]), 0, 'an empty hand is 0');
 ok(isSoft([A, 5]), '[A,6] is soft');
 ok(!isSoft([A, KING, TWO]), '[A,K,2] is hard 13');
 ok(isNatural([A, JACK]), '[A,J] is a natural');
-ok(!isNatural([A, 5, 4]), 'three cards to 21 is not a natural');
+ok(!isNatural([TEN, NINE, TWO]), 'three cards to 21 is not a natural');
 ok(isBust([KING, KING, TWO]), '22 busts');
 ok(!isBust([A, KING]), '21 does not bust');
 
@@ -76,7 +76,7 @@ eq(dealerPlay([A, KING], () => { throw new Error('drew on a natural'); }).length
 
 // Settlement.
 const hand = (cards, bet = 100, doubled = false) => ({ cards, bet, doubled });
-eq(settleHand(hand([KING, NINE]), [KING, 7]).payout, 100, '19 beats 17');
+eq(settleHand(hand([KING, NINE]), [KING, 6]).payout, 100, '19 beats 17');
 eq(settleHand(hand([KING, NINE]), [KING, NINE]).outcome, 'push', 'equal totals push');
 eq(settleHand(hand([KING, 5]), [KING, NINE]).payout, -100, '16 loses to 19');
 eq(settleHand(hand([KING, KING, TWO]), [KING, 5]).payout, -100,
