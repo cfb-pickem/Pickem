@@ -1,6 +1,6 @@
 # A hand a week
 
-**Status:** designed, not built
+**Status:** approved, building
 **Date:** 2026-09-24
 **Builds on:** [Let the slots decide](2026-09-11-let-the-slots-decide-design.md), [Pop the football](2026-09-13-pop-the-football-design.md)
 
@@ -101,23 +101,36 @@ that fires once in three seasons.
 The board makes it visible rather than hiding it. A player sitting on exactly
 1,000 in week 12 has obviously never played, and the column says so.
 
-### The dealer cannot have a natural, and that one IS a rule bend
+### The dealer can have a natural, and the peek is applied backwards
 
-A real dealer showing an ace or a ten peeks at the hole card and ends the hand
-immediately, so nobody doubles into a hand that was already lost. **The hole card
-here is sealed from Tuesday to kickoff, so there is no peek available.** Left
-alone, a dealer natural would beat players who had spent the week doubling into
-it.
+This is real blackjack, so a dealer natural is in. It carries one wrinkle that
+has to be solved rather than waved at.
 
-So the hole card is **re-dealt until it does not make a natural 21**. It is the
-only deviation from Vegas in the whole design, it is forced by a hand that lasts
-a week rather than ninety seconds, and it runs in the players' favour — which is
-why it is safe to print on the felt.
+In the American game a dealer showing an ace or a ten **peeks** at the hole card,
+and if it is a natural the hand ends right there — nobody hits, nobody doubles,
+and every player loses their original bet or pushes with a natural of their own.
+The peek exists precisely so that nobody can double into a hand that was already
+over.
 
-It leaks a little information, and that is stated rather than discovered: when
-the up-card is an ace or a ten, the league knows the hole card is not a
-ten-value or an ace respectively. That is a real and tiny edge to anybody who
-thinks about it, and it is smaller than the unfairness it removes.
+A hole card sealed from Tuesday to kickoff cannot peek. So the peek is applied
+backwards at settlement: **a dealer natural settles the week as though nobody had
+acted.**
+
+- the player's original bet loses
+- a player holding their own natural pushes
+- a double is refunded — the original bet is all that is at risk
+- every card the player drew during the week is void, because a real peek would
+  have stopped them being drawn at all
+
+That last line is the one worth reading twice. A player who doubled on Wednesday
+and drew to a hard 20 still loses only their original bet, and a player who
+busted on Thursday loses only their original bet too. Both are correct: the hand
+they played never should have existed.
+
+**This is not a rule bend.** It is the standard US "original bets only" result,
+reached the only way a hand that lasts five days can reach it. The alternative —
+letting a sealed hole card take doubled bets — is the European no-hole-card game,
+and that variant does not deal a hole card on Tuesday at all.
 
 ## The week
 
@@ -130,7 +143,7 @@ football work: one thing everybody is watching at once.
 | **Tuesday**, when the lines lock | The week's dealer hand is dealt. Up-card face up, hole card sealed in Postgres. |
 | **Any time before first kickoff** | Place a bet, take two cards, then hit / stand / double. Every action is a server round trip. Standing, busting or doubling makes the hand final. |
 | **First kickoff** | The hole card flips, the dealer draws to 17, and the whole table settles against that one hand. |
-| **First leaderboard load after that** | You are shown the dealer's hand and your result. |
+| **First time they open the Tiebreakers board** | You are shown the dealer's hand and your result. |
 
 **The table opens when the lines lock** because that is the moment the week
 becomes real, and `20260822010000_line_locks_tuesday.sql` already defines it. The
@@ -235,7 +248,7 @@ All `security definer`, all checking `bj_week_open()`:
 
 | | |
 |---|---|
-| `bj_open_week()` | idempotent; deals the week's dealer hand once the lines have locked, re-dealing the hole card until it is not a natural |
+| `bj_open_week()` | idempotent; deals the week's dealer hand once the lines have locked |
 | `bj_deal(bet)` | table open, bet legal, bankroll covers it, no hand this week yet → your two cards and the up-card |
 | `bj_hit()` | one card; bust over 21 |
 | `bj_double()` | first decision only, full bet, exactly one card, hand final |
@@ -324,23 +337,32 @@ straight across it tells you who wins a tie:
 
 ## The reveal
 
-**On the first leaderboard load after the week's table settles, a player who
-played is shown the dealer's hand and their own result.** This is the slots
-reveal pattern — the board comes and finds you — and it is also what makes the
-pit discoverable at all, since a ritual buried in a dropdown is not a ritual.
+**The first time a player opens the Tiebreakers board after their week has
+settled, they are shown the dealer's hand and their own result.** Once per
+player per week.
+
+**It deliberately does not fire on the leaderboard.** That was the first design
+and it was wrong. The weekly board already flips every pick, spins the slots
+cells and runs seven seconds of football; a card table barging in on top of all
+that is noise, not an event. The reveal belongs on the board the chips belong
+to, and a player who does not go there has lost nothing — the result is sitting
+on the felt whenever they next arrive.
 
 | | |
 |---|---|
-| — | The board's picks flip and the slots cells spin, exactly as today |
-| — | The football runs its seven seconds, exactly as today |
 | 0.6s | Your hand slides in as you left it, with its total |
 | 0.8s | **The hole card flips.** The card that has been face down since Tuesday |
 | 0.7s each | The dealer draws to 17, one card at a time |
 | 1.2s | The verdict: the outcome, the chip delta, the new bankroll |
 
-**Blackjack goes last, after the football.** The board's picks are the main
-event and the pit is the coda; two takeovers competing for the same first load
-is worse than either.
+**Which moves the discoverability problem somewhere it has to be solved
+properly.** A reveal on the leaderboard would have found every player whether
+they wanted it or not; a reveal on the Tiebreakers board only finds the ones who
+go looking, and nothing on this site currently tells anybody that a hand is
+waiting. So the picks page carries a one-line nudge beside the football —
+*"Your hand this week →"*, linking through to the board — which is now
+load-bearing rather than a nicety. It is a line of text, not a second card
+table: the picks page keeps the football and gains nothing else.
 
 **The identical-frames rule does not need enforcing here,** unlike the football.
 The dealer's hand *is* the result, so there is nothing to telegraph: you learn
@@ -367,6 +389,7 @@ signed-out visitor and a player who sat out both see nothing.
 | a player hits exactly zero | out for the season; the column reads 0 and the felt says so |
 | a player tries to bet after the lock | `bj_deal()` refuses on `bj_week_open()`, the same check the picks deadline uses |
 | a player forges chips from the console | there is no write path. Every chip comes from a `payout` written by a security-definer function |
+| the dealer turns over a natural | the week settles as though nobody acted: originals lose, doubles refunded, player naturals push |
 | two players tie on points and chips | the cascade falls through to the Celebration Bowl, as it does today |
 
 ## Testing
@@ -376,7 +399,7 @@ modules against a small DOM:
 
 - `bj_total()` on aces: `[A,K]` is 21, `[A,A,9]` is 21, `[A,A,A,8]` is 21, `[A,9,5]` is 15
 - the dealer draws to 17 and stops, including soft 17
-- `bj_open_week()` never produces a dealer natural, over a few thousand opens
+- a dealer natural voids the week's play: doubles refunded, player naturals push, everyone else loses their original bet only, and a player who busted loses only that too
 - settlement is idempotent: a second and third call move zero chips
 - a live hand at lock settles on its standing total
 - bet limits at the boundaries: 24 refused, 25 taken, 500 taken, 501 refused, a stack of 18 takes exactly 18

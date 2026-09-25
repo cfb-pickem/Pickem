@@ -1371,27 +1371,36 @@ git commit -m "Chips on the tiebreaker board, where ties are actually settled"
 
 **Files:**
 - Modify: `js/blackjack.js` (append)
-- Modify: `index.html` — call it from the reveal path near `playRevealAnimation()` (`index.html:2866`)
+- Modify: `index.html` — call it from `loadTiebreakerWeek()`, NOT from `playRevealAnimation()`
 - Modify: `css/base.css` (append)
 
 **Interfaces:**
 - Consumes: `pitState()` from Task 8; `isRevealing()` from `js/slots.js:716`.
 - Produces: `revealHand()`, `forgetHands()`.
 
+**It must not fire on the leaderboard.** The weekly board already flips every
+pick, spins the slots cells and runs seven seconds of football. A card table on
+top of that is noise. The reveal belongs on the board the chips belong to.
+
 - [ ] **Step 1: Append the reveal**
 
 ```js
 import { isRevealing } from './slots.js';
 
-// THE REVEAL. On the first load after a week settles, a player who played is
-// shown the dealer's hand and their result. Same bargain the slots spin struck:
-// a localStorage key rather than a column and a write on every load, because
-// seeing your own hand twice is not a problem.
+// THE REVEAL. The first time a player opens the TIEBREAKERS board after their
+// week has settled, they are shown the dealer's hand and their result. Same
+// bargain the slots spin struck: a localStorage key rather than a column and a
+// write on every load, because seeing your own hand twice is not a problem.
 //
-// It goes LAST, after the football. The board's picks are the main event and the
-// pit is the coda; two takeovers competing for the same first load is worse than
-// either. There is no identical-frames rule to keep here, unlike the football -
-// the dealer's hand IS the result, so there is nothing to telegraph.
+// NOT ON THE LEADERBOARD, and that is the whole placement. The weekly board
+// already flips every pick, spins the slots cells and runs seven seconds of
+// football; a card table barging in on top of that is noise rather than an
+// event. This fires on the one board the chips actually mean something on, and a
+// player who does not go there has lost nothing - the result sits on the felt
+// until they arrive.
+//
+// There is no identical-frames rule to keep here, unlike the football: the
+// dealer's hand IS the result, so there is nothing to telegraph.
 const SEEN = 'cfb-bj-seen';
 
 export function forgetHands() { try { localStorage.removeItem(SEEN); } catch {} }
@@ -1444,14 +1453,17 @@ export async function revealHand() {
 }
 ```
 
-- [ ] **Step 2: Call it from the leaderboard's reveal path**
+- [ ] **Step 2: Call it from the Tiebreakers view, and nowhere else**
 
-In `index.html`, at the end of `playRevealAnimation()` (after the `tbody.querySelectorAll` loop, `index.html:2884`):
+In `index.html`, replace the `initPit(...)` line Task 8 added at the end of
+`loadTiebreakerWeek()` with:
 
 ```js
-      // The coda. Only fires for a signed-in player who had a hand that week,
-      // and only once per browser per week.
-      loadPit().then(revealHand).catch(() => {});
+      // The pit lives on this board and only this board: chips are a
+      // tiebreaker, so they belong where ties are settled. The reveal rides the
+      // same arrival - once per player per week, and never on the weekly board,
+      // which already has the picks flip, the slots spin and the football.
+      initPit(document.getElementById('pit')).then(revealHand).catch(() => {});
 ```
 
 Extend the import from Task 8:
@@ -1459,6 +1471,12 @@ Extend the import from Task 8:
 ```js
     import initPit, { loadPit, pitState, revealHand } from './js/blackjack.js';
 ```
+
+Then confirm by search that `revealHand` appears exactly once in `index.html`
+and that `playRevealAnimation()` does not mention it:
+
+Run: `grep -n "revealHand" index.html`
+Expected: two lines — the import, and the call inside `loadTiebreakerWeek()`.
 
 - [ ] **Step 3: Style the stage**
 
@@ -1490,6 +1508,9 @@ await m.revealHand();
 
 Expected: the up-card, then the hole card flipping, then the dealer's draws, then the verdict. Run it twice without `forgetHands()` — the second call must do nothing.
 
+Then check the placement for real: load the weekly leaderboard with a settled week behind you.
+Expected: no card table anywhere. Switch to **Tiebreakers** and it plays once.
+
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -1500,10 +1521,11 @@ git commit -m "The reveal: the hole card that has been face down since Tuesday"
 
 ---
 
-### Task 11: The rules page, and a lab entry
+### Task 11: The rules page, the nudge, and a lab entry
 
 **Files:**
 - Modify: `cfb-genius.html` (`cfb-genius.html:97-115`)
+- Modify: `picks.html` (beside the football strip)
 - Modify: `js/sandbox.js`
 
 **Interfaces:**
@@ -1541,7 +1563,40 @@ Immediately after that `</ol>`:
             </ul>
 ```
 
-- [ ] **Step 3: Add a lab entry to `js/sandbox.js`**
+- [ ] **Step 3: Add the nudge to the picks page**
+
+Now that the reveal no longer fires on the leaderboard, nothing on the site tells
+a player a hand is waiting. One line beside the football on `picks.html`, under
+the `.jp-strip[data-center]` block — a link, not a second card table:
+
+```html
+        <a class="bj-nudge" href="./index.html#tiebreakers">Your hand this week &rarr;</a>
+```
+
+And in `css/base.css`:
+
+```css
+/* The only signpost to the pit, now that the reveal waits on the tiebreaker
+   board instead of ambushing the leaderboard. A line of text beside the
+   football - the picks page does not get a card table. */
+.bj-nudge{ display:block; text-align:center; margin-top:.5rem; font-size:.75rem;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--cfp-gold-2);
+  text-decoration:none; }
+.bj-nudge:hover{ text-decoration:underline; }
+```
+
+`index.html` must select the Tiebreakers view when it loads with that hash. In the
+week-picker setup, after the options are built:
+
+```js
+      // Arrive from the picks page nudge straight onto the board the pit is on.
+      if (location.hash === '#tiebreakers'){
+        weekSel.value = 'tiebreakers';
+        weekSel.dispatchEvent(new Event('change'));
+      }
+```
+
+- [ ] **Step 4: Add a lab entry to `js/sandbox.js`**
 
 Following the pattern the slots lab already uses, add a panel that settles an arbitrary matchup locally with no database at all — the point is watching a dealer natural on a Tuesday instead of waiting for one:
 
@@ -1578,7 +1633,7 @@ function bjBench(mount) {
 
 Mount it beside the existing slots lab panel.
 
-- [ ] **Step 4: Verify**
+- [ ] **Step 5: Verify**
 
 Run: `npx serve .`, open `commissioner.html`, find the blackjack bench, and settle `0 12` against `0 10` (your `[A,K]` against a dealer `[A,J]`).
 Expected: `PUSH  0` — natural against natural.
@@ -1586,19 +1641,22 @@ Expected: `PUSH  0` — natural against natural.
 Then settle `12 8` (a 19) against `0 10`.
 Expected: `LOSE  -100`, the original bet only.
 
-- [ ] **Step 5: Commit**
+Then open `picks.html` and click the nudge.
+Expected: it lands on the leaderboard with the Tiebreakers view already selected and the felt showing.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 npm run css && npm run stamp
-git add cfb-genius.html js/sandbox.js css/tailwind.css
-git commit -m "Chips at tiebreaker three, the house rules, and a bench to argue on"
+git add cfb-genius.html picks.html index.html js/sandbox.js css/base.css css/tailwind.css
+git commit -m "Chips at tiebreaker three, the house rules, and a way to find the table"
 ```
 
 ---
 
 ## Self-Review
 
-**Spec coverage.** Every section of the spec maps to a task: the cascade → Task 11; the felt's rules → Tasks 1, 5, 6, 11; the bankroll and bet limits → Tasks 1, 2, 5; the dealer natural / backwards peek → Tasks 1, 6, 11; the week and its lock → Task 4; the two dealer tables → Task 2; the hands table and the `unique` rule → Task 2; the derived bankroll → Task 2; no shoe → Tasks 1, 3; the five functions (now seven with `bj_my_live_hand` and `bj_my_team`) → Tasks 4–6; settlement modelled on `resolve_slot_picks()` → Task 6; the mandatory revokes → Tasks 3–6, verified in Task 7; RLS → Task 2, verified in Task 7; the pit on the tiebreaker board → Task 8; the chips column → Task 9; the reveal → Task 10; failure modes → exercised in Task 7; rollout by hand → Task 7.
+**Spec coverage.** Every section of the spec maps to a task: the cascade → Task 11; the felt's rules → Tasks 1, 5, 6, 11; the bankroll and bet limits → Tasks 1, 2, 5; the dealer natural / backwards peek → Tasks 1, 6, 11; the week and its lock → Task 4; the two dealer tables → Task 2; the hands table and the `unique` rule → Task 2; the derived bankroll → Task 2; no shoe → Tasks 1, 3; the five functions (now seven with `bj_my_live_hand` and `bj_my_team`) → Tasks 4–6; settlement modelled on `resolve_slot_picks()` → Task 6; the mandatory revokes → Tasks 3–6, verified in Task 7; RLS → Task 2, verified in Task 7; the pit on the tiebreaker board → Task 8; the chips column → Task 9; the reveal on the Tiebreakers board and the picks-page nudge it makes necessary → Tasks 10 and 11; failure modes → exercised in Task 7; rollout by hand → Task 7.
 
 **Two gaps closed while reviewing.** The spec names five functions; the plan adds `bj_my_team()` and `bj_my_live_hand()`, because three copies of "the hand you may still act on" is how `bj_hit` and `bj_double` end up disagreeing. And the spec says the felt shows the current week without saying what it shows between Saturday's settlement and Tuesday's lines lock — `loadPit()` falls back to the newest `blackjack_weeks` row so it holds last week's result rather than going blank.
 
