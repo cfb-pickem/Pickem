@@ -14,7 +14,7 @@
 create table if not exists public.blackjack_weeks (
   cfb_season   integer not null,
   week         integer not null,
-  dealer_up    smallint not null,
+  dealer_up    smallint not null check (dealer_up between 0 and 51),
   dealer_final smallint[],
   opened_at    timestamptz not null default now(),
   settled_at   timestamptz,
@@ -27,7 +27,7 @@ create table if not exists public.blackjack_weeks (
 create table if not exists public.blackjack_hole (
   cfb_season integer not null,
   week       integer not null,
-  hole       smallint not null,
+  hole       smallint not null check (hole between 0 and 51),
   primary key (cfb_season, week)
 );
 
@@ -38,7 +38,7 @@ create table if not exists public.blackjack_hands (
   week       integer not null,
   bet        integer not null check (bet > 0),
   doubled    boolean not null default false,
-  cards      smallint[] not null,
+  cards      smallint[] not null check (0::smallint <= all(cards) and 51::smallint >= all(cards)),
   state      text not null check (state in ('live','stood','busted','settled')),
   outcome    text check (outcome in ('win','lose','push','blackjack')),
   payout     integer,
@@ -119,9 +119,10 @@ create policy blackjack_hands_readable on public.blackjack_hands
 
 -- No insert, update or delete policy on any of the three, on purpose. Every
 -- write goes through a security-definer function; there is no path by which a
--- client can author a card or a chip.
-revoke insert, update, delete on public.blackjack_weeks, public.blackjack_hole,
-                                 public.blackjack_hands from anon, authenticated;
+-- client can author a card or a chip. ALL, not just insert/update/delete: RLS
+-- does not cover TRUNCATE, so a narrower revoke would leave that door open.
+revoke all on public.blackjack_weeks, public.blackjack_hole,
+              public.blackjack_hands from anon, authenticated;
 grant select on public.blackjack_weeks, public.blackjack_hands to anon, authenticated;
 grant select on public.blackjack_bankrolls to anon, authenticated;
 revoke all on public.blackjack_hole from anon, authenticated;
@@ -169,6 +170,14 @@ returns smallint language sql volatile as $$
   select floor(random() * 52)::smallint;
 $$;
 
+-- Explicit revoke-then-grant, not just grant: a PUBLIC default is inherited
+-- rather than deliberate, and this project already shipped that exact bug on
+-- resolve_slot_picks(). These three are genuinely meant to be world-readable,
+-- but the day someone tightens one with `revoke ... from anon` the PUBLIC grant
+-- must not be left standing in to silently keep anon's access.
+revoke execute on function public.bj_card_value(smallint)   from public;
+revoke execute on function public.bj_total(smallint[])      from public;
+revoke execute on function public.bj_is_natural(smallint[]) from public;
 grant execute on function public.bj_card_value(smallint) to anon, authenticated;
 grant execute on function public.bj_total(smallint[])    to anon, authenticated;
 grant execute on function public.bj_is_natural(smallint[]) to anon, authenticated;
@@ -188,7 +197,7 @@ begin
   if public.bj_total(array[12,12,1]::smallint[])   <> 22 then raise exception '[K,K,2] should be 22'; end if;
   if public.bj_total('{}'::smallint[])             <> 0  then raise exception 'empty hand should be 0'; end if;
   if not public.bj_is_natural(array[0,10]::smallint[])    then raise exception '[A,J] should be a natural'; end if;
-  if     public.bj_is_natural(array[0,4,5]::smallint[])   then raise exception '[A,5,6] should not be a natural'; end if;
+  if     public.bj_is_natural(array[9,8,1]::smallint[])   then raise exception '[10,9,2] should not be a natural'; end if;
 end $$;
 
 -- 5. WHEN THE TABLE IS OPEN ------------------------------------------------
@@ -222,9 +231,13 @@ returns boolean language sql stable security definer set search_path = public as
          );
 $$;
 
--- The week the felt plays. The open week if there is one; otherwise the most
--- recently opened table, so that between Saturday's kickoff and next Tuesday's
--- lines lock the felt still shows last week's result instead of going blank.
+-- The OPEN week, and only the open week - returns nothing once the table has
+-- closed. Deliberately does not fall back to the most recently opened week: the
+-- client does that fallback on purpose (to keep showing last week's result
+-- between Saturday's kickoff and next Tuesday's lines lock), and doing it here
+-- instead would let bj_deal() insert a hand into a week that is already
+-- settled or about to be - turning the settlement race into a reachable bug on
+-- every post-kickoff page load instead of a closed one.
 create or replace function public.bj_live_week()
 returns table (cfb_season integer, week integer)
 language sql stable security definer set search_path = public as $$
@@ -237,6 +250,8 @@ language sql stable security definer set search_path = public as $$
    limit 1;
 $$;
 
+revoke execute on function public.bj_week_open(integer, integer) from public;
+revoke execute on function public.bj_live_week()                 from public;
 grant execute on function public.bj_week_open(integer, integer) to anon, authenticated;
 grant execute on function public.bj_live_week() to anon, authenticated;
 
@@ -253,6 +268,12 @@ grant execute on function public.bj_live_week() to anon, authenticated;
 -- amount of "the server is trusted" makes that honest. It can be a natural -
 -- this is real blackjack - and bj_settle_week() honours the peek that a
 -- five-day hand cannot take.
+--
+-- CRON-ONLY, deliberately, and that is why it is not granted to authenticated:
+-- this function draws the sealed hole card with random(), which is not
+-- cryptographically secure, inside a backend whose other outputs (the up-card
+-- it deals in the same breath, error messages, timing) a player can observe.
+-- Nobody signed in should ever be the one whose request triggers that draw.
 create or replace function public.bj_open_week()
 returns integer language plpgsql security definer set search_path = public as $$
 declare
@@ -273,18 +294,23 @@ begin
     on conflict (cfb_season, week) do nothing;
 
     if found then
-      insert into public.blackjack_hole (cfb_season, week, hole)
-      values (s, w, public.bj_draw_card())
-      on conflict (cfb_season, week) do nothing;
       n := n + 1;
     end if;
+
+    -- OUTSIDE the `if found`, always, idempotent via on conflict do nothing.
+    -- bj_settle_week() inner-joins blackjack_hole, so a week row that somehow
+    -- got created without its mate (a prior partial run, a manual insert) would
+    -- otherwise be invisible to the settler forever and every hand in it would
+    -- strand silently.
+    insert into public.blackjack_hole (cfb_season, week, hole)
+    values (s, w, public.bj_draw_card())
+    on conflict (cfb_season, week) do nothing;
   end loop;
   return n;
 end;
 $$;
 
-revoke execute on function public.bj_open_week() from public, anon;
-grant  execute on function public.bj_open_week() to authenticated;
+revoke execute on function public.bj_open_week() from public, anon, authenticated;
 
 -- 7. PLAYING THE HAND -----------------------------------------------------
 
@@ -311,6 +337,13 @@ begin
                   where cfb_season = s and week = w) then
     raise exception 'the table for this week has not opened yet';
   end if;
+
+  -- Seal against the settler. Without this a bet placed in the same second the
+  -- week closes lands in a week that is about to be settled without it, and the
+  -- hand strands live forever.
+  perform 1 from public.blackjack_weeks
+   where cfb_season = s and week = w and settled_at is null for share;
+  if not found then raise exception 'the table for this week has closed'; end if;
 
   select b.chips into chips from public.blackjack_bankrolls b
    where b.team_id = me and b.cfb_season = s;
@@ -347,6 +380,13 @@ begin
   if me is null then raise exception 'no team for this account'; end if;
   select cfb_season, week into s, w from public.bj_live_week();
   if s is null then raise exception 'the table has closed'; end if;
+
+  -- Seal against the settler. Without this a hit or double can commit inside
+  -- the same second the settler snapshots the week, and the card it draws goes
+  -- unaccounted for either way that race resolves.
+  perform 1 from public.blackjack_weeks
+   where cfb_season = s and week = w and settled_at is null for share;
+  if not found then raise exception 'the table has closed'; end if;
 
   select * into h from public.blackjack_hands
    where team_id = me and cfb_season = s and week = w for update;
@@ -468,6 +508,7 @@ begin
       select id, bet, doubled, cards from public.blackjack_hands
        where cfb_season = w.cfb_season and week = w.week and settled_at is null
        order by id
+         for update
     loop
       p_total   := public.bj_total(h.cards);
       p_natural := public.bj_is_natural(h.cards);
@@ -523,9 +564,17 @@ grant  execute on function public.bj_settle_week() to authenticated;
 
 -- Every minute, for the same reason resolve_slot_picks() runs every minute: the
 -- leaderboard reveals at kickoff and an unsettled table renders as a blank
--- felt. One job does both halves so they cannot get out of step.
-select cron.unschedule('blackjack-table')
- where exists (select 1 from cron.job where jobname = 'blackjack-table');
+-- felt. TWO jobs, not one command string with both calls in it: as a single
+-- string an error in bj_settle_week() would roll back bj_open_week()'s work too,
+-- and there is no reason the failure of one half should undo the other.
+select cron.unschedule('blackjack-open')
+ where exists (select 1 from cron.job where jobname = 'blackjack-open');
 
-select cron.schedule('blackjack-table', '* * * * *',
-                     $$select public.bj_open_week(); select public.bj_settle_week();$$);
+select cron.unschedule('blackjack-settle')
+ where exists (select 1 from cron.job where jobname = 'blackjack-settle');
+
+select cron.schedule('blackjack-open', '* * * * *',
+  $job$select public.bj_open_week()$job$);
+
+select cron.schedule('blackjack-settle', '* * * * *',
+  $job$select public.bj_settle_week()$job$);
