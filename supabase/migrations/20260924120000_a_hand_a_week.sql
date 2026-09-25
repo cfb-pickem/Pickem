@@ -190,3 +190,98 @@ begin
   if not public.bj_is_natural(array[0,10]::smallint[])    then raise exception '[A,J] should be a natural'; end if;
   if     public.bj_is_natural(array[0,4,5]::smallint[])   then raise exception '[A,5,6] should not be a natural'; end if;
 end $$;
+
+-- 5. WHEN THE TABLE IS OPEN ------------------------------------------------
+
+-- A SECOND DEADLINE DEFINITION, stated rather than buried, because this repo's
+-- rule is that there is never a second definition to drift out of step.
+--
+-- It is a different QUESTION, not a second answer to the same one.
+-- picks_open_for_game() answers "is this game still open", and in the playoffs
+-- it answers per game. A hand is not attached to a game, so it needs "is this
+-- week's table still open" - and for one weekly hand a per-game lock is
+-- meaningless. So the regular-season branch of picks_open_for_game() is reused
+-- verbatim and applied to playoff weeks too.
+--
+-- A week with no picked games is never open, which is what stops the table being
+-- dealt for a week the league does not play.
+create or replace function public.bj_week_open(p_season integer, p_week integer)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+           select 1 from public.all_games x
+            where x.cfb_season = p_season and x.week = p_week
+              and (coalesce(x.picked, false) or coalesce(x.tiebreaker, false))
+              and x."Start (CT)" is not null
+         )
+     and not exists (
+           select 1 from public.all_games x
+            where x.cfb_season = p_season and x.week = p_week
+              and (coalesce(x.picked, false) or coalesce(x.tiebreaker, false))
+              and x."Start (CT)" is not null
+              and (x."Start (CT)")::timestamp <= (now() at time zone 'America/Chicago')
+         );
+$$;
+
+-- The week the felt plays. The open week if there is one; otherwise the most
+-- recently opened table, so that between Saturday's kickoff and next Tuesday's
+-- lines lock the felt still shows last week's result instead of going blank.
+create or replace function public.bj_live_week()
+returns table (cfb_season integer, week integer)
+language sql stable security definer set search_path = public as $$
+  select g.cfb_season, g.week
+    from (select distinct a.cfb_season, a.week
+            from public.all_games a
+           where coalesce(a.picked, false) or coalesce(a.tiebreaker, false)) g
+   where public.bj_week_open(g.cfb_season, g.week)
+   order by g.cfb_season desc, g.week asc
+   limit 1;
+$$;
+
+grant execute on function public.bj_week_open(integer, integer) to anon, authenticated;
+grant execute on function public.bj_live_week() to anon, authenticated;
+
+-- 6. DEALING THE WEEK ------------------------------------------------------
+
+-- The table opens when the LINES lock, which is the moment the week becomes
+-- real and which line_lock_at() already defines. Idempotent and driven from
+-- cron every minute rather than fired once at 11:00 on Tuesday: a scheduled
+-- moment that gets missed would leave the league with no table for a week, and
+-- a self-healing check costs nothing.
+--
+-- The hole card is dealt NOW, not at settlement. Dealing it at settlement would
+-- let the house choose its second card after watching the table play, and no
+-- amount of "the server is trusted" makes that honest. It can be a natural -
+-- this is real blackjack - and bj_settle_week() honours the peek that a
+-- five-day hand cannot take.
+create or replace function public.bj_open_week()
+returns integer language plpgsql security definer set search_path = public as $$
+declare
+  s integer; w integer; first_kick timestamp; n integer := 0;
+begin
+  for s, w, first_kick in
+    select a.cfb_season, a.week, min((a."Start (CT)")::timestamp)
+      from public.all_games a
+     where (coalesce(a.picked, false) or coalesce(a.tiebreaker, false))
+       and a."Start (CT)" is not null
+     group by a.cfb_season, a.week
+  loop
+    continue when (now() at time zone 'America/Chicago') < public.line_lock_at(first_kick);
+    continue when not public.bj_week_open(s, w);
+
+    insert into public.blackjack_weeks (cfb_season, week, dealer_up)
+    values (s, w, public.bj_draw_card())
+    on conflict (cfb_season, week) do nothing;
+
+    if found then
+      insert into public.blackjack_hole (cfb_season, week, hole)
+      values (s, w, public.bj_draw_card())
+      on conflict (cfb_season, week) do nothing;
+      n := n + 1;
+    end if;
+  end loop;
+  return n;
+end;
+$$;
+
+revoke execute on function public.bj_open_week() from public, anon;
+grant  execute on function public.bj_open_week() to authenticated;
