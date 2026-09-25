@@ -285,3 +285,147 @@ $$;
 
 revoke execute on function public.bj_open_week() from public, anon;
 grant  execute on function public.bj_open_week() to authenticated;
+
+-- 7. PLAYING THE HAND -----------------------------------------------------
+
+-- Every one of these re-derives the caller's team and the live week server-side.
+-- Nothing is taken from the client but the bet, and that is validated against a
+-- bankroll the client cannot write.
+create or replace function public.bj_deal(p_bet integer)
+returns public.blackjack_hands
+language plpgsql security definer set search_path = public as $$
+declare
+  me bigint; s integer; w integer; chips integer; lo integer; hi integer;
+  cards smallint[]; out_row public.blackjack_hands;
+begin
+  me := public.bj_my_team();
+  if me is null then raise exception 'no team for this account'; end if;
+
+  select cfb_season, week into s, w from public.bj_live_week();
+  if s is null then raise exception 'no table is open'; end if;
+
+  -- OPEN MEANS THE DEALER EXISTS, not merely that nothing has kicked off.
+  -- bj_week_open() is true on Monday too, and a bet placed before the lines lock
+  -- would be a bet against a dealer who has not been dealt.
+  if not exists (select 1 from public.blackjack_weeks
+                  where cfb_season = s and week = w) then
+    raise exception 'the table for this week has not opened yet';
+  end if;
+
+  select b.chips into chips from public.blackjack_bankrolls b
+   where b.team_id = me and b.cfb_season = s;
+  chips := coalesce(chips, 1000);
+  if chips <= 0 then raise exception 'you are out for the season'; end if;
+
+  -- Your last chips are always a legal bet; you are out at exactly zero and
+  -- nowhere else.
+  lo := least(25, chips);
+  hi := least(500, chips);
+  if p_bet is null or p_bet < lo or p_bet > hi then
+    raise exception 'bet must be between % and %', lo, hi;
+  end if;
+
+  cards := array[public.bj_draw_card(), public.bj_draw_card()]::smallint[];
+
+  insert into public.blackjack_hands (team_id, cfb_season, week, bet, cards, state)
+  values (me, s, w, p_bet, cards,
+          case when public.bj_is_natural(cards) then 'stood' else 'live' end)
+  returning * into out_row;
+
+  return out_row;
+end;
+$$;
+
+-- One private helper so all three share a single definition of "a hand you are
+-- still allowed to act on". Without it, three copies of the same four guards.
+create or replace function public.bj_my_live_hand()
+returns public.blackjack_hands
+language plpgsql security definer set search_path = public as $$
+declare me bigint; s integer; w integer; h public.blackjack_hands;
+begin
+  me := public.bj_my_team();
+  if me is null then raise exception 'no team for this account'; end if;
+  select cfb_season, week into s, w from public.bj_live_week();
+  if s is null then raise exception 'the table has closed'; end if;
+
+  select * into h from public.blackjack_hands
+   where team_id = me and cfb_season = s and week = w for update;
+  if h.id is null then raise exception 'you have no hand this week'; end if;
+  if h.state <> 'live' then raise exception 'that hand is already finished'; end if;
+  return h;
+end;
+$$;
+
+create or replace function public.bj_hit()
+returns public.blackjack_hands
+language plpgsql security definer set search_path = public as $$
+-- NOT named `cards`: a local with a column's name makes `set cards = cards`
+  -- ambiguous and plpgsql refuses to run it.
+  declare h public.blackjack_hands; new_cards smallint[]; out_row public.blackjack_hands;
+begin
+  h := public.bj_my_live_hand();
+  new_cards := h.cards || public.bj_draw_card();
+  update public.blackjack_hands
+     set cards = new_cards,
+         state = case when public.bj_total(new_cards) > 21 then 'busted' else 'live' end
+   where id = h.id
+  returning * into out_row;
+  return out_row;
+end;
+$$;
+
+create or replace function public.bj_double()
+returns public.blackjack_hands
+language plpgsql security definer set search_path = public as $$
+declare h public.blackjack_hands; chips integer; new_cards smallint[];
+        out_row public.blackjack_hands;
+begin
+  h := public.bj_my_live_hand();
+
+  -- FIRST DECISION ONLY, which is what "double down" means everywhere.
+  if coalesce(array_length(h.cards, 1), 0) <> 2 then
+    raise exception 'you can only double on your first decision';
+  end if;
+  if h.doubled then raise exception 'already doubled'; end if;
+
+  select b.chips into chips from public.blackjack_bankrolls b
+   where b.team_id = h.team_id and b.cfb_season = h.cfb_season;
+  chips := coalesce(chips, 1000);
+  -- No doubling for less. The button is disabled when the stack will not cover
+  -- it, and this is the server saying the same thing.
+  if h.bet * 2 > chips then raise exception 'not enough chips to double'; end if;
+
+  -- Exactly one card, then the hand is final however it landed.
+  new_cards := h.cards || public.bj_draw_card();
+  update public.blackjack_hands
+     set cards = new_cards, doubled = true,
+         state = case when public.bj_total(new_cards) > 21 then 'busted' else 'stood' end
+   where id = h.id
+  returning * into out_row;
+  return out_row;
+end;
+$$;
+
+create or replace function public.bj_stand()
+returns public.blackjack_hands
+language plpgsql security definer set search_path = public as $$
+declare h public.blackjack_hands; out_row public.blackjack_hands;
+begin
+  h := public.bj_my_live_hand();
+  update public.blackjack_hands set state = 'stood' where id = h.id
+  returning * into out_row;
+  return out_row;
+end;
+$$;
+
+revoke execute on function public.bj_deal(integer)    from public, anon;
+revoke execute on function public.bj_hit()            from public, anon;
+revoke execute on function public.bj_double()         from public, anon;
+revoke execute on function public.bj_stand()          from public, anon;
+revoke execute on function public.bj_my_live_hand()   from public, anon, authenticated;
+revoke execute on function public.bj_my_team()        from public, anon;
+grant  execute on function public.bj_deal(integer)    to authenticated;
+grant  execute on function public.bj_hit()            to authenticated;
+grant  execute on function public.bj_double()         to authenticated;
+grant  execute on function public.bj_stand()          to authenticated;
+grant  execute on function public.bj_my_team()        to authenticated;
