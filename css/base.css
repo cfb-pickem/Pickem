@@ -2627,3 +2627,17 @@ td[data-slots]{ cursor:pointer; }
 .bj-chips{ font-family:'Teko','Oswald',sans-serif; font-size:1.1rem;
   color:var(--cfp-gold-2); }
 .bj-chips.bj-busted{ color:#e08a8a; }
+
+/* The reveal stage. Deliberately lighter than the football's takeover - this
+   is the coda, not the event. Sits below the site nav/modal layers (200+)
+   on purpose: it belongs to the tiebreaker board underneath it, not over it. */
+.bj-stage{ position:fixed; inset:0; z-index:70; display:grid; place-items:center;
+  background:rgba(4,8,6,.82); backdrop-filter:blur(2px); cursor:pointer; }
+.bj-stage-inner{ background:linear-gradient(180deg,#0d3b24,#08281a);
+  border:1px solid #2f6b4c; border-radius:.5rem; padding:1.25rem 1.5rem;
+  display:flex; flex-direction:column; gap:.6rem; min-width:min(92vw,22rem);
+  box-shadow:0 18px 50px rgba(0,0,0,.6); }
+.bj-verdict{ font-family:'Teko','Oswald',sans-serif; font-size:1.6rem;
+  text-transform:uppercase; letter-spacing:.04em; color:var(--cfp-gold-2);
+  text-align:center; margin:.2rem 0 0; }
+@media (prefers-reduced-motion: reduce){ .bj-stage{ backdrop-filter:none; } }

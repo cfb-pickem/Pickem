@@ -347,3 +347,102 @@ export default async function initPit(mount) {
   if (myGen !== gen) return;
   renderPit(mount);
 }
+
+// --- the reveal -------------------------------------------------------------
+//
+// The first time a player opens the TIEBREAKERS board after their week has
+// settled, they are shown the dealer's hand and their result. Same bargain
+// the slots spin struck: a localStorage key rather than a column and a write
+// on every load, because seeing your own hand twice is not a problem.
+//
+// NOT ON THE LEADERBOARD, and that is the whole placement. The weekly board
+// already flips every pick, spins the slots cells and runs seven seconds of
+// football; a card table barging in on top of that is noise rather than an
+// event. This fires on the one board the chips actually mean something on,
+// and a player who does not go there has lost nothing - the result sits on
+// the felt until they arrive. Because it no longer shares a board with that
+// football, it has nothing to wait out and no reason to reach into the
+// module that drives it.
+//
+// There is no identical-frames rule to keep here, unlike the football: the
+// dealer's hand IS the result, so there is nothing to telegraph.
+const SEEN = 'cfb-bj-seen';
+
+export function forgetHands() { try { localStorage.removeItem(SEEN); } catch {} }
+
+const seenWeeks = () => { try { return JSON.parse(localStorage.getItem(SEEN) || '[]'); } catch { return []; } };
+const remember = k => { try { localStorage.setItem(SEEN, JSON.stringify([...seenWeeks(), k].slice(-40))); } catch {} };
+
+export async function revealHand() {
+  const s = pitState();
+  if (!s.settled || !s.hand || !s.dealerFinal) return;
+  const key = s.season + ':' + s.week;
+  if (seenWeeks().includes(key)) return;
+
+  // Captured once, same as initPit()/act(): if the tiebreaker board is torn
+  // down mid-reveal (the user navigates to the weekly or playoff board), the
+  // stage this closure built is now sitting on top of a screen it does not
+  // belong to, and every await below has to check for that before touching it.
+  const myGen = gen;
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const stage = document.createElement('div');
+  stage.className = 'bj-stage';
+  stage.innerHTML = '<div class="bj-stage-inner"></div>';
+  document.body.appendChild(stage);
+  const inner = stage.querySelector('.bj-stage-inner');
+
+  const paint = (dealerCards, showVerdict) => {
+    inner.innerHTML =
+      '<div class="bj-row"><span class="bj-who">DEALER</span>' + handHtml(dealerCards) +
+        '<span class="bj-tot">' + handTotal(dealerCards) + '</span></div>' +
+      '<div class="bj-row"><span class="bj-who">YOU</span>' + handHtml(s.hand.cards) +
+        '<span class="bj-tot">' + handTotal(s.hand.cards) + '</span></div>' +
+      (showVerdict ? '<p class="bj-verdict">' + verdict(s.hand) + '</p>' : '');
+  };
+
+  // Idempotent, because a click and a navigation-triggered bail can both try
+  // to close the same stage. markSeen is false only for the latter case: the
+  // tiebreaker board went away out from under this stage (F2's rule again),
+  // so nothing was actually seen and the key stays unwritten - the reveal
+  // owes them the full sequence, uninterrupted, next time they arrive. A
+  // click is the player choosing to stop looking, which counts as seen.
+  let closed = false;
+  const close = markSeen => {
+    if (closed) return;
+    closed = true;
+    stage.remove();
+    if (markSeen) remember(key);
+  };
+  stage.addEventListener('click', () => close(true));
+
+  // Every checkpoint below closes with whatever the generation says "seen"
+  // should mean at that moment - true once the sequence has run its course,
+  // false if the board moved out from under it first.
+  if (myGen !== gen) return close(false);
+
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  if (reduced) {
+    // No animation, but still a pause to read it - the whole point of
+    // reduced motion is skipping the draw-by-draw, not skipping the result.
+    paint(s.dealerFinal, true);
+    await wait(2500);
+    return close(myGen === gen);
+  }
+
+  paint([s.dealerFinal[0]], false);                    // the up-card, as it stood all week
+  await wait(600);
+  if (myGen !== gen) return close(false);
+  paint(s.dealerFinal.slice(0, 2), false);             // the hole card flips
+  await wait(800);
+  if (myGen !== gen) return close(false);
+  for (let i = 3; i <= s.dealerFinal.length; i++) {    // draw to 17
+    paint(s.dealerFinal.slice(0, i), false);
+    await wait(700);
+    if (myGen !== gen) return close(false);
+  }
+  paint(s.dealerFinal, true);
+  await wait(1200);
+  close(myGen === gen);
+}
