@@ -2584,3 +2584,40 @@ td[data-slots]{ cursor:pointer; }
   .jp-party-title::after,
   .jp-party-title{ animation:none; }
 }
+
+/* THE PIT — the league's blackjack table, on the tiebreaker board.
+   Green felt against the same scoreboard chrome everything else uses, because a
+   card table that ignored the site's furniture would read as an advert. */
+.bj-felt{ background:linear-gradient(180deg,#0d3b24,#08281a); }
+.bj-head{ padding:.6rem 1rem; border-bottom:3px solid #444;
+  font-family:'Teko','Oswald',sans-serif; font-size:1.3rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:.06em; color:#ddd;
+  display:flex; align-items:center; gap:.75rem; }
+.bj-bank{ margin-left:auto; font-size:.95rem; color:var(--cfp-gold-2); }
+.bj-body{ padding:1rem; display:flex; flex-direction:column; gap:.75rem; }
+.bj-row{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.bj-who{ width:5.5rem; font-size:.7rem; letter-spacing:.12em; color:#9fb8a8;
+  text-transform:uppercase; }
+.bj-card{ display:inline-flex; align-items:center; justify-content:center;
+  min-width:2.4rem; padding:.45rem .4rem; border-radius:.3rem;
+  background:#f4f1ea; color:#16181c; font-weight:700; font-size:.95rem;
+  box-shadow:0 2px 4px rgba(0,0,0,.45); }
+.bj-card.bj-red{ color:#b3202c; }
+.bj-card-down{ background:repeating-linear-gradient(45deg,#7d1d24,#7d1d24 4px,#5e1419 4px,#5e1419 8px);
+  color:transparent; }
+.bj-tot{ margin-left:.4rem; font-family:'Teko','Oswald',sans-serif; font-size:1.3rem;
+  color:var(--cfp-ivory); }
+.bj-seal{ margin-left:.4rem; font-size:.7rem; color:#7f9a8b; font-style:italic; }
+.bj-btn{ padding:.45rem .9rem; border-radius:.3rem; border:1px solid #2f6b4c;
+  background:#125c3c; color:#eafff3; font-weight:700; font-size:.8rem;
+  letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
+.bj-btn:hover{ background:#17734c; }
+.bj-btn:disabled{ opacity:.5; cursor:default; }
+.bj-bet{ width:5.5rem; padding:.4rem .5rem; border-radius:.3rem; border:1px solid #2f6b4c;
+  background:#07231a; color:#eafff3; }
+.bj-note{ font-size:.75rem; color:#9fb8a8; }
+.bj-note.bj-out{ color:#e08a8a; }
+.bj-err{ font-size:.75rem; color:#ffb3b3; }
+@media (max-width:640px){
+  .bj-who{ width:100%; }
+}

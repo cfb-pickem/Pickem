@@ -98,3 +98,211 @@ export function settleHand({ cards, bet, doubled }, dealerCards) {
   if (p === d) return { outcome: 'push', payout: 0 };
   return { outcome: 'lose', payout: -stake };
 }
+
+import { supabase } from './supabaseClient.js';
+
+// --- the felt -------------------------------------------------------------
+//
+// One panel, two states worth code: no hand yet (place a bet) and a hand in
+// progress or just settled (hit/stand/double, then a verdict). Every card
+// shown here came from an RPC; nothing in this file decides a total or an
+// outcome, only formats one that Postgres already computed.
+//
+// bj_my_team() is authenticated-only and errors outright for a signed-out
+// visitor - there is no team to hand back. A visitor with no team gets a
+// read-only felt: the dealer's up-card and its sealed hole card, no bet box,
+// no buttons. Nothing else in this module distinguishes "signed out" from
+// "signed in but errored" because the felt treats both the same way: show
+// what is public, offer nothing that would 400.
+let state = {
+  season: null, week: null, hand: null, dealerUp: null, dealerFinal: null,
+  chips: TABLE.start, settled: false, table: [], myTeam: null
+};
+
+// Surfaced in the felt rather than alert()'d, so a bad bet doesn't block the
+// tab with a modal a phone can't easily dismiss. Cleared on every fresh load.
+let lastError = null;
+
+// One RPC in flight at a time. A double-click on DEAL is real (it is the
+// example the spec calls out), and a click on STAND while HIT is still in
+// flight would race two writes against the same hand; both are closed by
+// disabling every action button for the duration of the request, not just
+// the one that was clicked.
+let busy = false;
+
+export function pitState() { return { ...state }; }
+
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = s => String(s).replace(/[&<>"']/g, c => ESC[c]);
+
+const card = (c, faceDown = false) =>
+  faceDown
+    ? '<span class="bj-card bj-card-down" aria-label="face down"></span>'
+    : '<span class="bj-card' + (cardSuit(c) === 1 || cardSuit(c) === 2 ? ' bj-red' : '') +
+      '">' + cardLabel(c) + '</span>';
+
+const handHtml = (cards, faceDownAfter = Infinity) =>
+  cards.map((c, i) => card(c, i >= faceDownAfter)).join('');
+
+async function myTeam() {
+  try {
+    const res = await supabase.rpc('bj_my_team');
+    return res.error ? null : (res.data ?? null);
+  } catch {
+    return null;
+  }
+}
+
+export async function loadPit() {
+  const wk = await supabase.rpc('bj_live_week');
+  const live = Array.isArray(wk.data) ? wk.data[0] : wk.data;
+
+  // A settled week has no open table, so bj_live_week() returns nothing. Fall
+  // back to the newest row so the felt shows last week's result rather than
+  // going blank between Saturday and Tuesday.
+  let season = live?.cfb_season ?? null, week = live?.week ?? null;
+  let wrow = null;
+  if (season == null) {
+    const r = await supabase.from('blackjack_weeks')
+      .select('cfb_season, week, dealer_up, dealer_final, settled_at')
+      .order('cfb_season', { ascending: false }).order('week', { ascending: false }).limit(1);
+    wrow = r.data?.[0] ?? null;
+    season = wrow?.cfb_season ?? null; week = wrow?.week ?? null;
+  } else {
+    const r = await supabase.from('blackjack_weeks')
+      .select('cfb_season, week, dealer_up, dealer_final, settled_at')
+      .eq('cfb_season', season).eq('week', week).maybeSingle();
+    wrow = r.data ?? null;
+  }
+  if (!wrow) { state = { ...state, season: null, week: null }; return state; }
+
+  const hands = await supabase.from('blackjack_hands')
+    .select('team_id, bet, doubled, cards, state, outcome, payout')
+    .eq('cfb_season', season).eq('week', week);
+
+  const me = await myTeam();
+  // .eq('team_id', null) would ask Postgres "team_id = NULL", which is never
+  // true, so a signed-out visitor skips the bankroll round trip entirely
+  // rather than relying on that to come back empty.
+  const bank = me == null
+    ? { data: null }
+    : await supabase.from('blackjack_bankrolls')
+        .select('chips, hands_played').eq('cfb_season', season).eq('team_id', me).maybeSingle();
+
+  state = {
+    season, week,
+    dealerUp: wrow.dealer_up,
+    dealerFinal: wrow.dealer_final ?? null,
+    settled: !!wrow.settled_at,
+    chips: bank.data?.chips ?? TABLE.start,
+    hand: (hands.data || []).find(h => h.team_id === me) ?? null,
+    table: hands.data || [],
+    myTeam: me
+  };
+  return state;
+}
+
+function setBusy(mount, v) {
+  busy = v;
+  mount.querySelectorAll('[data-bj]').forEach(b => { b.disabled = v; });
+}
+
+function renderPit(mount) {
+  if (state.season == null) { mount.hidden = true; return; }
+  mount.hidden = false;
+
+  const s = state;
+  const dealer = s.settled && s.dealerFinal
+    ? handHtml(s.dealerFinal)
+    : handHtml([s.dealerUp]) + card(0, true);
+  const dealerTot = s.settled && s.dealerFinal ? handTotal(s.dealerFinal) : null;
+
+  let body;
+  if (s.myTeam == null) {
+    // No RPC seats a signed-out visitor, and none should - bj_my_team() is
+    // authenticated-only on purpose. This is the felt's whole story for them.
+    body = '<p class="bj-note">Sign in with a team to play this week&rsquo;s hand.</p>';
+  } else if (!s.hand) {
+    const r = legalBets(s.chips);
+    body = r
+      ? '<div class="bj-row"><label class="bj-label" for="bj-bet">BET</label>' +
+        '<input id="bj-bet" class="bj-bet" type="number" inputmode="numeric" ' +
+        'min="' + r.min + '" max="' + r.max + '" step="1" value="' + r.min + '">' +
+        '<button class="bj-btn" data-bj="deal">DEAL</button></div>' +
+        '<p class="bj-note">Table ' + r.min + '–' + r.max + '. Blackjack pays 3:2.</p>'
+      : '<p class="bj-note bj-out">You are out for the season. No reload.</p>';
+  } else {
+    const h = s.hand, tot = handTotal(h.cards);
+    const canAct = h.state === 'live' && !s.settled;
+    body =
+      '<div class="bj-row"><span class="bj-who">YOU</span>' + handHtml(h.cards) +
+      '<span class="bj-tot">' + tot + (isSoft(h.cards) ? ' soft' : '') + '</span></div>' +
+      (canAct
+        ? '<div class="bj-row">' +
+          '<button class="bj-btn" data-bj="hit">HIT</button>' +
+          '<button class="bj-btn" data-bj="stand">STAND</button>' +
+          (h.cards.length === 2 && h.bet * 2 <= s.chips
+            ? '<button class="bj-btn" data-bj="double">DOUBLE</button>' : '') +
+          '</div>'
+        : '<p class="bj-note">' + verdict(h) + '</p>');
+  }
+
+  mount.innerHTML =
+    '<div class="bj-felt scoreboard-wrap" data-bj-felt>' +
+      '<div class="scoreboard-header bj-head">THE PIT · WEEK ' + s.week +
+        '<span class="bj-bank">' + s.chips.toLocaleString() + ' chips</span></div>' +
+      '<div class="bj-body">' +
+        '<div class="bj-row"><span class="bj-who">DEALER</span>' + dealer +
+          (dealerTot != null ? '<span class="bj-tot">' + dealerTot + '</span>'
+                             : '<span class="bj-seal">sealed Tuesday</span>') + '</div>' +
+        body +
+        (lastError ? '<p class="bj-err">' + esc(lastError) + '</p>' : '') +
+      '</div>' +
+    '</div>';
+
+  mount.querySelectorAll('[data-bj]').forEach(btn => {
+    btn.addEventListener('click', () => act(btn.dataset.bj, mount), { once: true });
+  });
+}
+
+function verdict(h) {
+  if (h.state === 'busted' && h.outcome == null) return 'Bust. Settles at kickoff.';
+  if (h.outcome == null) return 'Standing on ' + handTotal(h.cards) + '. Settles at kickoff.';
+  const n = h.payout > 0 ? '+' + h.payout : String(h.payout);
+  return ({ win: 'Won', lose: 'Lost', push: 'Pushed', blackjack: 'BLACKJACK' })[h.outcome] +
+         ' · ' + n + ' chips';
+}
+
+// Postgres already writes every one of these for a player to read - see the
+// list in the plan. The one exception is a raw unique-violation, which is
+// what a double-clicked DEAL produces, and which nobody but a DBA would parse.
+function friendlyError(err) {
+  const msg = err?.message || String(err);
+  if (err?.code === '23505' || /duplicate key/i.test(msg)) {
+    return 'You have already played this week’s hand.';
+  }
+  return msg;
+}
+
+async function act(what, mount) {
+  if (busy) return;
+  setBusy(mount, true);
+  const fn = { deal: 'bj_deal', hit: 'bj_hit', stand: 'bj_stand', double: 'bj_double' }[what];
+  const args = what === 'deal'
+    ? { p_bet: Number(mount.querySelector('#bj-bet')?.value || 0) } : {};
+  const res = await supabase.rpc(fn, args);
+  lastError = res.error ? friendlyError(res.error) : null;
+  await loadPit();
+  renderPit(mount);
+  busy = false;
+}
+
+export default async function initPit(mount) {
+  if (!mount) return;
+  // Belt and braces, exactly as the leaderboard already does for the slots: a
+  // dead cron must not be able to hide a result.
+  await supabase.rpc('bj_settle_week').catch(() => {});
+  lastError = null;
+  await loadPit();
+  renderPit(mount);
+}

@@ -70,7 +70,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=2061f197">
+  <link rel="stylesheet" href="./css/base.css?v=71c3df5c">
   <link rel="stylesheet" href="./css/theme-halloween.css?v=c39d5271">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=c3815cb1">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=23a99229">
@@ -455,6 +455,10 @@
 
     <div id="week-recap" class="mt-4" hidden></div>
 
+    <!-- The pit. Hidden on every view but Tiebreakers, because chips are a
+         tiebreaker and that is the board where ties are settled. -->
+    <div id="pit" class="mt-4" hidden></div>
+
     <div id="weekly-submissions" class="scoreboard-wrap mt-4">
       <div class="scoreboard-header" style="padding:.6rem 1rem;border-bottom:3px solid #444;">
         <span style="font-family:'Teko','Oswald',sans-serif;font-size:1.3rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#ddd;">
@@ -523,6 +527,7 @@
     import { sameTeam, escapeHtml, buildPickMap, buildSlotsMap, buildJackpotMap, getTeamColor, markSlotCell } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
+    import initPit, { loadPit, pitState } from './js/blackjack.js';
 
     // DOM
     const seasonSelect = document.getElementById('season-select');
@@ -1331,6 +1336,7 @@
     async function loadWeek(week){
       // Number(null) is 0, which is finite - so this has to test for null first.
       if (week == null || !Number.isFinite(Number(week))) return;
+      { const el = document.getElementById('pit'); if (el) { el.hidden = true; el.innerHTML = ''; } }
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Week ${week}…`);
       isPlayoffView = false;
@@ -1421,6 +1427,7 @@
 
     async function loadPlayoffWeek(){
       { const el = document.getElementById('week-recap'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+      { const el = document.getElementById('pit'); if (el) { el.hidden = true; el.innerHTML = ''; } }
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Playoff…`);
       isPlayoffView = true;
@@ -1617,6 +1624,10 @@
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap, true, tbPoints, true);
       showTable();
+
+      // The pit lives on this board and only this board: chips are a
+      // tiebreaker, so they belong where ties are settled.
+      initPit(document.getElementById('pit'));
 
       startLiveTicker();
       const decided = games.filter(g => g.winner != null).length;
