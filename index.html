@@ -2918,7 +2918,13 @@
       // be late by, which happens to be the exact minute this page cares about.
       // Idempotent and signed-in only - see resolve_slot_picks() in the
       // migration. Failure is silently fine: the next cron tick gets it.
-      supabase.rpc('resolve_slot_picks').catch(() => {});
+      //
+      // supabase.rpc() returns a PostgrestBuilder, which is PromiseLike (only
+      // .then()) rather than an actual Promise, so chaining .catch() directly
+      // on it throws synchronously - which was skipping the chaseRevealedPicks()
+      // call right below, every time. revealNow() isn't async and nothing awaits
+      // it, so wrap in a real Promise rather than changing its signature.
+      Promise.resolve(supabase.rpc('resolve_slot_picks')).catch(() => {});
       // Then go and get what the database was hiding a second ago.
       chaseRevealedPicks();
     }
