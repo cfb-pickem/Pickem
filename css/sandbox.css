@@ -215,3 +215,7 @@
 [data-sandbox="on"] .slot-ball-preview .jp-sound,
 [data-sandbox="on"] .slot-ball-preview .jp-bulbs{ display:none; }
 [data-sandbox="on"] .slot-ball-preview .jp-ball{ width:calc(54px * var(--jp-swell, 1)); }
+
+/* The blackjack bench sits beside the slot lab, not under it - two panels
+   anchored at the same fixed corner would just cover each other. */
+.bj-panel{ left:auto; right:1rem; }

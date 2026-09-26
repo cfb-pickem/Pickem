@@ -2641,3 +2641,11 @@ td[data-slots]{ cursor:pointer; }
   text-transform:uppercase; letter-spacing:.04em; color:var(--cfp-gold-2);
   text-align:center; margin:.2rem 0 0; }
 @media (prefers-reduced-motion: reduce){ .bj-stage{ backdrop-filter:none; } }
+
+/* The only signpost to the pit, now that the reveal waits on the tiebreaker
+   board instead of ambushing the leaderboard. A line of text beside the
+   football - the picks page does not get a card table. */
+.bj-nudge{ display:block; text-align:center; margin-top:.5rem; font-size:.75rem;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--cfp-gold-2);
+  text-decoration:none; }
+.bj-nudge:hover{ text-decoration:underline; }
