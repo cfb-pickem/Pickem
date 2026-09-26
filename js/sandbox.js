@@ -51,6 +51,7 @@ import { runSlots, setRevealSpeed } from './slots.js';
 import { markSlotCell } from './utils.js';
 import { previewJackpot, setMeter, jackpotOdds } from './jackpot.js';
 import { lever, unlock } from './slotsound.js';
+import { handTotal, isNatural, settleHand, cardLabel, dealerPlay } from './blackjack.js';
 
 // KEEP THE GATE AT THE BOTTOM OF THIS FILE. Function declarations hoist but
 // `const` and `let` do not, so calling enableSandbox() from up here would reach
@@ -96,6 +97,7 @@ function enableSandbox() {
   // --------------------------------------------------------------------
 
   initSlotLab();
+  initBjBench();
 }
 
 function mountBanner() {
@@ -387,6 +389,67 @@ function initSlotLab() {
   // takeover is that the football is an event rather than furniture.
   previewJackpot(0, labPanel.querySelector('[data-ball-preview]'));
   labNote('Roll it to watch a kickoff reveal.');
+}
+
+// ----------------------------------------------------------------------
+// BLACKJACK BENCH. No RPCs, no meter, no week - two hands typed in and the
+// same settleHand() the felt uses, so an argument about what a hand pays can
+// be settled in ten seconds rather than waiting for a real dealer natural
+// next April. Cards are 0..51: rank = card % 13 (0=A, 1-8 = 2-9, 9-12 =
+// 10/J/Q/K), suit = card / 13.
+// ----------------------------------------------------------------------
+
+function mountBjPanel() {
+  const p = document.createElement('div');
+  p.className = 'slot-panel bj-panel';
+  p.innerHTML =
+    '<div class="slot-panel-title">Blackjack bench <span class="slot-panel-tag">sandbox</span></div>' +
+    '<label class="slot-panel-field">Your cards' +
+      '<input class="slot-input" data-bj-you value="0 12">' +
+    '</label>' +
+    '<label class="slot-panel-field">Dealer up+hole' +
+      '<input class="slot-input" data-bj-dealer value="0 10">' +
+    '</label>' +
+    '<label class="slot-panel-field">Bet' +
+      '<input class="slot-input" data-bj-bet type="number" value="100">' +
+    '</label>' +
+    '<label class="slot-panel-field slot-panel-check">' +
+      '<input type="checkbox" class="slot-check" data-bj-dbl> Doubled' +
+    '</label>' +
+    '<div class="slot-panel-row">' +
+      '<button type="button" class="slot-btn" data-bj-run>Settle</button>' +
+    '</div>' +
+    '<pre class="slot-panel-note" data-bj-out>&nbsp;</pre>' +
+    '<div class="slot-panel-foot">Same settleHand() the felt uses. Nothing is written to the database.</div>';
+  document.body.appendChild(p);
+
+  // Anything outside 0..51 is a typo, not a card - drop it rather than let
+  // NaN reach handTotal() and produce a total that looks plausible but isn't.
+  const parse = s => s.split(/[\s,]+/).filter(Boolean).map(Number)
+    .filter(n => Number.isInteger(n) && n >= 0 && n <= 51);
+
+  p.querySelector('[data-bj-run]').addEventListener('click', () => {
+    const you = parse(p.querySelector('[data-bj-you]').value);
+    const up  = parse(p.querySelector('[data-bj-dealer]').value);
+    const bet = Number(p.querySelector('[data-bj-bet]').value) || 0;
+    const dbl = p.querySelector('[data-bj-dbl]').checked;
+    // The draw only fires past the up+hole pair - a natural in either hand
+    // never draws, same as dealerPlay() itself decides on the felt.
+    const dealer = dealerPlay(up, () => Math.floor(Math.random() * 52));
+    const r = settleHand({ cards: you, bet, doubled: dbl }, dealer);
+    p.querySelector('[data-bj-out]').textContent =
+      'you     ' + you.map(cardLabel).join(' ') + '  = ' + handTotal(you) +
+      (isNatural(you) ? '  NATURAL' : '') + '\n' +
+      'dealer  ' + dealer.map(cardLabel).join(' ') + '  = ' + handTotal(dealer) +
+      (isNatural(dealer) ? '  NATURAL' : '') + '\n\n' +
+      r.outcome.toUpperCase() + '  ' + (r.payout > 0 ? '+' : '') + r.payout;
+  });
+
+  return p;
+}
+
+function initBjBench() {
+  mountBjPanel();
 }
 
 // ======================================================================

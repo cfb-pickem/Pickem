@@ -70,7 +70,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=2061f197">
+  <link rel="stylesheet" href="./css/base.css?v=2118052b">
   <link rel="stylesheet" href="./css/theme-halloween.css?v=c39d5271">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=c3815cb1">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=23a99229">
@@ -397,7 +397,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=24a6fb56">
+  <link rel="stylesheet" href="./css/tailwind.css?v=6d5c7ba1">
 </head>
 
 <body data-page="leaderboard">
@@ -454,6 +454,10 @@
     </div>
 
     <div id="week-recap" class="mt-4" hidden></div>
+
+    <!-- The pit. Hidden on every view but Tiebreakers, because chips are a
+         tiebreaker and that is the board where ties are settled. -->
+    <div id="pit" class="mt-4" hidden></div>
 
     <div id="weekly-submissions" class="scoreboard-wrap mt-4">
       <div class="scoreboard-header" style="padding:.6rem 1rem;border-bottom:3px solid #444;">
@@ -523,6 +527,7 @@
     import { sameTeam, escapeHtml, buildPickMap, buildSlotsMap, buildJackpotMap, getTeamColor, markSlotCell } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
+    import initPit, { resetPit, revealHand } from './js/blackjack.js';
 
     // DOM
     const seasonSelect = document.getElementById('season-select');
@@ -559,6 +564,10 @@
     // NEVER folded into points, records or stats - see loadSeasonData(), which
     // keeps them in their own cache field so they cannot leak into the season.
     let isTiebreakerView = false;
+    // Which of the two tiebreaker boards is on screen. Chips are deliberately
+    // absent from the playoff tiebreaker cascade, so the chips column needs a
+    // sharper gate than isTiebreakerView alone - that flag is true for both.
+    let isPlayoffTbView = false;
 
     let lastTeams = [];
     let lastPickMap = {};
@@ -569,6 +578,9 @@
     // folded into it: a popped pick has no team, so the board draws it as words
     // rather than a crest and scores it without consulting the winner.
     let lastJackpotMap = {};
+    // team_id -> chips, for the regular-season tiebreaker board only. Read-only:
+    // nothing in this file ever writes a chip. See loadTiebreakerWeek().
+    let lastChipsMap = Object.create(null);
     // Whether the week on screen is the one being played. The reveal replays on
     // every page load, but only for the live week - unbounded, week 12 would mean
     // forty cells spinning before anybody could read a score.
@@ -589,6 +601,13 @@
     // standalone tiebreakers page did.
     let hasRegTiebreakers = false;
     let hasPlayoffTiebreakers = false;
+
+    // Set synchronously by loadWeeksForSeason() when the picks-page nudge
+    // (index.html#tiebreakers) drives the week picker itself - see F2. startup()
+    // reads this right after awaiting that call to decide whether the default
+    // week-selection logic below should run at all, so the hash's own loader
+    // never has a second one dispatched on top of it for the same board.
+    let hashTiebreakerConsumed = false;
 
     let showPicks = true;
 
@@ -908,53 +927,21 @@
       }
       seasonSelect.value = String(currentSeason);
 
-      // IMPORTANT: loadWeeksForSeason now RETURNS maxPickedWeek
-      const maxPickedWeek = await loadWeeksForSeason(currentSeason);
-
-      // Default behavior:
-      // - If max picked week > 15, default to playoff
-      // - Else default to max picked regular week (week 1-15)
-      if (Number.isFinite(maxPickedWeek) && maxPickedWeek > 15) {
-        currentWeek = 'playoff';
-        isPlayoffView = true;
-        weekSelect.value = 'playoff';
-        localStorage.removeItem(STORAGE_KEYS.lastWeek);
-      } else if (Number.isFinite(maxPickedWeek)) {
-        currentWeek = maxPickedWeek;
-        isPlayoffView = false;
-        weekSelect.value = String(currentWeek);
-        setCached(STORAGE_KEYS.lastWeek, currentWeek);
-      } else {
-        currentWeek = null;
-        isPlayoffView = false;
-      }
-
-      // Rendering needs the current user's team (row highlight) and the logo map.
-      await Promise.all([navReady, userReady, assetsReady]);
-
-      // ✅ Compute points based on selected view
-      if (isPlayoffView) {
-        await computePlayoffWins();
-      } else if (Number.isFinite(currentWeek)) {
-        await computeSeasonWinsThroughWeek(currentWeek);
-      } else {
-        winsByTeamRegular = Object.create(null);
-      }
-
-      if (isPlayoffView) {
-        await loadPlayoffWeek();
-      } else if (currentWeek != null) {
-        await loadWeek(currentWeek);
-      } else {
-        await loadTeamsOnly();
-      }
-
+      // Installed BEFORE the first loadWeeksForSeason() call below, not after
+      // it. That call can dispatch a synthetic 'change' on weekSelect itself
+      // (the #tiebreakers hash nudge from picks.html - see F2), and a
+      // dispatched event with no listener yet attached is silently dropped:
+      // that was the whole bug. Hoisting costs nothing here since neither
+      // handler runs until something changes the corresponding <select>.
       seasonSelect.onchange = async () => {
         ++loadSeq;                       // abandon anything already in flight
         currentSeason = Number(seasonSelect.value);
         setCached(STORAGE_KEYS.lastSeason, currentSeason);
 
         const maxPickedWeek2 = await loadWeeksForSeason(currentSeason);
+        // A hash-driven jump inside that call already picked the board and
+        // started loading it - see the matching check in startup() below.
+        if (hashTiebreakerConsumed) { hashTiebreakerConsumed = false; return; }
 
         if (Number.isFinite(maxPickedWeek2) && maxPickedWeek2 > 15) {
           currentWeek = 'playoff';
@@ -1010,6 +997,59 @@
           await loadWeek(currentWeek);
         }
       };
+
+      // IMPORTANT: loadWeeksForSeason now RETURNS maxPickedWeek
+      const maxPickedWeek = await loadWeeksForSeason(currentSeason);
+
+      // The #tiebreakers hash (picks.html's nudge) drives weekSelect itself
+      // from inside the call above, via the onchange now installed ahead of
+      // it - that has already set isTiebreakerView/currentWeek and kicked off
+      // loadTiebreakerWeek(). Falling through to the default-week logic below
+      // would start a second, unrelated loader race against it for the same
+      // board - see F2. Skip straight to done.
+      if (hashTiebreakerConsumed) {
+        hashTiebreakerConsumed = false;
+        await Promise.all([navReady, userReady, assetsReady]);
+        return;
+      }
+
+      // Default behavior:
+      // - If max picked week > 15, default to playoff
+      // - Else default to max picked regular week (week 1-15)
+      if (Number.isFinite(maxPickedWeek) && maxPickedWeek > 15) {
+        currentWeek = 'playoff';
+        isPlayoffView = true;
+        weekSelect.value = 'playoff';
+        localStorage.removeItem(STORAGE_KEYS.lastWeek);
+      } else if (Number.isFinite(maxPickedWeek)) {
+        currentWeek = maxPickedWeek;
+        isPlayoffView = false;
+        weekSelect.value = String(currentWeek);
+        setCached(STORAGE_KEYS.lastWeek, currentWeek);
+      } else {
+        currentWeek = null;
+        isPlayoffView = false;
+      }
+
+      // Rendering needs the current user's team (row highlight) and the logo map.
+      await Promise.all([navReady, userReady, assetsReady]);
+
+      // ✅ Compute points based on selected view
+      if (isPlayoffView) {
+        await computePlayoffWins();
+      } else if (Number.isFinite(currentWeek)) {
+        await computeSeasonWinsThroughWeek(currentWeek);
+      } else {
+        winsByTeamRegular = Object.create(null);
+      }
+
+      if (isPlayoffView) {
+        await loadPlayoffWeek();
+      } else if (currentWeek != null) {
+        await loadWeek(currentWeek);
+      } else {
+        await loadTeamsOnly();
+      }
     }
     startup();
 
@@ -1150,11 +1190,25 @@
       hasRegTiebreakers     = tbAll.some(g => g.week == null || Number(g.week) < 16);
       hasPlayoffTiebreakers = tbAll.some(g => g.week != null && Number(g.week) >= 16);
 
+      // The pit deals a hand every Tuesday whether or not the commissioner has
+      // flagged any tiebreaker games yet - a season can go all year with zero
+      // rows in all_games.tiebreaker and still have a live blackjack table. The
+      // board must be reachable either way, or the felt and the chips column
+      // exist in the database with no door in the UI to reach them.
+      let hasBlackjackTable = false;
+      try {
+        const bj = await supabase.from('blackjack_weeks')
+          .select('week').eq('cfb_season', season).limit(1);
+        hasBlackjackTable = !!(bj.data && bj.data.length);
+      } catch (e) {
+        console.warn('blackjack_weeks lookup failed:', e);
+      }
+
       let html = '';
       if (regularWeeks.length){
         html += regularWeeks.map(w=>`<option value="${w}">Week ${w}</option>`).join('');
       }
-      if (hasRegTiebreakers){
+      if (hasRegTiebreakers || hasBlackjackTable){
         html += `<option value="tiebreakers">Tiebreakers</option>`;
       }
       if (hasPlayoffOption){
@@ -1166,6 +1220,28 @@
 
       weekSelect.innerHTML = html;
       setWeekPickerVisible(true);
+
+      // Arrive from the picks page nudge straight onto the board the pit is on.
+      // This only works because startup() hoists weekSelect.onchange ahead of
+      // the call that reaches this line (F2) - dispatchEvent() is a no-op
+      // against a select with no listener, which is exactly how this used to
+      // silently drop the nudge on every cold load.
+      if (location.hash === '#tiebreakers'){
+        // Replace rather than assign: `location.hash = ''` pushes a history
+        // entry, so Back from here would land on an inert #tiebreakers URL
+        // instead of returning to the picks page.
+        history.replaceState(null, '', location.pathname + location.search);
+        weekSelect.value = 'tiebreakers';
+        // Only claim the hash if the option EXISTS. Assigning a value with no
+        // matching <option> silently leaves it '', and consuming the hash on
+        // that path told startup() a board was loading when none was - a blank
+        // picker stuck on "Loading weeks", with no way back but a reload.
+        if (weekSelect.value === 'tiebreakers'){
+          hashTiebreakerConsumed = true;
+          weekSelect.dispatchEvent(new Event('change'));
+        }
+      }
+
       return maxPickedWeek;
     }
 
@@ -1286,6 +1362,13 @@
     async function loadTeamsOnly(){
       status(`Loading Season ${currentSeason}…`, false, true);
       isPlayoffView = false;
+      isTiebreakerView = false;
+      // Same teardown as loadWeek()/loadPlayoffWeek(): a preseason board with
+      // no picked games yet is still a board switch away from the pit, and it
+      // was the one loader missing this - see the minors list.
+      resetPit();
+      { const el = document.getElementById('pit'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+      lastChipsMap = Object.create(null);
       stopLiveTicker();
       headerStatusEls.clear();
 
@@ -1331,9 +1414,17 @@
     async function loadWeek(week){
       // Number(null) is 0, which is finite - so this has to test for null first.
       if (week == null || !Number.isFinite(Number(week))) return;
+      // resetPit() bumps blackjack.js's generation token so an in-flight
+      // HIT/STAND/DEAL from the tiebreaker board cannot repaint the felt onto
+      // this board once its RPC resolves - see F2.
+      resetPit();
+      { const el = document.getElementById('pit'); if (el) { el.hidden = true; el.innerHTML = ''; } }
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Week ${week}…`);
       isPlayoffView = false;
+      isPlayoffTbView = false;
+      isTiebreakerView = false;
+      lastChipsMap = Object.create(null);
       stopLiveTicker();
       headerStatusEls.clear();
 
@@ -1421,9 +1512,16 @@
 
     async function loadPlayoffWeek(){
       { const el = document.getElementById('week-recap'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+      // See loadWeek() - same generation bump, same reason: the pit must not
+      // survive a navigation to a board it doesn't belong on.
+      resetPit();
+      { const el = document.getElementById('pit'); if (el) { el.hidden = true; el.innerHTML = ''; } }
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Playoff…`);
       isPlayoffView = true;
+      isPlayoffTbView = false;
+      isTiebreakerView = false;
+      lastChipsMap = Object.create(null);
       stopLiveTicker();
       headerStatusEls.clear();
 
@@ -1529,12 +1627,18 @@
     // reads from seasonCache.tbGames / tbPicks, which no other view touches.
     async function loadTiebreakerWeek(kind){
       { const el = document.getElementById('week-recap'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+      // Unconditional, unlike the branch below: two rapid loads of THIS SAME
+      // board (regular tiebreakers twice in a row, say) must not share a
+      // generation either, or the first load's felt-and-reveal setup can
+      // still resolve after the second has repainted the very same mount.
+      resetPit();
       const isPlayoffTb = kind === 'playoff';
       const label = isPlayoffTb ? 'Playoff Tiebreakers' : 'Tiebreakers';
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} \u2022 ${label}\u2026`);
       isPlayoffView = false;
       isTiebreakerView = true;
+      isPlayoffTbView = isPlayoffTb;
       stopLiveTicker();
       headerStatusEls.clear();
 
@@ -1603,6 +1707,18 @@
         if (sameTeam(p.pick, w)) tbPoints[p.team_id] = (tbPoints[p.team_id] || 0) + 1;
       }
 
+      // Chips are the third regular-season tiebreaker, so they belong on this
+      // board beside the football ones. Read only - nothing here can move one.
+      // Absent from the playoff tiebreaker cascade on purpose: left empty here,
+      // lastChipsMap stays empty and the column simply does not draw below.
+      let chipsMap = Object.create(null);
+      if (!isPlayoffTb) {
+        const cr = await supabase.from('blackjack_bankrolls')
+          .select('team_id, chips').eq('cfb_season', currentSeason);
+        for (const r of (cr.data || [])) chipsMap[r.team_id] = r.chips;
+      }
+      lastChipsMap = chipsMap;
+
       const teamsSorted = [...teamsForSeason(teamRows)].sort((a,b)=>{
         const pa = getPoints(tbPoints, a.team_id);
         const pb = getPoints(tbPoints, b.team_id);
@@ -1617,6 +1733,32 @@
       renderHeader(gameNameMap, games);
       renderTable(teamsSorted, pickMap, winnerMap, true, tbPoints, true);
       showTable();
+
+      // The pit lives on the REGULAR-SEASON tiebreaker board and only there.
+      // Chips are the third regular-season tiebreaker (see the chipsMap block
+      // above), and are deliberately absent from the playoff cascade - so a
+      // player looking at Playoff Tiebreakers must not be able to bet real
+      // chips there. isPlayoffTbView gates the chips column the same way.
+      // The reveal rides the same arrival - once per player per week, and
+      // never on the weekly board, which already has the picks flip, the
+      // slots spin and the football.
+      //
+      // The re-check right here matters: an intervening await (the
+      // blackjack_bankrolls fetch above) means a newer selection could have
+      // won the race since the last mySeq check, and initPit() bumping/
+      // reading `gen` is not the same guard as loadSeq - it protects the felt
+      // from a stale RPC, not this function from starting a second felt on
+      // top of a load that has already moved on.
+      if (mySeq !== loadSeq) return;
+      if (isPlayoffTb) {
+        const el = document.getElementById('pit');
+        if (el) { el.hidden = true; el.innerHTML = ''; }
+      } else {
+        // initPit() resolves `true` only if it painted for THIS generation -
+        // a stale one resolves `false` (see C1), so a torn-down load can
+        // never still trigger the reveal overlay after the fact.
+        initPit(document.getElementById('pit')).then(ok => { if (ok) revealHand(); }).catch(() => {});
+      }
 
       startLiveTicker();
       const decided = games.filter(g => g.winner != null).length;
@@ -2422,6 +2564,18 @@
         theadRow.appendChild(th);
       });
 
+      // Chips are the third regular-season tiebreaker, so the column rides only
+      // the board where ties are settled - never the playoff tiebreaker cascade,
+      // which does not consult chips at all. isTiebreakerView alone is true for
+      // both tiebreaker boards, hence the extra isPlayoffTbView check.
+      if (isTiebreakerView && !isPlayoffView && !isPlayoffTbView) {
+        const thChips = document.createElement('th');
+        thChips.className = 'px-2 py-2 text-right whitespace-nowrap bg-[var(--cfp-black)] font-[Oswald] tracking-wide text-white';
+        thChips.title = 'Third regular-season tiebreaker';
+        thChips.innerHTML = 'SEASON<br>CHIPS';
+        theadRow.appendChild(thChips);
+      }
+
       refreshLiveTag();
     }
 
@@ -2626,6 +2780,24 @@
 
           tr.appendChild(td);
         });
+
+        // Literally the same gate as the header (see renderHeader): the two
+        // used to differ by !isPlayoffView, which is normally redundant with
+        // isTiebreakerView being reset elsewhere - except isTiebreakerView
+        // wasn't reset by loadWeek()/loadPlayoffWeek() (F4), so the two gates
+        // could disagree for a stale render. Keep them identical so a future
+        // reset bug can only ever hide the column in both places or neither.
+        if (isTiebreakerView && !isPlayoffView && !isPlayoffTbView) {
+          const c = lastChipsMap[team.team_id];
+          const td = document.createElement('td');
+          td.className = 'px-2 py-2 text-right whitespace-nowrap bj-chips';
+          // A player sitting on exactly the starting stack has never played, and
+          // the board is allowed to say so - that is the only thing keeping a
+          // hoarder honest, since the table runs at real Vegas odds.
+          td.textContent = (c == null) ? '—' : Number(c).toLocaleString();
+          if (c === 0) td.classList.add('bj-busted');
+          tr.appendChild(td);
+        }
 
         tbody.appendChild(tr);
 
@@ -2856,7 +3028,13 @@
       // be late by, which happens to be the exact minute this page cares about.
       // Idempotent and signed-in only - see resolve_slot_picks() in the
       // migration. Failure is silently fine: the next cron tick gets it.
-      supabase.rpc('resolve_slot_picks').catch(() => {});
+      //
+      // supabase.rpc() returns a PostgrestBuilder, which is PromiseLike (only
+      // .then()) rather than an actual Promise, so chaining .catch() directly
+      // on it throws synchronously - which was skipping the chaseRevealedPicks()
+      // call right below, every time. revealNow() isn't async and nothing awaits
+      // it, so wrap in a real Promise rather than changing its signature.
+      Promise.resolve(supabase.rpc('resolve_slot_picks')).catch(() => {});
       // Then go and get what the database was hiding a second ago.
       chaseRevealedPicks();
     }
