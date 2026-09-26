@@ -1561,6 +1561,11 @@
     // reads from seasonCache.tbGames / tbPicks, which no other view touches.
     async function loadTiebreakerWeek(kind){
       { const el = document.getElementById('week-recap'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+      // Unconditional, unlike the branch below: two rapid loads of THIS SAME
+      // board (regular tiebreakers twice in a row, say) must not share a
+      // generation either, or the first load's felt-and-reveal setup can
+      // still resolve after the second has repainted the very same mount.
+      resetPit();
       const isPlayoffTb = kind === 'playoff';
       const label = isPlayoffTb ? 'Playoff Tiebreakers' : 'Tiebreakers';
       const mySeq = loadSeq;
@@ -1671,12 +1676,22 @@
       // The reveal rides the same arrival - once per player per week, and
       // never on the weekly board, which already has the picks flip, the
       // slots spin and the football.
+      //
+      // The re-check right here matters: an intervening await (the
+      // blackjack_bankrolls fetch above) means a newer selection could have
+      // won the race since the last mySeq check, and initPit() bumping/
+      // reading `gen` is not the same guard as loadSeq - it protects the felt
+      // from a stale RPC, not this function from starting a second felt on
+      // top of a load that has already moved on.
+      if (mySeq !== loadSeq) return;
       if (isPlayoffTb) {
-        resetPit();
         const el = document.getElementById('pit');
         if (el) { el.hidden = true; el.innerHTML = ''; }
       } else {
-        initPit(document.getElementById('pit')).then(revealHand).catch(() => {});
+        // initPit() resolves `true` only if it painted for THIS generation -
+        // a stale one resolves `false` (see C1), so a torn-down load can
+        // never still trigger the reveal overlay after the fact.
+        initPit(document.getElementById('pit')).then(ok => { if (ok) revealHand(); }).catch(() => {});
       }
 
       startLiveTicker();

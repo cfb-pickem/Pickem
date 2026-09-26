@@ -328,8 +328,14 @@ async function act(what, mount) {
   }
 }
 
+// Resolves true only if THIS call actually painted `mount` for the
+// generation it started with, false for every early bail-out. A bare
+// `return` on a stale generation still resolves (just with `undefined`),
+// and `undefined` is falsy but `.then(revealHand)` doesn't check that - it
+// calls revealHand() regardless of what initPit() resolved to. The caller
+// (index.html) has to gate on this explicitly: `.then(ok => { if (ok) ... })`.
 export default async function initPit(mount) {
-  if (!mount) return;
+  if (!mount) return false;
   const myGen = gen;
   const me = await myTeam();
   // bj_settle_week() is authenticated-only; firing it for every anonymous page
@@ -341,11 +347,12 @@ export default async function initPit(mount) {
   // chaining either throws synchronously before anything ever renders. Await
   // it and swallow the rejection in a try/catch instead.
   if (me != null) { try { await supabase.rpc('bj_settle_week'); } catch {} }
-  if (myGen !== gen) return;
+  if (myGen !== gen) return false;
   lastError = null;
   await loadPit(me);
-  if (myGen !== gen) return;
+  if (myGen !== gen) return false;
   renderPit(mount);
+  return true;
 }
 
 // --- the reveal -------------------------------------------------------------
@@ -431,16 +438,22 @@ export async function revealHand() {
     return close(myGen === gen);
   }
 
+  // `|| closed` at every checkpoint, not just `myGen !== gen`: a click
+  // mid-wait already removed the stage via the listener above, but this
+  // suspended function resumes anyway at its next await and would otherwise
+  // keep calling paint() on a now-detached node for the rest of the
+  // sequence - harmless to the screen, but a ~4s zombie timer nobody asked
+  // for and a repeated cost to hold, one bug shy of also double-closing.
   paint([s.dealerFinal[0]], false);                    // the up-card, as it stood all week
   await wait(600);
-  if (myGen !== gen) return close(false);
+  if (myGen !== gen || closed) return close(false);
   paint(s.dealerFinal.slice(0, 2), false);             // the hole card flips
   await wait(800);
-  if (myGen !== gen) return close(false);
+  if (myGen !== gen || closed) return close(false);
   for (let i = 3; i <= s.dealerFinal.length; i++) {    // draw to 17
     paint(s.dealerFinal.slice(0, i), false);
     await wait(700);
-    if (myGen !== gen) return close(false);
+    if (myGen !== gen || closed) return close(false);
   }
   paint(s.dealerFinal, true);
   await wait(1200);

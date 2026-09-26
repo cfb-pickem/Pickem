@@ -24,3 +24,8 @@ supabase/config.toml
 .supabase/
 *.dump
 *.sql.gz
+
+# tools/blackjack-race.test.mjs copies js/blackjack.js here on every run so
+# it always tests the current source rather than a stale duplicate - nothing
+# to commit, and committing it would just be a diff nobody remembered to make.
+tools/harness/js/blackjack.js
