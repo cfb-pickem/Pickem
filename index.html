@@ -1227,13 +1227,19 @@
       // against a select with no listener, which is exactly how this used to
       // silently drop the nudge on every cold load.
       if (location.hash === '#tiebreakers'){
-        // Consumed once, right away: a season change re-runs this function,
-        // and the hash must not replay the jump on a board switch the player
-        // never asked for.
-        location.hash = '';
-        hashTiebreakerConsumed = true;
+        // Replace rather than assign: `location.hash = ''` pushes a history
+        // entry, so Back from here would land on an inert #tiebreakers URL
+        // instead of returning to the picks page.
+        history.replaceState(null, '', location.pathname + location.search);
         weekSelect.value = 'tiebreakers';
-        weekSelect.dispatchEvent(new Event('change'));
+        // Only claim the hash if the option EXISTS. Assigning a value with no
+        // matching <option> silently leaves it '', and consuming the hash on
+        // that path told startup() a board was loading when none was - a blank
+        // picker stuck on "Loading weeks", with no way back but a reload.
+        if (weekSelect.value === 'tiebreakers'){
+          hashTiebreakerConsumed = true;
+          weekSelect.dispatchEvent(new Event('change'));
+        }
       }
 
       return maxPickedWeek;
