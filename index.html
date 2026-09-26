@@ -70,7 +70,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto:wght@400;500;700&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="./css/base.css?v=71c3df5c">
+  <link rel="stylesheet" href="./css/base.css?v=a88e9737">
   <link rel="stylesheet" href="./css/theme-halloween.css?v=c39d5271">
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=c3815cb1">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=23a99229">
@@ -397,7 +397,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=24a6fb56">
+  <link rel="stylesheet" href="./css/tailwind.css?v=6d5c7ba1">
 </head>
 
 <body data-page="leaderboard">
@@ -564,6 +564,10 @@
     // NEVER folded into points, records or stats - see loadSeasonData(), which
     // keeps them in their own cache field so they cannot leak into the season.
     let isTiebreakerView = false;
+    // Which of the two tiebreaker boards is on screen. Chips are deliberately
+    // absent from the playoff tiebreaker cascade, so the chips column needs a
+    // sharper gate than isTiebreakerView alone - that flag is true for both.
+    let isPlayoffTbView = false;
 
     let lastTeams = [];
     let lastPickMap = {};
@@ -574,6 +578,9 @@
     // folded into it: a popped pick has no team, so the board draws it as words
     // rather than a crest and scores it without consulting the winner.
     let lastJackpotMap = {};
+    // team_id -> chips, for the regular-season tiebreaker board only. Read-only:
+    // nothing in this file ever writes a chip. See loadTiebreakerWeek().
+    let lastChipsMap = Object.create(null);
     // Whether the week on screen is the one being played. The reveal replays on
     // every page load, but only for the live week - unbounded, week 12 would mean
     // forty cells spinning before anybody could read a score.
@@ -1340,6 +1347,8 @@
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Week ${week}…`);
       isPlayoffView = false;
+      isPlayoffTbView = false;
+      lastChipsMap = Object.create(null);
       stopLiveTicker();
       headerStatusEls.clear();
 
@@ -1431,6 +1440,8 @@
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Playoff…`);
       isPlayoffView = true;
+      isPlayoffTbView = false;
+      lastChipsMap = Object.create(null);
       stopLiveTicker();
       headerStatusEls.clear();
 
@@ -1542,6 +1553,7 @@
       status(`Loading S${currentSeason} \u2022 ${label}\u2026`);
       isPlayoffView = false;
       isTiebreakerView = true;
+      isPlayoffTbView = isPlayoffTb;
       stopLiveTicker();
       headerStatusEls.clear();
 
@@ -1609,6 +1621,18 @@
         if (w == null) continue;
         if (sameTeam(p.pick, w)) tbPoints[p.team_id] = (tbPoints[p.team_id] || 0) + 1;
       }
+
+      // Chips are the third regular-season tiebreaker, so they belong on this
+      // board beside the football ones. Read only - nothing here can move one.
+      // Absent from the playoff tiebreaker cascade on purpose: left empty here,
+      // lastChipsMap stays empty and the column simply does not draw below.
+      let chipsMap = Object.create(null);
+      if (!isPlayoffTb) {
+        const cr = await supabase.from('blackjack_bankrolls')
+          .select('team_id, chips').eq('cfb_season', currentSeason);
+        for (const r of (cr.data || [])) chipsMap[r.team_id] = r.chips;
+      }
+      lastChipsMap = chipsMap;
 
       const teamsSorted = [...teamsForSeason(teamRows)].sort((a,b)=>{
         const pa = getPoints(tbPoints, a.team_id);
@@ -2433,6 +2457,18 @@
         theadRow.appendChild(th);
       });
 
+      // Chips are the third regular-season tiebreaker, so the column rides only
+      // the board where ties are settled - never the playoff tiebreaker cascade,
+      // which does not consult chips at all. isTiebreakerView alone is true for
+      // both tiebreaker boards, hence the extra isPlayoffTbView check.
+      if (isTiebreakerView && !isPlayoffView && !isPlayoffTbView) {
+        const thChips = document.createElement('th');
+        thChips.className = 'px-2 py-2 text-right whitespace-nowrap bg-[var(--cfp-black)] font-[Oswald] tracking-wide text-white';
+        thChips.title = 'Third regular-season tiebreaker';
+        thChips.innerHTML = 'SEASON<br>CHIPS';
+        theadRow.appendChild(thChips);
+      }
+
       refreshLiveTag();
     }
 
@@ -2637,6 +2673,21 @@
 
           tr.appendChild(td);
         });
+
+        // Same gate as the header: regular-season Tiebreakers only. playoffMode
+        // is true on both tiebreaker boards (it just means "reveal per game"),
+        // so isPlayoffTbView is what actually keeps this off the playoff cascade.
+        if (isTiebreakerView && !isPlayoffTbView) {
+          const c = lastChipsMap[team.team_id];
+          const td = document.createElement('td');
+          td.className = 'px-2 py-2 text-right whitespace-nowrap bj-chips';
+          // A player sitting on exactly the starting stack has never played, and
+          // the board is allowed to say so - that is the only thing keeping a
+          // hoarder honest, since the table runs at real Vegas odds.
+          td.textContent = (c == null) ? '—' : Number(c).toLocaleString();
+          if (c === 0) td.classList.add('bj-busted');
+          tr.appendChild(td);
+        }
 
         tbody.appendChild(tr);
 

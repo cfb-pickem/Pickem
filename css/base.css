@@ -2621,3 +2621,9 @@ td[data-slots]{ cursor:pointer; }
 @media (max-width:640px){
   .bj-who{ width:100%; }
 }
+
+/* The chips column on the Tiebreakers board - same felt palette as the pit
+   itself, so the number reads as the same game rather than a stray stat. */
+.bj-chips{ font-family:'Teko','Oswald',sans-serif; font-size:1.1rem;
+  color:var(--cfp-gold-2); }
+.bj-chips.bj-busted{ color:#e08a8a; }
