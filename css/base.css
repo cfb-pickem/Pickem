@@ -2628,6 +2628,28 @@ td[data-slots]{ cursor:pointer; }
   color:var(--cfp-gold-2); }
 .bj-chips.bj-busted{ color:#e08a8a; }
 
+/* The settled "whole league face up" view - who hit on 18 against a 6 is the
+   part people talk about, so it sits right under the player's own hand.
+   Sorted by payout: the week's winner reads top to bottom like a chip stack. */
+.bj-league{ border-top:1px solid #234a37; padding-top:.6rem; margin-top:.2rem;
+  display:flex; flex-direction:column; gap:.35rem; }
+.bj-league-title{ font-size:.7rem; letter-spacing:.12em; color:#7f9a8b;
+  text-transform:uppercase; }
+.bj-league-row{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+  padding:.2rem 0; }
+.bj-league-row.bj-league-me{ background:rgba(240,200,80,.08); border-radius:.25rem; }
+.bj-league-team{ width:8rem; font-size:.8rem; color:var(--cfp-ivory);
+  overflow:hidden; text-overflow:ellipsis; }
+.bj-league-cards{ display:flex; gap:.2rem; flex-wrap:wrap; }
+.bj-delta{ margin-left:auto; font-family:'Teko','Oswald',sans-serif; font-size:1.05rem; }
+.bj-delta.bj-win{ color:#7fd99a; }
+.bj-delta.bj-lose{ color:#e08a8a; }
+.bj-delta.bj-push{ color:#9fb8a8; }
+@media (max-width:640px){
+  .bj-league-team{ width:100%; }
+  .bj-delta{ margin-left:0; }
+}
+
 /* The reveal stage. Deliberately lighter than the football's takeover - this
    is the coda, not the event. Sits below the site nav/modal layers (200+)
    on purpose: it belongs to the tiebreaker board underneath it, not over it. */

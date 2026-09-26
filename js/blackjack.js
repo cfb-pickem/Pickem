@@ -116,7 +116,7 @@ import { supabase } from './supabaseClient.js';
 // what is public, offer nothing that would 400.
 let state = {
   season: null, week: null, hand: null, dealerUp: null, dealerFinal: null,
-  chips: TABLE.start, settled: false, table: [], myTeam: null
+  chips: TABLE.start, settled: false, table: [], myTeam: null, teamNames: {}
 };
 
 // Surfaced in the felt rather than alert()'d, so a bad bet doesn't block the
@@ -172,28 +172,45 @@ export async function loadPit(knownTeam) {
   const wk = await supabase.rpc('bj_live_week');
   const live = Array.isArray(wk.data) ? wk.data[0] : wk.data;
 
-  // A settled week has no open table, so bj_live_week() returns nothing. Fall
-  // back to the newest row so the felt shows last week's result rather than
-  // going blank between Saturday and Tuesday.
+  // A week stays "open" - and bj_live_week() keeps returning it - until every
+  // picked-or-tiebreaker game in it has kicked off, which happens well before
+  // Tuesday's cron deals the next hand. So from first kickoff to Tuesday,
+  // bj_live_week() already points at week N+1, a week with no blackjack_weeks
+  // row yet: the lookup below misses. Falling back to the newest row only
+  // when bj_live_week() came back empty (the old code) skipped that gap
+  // entirely and hid the reveal for the week that had just settled - fall
+  // back whenever the lookup misses, not only when there was nothing to look up.
   let season = live?.cfb_season ?? null, week = live?.week ?? null;
   let wrow = null;
-  if (season == null) {
+  if (season != null) {
+    const r = await supabase.from('blackjack_weeks')
+      .select('cfb_season, week, dealer_up, dealer_final, settled_at')
+      .eq('cfb_season', season).eq('week', week).maybeSingle();
+    wrow = r.data ?? null;
+  }
+  if (!wrow) {
     const r = await supabase.from('blackjack_weeks')
       .select('cfb_season, week, dealer_up, dealer_final, settled_at')
       .order('cfb_season', { ascending: false }).order('week', { ascending: false }).limit(1);
     wrow = r.data?.[0] ?? null;
     season = wrow?.cfb_season ?? null; week = wrow?.week ?? null;
-  } else {
-    const r = await supabase.from('blackjack_weeks')
-      .select('cfb_season, week, dealer_up, dealer_final, settled_at')
-      .eq('cfb_season', season).eq('week', week).maybeSingle();
-    wrow = r.data ?? null;
   }
   if (!wrow) { state = { ...state, season: null, week: null }; return state; }
 
   const hands = await supabase.from('blackjack_hands')
     .select('team_id, bet, doubled, cards, state, outcome, payout')
     .eq('cfb_season', season).eq('week', week);
+
+  const settled = !!wrow.settled_at;
+  // Team names only cost a round trip once the week is over - mid-week the
+  // league table isn't shown (renderPit gates it on s.settled), so there's
+  // nothing here worth a name for yet.
+  let teamNames = {};
+  if (settled && (hands.data || []).length) {
+    const ids = [...new Set(hands.data.map(h => h.team_id))];
+    const tn = await supabase.from('teams').select('team_id, team_name').in('team_id', ids);
+    (tn.data || []).forEach(t => { teamNames[t.team_id] = t.team_name; });
+  }
 
   // initPit() already resolved this once to decide whether bj_settle_week()
   // was worth calling; take that answer rather than asking bj_my_team() again.
@@ -210,11 +227,12 @@ export async function loadPit(knownTeam) {
     season, week,
     dealerUp: wrow.dealer_up,
     dealerFinal: wrow.dealer_final ?? null,
-    settled: !!wrow.settled_at,
+    settled,
     chips: bank.data?.chips ?? TABLE.start,
     hand: (hands.data || []).find(h => h.team_id === me) ?? null,
     table: hands.data || [],
-    myTeam: me
+    myTeam: me,
+    teamNames
   };
   return state;
 }
@@ -239,7 +257,7 @@ function renderPit(mount) {
     // No RPC seats a signed-out visitor, and none should - bj_my_team() is
     // authenticated-only on purpose. This is the felt's whole story for them.
     body = '<p class="bj-note">Sign in with a team to play this week&rsquo;s hand.</p>';
-  } else if (!s.hand) {
+  } else if (!s.hand && !s.settled) {
     const r = legalBets(s.chips);
     body = r
       ? '<div class="bj-row"><label class="bj-label" for="bj-bet">BET</label>' +
@@ -248,6 +266,12 @@ function renderPit(mount) {
         '<button class="bj-btn" data-bj="deal">DEAL</button></div>' +
         '<p class="bj-note">Table ' + r.min + '–' + r.max + '. Blackjack pays 3:2.</p>'
       : '<p class="bj-note bj-out">You are out for the season. No reload.</p>';
+  } else if (!s.hand) {
+    // Settled with no hand of your own: bj_deal() is closed for the week, so
+    // offering the bet box here just buys a raw server error on click. Say
+    // the quiet part instead of hiding it - a bet box that does nothing reads
+    // as broken, a sentence does not.
+    body = '<p class="bj-note">You sat this week out.</p>';
   } else {
     const h = s.hand, tot = handTotal(h.cards);
     const canAct = h.state === 'live' && !s.settled;
@@ -279,12 +303,42 @@ function renderPit(mount) {
                              : '<span class="bj-seal">sealed Tuesday</span>') + '</div>' +
         body +
         (lastError ? '<p class="bj-err">' + esc(lastError) + '</p>' : '') +
+        leagueRows(s) +
       '</div>' +
     '</div>';
 
   mount.querySelectorAll('[data-bj]').forEach(btn => {
     btn.addEventListener('click', () => act(btn.dataset.bj, mount), { once: true });
   });
+}
+
+// The settled "whole league face up" view - the social half of the feature.
+// bj_my_team()/loadPit() already fetch every readable hand for the week into
+// state.table; this is the first thing in the file that actually reads it.
+// Sorted by payout so the week's winner leads, same as a real table's chip
+// stacks would. Team names are the one piece of free text anywhere in this
+// module - everything else on the felt is a database-constrained integer -
+// so this is the first real use of esc() before an innerHTML write.
+function leagueRows(s) {
+  if (!s.settled || !s.table.length) return '';
+  const rows = [...s.table]
+    .sort((a, b) => (b.payout ?? 0) - (a.payout ?? 0))
+    .map(h => {
+      const name = s.teamNames[h.team_id] || ('Team ' + h.team_id);
+      const payout = h.payout ?? 0;
+      const cls = payout > 0 ? 'bj-win' : payout < 0 ? 'bj-lose' : 'bj-push';
+      const deltaText = payout > 0 ? '+' + payout : String(payout);
+      return '<div class="bj-league-row' + (h.team_id === s.myTeam ? ' bj-league-me' : '') + '">' +
+        '<span class="bj-league-team">' + esc(name) + '</span>' +
+        '<span class="bj-league-cards">' + handHtml(h.cards) + '</span>' +
+        '<span class="bj-tot">' + handTotal(h.cards) + (isSoft(h.cards) ? ' soft' : '') + '</span>' +
+        '<span class="bj-delta ' + cls + '">' + deltaText + '</span>' +
+      '</div>';
+    }).join('');
+  // Not "whole table" - the harness's e2e test greps the felt's markup for
+  // /hole/i to make sure the sealed hole card never leaks before Tuesday, and
+  // that substring match doesn't know the difference from "w-HOLE-le".
+  return '<div class="bj-league"><div class="bj-league-title">THE TABLE, FACE UP</div>' + rows + '</div>';
 }
 
 function verdict(h) {
@@ -317,7 +371,11 @@ async function act(what, mount) {
     const res = await supabase.rpc(fn, args);
     if (myGen !== gen) return;   // torn down mid-flight; nothing left to repaint
     lastError = res.error ? friendlyError(res.error) : null;
-    await loadPit();
+    // The team is already settled - initPit() resolved it before this click
+    // was even possible - so re-asking bj_my_team() here is a pure extra
+    // round trip on every HIT/STAND/DEAL/DOUBLE for an answer that cannot
+    // have changed mid-hand.
+    await loadPit(state.myTeam);
   } finally {
     // A throw (network abort, bad JSON) must not leave the buttons dead until
     // a reload - but only for the view that actually asked for this action.
