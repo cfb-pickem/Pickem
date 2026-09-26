@@ -527,7 +527,7 @@
     import { sameTeam, escapeHtml, buildPickMap, buildSlotsMap, buildJackpotMap, getTeamColor, markSlotCell } from './js/utils.js';
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
-    import initPit, { loadPit, pitState } from './js/blackjack.js';
+    import initPit, { loadPit, pitState, resetPit } from './js/blackjack.js';
 
     // DOM
     const seasonSelect = document.getElementById('season-select');
@@ -1343,6 +1343,10 @@
     async function loadWeek(week){
       // Number(null) is 0, which is finite - so this has to test for null first.
       if (week == null || !Number.isFinite(Number(week))) return;
+      // resetPit() bumps blackjack.js's generation token so an in-flight
+      // HIT/STAND/DEAL from the tiebreaker board cannot repaint the felt onto
+      // this board once its RPC resolves - see F2.
+      resetPit();
       { const el = document.getElementById('pit'); if (el) { el.hidden = true; el.innerHTML = ''; } }
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Week ${week}…`);
@@ -1436,6 +1440,9 @@
 
     async function loadPlayoffWeek(){
       { const el = document.getElementById('week-recap'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+      // See loadWeek() - same generation bump, same reason: the pit must not
+      // survive a navigation to a board it doesn't belong on.
+      resetPit();
       { const el = document.getElementById('pit'); if (el) { el.hidden = true; el.innerHTML = ''; } }
       const mySeq = loadSeq;
       status(`Loading S${currentSeason} • Playoff…`);
@@ -1649,9 +1656,18 @@
       renderTable(teamsSorted, pickMap, winnerMap, true, tbPoints, true);
       showTable();
 
-      // The pit lives on this board and only this board: chips are a
-      // tiebreaker, so they belong where ties are settled.
-      initPit(document.getElementById('pit'));
+      // The pit lives on the REGULAR-SEASON tiebreaker board and only there.
+      // Chips are the third regular-season tiebreaker (see the chipsMap block
+      // above), and are deliberately absent from the playoff cascade - so a
+      // player looking at Playoff Tiebreakers must not be able to bet real
+      // chips there. isPlayoffTbView gates the chips column the same way.
+      if (isPlayoffTb) {
+        resetPit();
+        const el = document.getElementById('pit');
+        if (el) { el.hidden = true; el.innerHTML = ''; }
+      } else {
+        initPit(document.getElementById('pit'));
+      }
 
       startLiveTicker();
       const decided = games.filter(g => g.winner != null).length;

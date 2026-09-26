@@ -130,6 +130,21 @@ let lastError = null;
 // the one that was clicked.
 let busy = false;
 
+// #pit is one persistent DOM node shared by every view the SPA router swaps
+// in and out. A HIT/STAND/DEAL in flight when the user navigates away must
+// not repaint the felt onto whatever board they land on next - so every
+// teardown bumps this counter, and initPit()/act() both capture it up front
+// and refuse to touch the DOM again once it has moved out from under them.
+let gen = 0;
+export function resetPit() {
+  gen++;
+  // A stranded act() from the torn-down view will see its generation has
+  // moved and skip resetting this in its own finally - so clear it here, or
+  // the next legitimate click on a freshly initialised pit would find `busy`
+  // stuck true from a view that no longer exists and silently do nothing.
+  busy = false;
+}
+
 export function pitState() { return { ...state }; }
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -153,7 +168,7 @@ async function myTeam() {
   }
 }
 
-export async function loadPit() {
+export async function loadPit(knownTeam) {
   const wk = await supabase.rpc('bj_live_week');
   const live = Array.isArray(wk.data) ? wk.data[0] : wk.data;
 
@@ -180,7 +195,9 @@ export async function loadPit() {
     .select('team_id, bet, doubled, cards, state, outcome, payout')
     .eq('cfb_season', season).eq('week', week);
 
-  const me = await myTeam();
+  // initPit() already resolved this once to decide whether bj_settle_week()
+  // was worth calling; take that answer rather than asking bj_my_team() again.
+  const me = knownTeam !== undefined ? knownTeam : await myTeam();
   // .eq('team_id', null) would ask Postgres "team_id = NULL", which is never
   // true, so a signed-out visitor skips the bankroll round trip entirely
   // rather than relying on that to come back empty.
@@ -247,10 +264,15 @@ function renderPit(mount) {
         : '<p class="bj-note">' + verdict(h) + '</p>');
   }
 
+  // A signed-out visitor has no bankroll row, and state.chips falls back to
+  // TABLE.start only so the bet-box math elsewhere has a number to divide by.
+  // That fallback must never reach the screen as if it were a real balance.
+  const bankHtml = s.myTeam == null ? ''
+    : '<span class="bj-bank">' + s.chips.toLocaleString() + ' chips</span>';
+
   mount.innerHTML =
     '<div class="bj-felt scoreboard-wrap" data-bj-felt>' +
-      '<div class="scoreboard-header bj-head">THE PIT · WEEK ' + s.week +
-        '<span class="bj-bank">' + s.chips.toLocaleString() + ' chips</span></div>' +
+      '<div class="scoreboard-header bj-head">THE PIT · WEEK ' + s.week + bankHtml + '</div>' +
       '<div class="bj-body">' +
         '<div class="bj-row"><span class="bj-who">DEALER</span>' + dealer +
           (dealerTot != null ? '<span class="bj-tot">' + dealerTot + '</span>'
@@ -286,23 +308,42 @@ function friendlyError(err) {
 
 async function act(what, mount) {
   if (busy) return;
+  const myGen = gen;
   setBusy(mount, true);
-  const fn = { deal: 'bj_deal', hit: 'bj_hit', stand: 'bj_stand', double: 'bj_double' }[what];
-  const args = what === 'deal'
-    ? { p_bet: Number(mount.querySelector('#bj-bet')?.value || 0) } : {};
-  const res = await supabase.rpc(fn, args);
-  lastError = res.error ? friendlyError(res.error) : null;
-  await loadPit();
-  renderPit(mount);
-  busy = false;
+  try {
+    const fn = { deal: 'bj_deal', hit: 'bj_hit', stand: 'bj_stand', double: 'bj_double' }[what];
+    const args = what === 'deal'
+      ? { p_bet: Number(mount.querySelector('#bj-bet')?.value || 0) } : {};
+    const res = await supabase.rpc(fn, args);
+    if (myGen !== gen) return;   // torn down mid-flight; nothing left to repaint
+    lastError = res.error ? friendlyError(res.error) : null;
+    await loadPit();
+  } finally {
+    // A throw (network abort, bad JSON) must not leave the buttons dead until
+    // a reload - but only for the view that actually asked for this action.
+    if (myGen === gen) {
+      busy = false;
+      renderPit(mount);
+    }
+  }
 }
 
 export default async function initPit(mount) {
   if (!mount) return;
-  // Belt and braces, exactly as the leaderboard already does for the slots: a
-  // dead cron must not be able to hide a result.
-  await supabase.rpc('bj_settle_week').catch(() => {});
+  const myGen = gen;
+  const me = await myTeam();
+  // bj_settle_week() is authenticated-only; firing it for every anonymous page
+  // view is a guaranteed 401 for no reason, so only run it when there is a
+  // team to settle for. Belt and braces otherwise, exactly as the leaderboard
+  // already does for the slots: a dead cron must not be able to hide a result.
+  // supabase.rpc() returns a PostgrestBuilder, which is PromiseLike (it has
+  // .then()) but not an actual Promise - it has no .catch()/.finally(), so
+  // chaining either throws synchronously before anything ever renders. Await
+  // it and swallow the rejection in a try/catch instead.
+  if (me != null) { try { await supabase.rpc('bj_settle_week'); } catch {} }
+  if (myGen !== gen) return;
   lastError = null;
-  await loadPit();
+  await loadPit(me);
+  if (myGen !== gen) return;
   renderPit(mount);
 }
