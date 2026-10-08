@@ -110,10 +110,11 @@ import { supabase } from './supabaseClient.js';
 //
 // bj_my_team() is authenticated-only and errors outright for a signed-out
 // visitor - there is no team to hand back. A visitor with no team gets a
-// read-only felt: the dealer's up-card and its sealed hole card, no bet box,
-// no buttons. Nothing else in this module distinguishes "signed out" from
-// "signed in but errored" because the felt treats both the same way: show
-// what is public, offer nothing that would 400.
+// read-only felt: two face-down dealer cards, no bet box, no buttons. Nothing
+// else in this module distinguishes "signed out" from "signed in but errored"
+// because the felt treats both the same way: show what is public, offer
+// nothing that would 400. Mid-week there is nothing public to show - which is
+// the point, since the up-card is what a player must not have before betting.
 let state = {
   season: null, week: null, hand: null, dealerUp: null, dealerFinal: null,
   chips: TABLE.start, settled: false, table: [], myTeam: null, teamNames: {}
@@ -182,15 +183,20 @@ export async function loadPit(knownTeam) {
   // back whenever the lookup misses, not only when there was nothing to look up.
   let season = live?.cfb_season ?? null, week = live?.week ?? null;
   let wrow = null;
+  // dealer_up is NOT selected any more, and that is the whole point of the
+  // 20261007 migration: the column is retired and permanently null because
+  // publishing the up-card on Tuesday let the league read it and then decide
+  // whether to bet at all. The up-card now comes from bj_dealer_up(), which
+  // hands it over only once you hold a hand.
   if (season != null) {
     const r = await supabase.from('blackjack_weeks')
-      .select('cfb_season, week, dealer_up, dealer_final, settled_at')
+      .select('cfb_season, week, dealer_final, settled_at')
       .eq('cfb_season', season).eq('week', week).maybeSingle();
     wrow = r.data ?? null;
   }
   if (!wrow) {
     const r = await supabase.from('blackjack_weeks')
-      .select('cfb_season, week, dealer_up, dealer_final, settled_at')
+      .select('cfb_season, week, dealer_final, settled_at')
       .order('cfb_season', { ascending: false }).order('week', { ascending: false }).limit(1);
     wrow = r.data?.[0] ?? null;
     season = wrow?.cfb_season ?? null; week = wrow?.week ?? null;
@@ -223,9 +229,21 @@ export async function loadPit(knownTeam) {
     : await supabase.from('blackjack_bankrolls')
         .select('chips, hands_played').eq('cfb_season', season).eq('team_id', me).maybeSingle();
 
+  // The up-card, if this player has earned the right to see it. The server
+  // decides that, not us: bj_dealer_up() returns null unless the caller holds a
+  // hand in the week asked for. Skipped entirely for a signed-out visitor,
+  // who can never hold one and whose call would only 401.
+  let up = null;
+  if (me != null) {
+    try {
+      const u = await supabase.rpc('bj_dealer_up', { p_season: season, p_week: week });
+      up = u.error ? null : (u.data ?? null);
+    } catch { up = null; }
+  }
+
   state = {
     season, week,
-    dealerUp: wrow.dealer_up,
+    dealerUp: up,
     dealerFinal: wrow.dealer_final ?? null,
     settled,
     chips: bank.data?.chips ?? TABLE.start,
@@ -247,10 +265,20 @@ function renderPit(mount) {
   mount.hidden = false;
 
   const s = state;
+  // THREE STATES, and the middle one is the fix. Settled: the whole hand, the
+  // up-card finally public as dealer_final[0]. Mid-week holding a hand: your
+  // up-card and the hole card still down. Mid-week with no hand: BOTH cards
+  // down, because knowing the up-card before you decide whether to bet is the
+  // entire edge this feature accidentally handed out for two weeks.
   const dealer = s.settled && s.dealerFinal
     ? handHtml(s.dealerFinal)
-    : handHtml([s.dealerUp]) + card(0, true);
+    : (s.dealerUp != null ? handHtml([s.dealerUp]) + card(0, true)
+                          : card(0, true) + card(0, true));
   const dealerTot = s.settled && s.dealerFinal ? handTotal(s.dealerFinal) : null;
+  // "Sealed Tuesday" was true of one card. Now it depends on whether you have
+  // skin in the week yet, and the wording has to say which, or a player staring
+  // at two face-down cards reads it as the page failing to load.
+  const sealNote = s.dealerUp != null ? 'hole card sealed' : 'sealed until you bet';
 
   let body;
   if (s.myTeam == null) {
@@ -264,7 +292,8 @@ function renderPit(mount) {
         '<input id="bj-bet" class="bj-bet" type="number" inputmode="numeric" ' +
         'min="' + r.min + '" max="' + r.max + '" step="1" value="' + r.min + '">' +
         '<button class="bj-btn" data-bj="deal">DEAL</button></div>' +
-        '<p class="bj-note">Table ' + r.min + '–' + r.max + '. Blackjack pays 3:2.</p>'
+        '<p class="bj-note">You bet before the cards come out, same as any ' +
+        'table. Table ' + r.min + '–' + r.max + '. Blackjack pays 3:2.</p>'
       : '<p class="bj-note bj-out">You are out for the season. No reload.</p>';
   } else if (!s.hand) {
     // Settled with no hand of your own: bj_deal() is closed for the week, so
@@ -300,7 +329,7 @@ function renderPit(mount) {
       '<div class="bj-body">' +
         '<div class="bj-row"><span class="bj-who">DEALER</span>' + dealer +
           (dealerTot != null ? '<span class="bj-tot">' + dealerTot + '</span>'
-                             : '<span class="bj-seal">sealed Tuesday</span>') + '</div>' +
+                             : '<span class="bj-seal">' + sealNote + '</span>') + '</div>' +
         body +
         (lastError ? '<p class="bj-err">' + esc(lastError) + '</p>' : '') +
         leagueRows(s) +
