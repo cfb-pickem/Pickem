@@ -53,8 +53,16 @@ update public.blackjack_hole bh
 -- RETIRED, not dropped. Dropping a column the browser selects by name would
 -- 400 every page still being served from a stale cache, and GitHub Pages serves
 -- this site with max-age=600 - so a ten minute window where nobody can load the
--- leaderboard. Kept, nulled, and never written again: a cached script reads
--- null and draws a face-down card, which is precisely the new behaviour.
+-- leaderboard. Kept, nulled, and never written again.
+--
+-- A CORRECTION TO WHAT THIS COMMENT FIRST CLAIMED. It said a cached script
+-- would read null and draw a face-down card. It did not: `null % 13` is 0 in
+-- JavaScript and card 0 is the ace of spades, so every browser still running
+-- the old module drew a confident A-spades where the sealed card belonged.
+-- Nothing leaked - the real up-card was an 8 - but an ace showing is the worst
+-- spot in blackjack, so the page spent the cache window inventing a reason not
+-- to bet. js/blackjack.js now renders any absent card face down, which is what
+-- makes the sentence above true rather than hopeful.
 alter table public.blackjack_weeks alter column dealer_up drop not null;
 update public.blackjack_weeks set dealer_up = null where dealer_up is not null;
 

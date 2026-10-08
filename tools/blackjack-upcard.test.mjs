@@ -126,6 +126,19 @@ console.log('\n=== a signed-out visitor sees no more than a non-bettor ===');
      'and the felt does not even ask - no pointless 401 on every anonymous view');
 }
 
+console.log('\n=== a missing card is face down, not a phantom ace ===');
+{
+  // `null % 13` is 0 in JavaScript and card 0 is the ace of spades, so an
+  // absent card used to render as a confident A-spades. That actually happened:
+  // every browser running a cached copy of the module after the up-card stopped
+  // being published drew an ace where the sealed card belonged - inventing the
+  // worst up-card in the game, and with it a reason not to bet.
+  const html = await paint({ week: WEEK_OPEN, hand: MY_HAND, upcard: null });
+  ok(html.indexOf('A♠') < 0, 'a null up-card does not render as the ace of spades');
+  ok(faceUps(html) === 2, 'only the player’s own two cards are face up (got ' + faceUps(html) + ')');
+  ok(faceDowns(html) === 2, 'both dealer cards stay down when the card is missing');
+}
+
 console.log('\n=== settled: the whole hand, because the week is over ===');
 {
   const html = await paint({ week: WEEK_DONE, hand: null, upcard: SIX_CLUBS });

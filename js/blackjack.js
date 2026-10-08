@@ -151,8 +151,15 @@ export function pitState() { return { ...state }; }
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = s => String(s).replace(/[&<>"']/g, c => ESC[c]);
 
+// A MISSING CARD IS FACE DOWN, never a real one, and this guard is not
+// theoretical. `null % 13` is 0 in JavaScript, and card 0 is the ace of spades -
+// so the moment the up-card stopped being published, every browser still
+// running a cached copy of this file drew a confident A-spades where the sealed
+// card should have been. Nothing leaked (the real card was an 8), but an ace
+// showing is the worst spot in blackjack, so the page was inventing a reason not
+// to bet. Any absent card renders face down from here on.
 const card = (c, faceDown = false) =>
-  faceDown
+  (faceDown || !Number.isInteger(c) || c < 0 || c > 51)
     ? '<span class="bj-card bj-card-down" aria-label="face down"></span>'
     : '<span class="bj-card' + (cardSuit(c) === 1 || cardSuit(c) === 2 ? ' bj-red' : '') +
       '">' + cardLabel(c) + '</span>';
