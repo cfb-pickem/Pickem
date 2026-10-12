@@ -10,16 +10,21 @@ const thenable = (resolve) => ({
   // no .catch, no .finally - on purpose
 });
 
+// Every chained call is recorded in q._f as [method, ...args]. A table scripted
+// as a plain array ignores them, which is all most tests need; a table scripted
+// as a FUNCTION receives them and answers for that exact query, which is how a
+// test pins WHICH rows the module asked for (blackjack-open.test.mjs does).
 const qb = (table) => {
-  const q = { _t: table };
-  const chain = ['select', 'eq', 'order', 'limit', 'in', 'gte', 'filter'];
-  for (const m of chain) q[m] = () => q;
-  q.maybeSingle = () => thenable(() => {
-    const rows = SCRIPT.tables[table] ?? [];
-    return { data: rows[0] ?? null, error: null };
-  });
+  const q = { _t: table, _f: [] };
+  const chain = ['select', 'eq', 'not', 'order', 'limit', 'in', 'gte', 'filter'];
+  for (const m of chain) q[m] = (...a) => { q._f.push([m, ...a]); return q; };
+  const rows = () => {
+    const t = SCRIPT.tables[table];
+    return (typeof t === 'function' ? t(q._f) : t) ?? [];
+  };
+  q.maybeSingle = () => thenable(() => ({ data: rows()[0] ?? null, error: null }));
   q.then = (ok, err) => Promise.resolve()
-    .then(() => ({ data: SCRIPT.tables[table] ?? [], error: null }))
+    .then(() => ({ data: rows(), error: null }))
     .then(ok, err);
   return q;
 };

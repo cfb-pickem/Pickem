@@ -248,7 +248,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=6d5c7ba1">
+  <link rel="stylesheet" href="./css/tailwind.css?v=eaaed95b">
 </head>
 
 <body data-page="stats">
@@ -308,7 +308,7 @@
           <span class="trophy-oval" aria-hidden="true"></span>
           <h2 class="stat-title">Perfect Week Club</h2>
         </div>
-        <div id="perfect-ribbon" class="relative flex items-center gap-2 overflow-x-auto px-4 md:px-6 py-3 z-10"></div>
+        <div id="perfect-ribbon" class="relative flex flex-wrap items-center gap-2 px-4 md:px-6 py-3 z-10"></div>
       </div>
 
       <!-- Winless Week Club -->
@@ -432,7 +432,7 @@
     import initNav from './js/nav.js';
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
-    import { renderSeasonHistory } from './js/seasonHistory.js';
+    import { renderSeasonHistory, selectAll, isWin } from './js/seasonHistory.js';
     import { sameTeam, escapeHtml } from './js/utils.js';
     import { gameScore } from './js/gameScore.js';
 
@@ -453,6 +453,11 @@
       if (statusSpinner) statusSpinner.style.display = loading ? '' : 'none';
     }
 
+    // ".571" style, the way a batting average reads - but a perfect record has to
+    // say 1.000. (1).toFixed(3).slice(1) is ".000", which is how a 3-0 board
+    // leader used to show the worst percentage on the card.
+    const pct3 = p => (p >= 1 ? '1.000' : p.toFixed(3).slice(1));
+
     // Parse "Start (CT)" which is stored as a timestamp in CT; we read it as local Date.
     function parseCT(ts){
       if(!ts) return null;
@@ -463,8 +468,10 @@
     async function loadSeasons(){
       setStatus('Loading seasons…', false, true);
       const [allRes, pickedRes] = await Promise.all([
-        supabase.from('all_games').select('cfb_season').not('cfb_season', 'is', null),
-        supabase.from('all_games').select('cfb_season').eq('picked', true).not('winner', 'is', null).not('cfb_season', 'is', null),
+        // Paged: all_games holds every game of every imported slate, and past
+        // 1000 rows an unpaged select would quietly drop whole seasons.
+        selectAll(() => supabase.from('all_games').select('cfb_season').not('cfb_season', 'is', null).order('GameId')),
+        selectAll(() => supabase.from('all_games').select('cfb_season').eq('picked', true).not('winner', 'is', null).not('cfb_season', 'is', null).order('GameId')),
       ]);
       if(allRes.error){
         setStatus('Error loading seasons', true);
@@ -492,7 +499,12 @@
       return true;
     }
 
+    let loadSeq = 0;
     async function main(){
+      // Switching seasons while the previous one is still loading must not let
+      // the slower, older request paint over the newer one.
+      const seq = ++loadSeq;
+      const stale = () => seq !== loadSeq;
       setStatus('Loading data…', false, true);
 
       const season = Number(seasonSel.value);
@@ -502,12 +514,14 @@
       }
 
       // Pull only picked games for the chosen season
-      const { data: allGames, error: gErr } = await supabase
+      const { data: allGames, error: gErr } = await selectAll(() => supabase
         .from('all_games')
-        .select('GameId, week, winner, picked, Away, Home, line, "Network", "Start (CT)", cfb_season')
+        .select('GameId, week, winner, picked, Away, Home, "AwayPts", "HomePts", line, "Network", "Start (CT)", cfb_season')
         .eq('picked', true)
         .eq('cfb_season', season)
-        .lt('week', 16);   // only use weeks < 16
+        .lt('week', 16)    // only use weeks < 16
+        .order('GameId'));
+      if(stale()) return;
 
       if(gErr){
         console.error(gErr);
@@ -535,6 +549,8 @@
           away: g.Away || null,
           home: g.Home || null,
           line: (g.line==null ? null : Number(g.line)),
+          awayPts: (g.AwayPts==null ? null : Number(g.AwayPts)),
+          homePts: (g.HomePts==null ? null : Number(g.HomePts)),
           network: g['Network'] ?? null,
           start
         };
@@ -550,6 +566,14 @@
       }
 
       if(!gameIds.length){
+        // Clear the cards above too, or the previous season's awards and
+        // boards stay on screen under this season's name.
+        document.getElementById('awards-week').textContent = '';
+        document.getElementById('awards-body').innerHTML = '<p class="text-sm text-gray-300">No completed week yet this season.</p>';
+        document.getElementById('hero-body').innerHTML  = '<p class="text-sm text-gray-300">Not enough decided games yet this season.</p>';
+        document.getElementById('sicko-body').innerHTML = '<p class="text-sm text-gray-300">Not enough decided games yet this season.</p>';
+        document.querySelector('.tier-big').textContent   = 'Top 10% of games';
+        document.querySelector('.tier-sicko').textContent = 'Bottom 10% of games';
         perfectRibbon.innerHTML = '<span class="text-sm text-gray-300">No picked games found for this season.</span>';
         zeroRibbon.innerHTML    = '<span class="text-sm text-gray-300">No picked games found for this season.</span>';
         // These two used to render as a header with nothing at all beneath it,
@@ -575,9 +599,13 @@
       );
 
       const [{ data: picks, error: pErr }, { data: teams, error: tErr }] = await Promise.all([
-        supabase.from('picks').select('team_id, game_id, pick').in('game_id', gameIds),
+        // Paged: 15 teams x a 64-game regular season is already within a few
+        // rows of PostgREST's 1000-row cap, and past it picks vanish silently.
+        // jackpot is selected because a jackpot scores on the leaderboard.
+        selectAll(() => supabase.from('picks').select('id, team_id, game_id, pick, jackpot').in('game_id', gameIds).order('id')),
         supabase.from('teams').select('team_id, team_name, active')
       ]);
+      if(stale()) return;
       if(pErr){
         console.error(pErr);
         return setStatus('Error loading picks', true);
@@ -656,7 +684,7 @@
             const m = gameMeta[p.game_id];
             if(!m || m.winner == null) continue;
             if(!rec.has(p.team_id)) rec.set(p.team_id, { w:0, l:0 });
-            rec.get(p.team_id)[ sameTeam(p.pick, m.winner) ? 'w' : 'l' ]++;
+            rec.get(p.team_id)[ isWin(p, m.winner) ? 'w' : 'l' ]++;
           }
           return [...rec.entries()]
             .map(([id, r]) => ({ id, ...r, n: r.w + r.l, pct: (r.w + r.l) ? r.w / (r.w + r.l) : 0 }))
@@ -674,7 +702,7 @@
             + '<span class="tier-team">' + escapeHtml(teamName.get(r.id) || ('Team ' + r.id)) + '</span>'
             + (i === 0 ? '<span class="tier-crown" aria-hidden="true">\u{1F3C6}</span>' : '')
             + '<span class="tier-rec">' + r.w + '-' + r.l + '</span>'
-            + '<span class="tier-pct">' + (r.n ? (r.w / r.n).toFixed(3).slice(1) : '\u2014') + '</span>'
+            + '<span class="tier-pct">' + (r.n ? pct3(r.w / r.n) : '\u2014') + '</span>'
             + '</div>').join('');
         }
 
@@ -723,7 +751,7 @@
         const byTeam = new Map();   // team_id -> {w:0,l:0}
         for(const r of rowsThisWeek){
           if(r.winner == null) continue;
-          const hit = sameTeam(r.pick, r.winner);
+          const hit = isWin(r, r.winner);
           if(!byGame.has(r.game_id)) byGame.set(r.game_id, { right:[], wrong:[] });
           byGame.get(r.game_id)[hit ? 'right' : 'wrong'].push(r.team_id);
           if(!byTeam.has(r.team_id)) byTeam.set(r.team_id, { w:0, l:0 });
@@ -752,15 +780,23 @@
         // The game everyone was right about, and the one that burned everyone.
         const games = [...byGame.entries()];
         if(games.length){
-          const lock = games.slice().sort((a,b)=> b[1].right.length - a[1].right.length)[0];
-          if(lock[1].right.length){
-            add('Lock of the Week', gameLabel(lock[0]),
-                `${lock[1].right.length} of ${lock[1].right.length + lock[1].wrong.length} had it`);
+          // A tie names every game in it. Picking "the first" of two equal
+          // games meant the award flipped on nothing more than row order.
+          const leaders = side => {
+            const top = Math.max(...games.map(([,v]) => v[side].length));
+            return { top, ids: games.filter(([,v]) => v[side].length === top).map(([gid]) => gid) };
+          };
+          const tot = gid => byGame.get(gid).right.length + byGame.get(gid).wrong.length;
+          const each = ids => ids.length > 1 ? ' on each' : '';
+          const lock = leaders('right');
+          if(lock.top){
+            add('Lock of the Week', lock.ids.map(gameLabel).join(' & '),
+                `${lock.top} of ${tot(lock.ids[0])} had it${each(lock.ids)}`);
           }
-          const trap = games.slice().sort((a,b)=> b[1].wrong.length - a[1].wrong.length)[0];
-          if(trap[1].wrong.length){
-            add('Trap Game', gameLabel(trap[0]),
-                `${trap[1].wrong.length} of ${trap[1].right.length + trap[1].wrong.length} got burned`, true);
+          const trap = leaders('wrong');
+          if(trap.top){
+            add('Trap Game', trap.ids.map(gameLabel).join(' & '),
+                `${trap.top} of ${tot(trap.ids[0])} got burned${each(trap.ids)}`, true);
           }
           // Exactly one person on the right side of it.
           const lone = games.filter(([,v]) => v.right.length === 1 && v.wrong.length >= 2)
@@ -784,7 +820,7 @@
 
         let correct = 0;
         for(const r of rows){
-          if(sameTeam(r.pick, r.winner)) correct++;
+          if(isWin(r, r.winner)) correct++;
         }
         if(rows.length > 0 && correct === rows.length){
           const teamId = Number(key.split('|')[0]);
@@ -813,7 +849,7 @@
 
         let correct = 0;
         for(const r of rows){
-          if(sameTeam(r.pick, r.winner)) correct++;
+          if(isWin(r, r.winner)) correct++;
         }
         if(rows.length > 0 && correct === 0){
           const teamId = Number(key.split('|')[0]);
@@ -851,14 +887,14 @@
       for(const [team_id, arr] of byTeamDecided.entries()){
         let wins = 0;
         for(const r of arr){
-          if(sameTeam(r.pick, r.winner)) wins++;
+          if(isWin(r, r.winner)) wins++;
         }
         seasonStats.set(team_id, { wins, total: arr.length });
       }
 
       const seasonRows = [...seasonStats.entries()].map(([team_id, {wins, total}])=>{
         const pct = total ? wins / total : 0;
-        const pctStr = pct.toFixed(3).slice(1); // .459 format
+        const pctStr = pct3(pct); // .459 format
 
         // Set difference, not a size subtraction: a team can only "play" weeks
         // that are in allWeeksWithPicks today, but counting sizes would quietly
@@ -947,7 +983,7 @@
         if(!last8.length) continue;
         let wins = 0;
         for(const r of last8){
-          if(sameTeam(r.pick, r.winner)) wins++;
+          if(isWin(r, r.winner)) wins++;
         }
         const pct = (wins / last8.length) * 100;
         formRows.push({
@@ -979,8 +1015,15 @@
         const dog = underdogTeamFor(g);
         if (!dog) continue;
 
+        // all_games.winner is the side that COVERED (set_winner_on_final scores
+        // HomePts + line against AwayPts), not the side that won the game. So
+        // "outright" has to come from the score itself: Baylor +7.5 losing 16-17
+        // at Auburn is a cover, not an underdog win.
+        if (g.awayPts == null || g.homePts == null || g.awayPts === g.homePts) continue;
+        const outright = g.homePts > g.awayPts ? g.home : g.away;
+
         // If they picked the underdog AND the underdog won outright
-        if (sameTeam(p.pick, dog) && sameTeam(g.winner, dog)) {
+        if (sameTeam(p.pick, dog) && sameTeam(outright, dog)) {
           const tId = p.team_id;
           dogWins.set(tId, (dogWins.get(tId) || 0) + 1);
         }

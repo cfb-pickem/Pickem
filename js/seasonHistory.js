@@ -10,17 +10,36 @@
 // Splash grid covers. Comparing a 15-week total against one that quietly
 // included six playoff weeks would flatter the recent years for no reason.
 
-import { escapeHtml } from './utils.js';
+import { escapeHtml, sameTeam } from './utils.js';
 import { LEAGUE_HISTORY, HISTORY_SEASONS, historyFor } from './leagueHistory.js';
 
-const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+// PostgREST hands back at most 1000 rows per request, silently. The picks table
+// passed that in 2026, and because the rows come back oldest-first the newest
+// season was the one cut off - its column read 0-5 wins when the real numbers
+// were 9-14. Anything that can grow past a page goes through here. `build`
+// must return a fresh query with a stable .order() so the pages don't overlap.
+export async function selectAll(build, pageSize = 1000) {
+  const out = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await build().range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    out.push(...(data || []));
+    if (!data || data.length < pageSize) return { data: out, error: null };
+  }
+}
+
+// The leaderboard's rule, verbatim: a pick scores when its game has a winner
+// and either the pick matches it or the slots paid out a jackpot.
+export function isWin(p, winner) {
+  return winner != null && (!!p.jackpot || sameTeam(p.pick, winner));
+}
 
 export async function renderSeasonHistory(mount, supabase) {
   if (!mount) return;
 
   const [{ data: games }, { data: picks }, { data: teams }] = await Promise.all([
-    supabase.from('all_games').select('GameId, week, winner, cfb_season').eq('picked', true),
-    supabase.from('picks').select('team_id, game_id, pick'),
+    selectAll(() => supabase.from('all_games').select('GameId, week, winner, cfb_season').eq('picked', true).order('GameId')),
+    selectAll(() => supabase.from('picks').select('id, team_id, game_id, pick, jackpot').order('id')),
     supabase.from('teams').select('team_id, team_name, active')
   ]);
   if (!games || !picks || !teams) return;
@@ -37,7 +56,7 @@ export async function renderSeasonHistory(mount, supabase) {
     liveSeasons.add(s);
     live[s] = live[s] || {};
     live[s][p.team_id] = live[s][p.team_id] || 0;
-    if (norm(p.pick) === norm(g.winner)) live[s][p.team_id]++;
+    if (isWin(p, g.winner)) live[s][p.team_id]++;
   }
 
   const seasons = [...new Set([...liveSeasons, ...HISTORY_SEASONS])].sort((a, b) => b - a);

@@ -617,6 +617,89 @@
     }
     .spin { animation: cfp-spin .7s linear infinite; transform-origin: center; }
 
+    /* THE UNSAVED BAR. A member once picked every game, closed the tab and
+       scored nothing, because the only sign that nothing had been written was
+       the absence of a toast. So this is the opposite of subtle: pinned to the
+       bottom of the screen, amber-to-red, pulsing, with the Save button IN it,
+       for as long as what is on screen is not what is in the database.
+       It is position:fixed rather than sticky so it holds on a phone however
+       far down the slate you have scrolled, and it pads itself clear of the
+       home indicator. */
+    .save-bar{
+      position:fixed; left:0; right:0; bottom:0; z-index:300;
+      padding:.7rem max(1rem, env(safe-area-inset-right, 0px))
+              calc(.7rem + env(safe-area-inset-bottom, 0px))
+              max(1rem, env(safe-area-inset-left, 0px));
+      display:flex; align-items:center; justify-content:center; gap:.75rem;
+      flex-wrap:wrap;
+      color:#fff; font-weight:600; font-size:.9rem; line-height:1.3;
+      border-top:2px solid #ffb347;
+      background:linear-gradient(90deg, #b23a12, #d9661a 50%, #b23a12);
+      box-shadow:0 -8px 28px rgba(0,0,0,.55);
+      transform:translateY(0); transition:transform .25s cubic-bezier(.22,1,.36,1), background .25s ease;
+    }
+    .save-bar[hidden]{ display:flex !important; transform:translateY(110%); pointer-events:none; visibility:hidden; }
+    .save-bar-icon{ font-size:1.15rem; line-height:1; flex:none; }
+    .save-bar-msg{ text-align:center; }
+    .save-bar-msg small{ display:block; font-weight:400; font-size:.75rem; opacity:.9; }
+    .save-bar-btn{
+      flex:none; min-height:44px; padding:.55rem 1.25rem;
+      background:#fff; color:#8a2a08; font-weight:700; letter-spacing:.02em;
+      border:0; border-radius:.35rem; cursor:pointer;
+      box-shadow:0 2px 0 rgba(0,0,0,.25);
+    }
+    .save-bar-btn:disabled{ opacity:.7; cursor:default; }
+    .save-bar-btn[hidden]{ display:none; }
+    .save-bar.is-dirty{ animation:save-bar-pulse 1.6s ease-in-out infinite; }
+    .save-bar.is-saving{ background:linear-gradient(90deg, #8a5a0c, #b07a12 50%, #8a5a0c); border-top-color:#e9b949; }
+    .save-bar.is-error{ background:linear-gradient(90deg, #8f1010, #c21d1d 50%, #8f1010); border-top-color:#ff8a8a; }
+    .save-bar.is-saved{ background:linear-gradient(90deg, #1e5e38, #2a7a4a 50%, #1e5e38); border-top-color:#58d68d; }
+    @keyframes save-bar-pulse{
+      0%, 100% { box-shadow:0 -8px 28px rgba(0,0,0,.55), 0 0 0 0 rgba(255,120,40,.0); filter:brightness(1); }
+      50%      { box-shadow:0 -8px 28px rgba(0,0,0,.55), 0 -6px 26px 4px rgba(255,120,40,.55); filter:brightness(1.18); }
+    }
+    @media (prefers-reduced-motion: reduce){
+      .save-bar.is-dirty{ animation:none; }
+    }
+    /* Room at the bottom of the page so the bar never sits on top of the last
+       card or the page's own Save button, and the toasts ride above it. */
+    body.has-save-bar{ padding-bottom:calc(5.5rem + env(safe-area-inset-bottom, 0px)); }
+    body.has-save-bar .toast-container{ bottom:calc(5.5rem + env(safe-area-inset-bottom, 0px)); }
+
+    /* The standing tally beside the team chip: "3 of 4 saved" or "All 4 saved". */
+    .pick-tally{
+      display:inline-flex; align-items:center; gap:.4rem;
+      padding:.3rem .65rem; border-radius:999px;
+      font-size:.75rem; font-weight:600; letter-spacing:.02em;
+      border:1px solid rgba(255,255,255,.15); color:#d1d5db;
+    }
+    .pick-tally[hidden]{ display:none; }
+    .pick-tally.is-complete{ border-color:#58d68d; color:#9ff0bd; background:rgba(88,214,141,.1); }
+    .pick-tally.is-partial { border-color:#e0912f; color:#f0b46a; background:rgba(224,145,47,.1); }
+    .pick-tally.is-dirty   { border-color:#ff7a3d; color:#fff; background:#c2410c; }
+
+    /* Leaving with picks unsaved. Built in-page because window.confirm cannot
+       offer the one choice that matters here, which is "save, then go". */
+    .leave-guard{
+      position:fixed; inset:0; z-index:10000;
+      display:grid; place-items:center; padding:1rem;
+      background:rgba(0,0,0,.72);
+    }
+    .leave-guard[hidden]{ display:none; }
+    .leave-guard-card{
+      width:100%; max-width:26rem; padding:1.25rem;
+      background:linear-gradient(180deg, #161616, #0e0e0e);
+      border:1px solid #e0912f; border-radius:.5rem;
+      box-shadow:0 18px 60px rgba(0,0,0,.7);
+    }
+    .leave-guard-card h2{ font-family:'Oswald',sans-serif; font-size:1.25rem; color:#f0b46a; margin-bottom:.4rem; }
+    .leave-guard-card p{ font-size:.875rem; color:#d1d5db; margin-bottom:1rem; }
+    .leave-guard-actions{ display:flex; flex-direction:column; gap:.5rem; }
+    .leave-guard-actions button{ min-height:44px; padding:.55rem 1rem; border-radius:.35rem; font-weight:600; }
+    .leave-guard-save { background:var(--cfp-gold); color:#000; }
+    .leave-guard-go   { border:1px solid rgba(255,92,92,.5); color:#ffb4b4; }
+    .leave-guard-stay { border:1px solid rgba(255,255,255,.15); color:#e5e7eb; }
+
     /* Loading state */
     .picks-loading {
       display: flex; align-items: center; justify-content: center;
@@ -625,7 +708,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=6d5c7ba1">
+  <link rel="stylesheet" href="./css/tailwind.css?v=eaaed95b">
 </head>
 <body data-page="picks">
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
@@ -634,8 +717,11 @@
 
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3 px-1">
       <h1 class="font-['Oswald',_sans-serif] text-2xl md:text-3xl font-bold text-[var(--cfp-ivory)]">Make Your Picks</h1>
-      <div id="team-chip" class="hidden">
-        <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
+      <div class="flex items-center gap-2 flex-wrap">
+        <span id="pick-tally" class="pick-tally" role="status" hidden></span>
+        <div id="team-chip" class="hidden">
+          <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
+        </div>
       </div>
     </div>
     <div class="flex items-center gap-2 mb-3 px-1 text-xs text-gray-300">
@@ -685,8 +771,29 @@
         <button id="clear" class="px-5 py-3 border border-white/15 hover:border-white/30 transition-colors duration-200">Clear</button>
         <span id="saveStatus" class="text-xs text-gray-300" aria-live="polite"></span>
       </div>
+      <p class="mt-2 text-xs text-gray-400">Picks save automatically a moment after you tap them. If a save ever fails, a red bar at the bottom of the screen will say so &mdash; a pick only counts once it is saved.</p>
     </div>
 
+  </div>
+
+  <!-- Unsaved-picks bar. Shown whenever the screen and the database disagree. -->
+  <div id="save-bar" class="save-bar" role="alert" aria-live="assertive" hidden>
+    <span id="save-bar-icon" class="save-bar-icon" aria-hidden="true">⚠</span>
+    <span id="save-bar-msg" class="save-bar-msg"></span>
+    <button id="save-bar-btn" type="button" class="save-bar-btn">Save now</button>
+  </div>
+
+  <!-- Leaving with picks unsaved. -->
+  <div id="leave-guard" class="leave-guard" role="dialog" aria-modal="true" aria-labelledby="leave-guard-title" hidden>
+    <div class="leave-guard-card">
+      <h2 id="leave-guard-title">Your picks aren't saved</h2>
+      <p id="leave-guard-msg"></p>
+      <div class="leave-guard-actions">
+        <button id="leave-guard-save" type="button" class="leave-guard-save">Save picks, then go</button>
+        <button id="leave-guard-go" type="button" class="leave-guard-go">Leave without saving</button>
+        <button id="leave-guard-stay" type="button" class="leave-guard-stay">Stay on this page</button>
+      </div>
+    </div>
   </div>
 
   <div id="toast-container" class="toast-container"></div>
@@ -699,6 +806,7 @@
     import { escapeHtml, getTeamColor } from './js/utils.js';
     import { ctToEpochMs, isWeekLocked, isGameLocked as gameLocked } from './js/kickoff.js';
     import { loadTrainingData, modelFor, fieldRead } from './js/scoutData.js';
+    import { pickTally, onSlate, plural } from './js/pickSave.js';
 
     // CSS.escape polyfill (older browsers)
     if (!window.CSS || typeof CSS.escape !== 'function') {
@@ -737,6 +845,13 @@
     const lockBanner = document.getElementById('lock-banner');
     const lockMsg    = document.getElementById('lock-msg');
     const lockBannerTitle = document.getElementById('lock-banner-title');
+    const tallyEl    = document.getElementById('pick-tally');
+    const saveBar    = document.getElementById('save-bar');
+    const saveBarMsg = document.getElementById('save-bar-msg');
+    const saveBarIcon = document.getElementById('save-bar-icon');
+    const saveBarBtn = document.getElementById('save-bar-btn');
+    const leaveGuard = document.getElementById('leave-guard');
+    const leaveGuardMsg = document.getElementById('leave-guard-msg');
 
     // ------- State -------
     let session = null;
@@ -1120,9 +1235,158 @@
     function saveDraft(){
       const key = draftKey(); if (!key) return;
       try { localStorage.setItem(key, JSON.stringify(selections())); } catch {}
-      saveStatus.textContent = 'Draft saved locally';
-      setTimeout(()=>{ if (saveStatus.textContent === 'Draft saved locally') saveStatus.textContent=''; }, 1200);
+      // This used to flash "Draft saved locally" beside the Save button on
+      // every tap. It was true, and it was the worst possible thing to say: the
+      // word anybody reads in it is "saved", and nothing had reached the
+      // database. The draft is a crash net, not a save, so it stays quiet now
+      // and the save bar says what is actually recorded.
     }
+    // ------- Saved vs. on screen -------
+    //
+    // Every game the slate offers, tiebreakers included, as numbers. The ONLY
+    // games a pick may be written for or counted against - see js/pickSave.js.
+    function slateIds(){
+      return getAllGames().map(g => g.game_id);
+    }
+
+    // Can this game be saved right now? Mirrors savePicks' own gate exactly,
+    // and against the clock rather than the once-a-minute cached flag, so a
+    // locked game never shows as "unsaved" with a Save button that cannot help.
+    function gameOpen(gameId){
+      if (isPlayoffMode) {
+        if (!userInPlayoffs) return false;
+        const g = getAllGames().find(x => String(x.game_id) === String(gameId));
+        return !!g && !isGameLocked(g);
+      }
+      return !isWeekLocked(allWeekGames());
+    }
+
+    function currentTally(){
+      return pickTally(selections(), existingPicks, slateIds(), gameOpen);
+    }
+
+    // A save is waiting on the debounce, in flight, or has failed - any of
+    // which means leaving now could lose a pick.
+    function hasUnsaved(){
+      return saveInFlight || autosaveTimer != null || currentTally().unsaved.length > 0;
+    }
+
+    // 'idle' | 'saving' | 'saved' | 'error'. Only the bar reads it.
+    let barPhase = 'idle';
+    let barError = '';
+    let savedFlashTimer = null;
+
+    /**
+     * Paint the tally pill, the inline status and the bar from one tally, so
+     * the three can never disagree. Called after anything that can change
+     * either side: a tap, a load, a save, a clear, the minute tick.
+     */
+    function refreshSaveState(){
+      if (!slateIds().length || !session) {
+        tallyEl.hidden = true;
+        setBar(null);
+        return;
+      }
+      const t = currentTally();
+      const unsaved = t.unsaved.length;
+
+      // The pill. Always visible once there is a slate: it is the answer to
+      // "did my picks go in?" without having to do anything.
+      tallyEl.hidden = false;
+      tallyEl.classList.remove('is-complete', 'is-partial', 'is-dirty');
+      if (unsaved) {
+        tallyEl.classList.add('is-dirty');
+        tallyEl.textContent = '⚠ ' + plural(unsaved, 'pick') + ' not saved';
+      } else if (t.complete) {
+        tallyEl.classList.add('is-complete');
+        tallyEl.textContent = '✓ All ' + t.total + ' picks saved';
+      } else {
+        tallyEl.classList.add('is-partial');
+        tallyEl.textContent = t.savedCount + ' of ' + t.total + ' picks saved';
+      }
+      saveStatus.textContent = tallyEl.textContent;
+
+      // The bar. Error and saving outrank everything; then unsaved; then the
+      // brief green "saved" after a save; otherwise it gets out of the way.
+      // An error only stands while there is still something it failed to
+      // save; tap the old pick back and there is nothing left to warn about.
+      if (barPhase === 'error' && !unsaved && !saveInFlight) barPhase = 'idle';
+      if (barPhase === 'error') {
+        setBar('error',
+          '<b>Your picks did NOT save.</b><small>' + escapeHtml(barError || 'Check your connection and try again.') + '</small>',
+          'Retry');
+      } else if (barPhase === 'saving' || (autosaveTimer != null && unsaved)) {
+        setBar('saving', 'Saving ' + plural(Math.max(unsaved, 1), 'pick') + '…', null);
+      } else if (unsaved) {
+        setBar('dirty',
+          '<b>You have ' + plural(unsaved, 'unsaved pick') + '.</b>' +
+          '<small>They do not count until they are saved.</small>',
+          'Save now');
+      } else if (barPhase === 'saved') {
+        setBar('saved',
+          t.complete
+            ? '<b>Saved ✓</b> All ' + t.total + ' picks are in.'
+            : '<b>Saved ✓</b> ' + t.savedCount + ' of ' + t.total + ' picks are in &mdash; ' +
+              plural(t.total - t.savedCount, 'game') + ' still need' + (t.total - t.savedCount === 1 ? 's' : '') + ' a pick.',
+          null);
+      } else {
+        setBar(null);
+      }
+    }
+
+    function setBar(kind, html, btnLabel){
+      if (!kind) {
+        saveBar.hidden = true;
+        document.body.classList.remove('has-save-bar');
+        return;
+      }
+      saveBar.classList.remove('is-dirty', 'is-saving', 'is-error', 'is-saved');
+      saveBar.classList.add('is-' + kind);
+      saveBarIcon.textContent = kind === 'saved' ? '✓' : kind === 'saving' ? '…' : '⚠';
+      saveBarMsg.innerHTML = html;
+      saveBarBtn.hidden = !btnLabel;
+      saveBarBtn.disabled = kind === 'saving';
+      if (btnLabel) saveBarBtn.textContent = btnLabel;
+      saveBar.hidden = false;
+      document.body.classList.add('has-save-bar');
+    }
+
+    // ------- Autosave -------
+    //
+    // A tap on a team now saves it, a beat later. This is safe to do because
+    // the deadline is enforced in Postgres (20260822020000) and not merely by
+    // this page, and because a pick can be changed as often as you like until
+    // kickoff - an accidental tap costs one more tap. Forgetting the button
+    // cost a member an entire week.
+    //
+    // The debounce is there for the lever, whose drag can fire more than one
+    // change, and so that changing three games in quick succession is one
+    // upsert rather than three. The Save button and the bar still work and
+    // save immediately; they are the fallback if this ever fails.
+    //
+    // Slots are unaffected in substance: trg_slots_jackpot_pull counts one pull
+    // per ROW, ever, however many times the row is re-saved, so saving on every
+    // flip cannot walk the meter up.
+    const AUTOSAVE_MS = 700;
+    let autosaveTimer = null;
+    let saveInFlight = null;     // the running save, if any
+    let saveAgain = false;       // a change arrived while it was running
+
+    function scheduleAutosave(){
+      if (autosaveTimer != null) clearTimeout(autosaveTimer);
+      if (!currentTally().unsaved.length) { autosaveTimer = null; refreshSaveState(); return; }
+      autosaveTimer = setTimeout(() => { autosaveTimer = null; savePicks({ auto: true }); }, AUTOSAVE_MS);
+      refreshSaveState();
+    }
+
+    // Do not wait out the debounce if the page is going away.
+    function flushAutosave(){
+      if (autosaveTimer == null) return null;
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      return savePicks({ auto: true });
+    }
+
     function loadDraft(){
       const key = draftKey(); if (!key) return [];
       try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
@@ -1203,17 +1467,15 @@
         await loadPlayoffGames();
         await loadExistingPicksForVisibleGames();
         overlayDraft();
+        paintSlotsState();
         applyPerGameLocks();
+        refreshSaveState();
 
         // Re-check per-game locks every minute (CT-based)
         setInterval(() => {
           applyPerGameLocks();
+          refreshSaveState();
         }, 60_000);
-
-        // Save draft when tab is hidden
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'hidden') saveDraft();
-        });
 
         return;
       }
@@ -1244,25 +1506,27 @@
       await loadGamesForWeek(currentWeek);
       await loadExistingPicksForVisibleGames();
       overlayDraft();
+      // A draft from a visit that never saved shows up here as unsaved picks,
+      // and the bar says so. It is deliberately NOT autosaved: the player may
+      // have walked away from those picks on purpose, and the bar puts the
+      // decision in front of them instead of making it for them.
+      paintSlotsState();
 
       // Lock state (week-based) for normal picks; tiebreakers per-game
       computeEarliestKickoff();
       updateLockState();
       applyLockUI();
+      refreshSaveState();
 
       // Re-check lock state and tiebreaker per-game locks every minute
       setInterval(() => {
         updateLockState();
         applyLockUI();
+        refreshSaveState();
       }, 60_000);
 
       if (gamesLoading) gamesLoading.classList.add('hidden');
       setStatus(`Loaded week ${currentWeek} (Season ${currentSeason}).`);
-
-      // Save draft when tab is hidden
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') saveDraft();
-      });
     }
 
     async function loadGamesForWeek(week){
@@ -1443,7 +1707,9 @@
       // the team the coin chose. Either way the radio to re-check is the slots
       // one, so the flag decides this and not the pick value - otherwise a
       // resolved slots pick would come back looking like a pick they made.
-      (data||[]).forEach(r => {
+      // onSlate is belt and braces: the .in() above already asks only for slate
+      // games, and this guarantees nothing else can be counted as saved.
+      onSlate(data, gameIds).forEach(r => {
         existingPicks.set(String(r.game_id), r.by_slots ? SLOTS_VALUE : r.pick);
         if (r.by_slots) resolvedSlots.set(String(r.game_id), r.pick || null);
       });
@@ -1624,7 +1890,8 @@
             r.parentElement.classList.remove('selected');
           });
           input.parentElement.classList.add('selected');
-          saveDraft(); // save draft on every change
+          saveDraft(); // crash net only - see saveDraft
+          scheduleAutosave();
         });
       });
     }
@@ -1991,8 +2258,12 @@
     }
 
 
+    // A draft is whatever was on screen last time, saved or not. It is laid
+    // back over the page ONLY for games that can still be saved: once a game
+    // has locked the screen must show what the database holds, not a
+    // selection that never got there and now never will.
     function overlayDraft(){
-      const draft = loadDraft();
+      const draft = onSlate(loadDraft(), slateIds()).filter(d => gameOpen(d.game_id));
       if (!draft?.length) return;
       draft.forEach(({ game_id, pick }) => {
         const sel = `input[name="game_${game_id}"][value="${CSS.escape(pick)}"]`;
@@ -2053,19 +2324,52 @@
       saveBtn.innerHTML = `<span id="saveLabel">Save Picks</span>`;
     }
 
-    async function savePicks(){
-      if (!session) { setStatus('Please sign in to save picks.', true); return; }
-      if (!selectedTeamId) { setStatus('No team found for your account.', true); return; }
+    /**
+     * Write what is on screen to the database.
+     *
+     * `auto` is the autosave path: it stays quiet when there is nothing to do
+     * and does not toast on success (the bar turns green instead), because a
+     * toast per tap is noise. A manual save behaves exactly as it always did.
+     *
+     * One save at a time. A change that lands while one is running sets
+     * saveAgain and is picked up when it finishes, so the last tap always wins
+     * and two upserts can never race each other to the row.
+     */
+    async function savePicks({ auto = false } = {}){
+      if (auto !== true) auto = false;          // a click handler passes an Event
+      if (saveInFlight) { saveAgain = true; return saveInFlight; }
+      if (autosaveTimer != null) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+      saveInFlight = doSave(auto);
+      try { return await saveInFlight; }
+      finally {
+        saveInFlight = null;
+        if (saveAgain) {
+          saveAgain = false;
+          if (currentTally().unsaved.length) savePicks({ auto: true });
+        }
+        refreshSaveState();
+      }
+    }
+
+    async function doSave(auto){
+      if (!session) { setStatus('Please sign in to save picks.', true); return false; }
+      if (!selectedTeamId) { setStatus('No team found for your account.', true); return false; }
 
       if (isPlayoffMode && !userInPlayoffs) {
         setStatus('Playoff mode: only playoff teams can save picks.', true);
-        return;
+        return false;
       }
 
-      const selected = selections();
+      // ONLY THIS WEEK'S SLATE. selections() reads the rendered radios, which
+      // are only ever slate games, but a pick on a game the commissioner has
+      // taken off the board is exactly how one player ended a week with five
+      // picks out of four - so it is stated here rather than assumed. The
+      // database refuses it too (20261012120000).
+      const slate = slateIds();
+      const selected = onSlate(selections(), slate);
       if (!selected.length){
-        setStatus('Pick at least one game before saving.', true);
-        return;
+        if (!auto) setStatus('Pick at least one game before saving.', true);
+        return false;
       }
 
       const rows = [];
@@ -2108,33 +2412,112 @@
       }
 
       if (!rows.length) {
-        setStatus('No eligible games to save (picks may be locked).', true);
-        renderSaveError();
-        return;
+        if (!auto) {
+          setStatus('No eligible games to save (picks may be locked).', true);
+          renderSaveError();
+        }
+        return false;
       }
 
       setStatus('Saving…');
       renderSaving();
+      barPhase = 'saving';
+      refreshSaveState();
 
-      const { error } = await supabase
-        .from('picks')
-        .upsert(rows, { onConflict: 'team_id,game_id', returning: 'minimal' });
+      let error = null;
+      try {
+        ({ error } = await supabase
+          .from('picks')
+          .upsert(rows, { onConflict: 'team_id,game_id', returning: 'minimal' }));
+      } catch (e) {
+        // A dropped connection rejects rather than returning { error }, and an
+        // unhandled rejection here would leave the bar saying "Saving…" forever.
+        error = { message: e?.message || 'Network error' };
+      }
 
       if (error) {
+        barPhase = 'error';
+        barError = error.message;
         renderSaveError();
         setStatus('Error saving: ' + error.message, true);
         showToast('Error saving picks: ' + error.message, 'error');
-      } else {
-        setStatus('Picks saved!');
-        rows.forEach(r => {
-          existingPicks.set(String(r.game_id), r.by_slots ? SLOTS_VALUE : r.pick);
-          if (r.by_slots) resolvedSlots.set(String(r.game_id), null);
-          else resolvedSlots.delete(String(r.game_id));
-        });
-        clearDraft();
-        prefillSelections();
-        renderSaved();
-        showToast('Picks saved successfully!', 'success');
+        return false;
+      }
+
+      rows.forEach(r => {
+        existingPicks.set(String(r.game_id), r.by_slots ? SLOTS_VALUE : r.pick);
+        if (r.by_slots) resolvedSlots.set(String(r.game_id), null);
+        else resolvedSlots.delete(String(r.game_id));
+      });
+      await sweepStrayPicks(slate);
+
+      // Not prefillSelections(): that re-checks every radio to match the
+      // database, and with autosave a tap can land while this save is in
+      // flight - re-checking would quietly undo it. The radios are already
+      // right; only the slots notes need repainting.
+      paintSlotsState();
+      if (currentTally().unsaved.length) saveDraft(); else clearDraft();
+
+      setStatus(auto ? 'Picks saved automatically.' : 'Picks saved!');
+      renderSaved();
+      barPhase = 'saved';
+      barError = '';
+      if (savedFlashTimer) clearTimeout(savedFlashTimer);
+      savedFlashTimer = setTimeout(() => {
+        if (barPhase === 'saved') { barPhase = 'idle'; refreshSaveState(); }
+      }, 3500);
+      if (!auto) showToast('Picks saved successfully!', 'success');
+      return true;
+    }
+
+    /**
+     * Remove this team's picks for the current week on games that are no
+     * longer on the slate - the stray fifth pick, left behind when the
+     * commissioner swapped a game out after somebody had already picked it.
+     * Nothing on this page shows that row, so nothing on this page could ever
+     * have changed it; it just sat there being counted.
+     *
+     * Regular season only. The playoff slate spans weeks and is defined by
+     * "no winner yet", so a game dropping off it is normal and its pick must
+     * stand. Non-fatal: the picks the player can see have already saved, and a
+     * failure here is no reason to tell them otherwise.
+     */
+    async function sweepStrayPicks(slate){
+      if (isPlayoffMode || currentWeek == null || !slate.length) return;
+      // Never after lock, whoever is signed in. The commissioner is exempt from
+      // the deadline policy, so for them RLS would not be the backstop.
+      if (isWeekLocked(allWeekGames())) return;
+      try {
+        // picks.week has no season beside it, so "week 7, not on the slate"
+        // also matches LAST season's week 7. Each candidate is confirmed as a
+        // game in THIS season's week before anything is deleted.
+        const { data: maybe, error: e1 } = await supabase
+          .from('picks')
+          .select('game_id')
+          .eq('team_id', selectedTeamId)
+          .eq('week', currentWeek)
+          .not('game_id', 'in', '(' + slate.map(Number).join(',') + ')');
+        if (e1 || !maybe?.length) return;
+
+        const { data: games, error: e2 } = await supabase
+          .from('all_games')
+          .select('GameId')
+          .eq('cfb_season', currentSeason)
+          .eq('week', currentWeek)
+          .in('GameId', maybe.map(r => Number(r.game_id)));
+        if (e2 || !games?.length) return;
+
+        const stray = games.map(g => Number(g.GameId)).filter(id => !slate.includes(id));
+        if (!stray.length) return;
+
+        const { error } = await supabase
+          .from('picks')
+          .delete()
+          .eq('team_id', selectedTeamId)
+          .in('game_id', stray);
+        if (error) console.warn('stray pick sweep failed:', error.message);
+      } catch (e) {
+        console.warn('stray pick sweep failed:', e);
       }
     }
 
@@ -2156,11 +2539,101 @@
       });
       document.querySelectorAll('.pick-label').forEach(l => l.classList.remove('selected'));
       saveDraft();
-      setStatus('Selections cleared for unlocked games.');
+      paintSlotsState();
+      // Clearing deletes nothing in the database - saved picks still stand -
+      // so this only cancels an autosave that was about to send the old taps.
+      scheduleAutosave();
+      setStatus('Selections cleared for unlocked games. Saved picks still stand.');
     }
 
-    document.getElementById('save').addEventListener('click', savePicks);
+    document.getElementById('save').addEventListener('click', () => savePicks());
     document.getElementById('clear').addEventListener('click', clearSelections);
+    saveBarBtn.addEventListener('click', () => { barPhase = 'idle'; savePicks(); });
+
+    // ------- Leaving with picks unsaved -------
+
+    // The browser's own "Leave site?" prompt. It cannot say WHAT is unsaved or
+    // offer to save, but it is the only thing that catches a closed tab, a
+    // typed URL or the back button. Before asking, the pending autosave is
+    // fired, so the common case - tap a team, close the tab inside the
+    // debounce - most likely saves anyway.
+    let leavingOnPurpose = false;
+    window.addEventListener('beforeunload', e => {
+      if (leavingOnPurpose) return;
+      flushAutosave();
+      if (!hasUnsaved()) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+
+    // Switching apps on a phone is the one "leave" that never fires
+    // beforeunload, and the page may be killed in the background without
+    // warning. Write the draft and send the pending save while we still can.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'hidden') return;
+      saveDraft();
+      flushAutosave();
+    });
+
+    /**
+     * Links on the page - the nav, the blackjack nudge - are ordinary full
+     * page loads, so beforeunload alone would catch them. It is intercepted
+     * here anyway because this can do what the browser prompt cannot: say how
+     * many picks are at stake and offer "save, then go" as the first button.
+     *
+     * Capture phase on the document, so it sees nav.js's links without nav.js
+     * having to know this page exists. New tabs, modified clicks and same-page
+     * anchors are left alone: none of them unload this page.
+     */
+    let pendingHref = null;
+    document.addEventListener('click', e => {
+      const a = e.target?.closest?.('a[href]');
+      if (!a || e.defaultPrevented) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (a.target && a.target !== '_self') return;
+      if (a.hasAttribute('download')) return;
+      let url;
+      try { url = new URL(a.href, location.href); } catch { return; }
+      if (url.origin !== location.origin) return;
+      if (url.pathname === location.pathname && url.search === location.search && url.hash) return;
+      if (!hasUnsaved()) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      pendingHref = url.href;
+      const n = currentTally().unsaved.length;
+      leaveGuardMsg.textContent = n
+        ? `You have ${plural(n, 'pick')} that ${n === 1 ? 'has' : 'have'} not been saved. If you leave now ${n === 1 ? 'it' : 'they'} will not count.`
+        : 'Your picks are still being saved. Leaving now could lose them.';
+      leaveGuard.hidden = false;
+      document.getElementById('leave-guard-save').focus();
+    }, true);
+
+    function closeLeaveGuard(){ leaveGuard.hidden = true; pendingHref = null; }
+    function goPending(){
+      const href = pendingHref;
+      closeLeaveGuard();
+      if (!href) return;
+      leavingOnPurpose = true;
+      location.href = href;
+    }
+    document.getElementById('leave-guard-stay').addEventListener('click', closeLeaveGuard);
+    document.getElementById('leave-guard-go').addEventListener('click', goPending);
+    document.getElementById('leave-guard-save').addEventListener('click', async () => {
+      const btn = document.getElementById('leave-guard-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      if (saveInFlight) await saveInFlight;
+      const ok = currentTally().unsaved.length ? await savePicks() : barPhase !== 'error';
+      btn.disabled = false; btn.textContent = 'Save picks, then go';
+      // Only go if it actually went in. A failed save keeps them here, where
+      // the red bar is telling them so.
+      if (ok && !currentTally().unsaved.length) goPending();
+      else closeLeaveGuard();
+    });
+    leaveGuard.addEventListener('click', e => { if (e.target === leaveGuard) closeLeaveGuard(); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !leaveGuard.hidden) closeLeaveGuard();
+    });
 
   </script>
 </body>

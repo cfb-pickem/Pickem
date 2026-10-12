@@ -81,7 +81,7 @@ export function settleHand({ cards, bet, doubled }, dealerCards) {
 
   // THE PEEK, APPLIED BACKWARDS. A real dealer showing an ace or a ten looks at
   // the hole card and ends the hand on a natural, so nobody can double into a
-  // hand that was already over. A hole card sealed from Tuesday to kickoff
+  // hand that was already over. A hole card sealed from the open to kickoff
   // cannot peek, so the peek is honoured at settlement instead: the week's play
   // is void and only the original bet was ever at risk. US "original bets only".
   if (isNatural(dealerCards)) {
@@ -180,20 +180,26 @@ export async function loadPit(knownTeam) {
   const wk = await supabase.rpc('bj_live_week');
   const live = Array.isArray(wk.data) ? wk.data[0] : wk.data;
 
-  // A week stays "open" - and bj_live_week() keeps returning it - until every
-  // picked-or-tiebreaker game in it has kicked off, which happens well before
-  // Tuesday's cron deals the next hand. So from first kickoff to Tuesday,
-  // bj_live_week() already points at week N+1, a week with no blackjack_weeks
-  // row yet: the lookup below misses. Falling back to the newest row only
-  // when bj_live_week() came back empty (the old code) skipped that gap
-  // entirely and hid the reveal for the week that had just settled - fall
-  // back whenever the lookup misses, not only when there was nothing to look up.
+  // bj_live_week() is the earliest week whose picks are still open, and it
+  // can name a week with no blackjack_weeks row yet: the cron minute between
+  // the commissioner ticking `picked` and the table being dealt, or a
+  // tiebreaker-only week that still waits for Tuesday. Between a week's first
+  // kickoff and the next week's games being set it names nothing at all.
+  // Falling back only when it came back empty (the old code) hid the reveal
+  // for the week that had just settled - fall back whenever the lookup misses.
+  //
+  // AND FALL BACK TO A SETTLED WEEK, never merely the newest row. Since
+  // 20261012130000 the table opens with the picks, so a week can be dealt
+  // without being the live one: a later week set early, or a week dealt off a
+  // box ticked by mistake and then unticked (which now stays sealed instead of
+  // settling). The newest row could be either, and drawing it would offer a
+  // bet box that bj_deal() - which only ever seats the live week - refuses.
   let season = live?.cfb_season ?? null, week = live?.week ?? null;
   let wrow = null;
   // dealer_up is NOT selected any more, and that is the whole point of the
   // 20261007 migration: the column is retired and permanently null because
-  // publishing the up-card on Tuesday let the league read it and then decide
-  // whether to bet at all. The up-card now comes from bj_dealer_up(), which
+  // publishing the up-card when the table opened let the league read it and
+  // then decide whether to bet at all. The up-card now comes from bj_dealer_up(), which
   // hands it over only once you hold a hand.
   if (season != null) {
     const r = await supabase.from('blackjack_weeks')
@@ -204,6 +210,7 @@ export async function loadPit(knownTeam) {
   if (!wrow) {
     const r = await supabase.from('blackjack_weeks')
       .select('cfb_season, week, dealer_final, settled_at')
+      .not('settled_at', 'is', null)
       .order('cfb_season', { ascending: false }).order('week', { ascending: false }).limit(1);
     wrow = r.data?.[0] ?? null;
     season = wrow?.cfb_season ?? null; week = wrow?.week ?? null;
@@ -282,7 +289,7 @@ function renderPit(mount) {
     : (s.dealerUp != null ? handHtml([s.dealerUp]) + card(0, true)
                           : card(0, true) + card(0, true));
   const dealerTot = s.settled && s.dealerFinal ? handTotal(s.dealerFinal) : null;
-  // "Sealed Tuesday" was true of one card. Now it depends on whether you have
+  // "Sealed at the open" was true of one card. Now it depends on whether you have
   // skin in the week yet, and the wording has to say which, or a player staring
   // at two face-down cards reads it as the page failing to load.
   const sealNote = s.dealerUp != null ? 'hole card sealed' : 'sealed until you bet';
@@ -372,7 +379,7 @@ function leagueRows(s) {
       '</div>';
     }).join('');
   // Not "whole table" - the harness's e2e test greps the felt's markup for
-  // /hole/i to make sure the sealed hole card never leaks before Tuesday, and
+  // /hole/i to make sure the sealed hole card never leaks before kickoff, and
   // that substring match doesn't know the difference from "w-HOLE-le".
   return '<div class="bj-league"><div class="bj-league-title">THE TABLE, FACE UP</div>' + rows + '</div>';
 }
