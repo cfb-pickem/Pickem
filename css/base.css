@@ -2671,3 +2671,7 @@ td[data-slots]{ cursor:pointer; }
   letter-spacing:.08em; text-transform:uppercase; color:var(--cfp-gold-2);
   text-decoration:none; }
 .bj-nudge:hover{ text-decoration:underline; }
+
+/* Legend wording for the loss tint. Halloween turns loss cells purple, so the
+   legend swaps its colour word to match. */
+.legend-loss-hw { display: none; }

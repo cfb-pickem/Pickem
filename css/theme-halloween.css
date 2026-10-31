@@ -226,6 +226,10 @@ html[data-theme="halloween"] h1 {
   color: #a5f59a;
 }
 
+/* The legend under the board names the loss colour; keep it honest. */
+[data-theme="halloween"] .legend-loss-std { display: none; }
+[data-theme="halloween"] .legend-loss-hw  { display: inline; }
+
 [data-theme="halloween"] .cfp-card {
   border-color: rgba(255,117,24,.16);
   border-top-color: var(--cfp-gold);
