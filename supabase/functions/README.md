@@ -1,6 +1,6 @@
 # Edge Functions
 
-These three ran in production for months without being in version control. They
+The first three ran in production for months without being in version control. They
 were downloaded off the project with `supabase functions download <slug>` and
 committed as they were deployed, so this is a record of what is actually
 running, not a reconstruction of what it should be.
@@ -21,6 +21,7 @@ that is the rule: the repo is public and GitHub Pages serves it.
 | `dynamic-worker` (deployed as `sync-games`) | `Update from CFB API`, every 2h | active | Pulls the week's schedule from CollegeFootballData — start time, teams — and upserts it into `all_games`. |
 | `update-final-scores` | `Update from ESPN`, every minute | **retired** | Used to own the live state. Kept deployed but its cron job is deactivated; see below. |
 | `debug-espn-game` | none | on demand | Dumps a simplified view of ESPN's scoreboard. Diagnostic only, reads nothing from the database. |
+| `live-scores` | `live-scores-edge`, every minute | active | The 10-second score feed for game windows. Fetches ESPN at :10-:50 and writes through `apply_espn_scoreboard()`. `sync_espn_scores()` on the minute stays the floor. |
 
 ## `update-final-scores` is retired, not deleted
 
@@ -67,3 +68,20 @@ supabase functions deploy <slug>      # push a change
 
 Downloads land under the directory the CLI treats as the project root, which is
 not necessarily this repo — check where they went before copying them in.
+
+## `live-scores`
+
+Written in the repo, unlike the three above. See
+`migrations/20261030230000_ten_second_scores.sql` for the design. Two things
+worth knowing:
+
+- ESPN answers a bare Deno `fetch` from the edge with **403**. It is served with
+  ordinary browser headers (`ESPN_HEADERS`). If the fast feed ever goes quiet,
+  check that first.
+- `?debug=1` with the service-role key as the bearer runs one pass synchronously
+  and returns what happened, errors included. Anything else gets 403 for that
+  mode; the normal call is claim-guarded to one run a minute.
+
+Deploy with `npx supabase functions deploy live-scores --use-api --workdir . --project-ref vopdioszofwdkwnujtiq`
+(the `--workdir` matters: without it the CLI resolves paths from the home
+directory).

@@ -636,7 +636,13 @@
     // will not go finer - so the client's own interval is the only part left
     // worth shortening. At 8s a change is on screen about four seconds after it
     // lands, against fifteen before.
+    //
+    // Since 20261030230000 the feed lands every ~10s in a game window and the
+    // board also subscribes to all_games over Supabase realtime, so a change is
+    // repainted as it is written. While that subscription is up the poll drops
+    // to LIVE_MS_BACKSTOP, there only to catch anything realtime missed.
     const LIVE_MS_ACTIVE = 8000;   // something is in progress
+    const LIVE_MS_BACKSTOP = 30000; // in progress, and realtime is connected
     const LIVE_MS_IDLE   = 90000;  // everything final / nothing kicked off yet
     let liveIntervalMs = LIVE_MS_IDLE;
 
@@ -1067,7 +1073,7 @@
 
       const { data: games, error: gErr } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, network_logo, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind, possession, is_red_zone')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, status_name, Period, Clock, "Start (CT)", Network, network_logo, picked, week, espn_url, cfb_season, tiebreaker, fpi_margin, line_open, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .eq('cfb_season', season)
         .eq('picked', true);
       if (gErr){ status('Could not load the season schedule.', true); return null; }
@@ -1087,7 +1093,7 @@
       // walk them straight into the season points.
       const { data: tbGames } = await supabase
         .from('all_games')
-        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, Period, Clock, "Start (CT)", Network, network_logo, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind, possession, is_red_zone')
+        .select('GameId, Away, Home, AwayPts, HomePts, line, winner, Status, status_name, Period, Clock, "Start (CT)", Network, network_logo, picked, week, espn_url, cfb_season, tiebreaker, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .eq('cfb_season', season)
         .eq('tiebreaker', true);
 
@@ -2032,31 +2038,50 @@
         const d = document.createElement('div');
         d.className = cls; d.textContent = txt; centerEl.appendChild(d);
       };
-      if (String((row && row.Status) || '').trim().toLowerCase() === 'final') {
-        add('game-hdr-final', 'FINAL');
+      const st   = String((row && row.Status) || '').trim().toLowerCase();
+      const name = String((row && row.status_name) || '').trim().toUpperCase();
+      const p    = Number(row && row.Period) || 0;
+
+      // FINISHED, or never going to be. Overtime finals say so the way every
+      // scoreboard does - FINAL/OT, FINAL/2OT.
+      if (st === 'final') {
+        add('game-hdr-final', p >= 5 ? 'FINAL/' + otLabel(p) : 'FINAL');
         return;
       }
+      if (st === 'postponed') { add('game-hdr-final', 'PPD'); return; }
+      if (st === 'canceled' || st === 'cancelled') { add('game-hdr-final', 'CANC'); return; }
+
       if (isLive(row)) {
-        const clk = String((row && row.Clock) || '').trim();
-        const p = Number(row && row.Period) || 1;
-        // A quarter that has run out says so. "2ND 0:00" is what the clock
-        // reads, but nobody calls it that - and "4TH 0:00" sitting there looks
-        // like the feed has jammed when it is really ESPN holding the game open
-        // between the clock hitting zero and the result going official, which
-        // can be several minutes. FINAL still only ever comes from ESPN saying
-        // so; this is only about naming the gap honestly.
-        //
-        // Derived from the period and the clock rather than from a status of its
-        // own: no new field, no extra parsing, and it cannot break separately
-        // from the score it arrives with.
-        if (clk === '0:00') {
-          add('game-hdr-state', p === 2 ? 'HALF' : 'END ' + periodLabel(p));
+        const clk = cleanClock(row && row.Clock);
+        const per = periodLabel(p || 1);
+
+        // ESPN's own name for the state comes first: it is what knows halftime
+        // from a quarter that has merely run out, and a weather delay from a
+        // stopped clock. The clock-based reading below is the fallback for rows
+        // the feed wrote before it carried status_name.
+        if (name === 'STATUS_HALFTIME') { add('game-hdr-state', 'HALF'); return; }
+        if (name === 'STATUS_DELAYED' || name === 'STATUS_RAIN_DELAY') { add('game-hdr-state', 'DELAY'); return; }
+        if (name === 'STATUS_SUSPENDED') { add('game-hdr-state', 'SUSP'); return; }
+
+        // College overtime has no clock. ESPN sends 0:00 on every OT snap, which
+        // the old 0:00 rule read as "END OT" for the whole of a live overtime.
+        if (p >= 5) {
+          add('game-hdr-state', name === 'STATUS_END_PERIOD' ? 'END ' + per : per);
+          return;
+        }
+
+        // A quarter that has run out says so. "2ND 0:00" is what the clock reads,
+        // but nobody calls it that - and "4TH 0:00" sitting there looks like the
+        // feed has jammed when it is really ESPN holding the game open between
+        // the clock hitting zero and the result going official, which can be
+        // several minutes. FINAL still only ever comes from ESPN saying so.
+        if (name === 'STATUS_END_PERIOD' || clk === '0:00') {
+          add('game-hdr-state', p === 2 ? 'HALF' : 'END ' + per);
           return;
         }
         // One row, and no separator between them. Measured in the running app:
         // "1ST . 4:00" comes to 38.8px against 38.3px of usable width in a phone
         // column, and the dot is exactly what pushes it over. "1ST 4:00" is 33.8.
-        const per = periodLabel(p);
         add('game-hdr-state', clk ? per + ' ' + clk : per);
         return;
       }
@@ -2318,7 +2343,21 @@
     // right three times out of four and put "1TH" on the board for the first
     // quarter of the season opener.
     const QUARTER = ['1ST', '2ND', '3RD', '4TH'];
-    const periodLabel = p => (Number(p) >= 5 ? 'OT' : (QUARTER[Number(p) - 1] || '1ST'));
+    const otLabel = p => (p <= 5 ? 'OT' : (p - 4) + 'OT');
+    const periodLabel = p => (Number(p) >= 5 ? otLabel(Number(p)) : (QUARTER[Number(p) - 1] || '1ST'));
+
+    // ESPN's clock, made to read like a clock. The feed normalises it on the way
+    // in (espn_clean_clock), so this is a second line of defence for rows written
+    // before that, or by anything else: "08:12" -> "8:12", "0:07.3" -> "0:07",
+    // bare seconds -> "0:45".
+    function cleanClock(raw){
+      const c = String(raw ?? '').trim();
+      let m = c.match(/^(\d{1,2}):(\d{1,2})(?:\.\d+)?$/);
+      if (m) return Number(m[1]) + ':' + m[2].padStart(2, '0');
+      m = c.match(/^(\d{1,2})(?:\.\d+)?$/);
+      if (m) return '0:' + m[1].padStart(2, '0');
+      return c;
+    }
 
     // The score is a fact, not a verdict. It used to glow green for the winner,
     // amber for whoever was ahead and go dim for the other side - three more
@@ -3070,8 +3109,46 @@
     // doesn't keep hitting Supabase every 30s; it refreshes immediately on return.
     let liveTickerWanted = false;
 
+    // REALTIME. One channel for the life of the page, listening for UPDATEs to
+    // all_games. A change to a game on the board triggers the same refresh the
+    // poll does, a beat later so a pass that writes several rows repaints once.
+    // Everything the board shows still goes through refreshBadgesFromAllGames -
+    // realtime only decides WHEN, never WHAT, so it cannot paint anything the
+    // poll would not.
+    let realtimeUp = false;
+    let realtimeChannel = null;
+    let realtimeTimer = 0;
+    function startRealtime(){
+      if (realtimeChannel) return;
+      try {
+        realtimeChannel = supabase
+          .channel('all-games-live')
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'all_games' }, payload => {
+            const id = payload && payload.new && payload.new.GameId;
+            if (id == null || !liveTickerWanted || document.hidden) return;
+            if (!gameIds.some(g => String(g) === String(id))) return;
+            clearTimeout(realtimeTimer);
+            realtimeTimer = setTimeout(refreshBadgesFromAllGames, 300);
+          })
+          .subscribe(state => {
+            const up = state === 'SUBSCRIBED';
+            if (up === realtimeUp) return;
+            realtimeUp = up;
+            // Back to the fast poll the moment the socket drops; on to the
+            // backstop on the next refresh once it is up.
+            if (!up && liveIntervalMs === LIVE_MS_BACKSTOP) {
+              liveIntervalMs = LIVE_MS_ACTIVE;
+              if (liveTimer){ clearInterval(liveTimer); liveTimer = null; resumeLiveTicker(); }
+            }
+          });
+      } catch (e) {
+        console.warn('realtime unavailable, polling only:', e);
+      }
+    }
+
     async function startLiveTicker(){
       liveTickerWanted = true;
+      startRealtime();
       await refreshBadgesFromAllGames();
       resumeLiveTicker();
     }
@@ -3091,7 +3168,7 @@
         return ts != null && now >= ts;
       });
 
-      const next = anyLive ? LIVE_MS_ACTIVE : LIVE_MS_IDLE;
+      const next = anyLive ? (realtimeUp ? LIVE_MS_BACKSTOP : LIVE_MS_ACTIVE) : LIVE_MS_IDLE;
       if (next === liveIntervalMs) return;
       liveIntervalMs = next;
       if (liveTimer){ clearInterval(liveTimer); liveTimer = null; resumeLiveTicker(); }
@@ -3115,7 +3192,7 @@
 
       const { data: rows, error } = await supabase
         .from('all_games')
-        .select('GameId, Status, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, network_logo, winner, line_live, line_live_at, line_live_kind, possession, is_red_zone')
+        .select('GameId, Status, status_name, AwayPts, HomePts, Period, Clock, "Start (CT)", Network, network_logo, winner, line_live, line_live_at, line_live_kind, possession, is_red_zone')
         .in('GameId', gameIds);
 
       if(error){
