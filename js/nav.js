@@ -2,6 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { sessionInfo } from './session.js';
 import { initPrefetch } from './prefetch.js';
+import { initHalloweenTreats } from './halloweenTreats.js';
 
 const LINKS = [
   { href: './index.html',        key: 'leaderboard',  label: 'Leaderboard' },
@@ -23,6 +24,7 @@ function clsActive(isActive){
 let didSubscribe = false;
 
 export default async function initNav(){
+  initHalloweenTreats();
   const mount = document.getElementById('site-nav');
   if (!mount) return;
 
