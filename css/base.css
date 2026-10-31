@@ -2675,3 +2675,55 @@ td[data-slots]{ cursor:pointer; }
 /* Legend wording for the loss tint. Halloween turns loss cells purple, so the
    legend swaps its colour word to match. */
 .legend-loss-hw { display: none; }
+
+/* --- Seasonal treats (js/seasonalTreats.js) ---
+   The mechanics only: each holiday theme file sets the font and colours.
+   Both are untouchable and gone in seconds. */
+.st-flyer {
+  position: fixed; left: 0; top: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.st-flyer svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+/* The turkey's legs scissor while it runs. */
+.st-flyer.is-turkey .st-leg-a,
+.st-flyer.is-turkey .st-leg-b { transform-box: fill-box; transform-origin: 50% 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .st-flyer.is-turkey .st-leg-a { animation: st-leg .22s ease-in-out infinite alternate; }
+  .st-flyer.is-turkey .st-leg-b { animation: st-leg .22s ease-in-out infinite alternate-reverse; }
+  @keyframes st-leg { from { transform: rotate(-22deg); } to { transform: rotate(22deg); } }
+}
+
+/* The word popped over a cell as its game settles. */
+.st-tot {
+  position: fixed;
+  z-index: 65;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(.4);
+  opacity: 0;
+  padding: .15rem .5rem;
+  border-radius: 999px;
+  font-family: 'Teko', 'Oswald', sans-serif;
+  font-size: 1rem; line-height: 1.2;
+  white-space: nowrap;
+  color: #fff; background: #333;
+  animation: st-tot 1.9s ease-out forwards;
+}
+@keyframes st-tot {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(.4) rotate(-6deg); }
+  14%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15) rotate(3deg); }
+  26%  { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+  70%  { opacity: 1; transform: translate(-50%, -70%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -120%) scale(.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-tot { animation-name: st-tot-still; }
+  @keyframes st-tot-still {
+    0% { opacity: 0; transform: translate(-50%, -50%); }
+    15%, 75% { opacity: 1; transform: translate(-50%, -50%); }
+    100% { opacity: 0; transform: translate(-50%, -50%); }
+  }
+}

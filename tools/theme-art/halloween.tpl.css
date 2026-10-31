@@ -1,0 +1,321 @@
+/* ============================================================
+   HALLOWEEN - a night game under a harvest moon
+   Active when <body data-theme="halloween"> (leaderboard) or
+   <html data-theme="halloween"> (every other page, set pre-paint).
+
+   Two halves. The token block re-dresses everything built on the design tokens
+   at once - LEDs, panels, chrome - so nothing new comes out half-themed. Below
+   it is the atmosphere: a moon that rises from behind the board, bats, a
+   graveyard skyline with a set of goalposts in it at the foot of every page,
+   cobwebs and a spider on the jumbotron, goo off its LED strip, and a countdown
+   that flickers like a candle in a pumpkin.
+
+   Every decorative layer sits behind content (z-index -1 or in flow after it)
+   and never takes a tap. Motion is opt-out via prefers-reduced-motion.
+   The inline SVGs are generated; edit their source shapes, not the data URIs.
+   ============================================================ */
+
+[data-theme="halloween"] body,
+body[data-theme="halloween"] {
+  /* Blacks go violet, not grey - the board should feel lit by something wrong. */
+  --cfp-black:    #0a0410;
+  --cfp-charcoal: #120a1e;
+  --cfp-gray:     #1b1029;
+
+  /* Chrome: pumpkin rather than stadium gold. */
+  --cfp-gold:   #ff7518;
+  --cfp-gold-2: #ffa94d;
+  --cfp-ivory:  #f6ecdd;
+
+  /* Amber LEDs -> ember, and the winning score goes toxic green, which reads
+     as Halloween without touching the win/loss language. */
+  --led-amber:    #ff8c1a;
+  --led-white:    #f2e9dc;
+  --led-dim:      #6b5878;
+  --led-win:      #7dff5a;
+  --led-win-glow: rgba(125,255,90,.6);
+
+  --panel-face-1: #090412;
+  --panel-face-2: #150a22;
+  --panel-face-3: #10071b;
+  --panel-bezel:  #2e1a3d;
+  --panel-dot:    rgba(255,140,26,.09);
+
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 10px rgba(255,117,24,.35);
+
+  --hw-ink: #07030c;
+
+  color: #ece2f2;
+
+  background:
+    radial-gradient(ellipse 900px 420px at 100% 0%, rgba(255,140,40,.20), transparent 70%),
+    radial-gradient(circle at 3% 22%,  rgba(96,0,168,.30), transparent 58%),
+    radial-gradient(circle at 97% 60%, rgba(128,0,96,.20), transparent 58%),
+    linear-gradient(180deg, #0b0414, #120a1e 45%, #1a0b2a);
+  background-attachment: fixed;
+  background-color: #120a1e;
+}
+
+[data-theme="halloween"] ::selection { background: rgba(255,117,24,.4); color: #fff; }
+[data-theme="halloween"] ::-webkit-scrollbar-thumb { background: rgba(255,117,24,.35); }
+[data-theme="halloween"] ::-webkit-scrollbar-track { background: #0a0410; }
+
+
+/* ---------- Sky ---------------------------------------------------------- */
+
+/* The harvest moon, rising from behind the right edge of the board. Most of
+   the page is covered by the board, so it's placed where it peeks out rather
+   than where it would sit behind a table. */
+html[data-theme="halloween"]::before {
+  content: "";
+  position: fixed;
+  top: 84px; right: -54px;
+  width: 230px; height: 230px;
+  pointer-events: none; z-index: -1;
+  background:
+    __MOON__ center / 100% 100% no-repeat,
+    radial-gradient(circle, rgba(255,190,110,.30) 30%, rgba(255,120,30,.10) 48%, transparent 68%);
+  filter: drop-shadow(0 0 30px rgba(255,170,80,.35));
+}
+
+/* Bats, crossing in front of the moon. */
+html[data-theme="halloween"]::after {
+  content: "";
+  position: fixed;
+  top: 40px; right: 0;
+  width: 380px; height: 210px;
+  pointer-events: none; z-index: -1;
+  background: __BATS__ center / contain no-repeat;
+  opacity: .9;
+}
+
+/* Low violet haze over the whole sky. */
+[data-theme="halloween"] body::before,
+body[data-theme="halloween"]::before {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: -1;
+  background:
+    radial-gradient(ellipse 140% 40% at 50% 100%, rgba(90,20,140,.30), transparent 70%),
+    radial-gradient(ellipse 60% 30% at 0% 0%, rgba(60,0,90,.35), transparent 70%);
+}
+
+/* The graveyard, along the foot of the page. Anchored to the bottom of <html>
+   (made the containing block, at least a screen tall) with room reserved under
+   the content, so on a long board it is where you land when you scroll down,
+   on a short page it sits on the bottom of the screen, and it never covers a
+   row. Dead tree, headstones, an iron fence, jack-o'-lanterns, and a pair of
+   goalposts with something drifting through the uprights. The two soft
+   ellipses on top are fog, which moves while the ground stays put. */
+html[data-theme="halloween"] { position: relative; min-height: 100%; }
+[data-theme="halloween"] body,
+body[data-theme="halloween"] { padding-bottom: calc(clamp(130px, 17vw, 240px) + 2.5rem); }
+
+[data-theme="halloween"] body::after,
+body[data-theme="halloween"]::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: clamp(130px, 17vw, 240px);
+  pointer-events: none; z-index: -1;
+  background:
+    radial-gradient(ellipse 30% 55% at 20% 100%, rgba(200,180,230,.16), transparent 70%),
+    radial-gradient(ellipse 35% 50% at 75% 100%, rgba(200,180,230,.13), transparent 70%),
+    __SKYLINE__ center bottom / cover no-repeat;
+  background-size: 120% 100%, 120% 100%, cover;
+}
+
+
+/* ---------- The jumbotron ------------------------------------------------ */
+
+/* Cobwebs strung across both top corners, behind the mascots. */
+[data-theme="halloween"] .jumbotron-header {
+  background:
+    __WEB__ left top / 150px 150px no-repeat,
+    __WEBR__ right top / 150px 150px no-repeat,
+    radial-gradient(80% 140% at 50% 0%, rgba(255,117,24,.12), transparent 70%),
+    linear-gradient(180deg, rgba(26,12,36,.85), rgba(16,8,24,.82) 40%, rgba(10,4,16,.88));
+  border-color: rgba(255,117,24,.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.06),
+    0 -4px 26px rgba(255,90,0,.10),
+    0 -4px 20px rgba(0,0,0,.4);
+}
+
+/* The LED strip becomes candy corn, and something orange drips off it. */
+[data-theme="halloween"] .jumbotron-header::before {
+  height: 22px;
+  opacity: 1;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg,
+      #ffd23f 0 33.3%, #ff7518 33.3% 66.6%, #fff4e0 66.6% 100%) 0 0 / 24px 4px repeat-x,
+    __DRIPS__ 0 3px / 300px 18px repeat-x;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.5));
+}
+
+/* A spider letting itself down over the title. */
+[data-theme="halloween"] .jumbotron-title::before {
+  content: "";
+  position: absolute;
+  top: -1.1rem; left: 14%;
+  width: 26px; height: 92px;
+  pointer-events: none;
+  background: __SPIDER__ center top / 100% 100% no-repeat;
+  transform-origin: 50% 0;
+}
+
+[data-theme="halloween"] .jumbotron-title-text,
+html[data-theme="halloween"] h1 {
+  font-family: 'Creepster', 'Teko', 'Oswald', sans-serif;
+  font-weight: 400;
+  letter-spacing: .06em;
+  color: #ff8a1f;
+  text-shadow:
+    0 0 6px rgba(255,120,20,.55),
+    0 0 22px rgba(255,90,0,.35),
+    0 3px 0 #3a0d00;
+}
+[data-theme="halloween"] .jumbotron-title-text { font-size: 2.6rem; }
+
+@media (max-width: 640px) {
+  [data-theme="halloween"] .jumbotron-title-text { font-size: 1.55rem; letter-spacing: .04em; }
+  [data-theme="halloween"] .jumbotron-header {
+    background-size: 84px 84px, 84px 84px, auto, auto;
+  }
+  [data-theme="halloween"] .jumbotron-title::before { display: none; }
+  html[data-theme="halloween"]::before { width: 150px; height: 150px; top: 300px; right: -80px; }
+  html[data-theme="halloween"]::after  { width: 200px; height: 110px; top: 270px; right: -60px; }
+}
+
+
+/* ---------- The board ---------------------------------------------------- */
+
+[data-theme="halloween"] .scoreboard-header {
+  background: linear-gradient(180deg, #1d0f2a, #120a1c) !important;
+  border-bottom-color: #3b1d4f !important;
+}
+
+/* Board edge catches the ember light. */
+[data-theme="halloween"] .scoreboard-wrap {
+  box-shadow:
+    inset 0 0 34px rgba(255,117,24,.07),
+    inset 0 1px 0 rgba(255,255,255,.06),
+    0 0 0 1px #1d0f28,
+    0 16px 56px rgba(0,0,0,.85),
+    0 0 30px rgba(255,90,0,.12);
+}
+
+/* Team / Points headers glow pumpkin rather than gold. */
+[data-theme="halloween"] .table thead th.sticky-col-1,
+[data-theme="halloween"] .table thead th:nth-child(2) {
+  text-shadow: 0 0 10px rgba(255,140,40,.5), 0 0 20px rgba(255,90,0,.2);
+}
+
+/* Losing picks bruise purple instead of red - red on this background just
+   turns to mud. */
+[data-theme="halloween"] .pick-loss {
+  background: rgba(96,20,120,.24);
+  box-shadow: inset 3px 0 0 rgba(186,104,255,.75);
+  color: #d9a5f5;
+}
+[data-theme="halloween"] .pick-win {
+  background: rgba(46,138,60,.20);
+  box-shadow: inset 3px 0 0 rgba(125,255,90,.8);
+  color: #a5f59a;
+}
+
+/* The legend under the board names the loss colour; keep it honest. */
+[data-theme="halloween"] .legend-loss-std { display: none; }
+[data-theme="halloween"] .legend-loss-hw  { display: inline; }
+
+[data-theme="halloween"] .cfp-card {
+  border-color: rgba(255,117,24,.16);
+  border-top-color: var(--cfp-gold);
+}
+
+
+/* ---------- Countdown ---------------------------------------------------- */
+
+[data-theme="halloween"] .reveal-banner:not(.is-urgent):not(.is-imminent):not(.is-opener) {
+  background:
+    radial-gradient(120% 150% at 50% 0%, rgba(255,117,24,.18), transparent 70%),
+    linear-gradient(180deg, rgba(24,10,30,.92), rgba(12,5,18,.92));
+  border-color: rgba(255,117,24,.3);
+  border-top-color: var(--cfp-gold);
+}
+[data-theme="halloween"] .reveal-banner:not(.is-urgent):not(.is-imminent) .reveal-clock {
+  color: #ff9a2e;
+  text-shadow: 0 0 10px rgba(255,140,30,.6), 0 0 34px rgba(255,90,0,.3);
+}
+[data-theme="halloween"] .reveal-dot {
+  background: #ff9a2e;
+  box-shadow: 0 0 8px rgba(255,140,30,.95);
+}
+[data-theme="halloween"] .reveal-label { color: #d8c6e6; }
+
+
+/* ---------- Motion (opt-out) --------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Bats drift and bob rather than fly a fixed loop - quieter on a page you
+     stare at for three hours on a Saturday. */
+  html[data-theme="halloween"]::after { animation: hw-bats 14s ease-in-out infinite alternate; }
+  @keyframes hw-bats {
+    0%   { transform: translate(0, 0) rotate(0deg); }
+    50%  { transform: translate(-26px, 10px) rotate(-2deg); }
+    100% { transform: translate(-48px, -6px) rotate(1deg); }
+  }
+
+  /* Fog rolls through the graveyard. */
+  [data-theme="halloween"] body::after,
+  body[data-theme="halloween"]::after { animation: hw-fog 38s linear infinite alternate; }
+  @keyframes hw-fog {
+    from { background-position: 0% 100%, 100% 100%, center bottom; }
+    to   { background-position: 100% 100%, 0% 100%, center bottom; }
+  }
+
+  [data-theme="halloween"] .jumbotron-title::before { animation: hw-spider 7s ease-in-out infinite; }
+  @keyframes hw-spider {
+    0%, 100% { transform: rotate(4deg) scaleY(1); }
+    30%      { transform: rotate(-3deg) scaleY(1.12); }
+    60%      { transform: rotate(2deg) scaleY(.94); }
+  }
+
+  /* A candle in a pumpkin: the glow wavers, the digits don't move. */
+  [data-theme="halloween"] .reveal-banner:not(.is-urgent):not(.is-imminent) .reveal-clock {
+    animation: hw-candle 3.2s ease-in-out infinite;
+  }
+  @keyframes hw-candle {
+    0%, 100% { text-shadow: 0 0 10px rgba(255,140,30,.6), 0 0 34px rgba(255,90,0,.30); }
+    22%      { text-shadow: 0 0 6px  rgba(255,140,30,.45), 0 0 22px rgba(255,90,0,.18); }
+    37%      { text-shadow: 0 0 13px rgba(255,160,40,.75), 0 0 42px rgba(255,90,0,.38); }
+    58%      { text-shadow: 0 0 8px  rgba(255,140,30,.5),  0 0 28px rgba(255,90,0,.24); }
+    80%      { text-shadow: 0 0 12px rgba(255,150,40,.7),  0 0 38px rgba(255,90,0,.34); }
+  }
+
+  /* The title buzzes like a bad neon tube now and then. */
+  [data-theme="halloween"] .jumbotron-title-text { animation: hw-neon 9s steps(1, end) infinite; }
+  @keyframes hw-neon {
+    0%, 91%, 93.5%, 95%, 100% { opacity: 1; }
+    92%, 94.5% { opacity: .55; }
+  }
+
+  /* A slow flicker on the live badge - a bad bulb, not a strobe. */
+  [data-theme="halloween"] .badge-live { animation: hw-flicker 4s steps(1, end) infinite; }
+  @keyframes hw-flicker {
+    0%, 43%, 47%, 61%, 65%, 100% { opacity: 1; }
+    45%, 63% { opacity: .55; }
+  }
+}
+
+
+/* ---------- Treats (js/seasonalTreats.js) -------------------------------- */
+/* The mechanics are in base.css; this is only how Halloween's look. */
+
+[data-theme="halloween"] .st-flyer.is-ghost { filter: drop-shadow(0 0 14px rgba(220,205,255,.55)); }
+
+[data-theme="halloween"] .st-tot { font-family: 'Creepster', 'Teko', sans-serif; letter-spacing: .06em; }
+[data-theme="halloween"] .st-tot.is-good { color: #0b1a06; background: #7dff5a; box-shadow: 0 0 14px rgba(125,255,90,.75); }
+[data-theme="halloween"] .st-tot.is-bad  { color: #f3e6ff; background: #6b2a94; box-shadow: 0 0 14px rgba(186,104,255,.75); }

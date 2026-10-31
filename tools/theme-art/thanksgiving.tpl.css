@@ -1,0 +1,259 @@
+/* ============================================================
+   THANKSGIVING - a late-November afternoon game
+   Active when <body data-theme="thanksgiving"> (leaderboard) or
+   <html data-theme="thanksgiving"> (every other page, set pre-paint).
+
+   GENERATED from tools/theme-art/thanksgiving.tpl.css + thanksgiving.art.mjs
+   by tools/theme-art/build.mjs. Edit those, not this file.
+
+   Same shape as Halloween: tokens first, so everything built on them is warm
+   at once, then the atmosphere. Not spooky, just warm - a low sun, geese going
+   over, leaves coming down, and a farm at the foot of the page with the loft
+   light on and a set of goalposts at the edge of the field. 3:30pm with the
+   light going.
+
+   Every decorative layer sits behind content and never takes a tap. Motion is
+   opt-out via prefers-reduced-motion.
+   ============================================================ */
+
+[data-theme="thanksgiving"] body,
+body[data-theme="thanksgiving"] {
+  /* Warm near-blacks - brown-tinted rather than neutral. */
+  --cfp-black:    #100a06;
+  --cfp-charcoal: #171009;
+  --cfp-gray:     #22170d;
+
+  /* Chrome: harvest gold and burnt orange. */
+  --cfp-gold:   #d98324;
+  --cfp-gold-2: #f0b357;
+  --cfp-ivory:  #f7edd9;
+
+  /* The winning score stays green - it's the one signal that shouldn't shift
+     with the season - but warms towards olive so it sits in the palette. */
+  --led-amber:    #f0a838;
+  --led-white:    #f7eeda;
+  --led-dim:      #7a6249;
+  --led-win:      #9ede55;
+  --led-win-glow: rgba(158,222,85,.6);
+
+  --panel-face-1: #0d0805;
+  --panel-face-2: #181009;
+  --panel-face-3: #120c07;
+  --panel-bezel:  #3a2717;
+  --panel-dot:    rgba(240,168,56,.08);
+
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 9px rgba(217,131,36,.32);
+
+  color: #f2e7d4;
+
+  background:
+    radial-gradient(ellipse 900px 440px at 100% 0%, rgba(240,150,50,.28), transparent 68%),
+    radial-gradient(ellipse 620px 340px at 6% 22%, rgba(140,62,20,.20), transparent 66%),
+    radial-gradient(ellipse 140% 44% at 50% 104%, rgba(90,40,10,.42), transparent 72%),
+    linear-gradient(180deg, #120b06, #1a1009 48%, #23150a);
+  background-attachment: fixed;
+  background-color: #171009;
+}
+
+[data-theme="thanksgiving"] ::selection { background: rgba(217,131,36,.4); color: #fff; }
+[data-theme="thanksgiving"] ::-webkit-scrollbar-thumb { background: rgba(217,131,36,.35); }
+
+
+/* ---------- Sky ---------------------------------------------------------- */
+
+/* The low sun, coming up from behind the right edge of the board. */
+html[data-theme="thanksgiving"]::before {
+  content: "";
+  position: fixed;
+  top: 84px; right: -54px;
+  width: 230px; height: 230px;
+  pointer-events: none; z-index: -1;
+  background:
+    __SUN__ center / 100% 100% no-repeat,
+    radial-gradient(circle, rgba(255,180,90,.32) 30%, rgba(240,120,40,.10) 50%, transparent 70%);
+  filter: drop-shadow(0 0 34px rgba(255,160,70,.35));
+}
+
+/* Geese going over, in a V. */
+html[data-theme="thanksgiving"]::after {
+  content: "";
+  position: fixed;
+  top: 36px; right: 30px;
+  width: 340px; height: 120px;
+  pointer-events: none; z-index: -1;
+  background: __GEESE__ center / contain no-repeat;
+  opacity: .85;
+}
+
+/* Leaves coming down, two layers at two sizes so it reads as depth. */
+[data-theme="thanksgiving"] body::before,
+body[data-theme="thanksgiving"]::before {
+  content: "";
+  position: fixed; inset: -560px 0 0 0;
+  pointer-events: none; z-index: -1;
+  background:
+    __LEAVES_NEAR__ 0 0 / 560px 560px repeat,
+    __LEAVES_FAR__ 170px 110px / 380px 380px repeat;
+  opacity: .38;
+}
+
+/* The farm, along the foot of the page - anchored to the bottom of <html>
+   with room reserved under the content, the same way as Halloween's graveyard.
+   A haze of dust over the field is its own layer, so it can drift. */
+html[data-theme="thanksgiving"] { position: relative; min-height: 100%; }
+[data-theme="thanksgiving"] body,
+body[data-theme="thanksgiving"] { padding-bottom: calc(clamp(130px, 17vw, 240px) + 2.5rem); }
+
+[data-theme="thanksgiving"] body::after,
+body[data-theme="thanksgiving"]::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: clamp(130px, 17vw, 240px);
+  pointer-events: none; z-index: -1;
+  background:
+    radial-gradient(ellipse 40% 50% at 30% 100%, rgba(255,190,110,.10), transparent 70%),
+    __SKYLINE__ center bottom / cover no-repeat;
+  background-size: 120% 100%, cover;
+}
+
+
+/* ---------- The jumbotron ------------------------------------------------ */
+
+/* Wheat sheaves tied in both top corners, behind the mascots. */
+[data-theme="thanksgiving"] .jumbotron-header {
+  background:
+    __WHEAT__ left top / 130px 130px no-repeat,
+    __WHEATR__ right top / 130px 130px no-repeat,
+    radial-gradient(80% 140% at 50% 0%, rgba(217,131,36,.14), transparent 70%),
+    linear-gradient(180deg, rgba(30,18,10,.86), rgba(20,12,6,.84) 40%, rgba(12,8,4,.9));
+  border-color: rgba(217,131,36,.24);
+}
+
+/* The LED strip becomes a flannel band, and a garland of leaves hangs off it. */
+[data-theme="thanksgiving"] .jumbotron-header::before {
+  height: 30px;
+  opacity: 1;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg, rgba(60,25,8,.55) 0 3px, transparent 3px 12px) 0 0 / 100% 5px no-repeat,
+    repeating-linear-gradient(90deg, #b4501a 0 12px, #7a3412 12px 18px, #e8c48a 18px 20px, #7a3412 20px 26px) 0 0 / 100% 5px no-repeat,
+    __GARLAND__ 0 2px / 160px 30px repeat-x;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.5));
+}
+
+[data-theme="thanksgiving"] .jumbotron-title-text,
+html[data-theme="thanksgiving"] h1 {
+  font-family: 'Rye', 'Teko', 'Oswald', serif;
+  font-weight: 400;
+  letter-spacing: .04em;
+  color: #f0b357;
+  text-shadow:
+    0 0 8px rgba(240,160,60,.45),
+    0 0 24px rgba(217,110,30,.25),
+    0 3px 0 #3a1a06;
+}
+[data-theme="thanksgiving"] .jumbotron-title-text { font-size: 2.2rem; }
+
+@media (max-width: 640px) {
+  [data-theme="thanksgiving"] .jumbotron-header { padding-top: 1.7rem; }
+  [data-theme="thanksgiving"] .jumbotron-header::before { height: 22px; background-size: 100% 4px, 100% 4px, 110px 21px; }
+  [data-theme="thanksgiving"] .jumbotron-title-text { font-size: 1.3rem; letter-spacing: .02em; }
+  [data-theme="thanksgiving"] .jumbotron-header { background-size: 76px 76px, 76px 76px, auto, auto; }
+  html[data-theme="thanksgiving"]::before { width: 150px; height: 150px; top: 300px; right: -80px; }
+  html[data-theme="thanksgiving"]::after  { width: 200px; height: 72px; top: 260px; right: -20px; }
+}
+
+
+/* ---------- The board ---------------------------------------------------- */
+
+[data-theme="thanksgiving"] .scoreboard-header {
+  background: linear-gradient(180deg, #22150b, #160e07) !important;
+  border-bottom-color: #4a3018 !important;
+}
+
+/* Board looks lit by the same low sun. */
+[data-theme="thanksgiving"] .scoreboard-wrap {
+  box-shadow:
+    inset 0 0 34px rgba(217,131,36,.08),
+    inset 0 1px 0 rgba(255,255,255,.07),
+    0 0 0 1px #241708,
+    0 16px 56px rgba(0,0,0,.8),
+    0 0 26px rgba(200,110,30,.12);
+}
+
+[data-theme="thanksgiving"] .table thead th.sticky-col-1,
+[data-theme="thanksgiving"] .table thead th:nth-child(2) {
+  text-shadow: 0 0 10px rgba(240,160,60,.45), 0 0 20px rgba(217,110,30,.2);
+}
+
+/* Cell shading moves to autumn: russet for a loss, olive for a win. */
+[data-theme="thanksgiving"] .pick-win {
+  background: rgba(110,140,40,.20);
+  box-shadow: inset 3px 0 0 rgba(158,222,85,.8);
+  color: #cfe89a;
+}
+[data-theme="thanksgiving"] .pick-loss {
+  background: rgba(128,48,20,.22);
+  box-shadow: inset 3px 0 0 rgba(214,110,60,.75);
+  color: #eaa985;
+}
+
+[data-theme="thanksgiving"] .cfp-card {
+  border-color: rgba(217,131,36,.16);
+  border-top-color: var(--cfp-gold);
+}
+
+
+/* ---------- Countdown ---------------------------------------------------- */
+
+[data-theme="thanksgiving"] .reveal-banner:not(.is-urgent):not(.is-imminent):not(.is-opener) {
+  background:
+    radial-gradient(120% 150% at 50% 0%, rgba(240,150,50,.18), transparent 70%),
+    linear-gradient(180deg, rgba(28,17,9,.92), rgba(16,10,5,.92));
+  border-color: rgba(217,131,36,.3);
+  border-top-color: var(--cfp-gold);
+}
+[data-theme="thanksgiving"] .reveal-banner:not(.is-urgent):not(.is-imminent) .reveal-clock {
+  color: #f0a838;
+  text-shadow: 0 0 10px rgba(240,160,60,.55), 0 0 32px rgba(217,110,30,.25);
+}
+
+
+/* ---------- Treats (js/seasonalTreats.js) -------------------------------- */
+
+[data-theme="thanksgiving"] .st-flyer.is-turkey { filter: drop-shadow(0 4px 6px rgba(0,0,0,.5)); }
+[data-theme="thanksgiving"] .st-tot { font-family: 'Rye', 'Teko', serif; font-size: .9rem; letter-spacing: .03em; }
+[data-theme="thanksgiving"] .st-tot.is-good { color: #1c2a06; background: #b5e36a; box-shadow: 0 0 14px rgba(158,222,85,.7); }
+[data-theme="thanksgiving"] .st-tot.is-bad  { color: #fbe9d6; background: #9a3412; box-shadow: 0 0 14px rgba(214,110,60,.7); }
+
+
+/* ---------- Motion (opt-out) --------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Leaves drift down and a little sideways, the far layer slower. */
+  [data-theme="thanksgiving"] body::before,
+  body[data-theme="thanksgiving"]::before { animation: tg-leaves 34s linear infinite; }
+  @keyframes tg-leaves {
+    from { background-position: 0 0, 170px 110px; }
+    to   { background-position: -280px 560px, 0 490px; }
+  }
+
+  html[data-theme="thanksgiving"]::after { animation: tg-geese 22s ease-in-out infinite alternate; }
+  @keyframes tg-geese {
+    from { transform: translate(0, 0); }
+    to   { transform: translate(-70px, -8px); }
+  }
+
+  [data-theme="thanksgiving"] body::after,
+  body[data-theme="thanksgiving"]::after { animation: tg-haze 40s linear infinite alternate; }
+  @keyframes tg-haze {
+    from { background-position: 0% 100%, center bottom; }
+    to   { background-position: 100% 100%, center bottom; }
+  }
+
+  /* The live badge glows like a coal rather than blinking. */
+  [data-theme="thanksgiving"] .badge-live { animation: tg-ember 3s ease-in-out infinite; }
+  @keyframes tg-ember { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+}

@@ -1,0 +1,271 @@
+/* ============================================================
+   CHRISTMAS - bowl season, cold night, lights on
+   Active when <body data-theme="christmas"> (leaderboard) or
+   <html data-theme="christmas"> (every other page, set pre-paint).
+
+   GENERATED from tools/theme-art/christmas.tpl.css + christmas.art.mjs
+   by tools/theme-art/build.mjs. Edit those, not this file.
+
+   Token-first, same reasoning as the other two. The trap with a Christmas theme
+   is red-and-green everywhere, which fights a scoreboard that already uses red
+   and green to mean lost and won. So the page goes cold navy/pine, the chrome
+   goes warm bulb-gold, and red/green stay reserved for what they already mean -
+   they just get a little more saturated so they read as fairy lights.
+
+   The atmosphere: a winter moon and stars, snow coming down, a forest at the
+   foot of the page with a cabin lit up and snow on the crossbar, and on the
+   jumbotron a drift of snow, a string of lights, holly, and an ornament.
+
+   Every decorative layer sits behind content and never takes a tap. Motion is
+   opt-out via prefers-reduced-motion.
+   ============================================================ */
+
+[data-theme="christmas"] body,
+body[data-theme="christmas"] {
+  /* Cold night, not black. */
+  --cfp-black:    #050a12;
+  --cfp-charcoal: #08131d;
+  --cfp-gray:     #0d1c27;
+
+  /* Warm filament against the cold. */
+  --cfp-gold:   #e8c37a;
+  --cfp-gold-2: #ffe0a3;
+  --cfp-ivory:  #eef5fb;
+
+  --led-amber:    #ffd98a;
+  --led-white:    #eef5fb;
+  --led-dim:      #5b7183;
+  --led-win:      #4fe06a;
+  --led-win-glow: rgba(79,224,106,.6);
+
+  --panel-face-1: #040910;
+  --panel-face-2: #0a1622;
+  --panel-face-3: #07111a;
+  --panel-bezel:  #1d3346;
+  --panel-dot:    rgba(190,225,255,.07);
+
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 10px rgba(232,195,122,.32);
+
+  color: #e6eff7;
+
+  background:
+    radial-gradient(ellipse 900px 420px at 100% 0%, rgba(150,190,235,.20), transparent 70%),
+    radial-gradient(circle at 0% 70%,   rgba(10,60,45,.30), transparent 62%),
+    radial-gradient(circle at 100% 74%, rgba(10,55,50,.26), transparent 62%),
+    linear-gradient(180deg, #050a12, #08131d 46%, #0a1a22);
+  background-attachment: fixed;
+  background-color: #08131d;
+}
+
+[data-theme="christmas"] ::selection { background: rgba(232,195,122,.35); color: #fff; }
+[data-theme="christmas"] ::-webkit-scrollbar-thumb { background: rgba(232,195,122,.3); }
+
+
+/* ---------- Sky ---------------------------------------------------------- */
+
+/* The moon, rising from behind the right edge of the board. */
+html[data-theme="christmas"]::before {
+  content: "";
+  position: fixed;
+  top: 84px; right: -54px;
+  width: 220px; height: 220px;
+  pointer-events: none; z-index: -1;
+  background:
+    __MOON__ center / 100% 100% no-repeat,
+    radial-gradient(circle, rgba(200,225,255,.28) 30%, rgba(150,190,240,.08) 50%, transparent 70%);
+  filter: drop-shadow(0 0 30px rgba(190,215,255,.35));
+}
+
+/* Stars across the top of the sky. */
+html[data-theme="christmas"]::after {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0; height: 55vh;
+  pointer-events: none; z-index: -1;
+  background: __STARS__ 0 0 / 400px 260px repeat;
+  -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent);
+          mask-image: linear-gradient(180deg, #000 40%, transparent);
+  opacity: .7;
+}
+
+/* Snow. Three layers of dots at different sizes so it reads as depth rather
+   than a texture, drifting slowly down. */
+[data-theme="christmas"] body::before,
+body[data-theme="christmas"]::before {
+  content: "";
+  position: fixed; inset: -20% 0 0 0;
+  pointer-events: none; z-index: -1;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,.55) 1.1px, transparent 1.4px),
+    radial-gradient(circle, rgba(255,255,255,.35) 1.6px, transparent 1.9px),
+    radial-gradient(circle, rgba(255,255,255,.22) 2.2px, transparent 2.6px);
+  background-size: 140px 140px, 210px 210px, 320px 320px;
+  background-position: 0 0, 60px 40px, 130px 90px;
+  opacity: .55;
+}
+
+/* The forest, along the foot of the page - anchored to the bottom of <html>
+   with room reserved under the content, like the other two themes. */
+html[data-theme="christmas"] { position: relative; min-height: 100%; }
+[data-theme="christmas"] body,
+body[data-theme="christmas"] { padding-bottom: calc(clamp(130px, 17vw, 240px) + 2.5rem); }
+
+[data-theme="christmas"] body::after,
+body[data-theme="christmas"]::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: clamp(130px, 17vw, 240px);
+  pointer-events: none; z-index: -1;
+  background: __SKYLINE__ center bottom / cover no-repeat;
+}
+
+
+/* ---------- The jumbotron ------------------------------------------------ */
+
+/* Holly in both top corners, behind the mascots. */
+[data-theme="christmas"] .jumbotron-header {
+  background:
+    __HOLLY__ left 4px top 18px / 110px 110px no-repeat,
+    __HOLLYR__ right 4px top 18px / 110px 110px no-repeat,
+    radial-gradient(80% 140% at 50% 0%, rgba(232,195,122,.12), transparent 70%),
+    linear-gradient(180deg, rgba(10,22,34,.86), rgba(7,16,26,.84) 40%, rgba(4,10,16,.9));
+  border-color: rgba(190,225,255,.16);
+}
+
+/* Snow piled along the top of the board, and a string of lights under it. */
+[data-theme="christmas"] .jumbotron-header::before {
+  height: 40px;
+  opacity: 1;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    __DRIFT__ 0 0 / 300px 14px repeat-x,
+    __LIGHTS__ 0 10px / 120px 28px repeat-x;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.45));
+}
+
+/* An ornament hanging over the title. */
+[data-theme="christmas"] .jumbotron-title::before {
+  content: "";
+  position: absolute;
+  top: -1.1rem; left: 14%;
+  width: 26px; height: 78px;
+  pointer-events: none;
+  background: __ORNAMENT__ center top / 100% 100% no-repeat;
+  transform-origin: 50% 0;
+}
+
+[data-theme="christmas"] .jumbotron-title-text,
+html[data-theme="christmas"] h1 {
+  font-family: 'Mountains of Christmas', 'Teko', 'Oswald', serif;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: .03em;
+  color: #ffe3a3;
+  text-shadow:
+    0 0 8px rgba(255,215,140,.5),
+    0 0 26px rgba(232,195,122,.28),
+    0 3px 0 #3a0d10;
+}
+[data-theme="christmas"] .jumbotron-title-text { font-size: 2.7rem; }
+
+@media (max-width: 640px) {
+  [data-theme="christmas"] .jumbotron-header { padding-top: 1.9rem; }
+  [data-theme="christmas"] .jumbotron-header::before { height: 30px; background-size: 220px 10px, 86px 20px; background-position: 0 0, 0 7px; }
+  [data-theme="christmas"] .jumbotron-title-text { font-size: 1.6rem; letter-spacing: .01em; }
+  [data-theme="christmas"] .jumbotron-header { background-size: 64px 64px, 64px 64px, auto, auto; }
+  [data-theme="christmas"] .jumbotron-title::before { display: none; }
+  html[data-theme="christmas"]::before { width: 150px; height: 150px; top: 300px; right: -80px; }
+}
+
+
+/* ---------- The board ---------------------------------------------------- */
+
+[data-theme="christmas"] .scoreboard-header {
+  background: linear-gradient(180deg, #0e1d2b, #08131d) !important;
+  border-bottom-color: #23405a !important;
+}
+
+/* Cold moonlight on the board, warm light inside it. */
+[data-theme="christmas"] .scoreboard-wrap {
+  box-shadow:
+    inset 0 0 36px rgba(232,195,122,.06),
+    inset 0 1px 0 rgba(190,225,255,.09),
+    0 0 0 1px #0c1c29,
+    0 16px 56px rgba(0,0,0,.85),
+    0 0 26px rgba(90,150,210,.12);
+}
+
+[data-theme="christmas"] .table thead th.sticky-col-1,
+[data-theme="christmas"] .table thead th:nth-child(2) {
+  text-shadow: 0 0 10px rgba(255,215,140,.45), 0 0 20px rgba(232,195,122,.2);
+}
+
+/* Win/loss saturate slightly so they read as lights, without changing meaning. */
+[data-theme="christmas"] .pick-win {
+  background: rgba(24,132,62,.22);
+  box-shadow: inset 3px 0 0 rgba(79,224,106,.85);
+  color: #8ff0a4;
+}
+[data-theme="christmas"] .pick-loss {
+  background: rgba(150,30,40,.22);
+  box-shadow: inset 3px 0 0 rgba(255,107,107,.8);
+  color: #ff9d9d;
+}
+
+[data-theme="christmas"] .cfp-card {
+  border-color: rgba(190,225,255,.12);
+  border-top-color: var(--cfp-gold);
+}
+
+
+/* ---------- Countdown ---------------------------------------------------- */
+
+[data-theme="christmas"] .reveal-banner:not(.is-urgent):not(.is-imminent):not(.is-opener) {
+  background:
+    radial-gradient(120% 150% at 50% 0%, rgba(232,195,122,.16), transparent 70%),
+    linear-gradient(180deg, rgba(10,20,32,.92), rgba(5,11,18,.92));
+  border-color: rgba(232,195,122,.28);
+  border-top-color: var(--cfp-gold);
+}
+[data-theme="christmas"] .reveal-banner:not(.is-urgent):not(.is-imminent) .reveal-clock {
+  color: #ffd98a;
+  text-shadow: 0 0 10px rgba(255,215,140,.55), 0 0 32px rgba(232,195,122,.25);
+}
+
+
+/* ---------- Treats (js/seasonalTreats.js) -------------------------------- */
+
+[data-theme="christmas"] .st-flyer.is-sleigh { filter: drop-shadow(0 0 10px rgba(220,235,255,.55)); }
+[data-theme="christmas"] .st-tot { font-family: 'Mountains of Christmas', 'Teko', serif; font-weight: 700; font-size: 1.05rem; }
+[data-theme="christmas"] .st-tot.is-good { color: #06240f; background: #5ee07a; box-shadow: 0 0 14px rgba(79,224,106,.75); }
+[data-theme="christmas"] .st-tot.is-bad  { color: #e6e9ee; background: #2b2f36; box-shadow: 0 0 12px rgba(0,0,0,.6), 0 0 0 1px #4a505a inset; }
+
+
+/* ---------- Motion (opt-out) --------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="christmas"] body::before,
+  body[data-theme="christmas"]::before { animation: xm-snow 26s linear infinite; }
+  @keyframes xm-snow {
+    to { background-position: 0 140px, 60px 250px, 130px 410px; }
+  }
+
+  html[data-theme="christmas"]::after { animation: xm-twinkle 5s ease-in-out infinite; }
+  @keyframes xm-twinkle { 0%, 100% { opacity: .7; } 40% { opacity: .45; } 70% { opacity: .85; } }
+
+  /* The light string chases: brightness steps along, like a cheap controller. */
+  [data-theme="christmas"] .jumbotron-header::before { animation: xm-lights 2.4s steps(1, end) infinite; }
+  @keyframes xm-lights {
+    0%   { filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)) brightness(1); }
+    33%  { filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)) brightness(1.25) saturate(1.2); }
+    66%  { filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)) brightness(.85); }
+  }
+
+  [data-theme="christmas"] .jumbotron-title::before { animation: xm-ornament 6s ease-in-out infinite; }
+  @keyframes xm-ornament {
+    0%, 100% { transform: rotate(5deg); }
+    50%      { transform: rotate(-5deg); }
+  }
+}

@@ -1,12 +1,23 @@
 /* ============================================================
-   CHRISTMAS — bowl season, cold night, lights on
-   Active when <body data-theme="christmas">.
+   CHRISTMAS - bowl season, cold night, lights on
+   Active when <body data-theme="christmas"> (leaderboard) or
+   <html data-theme="christmas"> (every other page, set pre-paint).
+
+   GENERATED from tools/theme-art/christmas.tpl.css + christmas.art.mjs
+   by tools/theme-art/build.mjs. Edit those, not this file.
 
    Token-first, same reasoning as the other two. The trap with a Christmas theme
    is red-and-green everywhere, which fights a scoreboard that already uses red
    and green to mean lost and won. So the page goes cold navy/pine, the chrome
    goes warm bulb-gold, and red/green stay reserved for what they already mean -
    they just get a little more saturated so they read as fairy lights.
+
+   The atmosphere: a winter moon and stars, snow coming down, a forest at the
+   foot of the page with a cabin lit up and snow on the crossbar, and on the
+   jumbotron a drift of snow, a string of lights, holly, and an ornament.
+
+   Every decorative layer sits behind content and never takes a tap. Motion is
+   opt-out via prefers-reduced-motion.
    ============================================================ */
 
 [data-theme="christmas"] body,
@@ -38,22 +49,52 @@ body[data-theme="christmas"] {
   color: #e6eff7;
 
   background:
-    /* moonlight off snow, top */
-    radial-gradient(ellipse 900px 420px at 50% -8%, rgba(120,180,235,.20), transparent 70%),
-    /* pine dark at the edges */
+    radial-gradient(ellipse 900px 420px at 100% 0%, rgba(150,190,235,.20), transparent 70%),
     radial-gradient(circle at 0% 70%,   rgba(10,60,45,.30), transparent 62%),
     radial-gradient(circle at 100% 74%, rgba(10,55,50,.26), transparent 62%),
     linear-gradient(180deg, #050a12, #08131d 46%, #0a1a22);
   background-attachment: fixed;
+  background-color: #08131d;
+}
+
+[data-theme="christmas"] ::selection { background: rgba(232,195,122,.35); color: #fff; }
+[data-theme="christmas"] ::-webkit-scrollbar-thumb { background: rgba(232,195,122,.3); }
+
+
+/* ---------- Sky ---------------------------------------------------------- */
+
+/* The moon, rising from behind the right edge of the board. */
+html[data-theme="christmas"]::before {
+  content: "";
+  position: fixed;
+  top: 84px; right: -54px;
+  width: 220px; height: 220px;
+  pointer-events: none; z-index: -1;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cdefs%3E%3CradialGradient id='m' cx='42%25' cy='38%25' r='62%25'%3E%3Cstop offset='0' stop-color='%23ffffff'/%3E%3Cstop offset='.6' stop-color='%23e3ecf8'/%3E%3Cstop offset='1' stop-color='%23a9bdd8'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='100' cy='100' r='78' fill='url(%23m)'/%3E%3Cg fill='%237f97b8' opacity='.22'%3E%3Ccircle cx='72' cy='80' r='14'/%3E%3Ccircle cx='118' cy='62' r='8'/%3E%3Ccircle cx='128' cy='118' r='18'/%3E%3Ccircle cx='82' cy='132' r='9'/%3E%3Ccircle cx='148' cy='88' r='6'/%3E%3C/g%3E%3C/svg%3E") center / 100% 100% no-repeat,
+    radial-gradient(circle, rgba(200,225,255,.28) 30%, rgba(150,190,240,.08) 50%, transparent 70%);
+  filter: drop-shadow(0 0 30px rgba(190,215,255,.35));
+}
+
+/* Stars across the top of the sky. */
+html[data-theme="christmas"]::after {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0; height: 55vh;
+  pointer-events: none; z-index: -1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 260'%3E%3Ccircle cx='20' cy='30' r='1.2' fill='%23fff' opacity='0.85'/%3E%3Ccircle cx='90' cy='12' r='0.8' fill='%23fff' opacity='0.72'/%3E%3Ccircle cx='150' cy='60' r='1.5' fill='%23fff' opacity='0.95'/%3E%3Ccircle cx='230' cy='24' r='1' fill='%23fff' opacity='0.78'/%3E%3Ccircle cx='300' cy='70' r='0.9' fill='%23fff' opacity='0.75'/%3E%3Ccircle cx='370' cy='18' r='1.3' fill='%23fff' opacity='0.88'/%3E%3Ccircle cx='60' cy='110' r='0.7' fill='%23fff' opacity='0.68'/%3E%3Ccircle cx='190' cy='130' r='1.1' fill='%23fff' opacity='0.82'/%3E%3Ccircle cx='270' cy='150' r='0.8' fill='%23fff' opacity='0.72'/%3E%3Ccircle cx='340' cy='120' r='1.4' fill='%23fff' opacity='0.92'/%3E%3Ccircle cx='120' cy='190' r='1' fill='%23fff' opacity='0.78'/%3E%3Ccircle cx='30' cy='220' r='0.9' fill='%23fff' opacity='0.75'/%3E%3Ccircle cx='250' cy='230' r='1.2' fill='%23fff' opacity='0.85'/%3E%3Ccircle cx='380' cy='240' r='0.7' fill='%23fff' opacity='0.68'/%3E%3C/svg%3E") 0 0 / 400px 260px repeat;
+  -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent);
+          mask-image: linear-gradient(180deg, #000 40%, transparent);
+  opacity: .7;
 }
 
 /* Snow. Three layers of dots at different sizes so it reads as depth rather
-   than a texture, drifting slowly down. Motion is opt-out below. */
+   than a texture, drifting slowly down. */
 [data-theme="christmas"] body::before,
 body[data-theme="christmas"]::before {
   content: "";
   position: fixed; inset: -20% 0 0 0;
-  pointer-events: none; z-index: 0;
+  pointer-events: none; z-index: -1;
   background-image:
     radial-gradient(circle, rgba(255,255,255,.55) 1.1px, transparent 1.4px),
     radial-gradient(circle, rgba(255,255,255,.35) 1.6px, transparent 1.9px),
@@ -63,12 +104,87 @@ body[data-theme="christmas"]::before {
   opacity: .55;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  [data-theme="christmas"] body::before,
-body[data-theme="christmas"]::before { animation: xm-snow 26s linear infinite; }
-  @keyframes xm-snow {
-    to { background-position: 0 140px, 60px 250px, 130px 410px; }
-  }
+/* The forest, along the foot of the page - anchored to the bottom of <html>
+   with room reserved under the content, like the other two themes. */
+html[data-theme="christmas"] { position: relative; min-height: 100%; }
+[data-theme="christmas"] body,
+body[data-theme="christmas"] { padding-bottom: calc(clamp(130px, 17vw, 240px) + 2.5rem); }
+
+[data-theme="christmas"] body::after,
+body[data-theme="christmas"]::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: clamp(130px, 17vw, 240px);
+  pointer-events: none; z-index: -1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 240' preserveAspectRatio='xMidYMax slice'%3E%3Cg transform='translate(60 206)'%3E%3Cpath d='M0 -150L34.650000000000006 -93H18.9L50.400000000000006 -45H28.35L63 0H-63L-28.35 -45H-50.400000000000006L-18.9 -93H-34.650000000000006Z' fill='%2304101a'/%3E%3Cpath d='M0 -150L18.9 -117L0 -122.99999999999999L-18.9 -117Z' fill='%23e6eef7'/%3E%3Cpath d='M-34.650000000000006 -93Q0 -84.00000000000001 34.650000000000006 -93L18.9 -99Q0 -93 -18.9 -99Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-50.400000000000006 -45Q0 -36 50.400000000000006 -45L28.35 -51.00000000000001Q0 -45 -28.35 -51.00000000000001Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg transform='translate(130 206)'%3E%3Cpath d='M0 -110L25.41 -68.2H13.859999999999998L36.96 -33H20.79L46.199999999999996 0H-46.199999999999996L-20.79 -33H-36.96L-13.859999999999998 -68.2H-25.41Z' fill='%2304101a'/%3E%3Cpath d='M0 -110L13.859999999999998 -85.8L0 -90.19999999999999L-13.859999999999998 -85.8Z' fill='%23e6eef7'/%3E%3Cpath d='M-25.41 -68.2Q0 -61.60000000000001 25.41 -68.2L13.859999999999998 -72.60000000000001Q0 -68.2 -13.859999999999998 -72.60000000000001Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-36.96 -33Q0 -26.4 36.96 -33L20.79 -37.400000000000006Q0 -33 -20.79 -37.400000000000006Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg transform='translate(200 206)'%3E%3Cpath d='M0 -170L39.269999999999996 -105.4H21.419999999999998L57.12 -51H32.129999999999995L71.39999999999999 0H-71.39999999999999L-32.129999999999995 -51H-57.12L-21.419999999999998 -105.4H-39.269999999999996Z' fill='%2304101a'/%3E%3Cpath d='M0 -170L21.419999999999998 -132.6L0 -139.4L-21.419999999999998 -132.6Z' fill='%23e6eef7'/%3E%3Cpath d='M-39.269999999999996 -105.4Q0 -95.2 39.269999999999996 -105.4L21.419999999999998 -112.2Q0 -105.4 -21.419999999999998 -112.2Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-57.12 -51Q0 -40.8 57.12 -51L32.129999999999995 -57.800000000000004Q0 -51 -32.129999999999995 -57.800000000000004Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg transform='translate(800 206)'%3E%3Cpath d='M0 -120L27.720000000000002 -74.4H15.12L40.32 -36H22.68L50.4 0H-50.4L-22.68 -36H-40.32L-15.12 -74.4H-27.720000000000002Z' fill='%2304101a'/%3E%3Cpath d='M0 -120L15.12 -93.60000000000001L0 -98.39999999999999L-15.12 -93.60000000000001Z' fill='%23e6eef7'/%3E%3Cpath d='M-27.720000000000002 -74.4Q0 -67.2 27.720000000000002 -74.4L15.12 -79.2Q0 -74.4 -15.12 -79.2Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-40.32 -36Q0 -28.799999999999997 40.32 -36L22.68 -40.800000000000004Q0 -36 -22.68 -40.800000000000004Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg transform='translate(870 206)'%3E%3Cpath d='M0 -150L34.650000000000006 -93H18.9L50.400000000000006 -45H28.35L63 0H-63L-28.35 -45H-50.400000000000006L-18.9 -93H-34.650000000000006Z' fill='%2304101a'/%3E%3Cpath d='M0 -150L18.9 -117L0 -122.99999999999999L-18.9 -117Z' fill='%23e6eef7'/%3E%3Cpath d='M-34.650000000000006 -93Q0 -84.00000000000001 34.650000000000006 -93L18.9 -99Q0 -93 -18.9 -99Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-50.400000000000006 -45Q0 -36 50.400000000000006 -45L28.35 -51.00000000000001Q0 -45 -28.35 -51.00000000000001Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg transform='translate(940 206)'%3E%3Cpath d='M0 -100L23.1 -62H12.6L33.6 -30H18.900000000000002L42 0H-42L-18.900000000000002 -30H-33.6L-12.6 -62H-23.1Z' fill='%2304101a'/%3E%3Cpath d='M0 -100L12.6 -78L0 -82L-12.6 -78Z' fill='%23e6eef7'/%3E%3Cpath d='M-23.1 -62Q0 -56.00000000000001 23.1 -62L12.6 -66Q0 -62 -12.6 -66Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-33.6 -30Q0 -24 33.6 -30L18.900000000000002 -34Q0 -30 -18.900000000000002 -34Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg transform='translate(1340 206)'%3E%3Cpath d='M0 -140L32.34 -86.8H17.639999999999997L47.04 -42H26.46L58.8 0H-58.8L-26.46 -42H-47.04L-17.639999999999997 -86.8H-32.34Z' fill='%2304101a'/%3E%3Cpath d='M0 -140L17.639999999999997 -109.2L0 -114.8L-17.639999999999997 -109.2Z' fill='%23e6eef7'/%3E%3Cpath d='M-32.34 -86.8Q0 -78.4 32.34 -86.8L17.639999999999997 -92.4Q0 -86.8 -17.639999999999997 -92.4Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-47.04 -42Q0 -33.6 47.04 -42L26.46 -47.6Q0 -42 -26.46 -47.6Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg transform='translate(1420 206)'%3E%3Cpath d='M0 -175L40.425000000000004 -108.5H22.05L58.800000000000004 -52.5H33.075L73.5 0H-73.5L-33.075 -52.5H-58.800000000000004L-22.05 -108.5H-40.425000000000004Z' fill='%2304101a'/%3E%3Cpath d='M0 -175L22.05 -136.5L0 -143.5L-22.05 -136.5Z' fill='%23e6eef7'/%3E%3Cpath d='M-40.425000000000004 -108.5Q0 -98.00000000000001 40.425000000000004 -108.5L22.05 -115.5Q0 -108.5 -22.05 -115.5Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-58.800000000000004 -52.5Q0 -42 58.800000000000004 -52.5L33.075 -59.50000000000001Q0 -52.5 -33.075 -59.50000000000001Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg transform='translate(1510 206)'%3E%3Cpath d='M0 -120L27.720000000000002 -74.4H15.12L40.32 -36H22.68L50.4 0H-50.4L-22.68 -36H-40.32L-15.12 -74.4H-27.720000000000002Z' fill='%2304101a'/%3E%3Cpath d='M0 -120L15.12 -93.60000000000001L0 -98.39999999999999L-15.12 -93.60000000000001Z' fill='%23e6eef7'/%3E%3Cpath d='M-27.720000000000002 -74.4Q0 -67.2 27.720000000000002 -74.4L15.12 -79.2Q0 -74.4 -15.12 -79.2Z' fill='%23e6eef7' opacity='.9'/%3E%3Cpath d='M-40.32 -36Q0 -28.799999999999997 40.32 -36L22.68 -40.800000000000004Q0 -36 -22.68 -40.800000000000004Z' fill='%23e6eef7' opacity='.85'/%3E%3Crect x='-3' y='0' width='6' height='6' fill='%2304101a'/%3E%3C/g%3E%3Cg stroke='%2304101a' stroke-linecap='round' fill='none' stroke-width='7'%3E%3Cpath d='M400 210V130M350 130H450M350 130V40M450 130V40'/%3E%3C/g%3E%3Cpath d='M346 127H454V132H346Z' fill='%23e6eef7'/%3E%3Cpath d='M346 128Q360 122 380 127T420 126T454 127' fill='%23e6eef7'/%3E%3Cg fill='%2304101a'%3E%3Cpath d='M1120 206V150H1240V206Z'/%3E%3Crect x='1210' y='112' width='16' height='30'/%3E%3C/g%3E%3Cpath d='M1110 154L1180 112L1250 154Z' fill='%2304101a'/%3E%3Cpath d='M1110 154L1180 112L1250 154L1242 156L1180 120L1118 156Z' fill='%23e6eef7'/%3E%3Cpath d='M1208 112h20v-5h-20z' fill='%23e6eef7'/%3E%3Cg fill='%23ffd27a'%3E%3Crect x='1136' y='166' width='22' height='18'/%3E%3Crect x='1202' y='166' width='22' height='18'/%3E%3C/g%3E%3Cpath d='M1147 166V184M1136 175H1158M1213 166V184M1202 175H1224' stroke='%2304101a' stroke-width='2'/%3E%3Crect x='1170' y='170' width='20' height='36' fill='%232a1a10'/%3E%3Ccircle cx='1180' cy='175' r='40' fill='%23ffd27a' opacity='.1'/%3E%3Ccircle cx='1132' cy='153' r='2.4' fill='%23ff4d4d'/%3E%3Ccircle cx='1132' cy='153' r='5' fill='%23ff4d4d' opacity='.3'/%3E%3Ccircle cx='1143' cy='154.33681104009216' r='2.4' fill='%23ffd166'/%3E%3Ccircle cx='1143' cy='154.33681104009216' r='5' fill='%23ffd166' opacity='.3'/%3E%3Ccircle cx='1154' cy='154.2127446057294' r='2.4' fill='%233ddc84'/%3E%3Ccircle cx='1154' cy='154.2127446057294' r='5' fill='%233ddc84' opacity='.3'/%3E%3Ccircle cx='1165' cy='152.76338145878512' r='2.4' fill='%235aa9ff'/%3E%3Ccircle cx='1165' cy='152.76338145878512' r='5' fill='%235aa9ff' opacity='.3'/%3E%3Ccircle cx='1176' cy='151.57259688916574' r='2.4' fill='%23ff4d4d'/%3E%3Ccircle cx='1176' cy='151.57259688916574' r='5' fill='%23ff4d4d' opacity='.3'/%3E%3Ccircle cx='1187' cy='151.9416895116444' r='2.4' fill='%23ffd166'/%3E%3Ccircle cx='1187' cy='151.9416895116444' r='5' fill='%23ffd166' opacity='.3'/%3E%3Ccircle cx='1198' cy='153.46731204527006' r='2.4' fill='%233ddc84'/%3E%3Ccircle cx='1198' cy='153.46731204527006' r='5' fill='%233ddc84' opacity='.3'/%3E%3Ccircle cx='1209' cy='154.48225235081551' r='2.4' fill='%235aa9ff'/%3E%3Ccircle cx='1209' cy='154.48225235081551' r='5' fill='%235aa9ff' opacity='.3'/%3E%3Ccircle cx='1220' cy='153.87737578933763' r='2.4' fill='%23ff4d4d'/%3E%3Ccircle cx='1220' cy='153.87737578933763' r='5' fill='%23ff4d4d' opacity='.3'/%3E%3Cg fill='%23cfd9e6' opacity='.16'%3E%3Ccircle cx='1220' cy='100' r='7'/%3E%3Ccircle cx='1228' cy='86' r='9'/%3E%3Ccircle cx='1222' cy='68' r='11'/%3E%3Ccircle cx='1234' cy='50' r='13'/%3E%3C/g%3E%3Cg transform='translate(560 206)'%3E%3Ccircle cx='0' cy='-16' r='17' fill='%23e6eef7'/%3E%3Ccircle cx='0' cy='-44' r='12' fill='%23e6eef7'/%3E%3Ccircle cx='0' cy='-64' r='9' fill='%23e6eef7'/%3E%3Crect x='-9' y='-80' width='18' height='12' fill='%2304101a'/%3E%3Crect x='-13' y='-70' width='26' height='3' fill='%2304101a'/%3E%3Cpath d='M0-63L10-61L0-60Z' fill='%23f97316'/%3E%3Ccircle cx='-3' cy='-66' r='1.4' fill='%2304101a'/%3E%3Ccircle cx='3' cy='-66' r='1.4' fill='%2304101a'/%3E%3Cpath d='M-11-46L-30-58M-30-58L-34-56M-30-58L-31-63M11-46L30-56' stroke='%233b2a1a' stroke-width='2' fill='none'/%3E%3Cpath d='M-10-55Q0-50 10-55L10-51Q0-46-10-51Z' fill='%23dc2626'/%3E%3C/g%3E%3Cpath d='M0 240V206Q240 192 520 202T1060 198T1600 200V240Z' fill='%23e6eef7'/%3E%3Cpath d='M0 240V214Q300 206 640 212T1300 208T1600 212V240Z' fill='%23c8d6e8' opacity='.6'/%3E%3C/svg%3E") center bottom / cover no-repeat;
+}
+
+
+/* ---------- The jumbotron ------------------------------------------------ */
+
+/* Holly in both top corners, behind the mascots. */
+[data-theme="christmas"] .jumbotron-header {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 110 110'%3E%3Cg opacity='.85'%3E%3Cpath transform='translate(8 14) rotate(10)' d='M0 0Q6-6 12-3Q14-9 20-8Q20-2 26 0Q20 2 20 8Q14 9 12 3Q6 6 0 0Z' fill='%231f7a3e' stroke='%230e4a24' stroke-width='.8'/%3E%3Cpath transform='translate(10 18) rotate(55)' d='M0 0Q6-6 12-3Q14-9 20-8Q20-2 26 0Q20 2 20 8Q14 9 12 3Q6 6 0 0Z' fill='%231f7a3e' stroke='%230e4a24' stroke-width='.8'/%3E%3Cpath transform='translate(22 8) rotate(-12)' d='M0 0Q6-6 12-3Q14-9 20-8Q20-2 26 0Q20 2 20 8Q14 9 12 3Q6 6 0 0Z' fill='%231f7a3e' stroke='%230e4a24' stroke-width='.8'/%3E%3Cpath transform='translate(14 26) rotate(80)' d='M0 0Q6-6 12-3Q14-9 20-8Q20-2 26 0Q20 2 20 8Q14 9 12 3Q6 6 0 0Z' fill='%231f7a3e' stroke='%230e4a24' stroke-width='.8'/%3E%3Ccircle cx='12' cy='14' r='4.2' fill='%23d32f2f'/%3E%3Ccircle cx='19' cy='12' r='3.8' fill='%23e53935'/%3E%3Ccircle cx='16' cy='19' r='3.8' fill='%23c62828'/%3E%3Ccircle cx='11' cy='13' r='1.1' fill='%23fff' opacity='.7'/%3E%3C/g%3E%3C/svg%3E") left 4px top 18px / 110px 110px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 110 110'%3E%3Cg transform='matrix(-1 0 0 1 110 0)' opacity='.85'%3E%3Cpath transform='translate(8 14) rotate(10)' d='M0 0Q6-6 12-3Q14-9 20-8Q20-2 26 0Q20 2 20 8Q14 9 12 3Q6 6 0 0Z' fill='%231f7a3e' stroke='%230e4a24' stroke-width='.8'/%3E%3Cpath transform='translate(10 18) rotate(55)' d='M0 0Q6-6 12-3Q14-9 20-8Q20-2 26 0Q20 2 20 8Q14 9 12 3Q6 6 0 0Z' fill='%231f7a3e' stroke='%230e4a24' stroke-width='.8'/%3E%3Cpath transform='translate(22 8) rotate(-12)' d='M0 0Q6-6 12-3Q14-9 20-8Q20-2 26 0Q20 2 20 8Q14 9 12 3Q6 6 0 0Z' fill='%231f7a3e' stroke='%230e4a24' stroke-width='.8'/%3E%3Cpath transform='translate(14 26) rotate(80)' d='M0 0Q6-6 12-3Q14-9 20-8Q20-2 26 0Q20 2 20 8Q14 9 12 3Q6 6 0 0Z' fill='%231f7a3e' stroke='%230e4a24' stroke-width='.8'/%3E%3Ccircle cx='12' cy='14' r='4.2' fill='%23d32f2f'/%3E%3Ccircle cx='19' cy='12' r='3.8' fill='%23e53935'/%3E%3Ccircle cx='16' cy='19' r='3.8' fill='%23c62828'/%3E%3Ccircle cx='11' cy='13' r='1.1' fill='%23fff' opacity='.7'/%3E%3C/g%3E%3C/svg%3E") right 4px top 18px / 110px 110px no-repeat,
+    radial-gradient(80% 140% at 50% 0%, rgba(232,195,122,.12), transparent 70%),
+    linear-gradient(180deg, rgba(10,22,34,.86), rgba(7,16,26,.84) 40%, rgba(4,10,16,.9));
+  border-color: rgba(190,225,255,.16);
+}
+
+/* Snow piled along the top of the board, and a string of lights under it. */
+[data-theme="christmas"] .jumbotron-header::before {
+  height: 40px;
+  opacity: 1;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 18' preserveAspectRatio='none'%3E%3Cpath fill='%23e6eef7' d='M0 0H300V6C288 6 284 11 270 11C258 11 256 7 240 7C228 7 226 13 208 13C192 13 190 8 172 8C160 8 156 12 140 12C126 12 122 6 106 6C94 6 90 11 74 11C60 11 58 7 44 7C30 7 28 12 14 12C6 12 3 8 0 6Z'/%3E%3Cpath fill='%23ffffff' opacity='.6' d='M0 0H300V2H0Z'/%3E%3C/svg%3E") 0 0 / 300px 14px repeat-x,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 28'%3E%3Cpath d='M0 4Q30 16 60 4T120 4' stroke='%231d3a26' stroke-width='1.4' fill='none'/%3E%3Ccircle cx='15' cy='14.5' r='7' fill='%23ff4d4d' opacity='.28'/%3E%3Crect x='13.2' y='7.5' width='3.6' height='3' fill='%232d3b2f'/%3E%3Cellipse cx='15' cy='13.5' rx='3' ry='4.2' fill='%23ff4d4d'/%3E%3Cellipse cx='14' cy='12.1' rx='.9' ry='1.4' fill='%23fff' opacity='.7'/%3E%3Ccircle cx='45' cy='14.5' r='7' fill='%23ffd166' opacity='.28'/%3E%3Crect x='43.2' y='7.5' width='3.6' height='3' fill='%232d3b2f'/%3E%3Cellipse cx='45' cy='13.5' rx='3' ry='4.2' fill='%23ffd166'/%3E%3Cellipse cx='44' cy='12.1' rx='.9' ry='1.4' fill='%23fff' opacity='.7'/%3E%3Ccircle cx='75' cy='14.5' r='7' fill='%233ddc84' opacity='.28'/%3E%3Crect x='73.2' y='7.5' width='3.6' height='3' fill='%232d3b2f'/%3E%3Cellipse cx='75' cy='13.5' rx='3' ry='4.2' fill='%233ddc84'/%3E%3Cellipse cx='74' cy='12.1' rx='.9' ry='1.4' fill='%23fff' opacity='.7'/%3E%3Ccircle cx='105' cy='14.5' r='7' fill='%235aa9ff' opacity='.28'/%3E%3Crect x='103.2' y='7.5' width='3.6' height='3' fill='%232d3b2f'/%3E%3Cellipse cx='105' cy='13.5' rx='3' ry='4.2' fill='%235aa9ff'/%3E%3Cellipse cx='104' cy='12.1' rx='.9' ry='1.4' fill='%23fff' opacity='.7'/%3E%3C/svg%3E") 0 10px / 120px 28px repeat-x;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.45));
+}
+
+/* An ornament hanging over the title. */
+[data-theme="christmas"] .jumbotron-title::before {
+  content: "";
+  position: absolute;
+  top: -1.1rem; left: 14%;
+  width: 26px; height: 78px;
+  pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 120'%3E%3Cdefs%3E%3CradialGradient id='o' cx='38%25' cy='35%25' r='65%25'%3E%3Cstop offset='0' stop-color='%23ff8a8a'/%3E%3Cstop offset='.5' stop-color='%23d32f2f'/%3E%3Cstop offset='1' stop-color='%237f1010'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M20 0V86' stroke='%23e8c37a' stroke-width='1.2'/%3E%3Crect x='15' y='84' width='10' height='6' rx='1' fill='%23e8c37a'/%3E%3Ccircle cx='20' cy='103' r='15' fill='url(%23o)'/%3E%3Cpath d='M6 100Q20 106 34 100' stroke='%23ffe0a3' stroke-width='1.6' fill='none' opacity='.9'/%3E%3Ccircle cx='15' cy='97' r='3' fill='%23fff' opacity='.55'/%3E%3C/svg%3E") center top / 100% 100% no-repeat;
+  transform-origin: 50% 0;
+}
+
+[data-theme="christmas"] .jumbotron-title-text,
+html[data-theme="christmas"] h1 {
+  font-family: 'Mountains of Christmas', 'Teko', 'Oswald', serif;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: .03em;
+  color: #ffe3a3;
+  text-shadow:
+    0 0 8px rgba(255,215,140,.5),
+    0 0 26px rgba(232,195,122,.28),
+    0 3px 0 #3a0d10;
+}
+[data-theme="christmas"] .jumbotron-title-text { font-size: 2.7rem; }
+
+@media (max-width: 640px) {
+  [data-theme="christmas"] .jumbotron-header { padding-top: 1.9rem; }
+  [data-theme="christmas"] .jumbotron-header::before { height: 30px; background-size: 220px 10px, 86px 20px; background-position: 0 0, 0 7px; }
+  [data-theme="christmas"] .jumbotron-title-text { font-size: 1.6rem; letter-spacing: .01em; }
+  [data-theme="christmas"] .jumbotron-header { background-size: 64px 64px, 64px 64px, auto, auto; }
+  [data-theme="christmas"] .jumbotron-title::before { display: none; }
+  html[data-theme="christmas"]::before { width: 150px; height: 150px; top: 300px; right: -80px; }
+}
+
+
+/* ---------- The board ---------------------------------------------------- */
+
+[data-theme="christmas"] .scoreboard-header {
+  background: linear-gradient(180deg, #0e1d2b, #08131d) !important;
+  border-bottom-color: #23405a !important;
 }
 
 /* Cold moonlight on the board, warm light inside it. */
@@ -78,19 +194,12 @@ body[data-theme="christmas"]::before { animation: xm-snow 26s linear infinite; }
     inset 0 1px 0 rgba(190,225,255,.09),
     0 0 0 1px #0c1c29,
     0 16px 56px rgba(0,0,0,.85),
-    0 0 26px rgba(90,150,210,.10);
+    0 0 26px rgba(90,150,210,.12);
 }
 
-/* The gold strip along the top of the jumbotron becomes a string of bulbs,
-   alternating warm and green like a real light run. */
-[data-theme="christmas"] .jumbotron-header::before {
-  background: repeating-linear-gradient(
-    90deg,
-    #ffd98a 0 4px, transparent 4px 9px,
-    #4fe06a 9px 13px, transparent 13px 18px,
-    #ff6b6b 18px 22px, transparent 22px 27px
-  );
-  opacity: .95;
+[data-theme="christmas"] .table thead th.sticky-col-1,
+[data-theme="christmas"] .table thead th:nth-child(2) {
+  text-shadow: 0 0 10px rgba(255,215,140,.45), 0 0 20px rgba(232,195,122,.2);
 }
 
 /* Win/loss saturate slightly so they read as lights, without changing meaning. */
@@ -103,4 +212,60 @@ body[data-theme="christmas"]::before { animation: xm-snow 26s linear infinite; }
   background: rgba(150,30,40,.22);
   box-shadow: inset 3px 0 0 rgba(255,107,107,.8);
   color: #ff9d9d;
+}
+
+[data-theme="christmas"] .cfp-card {
+  border-color: rgba(190,225,255,.12);
+  border-top-color: var(--cfp-gold);
+}
+
+
+/* ---------- Countdown ---------------------------------------------------- */
+
+[data-theme="christmas"] .reveal-banner:not(.is-urgent):not(.is-imminent):not(.is-opener) {
+  background:
+    radial-gradient(120% 150% at 50% 0%, rgba(232,195,122,.16), transparent 70%),
+    linear-gradient(180deg, rgba(10,20,32,.92), rgba(5,11,18,.92));
+  border-color: rgba(232,195,122,.28);
+  border-top-color: var(--cfp-gold);
+}
+[data-theme="christmas"] .reveal-banner:not(.is-urgent):not(.is-imminent) .reveal-clock {
+  color: #ffd98a;
+  text-shadow: 0 0 10px rgba(255,215,140,.55), 0 0 32px rgba(232,195,122,.25);
+}
+
+
+/* ---------- Treats (js/seasonalTreats.js) -------------------------------- */
+
+[data-theme="christmas"] .st-flyer.is-sleigh { filter: drop-shadow(0 0 10px rgba(220,235,255,.55)); }
+[data-theme="christmas"] .st-tot { font-family: 'Mountains of Christmas', 'Teko', serif; font-weight: 700; font-size: 1.05rem; }
+[data-theme="christmas"] .st-tot.is-good { color: #06240f; background: #5ee07a; box-shadow: 0 0 14px rgba(79,224,106,.75); }
+[data-theme="christmas"] .st-tot.is-bad  { color: #e6e9ee; background: #2b2f36; box-shadow: 0 0 12px rgba(0,0,0,.6), 0 0 0 1px #4a505a inset; }
+
+
+/* ---------- Motion (opt-out) --------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="christmas"] body::before,
+  body[data-theme="christmas"]::before { animation: xm-snow 26s linear infinite; }
+  @keyframes xm-snow {
+    to { background-position: 0 140px, 60px 250px, 130px 410px; }
+  }
+
+  html[data-theme="christmas"]::after { animation: xm-twinkle 5s ease-in-out infinite; }
+  @keyframes xm-twinkle { 0%, 100% { opacity: .7; } 40% { opacity: .45; } 70% { opacity: .85; } }
+
+  /* The light string chases: brightness steps along, like a cheap controller. */
+  [data-theme="christmas"] .jumbotron-header::before { animation: xm-lights 2.4s steps(1, end) infinite; }
+  @keyframes xm-lights {
+    0%   { filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)) brightness(1); }
+    33%  { filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)) brightness(1.25) saturate(1.2); }
+    66%  { filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)) brightness(.85); }
+  }
+
+  [data-theme="christmas"] .jumbotron-title::before { animation: xm-ornament 6s ease-in-out infinite; }
+  @keyframes xm-ornament {
+    0%, 100% { transform: rotate(5deg); }
+    50%      { transform: rotate(-5deg); }
+  }
 }
