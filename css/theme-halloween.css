@@ -1,14 +1,18 @@
 /* ============================================================
-   HALLOWEEN — a night game under a blood moon
-   Active when <body data-theme="halloween">.
+   HALLOWEEN - a night game under a harvest moon
+   Active when <body data-theme="halloween"> (leaderboard) or
+   <html data-theme="halloween"> (every other page, set pre-paint).
 
-   Rewritten to be token-first. The previous version overrode ~30 individual
-   components, which meant anything built afterwards (the LED scores, the
-   jumbotron dot matrix, the countdown banner, the points column, the pick cards,
-   the stats boards) stayed stubbornly default and the page came out half-dressed.
-   Redefining the design tokens themes all of it at once, and keeps working for
-   whatever gets built next. Everything below the token block is atmosphere that
-   genuinely can't be expressed as a token.
+   Two halves. The token block re-dresses everything built on the design tokens
+   at once - LEDs, panels, chrome - so nothing new comes out half-themed. Below
+   it is the atmosphere: a moon that rises from behind the board, bats, a
+   graveyard skyline with a set of goalposts in it at the foot of every page,
+   cobwebs and a spider on the jumbotron, goo off its LED strip, and a countdown
+   that flickers like a candle in a pumpkin.
+
+   Every decorative layer sits behind content (z-index -1 or in flow after it)
+   and never takes a tap. Motion is opt-out via prefers-reduced-motion.
+   The inline SVGs are generated; edit their source shapes, not the data URIs.
    ============================================================ */
 
 [data-theme="halloween"] body,
@@ -18,13 +22,13 @@ body[data-theme="halloween"] {
   --cfp-charcoal: #120a1e;
   --cfp-gray:     #1b1029;
 
-  /* Chrome: ember orange rather than stadium gold. */
-  --cfp-gold:   #ff7518;          /* pumpkin */
+  /* Chrome: pumpkin rather than stadium gold. */
+  --cfp-gold:   #ff7518;
   --cfp-gold-2: #ffa94d;
   --cfp-ivory:  #f6ecdd;
 
-  /* The board's own LEDs. Amber -> ember, and the winning score goes toxic
-     green, which reads as Halloween without touching the win/loss language. */
+  /* Amber LEDs -> ember, and the winning score goes toxic green, which reads
+     as Halloween without touching the win/loss language. */
   --led-amber:    #ff8c1a;
   --led-white:    #f2e9dc;
   --led-dim:      #6b5878;
@@ -39,27 +43,158 @@ body[data-theme="halloween"] {
 
   --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 10px rgba(255,117,24,.35);
 
+  --hw-ink: #07030c;
+
   color: #ece2f2;
 
   background:
-    radial-gradient(ellipse 700px 380px at 50% -6%, rgba(190,26,0,.40), transparent 70%),
-    radial-gradient(circle at 3% 18%,  rgba(96,0,168,.26), transparent 58%),
-    radial-gradient(circle at 97% 28%, rgba(128,0,96,.22), transparent 58%),
-    linear-gradient(180deg, #0a0410, #120a1e 45%, #170b26);
+    radial-gradient(ellipse 900px 420px at 100% 0%, rgba(255,140,40,.20), transparent 70%),
+    radial-gradient(circle at 3% 22%,  rgba(96,0,168,.30), transparent 58%),
+    radial-gradient(circle at 97% 60%, rgba(128,0,96,.20), transparent 58%),
+    linear-gradient(180deg, #0b0414, #120a1e 45%, #1a0b2a);
   background-attachment: fixed;
+  background-color: #120a1e;
 }
 
-/* The moon itself, and a low fog that never moves. Fixed so it sits behind the
-   page rather than scrolling with it. */
+[data-theme="halloween"] ::selection { background: rgba(255,117,24,.4); color: #fff; }
+[data-theme="halloween"] ::-webkit-scrollbar-thumb { background: rgba(255,117,24,.35); }
+[data-theme="halloween"] ::-webkit-scrollbar-track { background: #0a0410; }
+
+
+/* ---------- Sky ---------------------------------------------------------- */
+
+/* The harvest moon, rising from behind the right edge of the board. Most of
+   the page is covered by the board, so it's placed where it peeks out rather
+   than where it would sit behind a table. */
+html[data-theme="halloween"]::before {
+  content: "";
+  position: fixed;
+  top: 84px; right: -54px;
+  width: 230px; height: 230px;
+  pointer-events: none; z-index: -1;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cdefs%3E%3CradialGradient id='m' cx='42%25' cy='38%25' r='62%25'%3E%3Cstop offset='0' stop-color='%23fff6dc'/%3E%3Cstop offset='.55' stop-color='%23ffd79a'/%3E%3Cstop offset='1' stop-color='%23e98f3e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='100' cy='100' r='78' fill='url(%23m)'/%3E%3Cg fill='%23b8682a' opacity='.22'%3E%3Ccircle cx='72' cy='80' r='14'/%3E%3Ccircle cx='118' cy='62' r='8'/%3E%3Ccircle cx='128' cy='118' r='18'/%3E%3Ccircle cx='82' cy='132' r='9'/%3E%3Ccircle cx='148' cy='88' r='6'/%3E%3Ccircle cx='102' cy='100' r='5'/%3E%3C/g%3E%3Cg fill='%231a0b26' opacity='.72'%3E%3Cellipse cx='70' cy='148' rx='78' ry='9'/%3E%3Cellipse cx='150' cy='160' rx='60' ry='7'/%3E%3C/g%3E%3C/svg%3E") center / 100% 100% no-repeat,
+    radial-gradient(circle, rgba(255,190,110,.30) 30%, rgba(255,120,30,.10) 48%, transparent 68%);
+  filter: drop-shadow(0 0 30px rgba(255,170,80,.35));
+}
+
+/* Bats, crossing in front of the moon. */
+html[data-theme="halloween"]::after {
+  content: "";
+  position: fixed;
+  top: 40px; right: 0;
+  width: 380px; height: 210px;
+  pointer-events: none; z-index: -1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 220'%3E%3Cdefs%3E%3Cpath id='b' d='M0 2C-3-2-6-3-8-1C-11-6-17-7-21-4C-18-3-16-1-16 1C-13 0-10 1-9 4C-6 2-3 3-1 6L0 4L1 6C3 3 6 2 9 4C10 1 13 0 16 1C16-1 18-3 21-4C17-7 11-6 8-1C6-3 3-2 0 2ZM-2 -1L-2.5 -4L-1 -2ZM2 -1L2.5 -4L1 -2Z' fill='%2307030c'/%3E%3C/defs%3E%3Cuse href='%23b' transform='translate(120 70) scale(2.1) rotate(-8)'/%3E%3Cuse href='%23b' transform='translate(210 40) scale(1.4) rotate(6)'/%3E%3Cuse href='%23b' transform='translate(300 96) scale(1.1) rotate(-4)'/%3E%3Cuse href='%23b' transform='translate(60 140) scale(.9) rotate(10)'/%3E%3Cuse href='%23b' transform='translate(250 160) scale(.75) rotate(-12)'/%3E%3Cuse href='%23b' transform='translate(350 30) scale(.6)'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: .9;
+}
+
+/* Low violet haze over the whole sky. */
 [data-theme="halloween"] body::before,
 body[data-theme="halloween"]::before {
   content: "";
   position: fixed; inset: 0;
-  pointer-events: none; z-index: 0;
+  pointer-events: none; z-index: -1;
   background:
-    radial-gradient(circle 90px at 50% 4%,  rgba(255,120,0,.22), transparent 70%),
-    radial-gradient(circle 240px at 50% 1%, rgba(200,30,0,.16), transparent 70%),
-    radial-gradient(ellipse 140% 40% at 50% 100%, rgba(70,0,110,.28), transparent 70%);
+    radial-gradient(ellipse 140% 40% at 50% 100%, rgba(90,20,140,.30), transparent 70%),
+    radial-gradient(ellipse 60% 30% at 0% 0%, rgba(60,0,90,.35), transparent 70%);
+}
+
+/* The graveyard, along the foot of the page. Anchored to the bottom of <html>
+   (made the containing block, at least a screen tall) with room reserved under
+   the content, so on a long board it is where you land when you scroll down,
+   on a short page it sits on the bottom of the screen, and it never covers a
+   row. Dead tree, headstones, an iron fence, jack-o'-lanterns, and a pair of
+   goalposts with something drifting through the uprights. The two soft
+   ellipses on top are fog, which moves while the ground stays put. */
+html[data-theme="halloween"] { position: relative; min-height: 100%; }
+[data-theme="halloween"] body,
+body[data-theme="halloween"] { padding-bottom: calc(clamp(130px, 17vw, 240px) + 2.5rem); }
+
+[data-theme="halloween"] body::after,
+body[data-theme="halloween"]::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: clamp(130px, 17vw, 240px);
+  pointer-events: none; z-index: -1;
+  background:
+    radial-gradient(ellipse 30% 55% at 20% 100%, rgba(200,180,230,.16), transparent 70%),
+    radial-gradient(ellipse 35% 50% at 75% 100%, rgba(200,180,230,.13), transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 240' preserveAspectRatio='xMidYMax slice'%3E%3Cdefs%3E%3CradialGradient id='glow'%3E%3Cstop offset='0' stop-color='%23ff9a2e' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23ff7518' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cg fill='%2307030c'%3E%3Cpath d='M0 240V196Q180 170 400 190T820 184T1240 192T1600 176V240Z'/%3E%3Cpath transform='rotate(-6 345 200)' d='M330 200V169A15 15 0 0 1 360 169V200Z'/%3E%3Cpath transform='rotate(4 407 200)' d='M395 200V178A12 12 0 0 1 419 178V200Z'/%3E%3Cg transform='rotate(-3 470 200)'%3E%3Crect x='467' y='142' width='6' height='58'/%3E%3Crect x='458' y='152' width='24' height='6'/%3E%3C/g%3E%3Cpath transform='rotate(8 554 200)' d='M540 200V174A14 14 0 0 1 568 174V200Z'/%3E%3Cpath transform='rotate(-10 651 200)' d='M640 200V181A11 11 0 0 1 662 181V200Z'/%3E%3Cg transform='rotate(7 760 200)'%3E%3Crect x='757' y='154' width='6' height='46'/%3E%3Crect x='748' y='164' width='24' height='6'/%3E%3C/g%3E%3Cpath transform='rotate(-4 1194 200)' d='M1180 200V172A14 14 0 0 1 1208 172V200Z'/%3E%3Cg transform='rotate(5 1250 200)'%3E%3Crect x='1247' y='148' width='6' height='52'/%3E%3Crect x='1238' y='158' width='24' height='6'/%3E%3C/g%3E%3Cpath transform='rotate(6 1533 200)' d='M1520 200V177A13 13 0 0 1 1546 177V200Z'/%3E%3Crect x='880' y='146' width='3' height='44'/%3E%3Cpath d='M878 146L881.5 138L885 146Z'/%3E%3Crect x='893' y='147' width='3' height='43'/%3E%3Cpath d='M891 147L894.5 139L898 147Z'/%3E%3Crect x='906' y='148' width='3' height='42'/%3E%3Cpath d='M904 148L907.5 140L911 148Z'/%3E%3Crect x='919' y='149' width='3' height='41'/%3E%3Cpath d='M917 149L920.5 141L924 149Z'/%3E%3Crect x='932' y='150' width='3' height='40'/%3E%3Cpath d='M930 150L933.5 142L937 150Z'/%3E%3Crect x='945' y='152' width='3' height='38'/%3E%3Cpath d='M943 152L946.5 144L950 152Z'/%3E%3Crect x='958' y='153' width='3' height='37'/%3E%3Cpath d='M956 153L959.5 145L963 153Z'/%3E%3Crect x='971' y='154' width='3' height='36'/%3E%3Cpath d='M969 154L972.5 146L976 154Z'/%3E%3Crect x='984' y='154' width='3' height='36'/%3E%3Cpath d='M982 154L985.5 146L989 154Z'/%3E%3Crect x='997' y='154' width='3' height='36'/%3E%3Cpath d='M995 154L998.5 146L1002 154Z'/%3E%3Crect x='1010' y='153' width='3' height='37'/%3E%3Cpath d='M1008 153L1011.5 145L1015 153Z'/%3E%3Crect x='1023' y='152' width='3' height='38'/%3E%3Cpath d='M1021 152L1024.5 144L1028 152Z'/%3E%3Crect x='1036' y='151' width='3' height='39'/%3E%3Cpath d='M1034 151L1037.5 143L1041 151Z'/%3E%3Crect x='1049' y='150' width='3' height='40'/%3E%3Cpath d='M1047 150L1050.5 142L1054 150Z'/%3E%3Crect x='1062' y='148' width='3' height='42'/%3E%3Cpath d='M1060 148L1063.5 140L1067 148Z'/%3E%3Crect x='1075' y='147' width='3' height='43'/%3E%3Cpath d='M1073 147L1076.5 139L1080 147Z'/%3E%3Crect x='1088' y='146' width='3' height='44'/%3E%3Cpath d='M1086 146L1089.5 138L1093 146Z'/%3E%3Crect x='1101' y='146' width='3' height='44'/%3E%3Cpath d='M1099 146L1102.5 138L1106 146Z'/%3E%3Crect x='878' y='160' width='236' height='3'/%3E%3Crect x='878' y='178' width='236' height='3'/%3E%3C/g%3E%3Cg stroke='%2307030c' stroke-linecap='round' fill='none'%3E%3Cpath d='M150 210C146 160 158 118 140 62' stroke-width='15'/%3E%3Cpath d='M146 130C116 108 92 104 66 72M148 102C172 86 192 74 206 40M142 76C128 52 132 38 118 16' stroke-width='7'/%3E%3Cpath d='M80 88L56 80M190 66L212 60M182 80L200 92M126 40L106 30M66 72L60 50' stroke-width='3.5'/%3E%3Cpath d='M1400 196V128M1350 128H1450M1350 128V30M1450 128V30' stroke-width='7'/%3E%3C/g%3E%3Cg transform='translate(1418 76)' fill='%23e9e3f5' opacity='.2'%3E%3Cpath d='M-14 22V-2A14 14 0 0 1 14-2V22L9 17L4 22L0 17L-4 22L-9 17Z'/%3E%3Ccircle cx='-5' cy='-2' r='2.6' fill='%2307030c'/%3E%3Ccircle cx='5' cy='-2' r='2.6' fill='%2307030c'/%3E%3C/g%3E%3Cg transform='translate(600 188) scale(1)'%3E%3Ccircle r='34' fill='url(%23glow)'/%3E%3Cellipse cx='-8' cy='0' rx='11' ry='13' fill='%23b9470b'/%3E%3Cellipse cx='8' cy='0' rx='11' ry='13' fill='%23b9470b'/%3E%3Cellipse cx='0' cy='0' rx='10' ry='14' fill='%23e0620f'/%3E%3Cpath d='M-1-13Q0-19 4-20' stroke='%232c3a12' stroke-width='3' fill='none'/%3E%3Cpath d='M-9-4L-4-4L-6.5-8ZM9-4L4-4L6.5-8ZM-9 4Q0 11 9 4L5 5L3 3L0 6L-3 3L-5 5Z' fill='%23ffe08a'/%3E%3C/g%3E%3Cg transform='translate(1300 190) scale(0.8)'%3E%3Ccircle r='34' fill='url(%23glow)'/%3E%3Cellipse cx='-8' cy='0' rx='11' ry='13' fill='%23b9470b'/%3E%3Cellipse cx='8' cy='0' rx='11' ry='13' fill='%23b9470b'/%3E%3Cellipse cx='0' cy='0' rx='10' ry='14' fill='%23e0620f'/%3E%3Cpath d='M-1-13Q0-19 4-20' stroke='%232c3a12' stroke-width='3' fill='none'/%3E%3Cpath d='M-9-4L-4-4L-6.5-8ZM9-4L4-4L6.5-8ZM-9 4Q0 11 9 4L5 5L3 3L0 6L-3 3L-5 5Z' fill='%23ffe08a'/%3E%3C/g%3E%3Cg transform='translate(250 196) scale(0.7)'%3E%3Ccircle r='34' fill='url(%23glow)'/%3E%3Cellipse cx='-8' cy='0' rx='11' ry='13' fill='%23b9470b'/%3E%3Cellipse cx='8' cy='0' rx='11' ry='13' fill='%23b9470b'/%3E%3Cellipse cx='0' cy='0' rx='10' ry='14' fill='%23e0620f'/%3E%3Cpath d='M-1-13Q0-19 4-20' stroke='%232c3a12' stroke-width='3' fill='none'/%3E%3Cpath d='M-9-4L-4-4L-6.5-8ZM9-4L4-4L6.5-8ZM-9 4Q0 11 9 4L5 5L3 3L0 6L-3 3L-5 5Z' fill='%23ffe08a'/%3E%3C/g%3E%3C/svg%3E") center bottom / cover no-repeat;
+  background-size: 120% 100%, 120% 100%, cover;
+}
+
+
+/* ---------- The jumbotron ------------------------------------------------ */
+
+/* Cobwebs strung across both top corners, behind the mascots. */
+[data-theme="halloween"] .jumbotron-header {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Cpath d='M0 0L150.0 0.0M0 0L144.9 38.8M0 0L127.2 79.5M0 0L96.4 114.9M0 0L56.2 139.1M0 0L0.0 150.0M26.0 0.0Q22.0 2.9 25.1 6.7Q20.3 8.8 22.0 13.8Q16.7 14.5 16.7 19.9Q11.4 18.9 9.7 24.1Q4.2 21.5 0.0 26.0M52.0 0.0Q44.0 5.8 50.2 13.5Q40.6 17.6 44.1 27.6Q33.3 29.0 33.4 39.8Q22.7 37.9 19.5 48.2Q8.4 43.1 0.0 52.0M80.0 0.0Q67.6 8.9 77.3 20.7Q62.4 27.1 67.8 42.4Q51.3 44.6 51.4 61.3Q35.0 58.2 30.0 74.2Q12.9 66.3 0.0 80.0M110.0 0.0Q93.0 12.2 106.3 28.5Q85.8 37.3 93.3 58.3Q70.5 61.3 70.7 84.3Q48.1 80.1 41.2 102.0Q17.7 91.2 0.0 110.0M140.0 0.0Q118.3 15.6 135.2 36.2Q109.2 47.5 118.7 74.2Q89.7 78.0 90.0 107.2Q61.2 101.9 52.4 129.8Q22.6 116.0 0.0 140.0' stroke='%23d9cfe6' stroke-width='.9' fill='none' opacity='.55'/%3E%3C/svg%3E") left top / 150px 150px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Cpath transform='matrix(-1 0 0 1 150 0)' d='M0 0L150.0 0.0M0 0L144.9 38.8M0 0L127.2 79.5M0 0L96.4 114.9M0 0L56.2 139.1M0 0L0.0 150.0M26.0 0.0Q22.0 2.9 25.1 6.7Q20.3 8.8 22.0 13.8Q16.7 14.5 16.7 19.9Q11.4 18.9 9.7 24.1Q4.2 21.5 0.0 26.0M52.0 0.0Q44.0 5.8 50.2 13.5Q40.6 17.6 44.1 27.6Q33.3 29.0 33.4 39.8Q22.7 37.9 19.5 48.2Q8.4 43.1 0.0 52.0M80.0 0.0Q67.6 8.9 77.3 20.7Q62.4 27.1 67.8 42.4Q51.3 44.6 51.4 61.3Q35.0 58.2 30.0 74.2Q12.9 66.3 0.0 80.0M110.0 0.0Q93.0 12.2 106.3 28.5Q85.8 37.3 93.3 58.3Q70.5 61.3 70.7 84.3Q48.1 80.1 41.2 102.0Q17.7 91.2 0.0 110.0M140.0 0.0Q118.3 15.6 135.2 36.2Q109.2 47.5 118.7 74.2Q89.7 78.0 90.0 107.2Q61.2 101.9 52.4 129.8Q22.6 116.0 0.0 140.0' stroke='%23d9cfe6' stroke-width='.9' fill='none' opacity='.55'/%3E%3C/svg%3E") right top / 150px 150px no-repeat,
+    radial-gradient(80% 140% at 50% 0%, rgba(255,117,24,.12), transparent 70%),
+    linear-gradient(180deg, rgba(26,12,36,.85), rgba(16,8,24,.82) 40%, rgba(10,4,16,.88));
+  border-color: rgba(255,117,24,.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.06),
+    0 -4px 26px rgba(255,90,0,.10),
+    0 -4px 20px rgba(0,0,0,.4);
+}
+
+/* The LED strip becomes candy corn, and something orange drips off it. */
+[data-theme="halloween"] .jumbotron-header::before {
+  height: 22px;
+  opacity: 1;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg,
+      #ffd23f 0 33.3%, #ff7518 33.3% 66.6%, #fff4e0 66.6% 100%) 0 0 / 24px 4px repeat-x,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 26' preserveAspectRatio='none'%3E%3Cpath fill='%23ff7518' d='M0 0H300V4C292 4 290 8 289 14C288 20 282 20 281 14C280 8 276 5 266 5C252 5 250 9 249 22C248 27 241 27 240 22C239 10 232 5 216 5C200 5 196 8 195 12C194 16 189 16 188 12C187 7 180 5 160 5C140 5 135 9 134 18C133 24 125 24 124 18C123 9 116 5 98 5C80 5 76 8 75 13C74 18 68 18 67 13C66 8 58 5 44 5C30 5 27 9 26 20C25 26 18 26 17 20C16 9 10 4 0 4Z'/%3E%3C/svg%3E") 0 3px / 300px 18px repeat-x;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.5));
+}
+
+/* A spider letting itself down over the title. */
+[data-theme="halloween"] .jumbotron-title::before {
+  content: "";
+  position: absolute;
+  top: -1.1rem; left: 14%;
+  width: 26px; height: 92px;
+  pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 140'%3E%3Cpath d='M20 0V108' stroke='%23d9cfe6' stroke-width='.8' opacity='.6'/%3E%3Cg stroke='%236a4386' stroke-width='2.2' fill='none' stroke-linecap='round'%3E%3Cpath d='M17 114L8 106L3 110M17 117L6 115L2 121M17 120L7 125L4 132M18 123L11 132L10 138'/%3E%3Cpath d='M23 114L32 106L37 110M23 117L34 115L38 121M23 120L33 125L36 132M22 123L29 132L30 138'/%3E%3C/g%3E%3Cellipse cx='20' cy='112' rx='5' ry='5' fill='%2355306e'/%3E%3Cellipse cx='20' cy='123' rx='7' ry='9' fill='%2355306e'/%3E%3Ccircle cx='18' cy='111' r='1.5' fill='%23ff7518'/%3E%3Ccircle cx='22' cy='111' r='1.5' fill='%23ff7518'/%3E%3C/svg%3E") center top / 100% 100% no-repeat;
+  transform-origin: 50% 0;
+}
+
+[data-theme="halloween"] .jumbotron-title-text,
+html[data-theme="halloween"] h1 {
+  font-family: 'Creepster', 'Teko', 'Oswald', sans-serif;
+  font-weight: 400;
+  letter-spacing: .06em;
+  color: #ff8a1f;
+  text-shadow:
+    0 0 6px rgba(255,120,20,.55),
+    0 0 22px rgba(255,90,0,.35),
+    0 3px 0 #3a0d00;
+}
+[data-theme="halloween"] .jumbotron-title-text { font-size: 2.6rem; }
+
+@media (max-width: 640px) {
+  [data-theme="halloween"] .jumbotron-title-text { font-size: 1.55rem; letter-spacing: .04em; }
+  [data-theme="halloween"] .jumbotron-header {
+    background-size: 84px 84px, 84px 84px, auto, auto;
+  }
+  [data-theme="halloween"] .jumbotron-title::before { display: none; }
+  html[data-theme="halloween"]::before { width: 150px; height: 150px; top: 300px; right: -80px; }
+  html[data-theme="halloween"]::after  { width: 200px; height: 110px; top: 270px; right: -60px; }
+}
+
+
+/* ---------- The board ---------------------------------------------------- */
+
+[data-theme="halloween"] .scoreboard-header {
+  background: linear-gradient(180deg, #1d0f2a, #120a1c) !important;
+  border-bottom-color: #3b1d4f !important;
 }
 
 /* Board edge catches the ember light. */
@@ -69,7 +204,13 @@ body[data-theme="halloween"]::before {
     inset 0 1px 0 rgba(255,255,255,.06),
     0 0 0 1px #1d0f28,
     0 16px 56px rgba(0,0,0,.85),
-    0 0 26px rgba(255,90,0,.10);
+    0 0 30px rgba(255,90,0,.12);
+}
+
+/* Team / Points headers glow pumpkin rather than gold. */
+[data-theme="halloween"] .table thead th.sticky-col-1,
+[data-theme="halloween"] .table thead th:nth-child(2) {
+  text-shadow: 0 0 10px rgba(255,140,40,.5), 0 0 20px rgba(255,90,0,.2);
 }
 
 /* Losing picks bruise purple instead of red - red on this background just
@@ -85,9 +226,80 @@ body[data-theme="halloween"]::before {
   color: #a5f59a;
 }
 
-/* A slow flicker on the live badge - a bad bulb, not a strobe. */
+[data-theme="halloween"] .cfp-card {
+  border-color: rgba(255,117,24,.16);
+  border-top-color: var(--cfp-gold);
+}
+
+
+/* ---------- Countdown ---------------------------------------------------- */
+
+[data-theme="halloween"] .reveal-banner:not(.is-urgent):not(.is-imminent):not(.is-opener) {
+  background:
+    radial-gradient(120% 150% at 50% 0%, rgba(255,117,24,.18), transparent 70%),
+    linear-gradient(180deg, rgba(24,10,30,.92), rgba(12,5,18,.92));
+  border-color: rgba(255,117,24,.3);
+  border-top-color: var(--cfp-gold);
+}
+[data-theme="halloween"] .reveal-banner:not(.is-urgent):not(.is-imminent) .reveal-clock {
+  color: #ff9a2e;
+  text-shadow: 0 0 10px rgba(255,140,30,.6), 0 0 34px rgba(255,90,0,.3);
+}
+[data-theme="halloween"] .reveal-dot {
+  background: #ff9a2e;
+  box-shadow: 0 0 8px rgba(255,140,30,.95);
+}
+[data-theme="halloween"] .reveal-label { color: #d8c6e6; }
+
+
+/* ---------- Motion (opt-out) --------------------------------------------- */
+
 @media (prefers-reduced-motion: no-preference) {
-  [data-theme="halloween"] .badge-live { animation: hw-flicker 4s steps(1,end) infinite; }
+  /* Bats drift and bob rather than fly a fixed loop - quieter on a page you
+     stare at for three hours on a Saturday. */
+  html[data-theme="halloween"]::after { animation: hw-bats 14s ease-in-out infinite alternate; }
+  @keyframes hw-bats {
+    0%   { transform: translate(0, 0) rotate(0deg); }
+    50%  { transform: translate(-26px, 10px) rotate(-2deg); }
+    100% { transform: translate(-48px, -6px) rotate(1deg); }
+  }
+
+  /* Fog rolls through the graveyard. */
+  [data-theme="halloween"] body::after,
+  body[data-theme="halloween"]::after { animation: hw-fog 38s linear infinite alternate; }
+  @keyframes hw-fog {
+    from { background-position: 0% 100%, 100% 100%, center bottom; }
+    to   { background-position: 100% 100%, 0% 100%, center bottom; }
+  }
+
+  [data-theme="halloween"] .jumbotron-title::before { animation: hw-spider 7s ease-in-out infinite; }
+  @keyframes hw-spider {
+    0%, 100% { transform: rotate(4deg) scaleY(1); }
+    30%      { transform: rotate(-3deg) scaleY(1.12); }
+    60%      { transform: rotate(2deg) scaleY(.94); }
+  }
+
+  /* A candle in a pumpkin: the glow wavers, the digits don't move. */
+  [data-theme="halloween"] .reveal-banner:not(.is-urgent):not(.is-imminent) .reveal-clock {
+    animation: hw-candle 3.2s ease-in-out infinite;
+  }
+  @keyframes hw-candle {
+    0%, 100% { text-shadow: 0 0 10px rgba(255,140,30,.6), 0 0 34px rgba(255,90,0,.30); }
+    22%      { text-shadow: 0 0 6px  rgba(255,140,30,.45), 0 0 22px rgba(255,90,0,.18); }
+    37%      { text-shadow: 0 0 13px rgba(255,160,40,.75), 0 0 42px rgba(255,90,0,.38); }
+    58%      { text-shadow: 0 0 8px  rgba(255,140,30,.5),  0 0 28px rgba(255,90,0,.24); }
+    80%      { text-shadow: 0 0 12px rgba(255,150,40,.7),  0 0 38px rgba(255,90,0,.34); }
+  }
+
+  /* The title buzzes like a bad neon tube now and then. */
+  [data-theme="halloween"] .jumbotron-title-text { animation: hw-neon 9s steps(1, end) infinite; }
+  @keyframes hw-neon {
+    0%, 91%, 93.5%, 95%, 100% { opacity: 1; }
+    92%, 94.5% { opacity: .55; }
+  }
+
+  /* A slow flicker on the live badge - a bad bulb, not a strobe. */
+  [data-theme="halloween"] .badge-live { animation: hw-flicker 4s steps(1, end) infinite; }
   @keyframes hw-flicker {
     0%, 43%, 47%, 61%, 65%, 100% { opacity: 1; }
     45%, 63% { opacity: .55; }
