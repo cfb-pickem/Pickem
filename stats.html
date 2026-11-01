@@ -85,6 +85,11 @@
 
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr{transition:background .18s ease-out}
+    /* Click-to-sort headers (js/sortableTables.js). */
+    .th-sortable{cursor:pointer;user-select:none;white-space:nowrap}
+    .th-sortable:hover,.th-sortable:focus-visible{color:var(--cfp-gold-2)}
+    .th-sortable[aria-sort="ascending"],.th-sortable[aria-sort="descending"]{color:var(--cfp-gold-2)}
+    .sort-arrow{display:inline-block;margin-left:.3em;font-size:.6em;vertical-align:middle;min-width:.8em}
     .table tbody tr:hover{
       background:radial-gradient(circle at 0 0, rgba(233,185,73,.18), transparent 55%);
     }
@@ -439,7 +444,8 @@
             <thead>
               <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
                 <th class="px-4 py-2 text-left font-semibold">Team</th>
-                <th class="px-4 py-2 text-left font-semibold">Slots</th>
+                <th class="px-4 py-2 text-left font-semibold">Pulls</th>
+                <th class="px-4 py-2 text-left font-semibold">Record</th>
                 <th class="px-4 py-2 text-left font-semibold">Win %</th>
                 <th class="px-4 py-2 text-left font-semibold">Own Picks</th>
               </tr>
@@ -458,6 +464,7 @@
     import { initMascots } from './js/mascots.js';
     import { supabase } from './js/supabaseClient.js';
     import { renderSeasonHistory, selectAll, isWin } from './js/seasonHistory.js';
+    import { makeTablesSortable } from './js/sortableTables.js';
     import { sameTeam, escapeHtml } from './js/utils.js';
     import { gameScore } from './js/gameScore.js';
 
@@ -1096,7 +1103,7 @@
         pct: e.sw / e.st,
         st: e.st,
         own: e.ot ? e.ow / e.ot : null
-      })).sort((a, b) => b.pct - a.pct || b.st - a.st || a.team.localeCompare(b.team));
+      })).sort((a, b) => b.st - a.st || b.pct - a.pct || a.team.localeCompare(b.team));
 
       const slotsBody = document.getElementById('slots-body');
       const slotsFoot = document.getElementById('slots-foot');
@@ -1111,12 +1118,13 @@
           ? slotsRows.map(r =>
               `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
                 <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.st}</td>
                 <td class="px-4 py-2">${r.record}</td>
                 <td class="px-4 py-2">${pct3(r.pct)}</td>
                 <td class="px-4 py-2">${ownCell(r)}</td>
               </tr>`
             ).join('')
-          : `<tr><td class="px-4 py-2 text-gray-300" colspan="4">Nobody has let the slots decide yet.</td></tr>`;
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="5">Nobody has let the slots decide yet.</td></tr>`;
 
       let lw = 0, lt = 0;
       for (const e of slotsStats.values()) { lw += e.sw; lt += e.st; }
@@ -1130,6 +1138,9 @@
     async function startup(){
       await initNav();
       initMascots();
+      // Every table on the page sorts by clicking its headers, and keeps the
+      // chosen order through season changes.
+      makeTablesSortable(document.querySelector('.max-w-7xl') || document);
       const ok = await loadSeasons();
       if(!ok) return;
 
