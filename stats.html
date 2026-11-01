@@ -248,7 +248,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=eaaed95b">
+  <link rel="stylesheet" href="./css/tailwind.css?v=015fa28b">
 </head>
 
 <body data-page="stats">
@@ -423,6 +423,31 @@
             <tbody id="favorite-body"></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Slots Win % -->
+      <div class="cfp-card gold-shadow">
+        <div class="stat-head px-4 md:px-6 py-3">
+          <span class="trophy-oval" aria-hidden="true"></span>
+          <div>
+            <h2 class="stat-title">Slots Win % 🎰</h2>
+            <p class="mt-1 text-[11px] text-gray-400">When the house picked for you, against the picks you made yourself.</p>
+          </div>
+        </div>
+        <div class="overflow-auto">
+          <table class="table min-w-full text-sm">
+            <thead>
+              <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                <th class="px-4 py-2 text-left font-semibold">Team</th>
+                <th class="px-4 py-2 text-left font-semibold">Slots</th>
+                <th class="px-4 py-2 text-left font-semibold">Win %</th>
+                <th class="px-4 py-2 text-left font-semibold">Own Picks</th>
+              </tr>
+            </thead>
+            <tbody id="slots-body"></tbody>
+          </table>
+        </div>
+        <p id="slots-foot" class="px-4 md:px-6 py-2 text-[11px] text-gray-400"></p>
       </div>
     </section>
 
@@ -601,8 +626,9 @@
       const [{ data: picks, error: pErr }, { data: teams, error: tErr }] = await Promise.all([
         // Paged: 15 teams x a 64-game regular season is already within a few
         // rows of PostgREST's 1000-row cap, and past it picks vanish silently.
-        // jackpot is selected because a jackpot scores on the leaderboard.
-        selectAll(() => supabase.from('picks').select('id, team_id, game_id, pick, jackpot').in('game_id', gameIds).order('id')),
+        // jackpot is selected because a jackpot scores on the leaderboard;
+        // by_slots for the Slots Win % card.
+        selectAll(() => supabase.from('picks').select('id, team_id, game_id, pick, jackpot, by_slots').in('game_id', gameIds).order('id')),
         supabase.from('teams').select('team_id, team_name, active')
       ]);
       if(stale()) return;
@@ -1045,6 +1071,58 @@
               </tr>`
             ).join('')
           : `<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>`;
+
+      // ------- Slots Win % (decided picks the house made, this season) -------
+      // A slots pick is a coin flip made at kickoff (resolve_slot_picks), so
+      // over enough of them everyone should drift to .500 against the spread.
+      // Set beside each player's record on the picks they made themselves, it
+      // answers the question the card is for: would you have done better
+      // letting the house pick? A popped football is a slots pick that scores,
+      // and isWin() already counts it as a win.
+      const slotsStats = new Map(); // team_id -> { sw, st, ow, ot }
+      for (const [team_id, arr] of byTeamDecided.entries()) {
+        const e = { sw: 0, st: 0, ow: 0, ot: 0 };
+        for (const r of arr) {
+          const win = isWin(r, r.winner);
+          if (r.by_slots) { e.st++; if (win) e.sw++; }
+          else            { e.ot++; if (win) e.ow++; }
+        }
+        if (e.st) slotsStats.set(team_id, e);
+      }
+
+      const slotsRows = [...slotsStats.entries()].map(([team_id, e]) => ({
+        team: teamName.get(team_id) || `Team ${team_id}`,
+        record: `${e.sw}-${e.st - e.sw}`,
+        pct: e.sw / e.st,
+        st: e.st,
+        own: e.ot ? e.ow / e.ot : null
+      })).sort((a, b) => b.pct - a.pct || b.st - a.st || a.team.localeCompare(b.team));
+
+      const slotsBody = document.getElementById('slots-body');
+      const slotsFoot = document.getElementById('slots-foot');
+      // Gold when the house did better for you than you did for yourself.
+      const ownCell = r => {
+        if (r.own == null) return '<span class="text-gray-500">—</span>';
+        const beat = r.pct > r.own;
+        return `<span class="${beat ? 'text-[var(--cfp-gold-2)]' : ''}">${pct3(r.own)}</span>`;
+      };
+      slotsBody.innerHTML =
+        slotsRows.length
+          ? slotsRows.map(r =>
+              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                <td class="px-4 py-2">${r.record}</td>
+                <td class="px-4 py-2">${pct3(r.pct)}</td>
+                <td class="px-4 py-2">${ownCell(r)}</td>
+              </tr>`
+            ).join('')
+          : `<tr><td class="px-4 py-2 text-gray-300" colspan="4">Nobody has let the slots decide yet.</td></tr>`;
+
+      let lw = 0, lt = 0;
+      for (const e of slotsStats.values()) { lw += e.sw; lt += e.st; }
+      slotsFoot.textContent = lt
+        ? `League on slots: ${lw}-${lt - lw} (${pct3(lw / lt)}). A coin flip should land near .500. Gold = the house beat your own picks.`
+        : '';
 
       setStatus(`Loaded • Season ${season}`);
     }
