@@ -131,12 +131,23 @@ export function simulatePlayoffOdds(o) {
     for (let r = 0; r < k; r++) first[order[r]] += 1 / k;
   }
 
+  // Players in exactly the same position - same points, same turnout, same
+  // visible picks - have exactly the same chance; any gap between their raw
+  // counts is sampling noise, and showing 66% beside 65% for two people level on
+  // points invites a question with no real answer. So they share one number:
+  // the average of their group, which is also the better estimate of it.
+  const groups = new Map();
+  ids.forEach((_, i) => {
+    const key = JSON.stringify([base[i], submit[i], known.map(sides => sides[i])]);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(i);
+  });
   const out = new Map();
-  ids.forEach((id, i) => out.set(id, {
-    playoff: playoff[i] / sims,
-    first: first[i] / sims,
-    expected: total[i] / sims,
-  }));
+  for (const members of groups.values()) {
+    const avg = arr => members.reduce((acc, i) => acc + arr[i], 0) / members.length / sims;
+    const r = { playoff: avg(playoff), first: avg(first), expected: avg(total) };
+    for (const i of members) out.set(ids[i], r);
+  }
   return out;
 }
 

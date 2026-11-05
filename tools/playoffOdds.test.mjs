@@ -96,6 +96,28 @@ t('whole-week misses swing harder than scattered ones', () => {
   assert.notEqual(weekly.toFixed(3), scattered.toFixed(3));
 });
 
+t('players in the same position get exactly the same odds', () => {
+  const r = simulatePlayoffOdds({
+    teams: teams(['a', 'b', 'c', 'd', 'e', 'f', 'g']),
+    points: { a: 23, b: 23, c: 22, d: 22, e: 21, f: 21, g: 21 },
+    unknownGames: 24, agreement: 0.66, sims: 5000,
+  });
+  assert.deepEqual(r.get('a'), r.get('b'));
+  assert.deepEqual(r.get('c'), r.get('d'));
+  assert.deepEqual(r.get('e'), r.get('g'));
+  assert.ok(Math.abs([...r.values()].reduce((x, v) => x + v.playoff, 0) - 4) < 1e-9);
+});
+
+t('different visible picks keep level players apart', () => {
+  const r = simulatePlayoffOdds({
+    teams: teams(['a', 'b', 'c']), points: { a: 10, b: 10, c: 10 },
+    knownGames: [{ picks: { a: 'home', b: 'away', c: 'home' } }],
+    unknownGames: 0, agreement: 0.6, sims: 4000, spots: 1,
+  });
+  assert.deepEqual(r.get('a'), r.get('c'));
+  assert.notDeepEqual(r.get('a'), r.get('b'));
+});
+
 t('agreement: majority share, with a fallback for thin data', () => {
   assert.equal(measureAgreement([['h', 'h', 'a']]), 0.6);
   const many = Array.from({ length: 20 }, () => ['h', 'h', 'h', 'a']);
