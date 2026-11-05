@@ -106,3 +106,28 @@ from pg_policies
 where schemaname = 'public'
 order by tablename, cmd;
 ```
+
+### Migrations
+
+Schema changes live in `supabase/migrations/`. Apply them with:
+
+```bash
+npx supabase db push --workdir .
+```
+
+**Always pass `--workdir .`** to the Supabase CLI from this repo. There is a stray
+`~/supabase` folder in the home directory with its own link and two old
+migrations; without the flag the CLI walks up to it and works against that copy
+instead. That is how the remote history ended up tracking only 2 of 39
+migrations, which made a plain `db push` want to re-run all the rest against
+production. The repo is now linked itself (`supabase link --workdir .`) and the
+history was repaired on 2026-11-04 (`supabase migration repair --status applied
+<every version> --workdir .`); `db push --dry-run --workdir .` reports
+"Remote database is up to date".
+
+If a migration is ever applied by hand instead (`db query --linked -f ...`),
+record it the same way so the history stays true:
+
+```bash
+npx supabase migration repair --status applied <version> --workdir .
+```

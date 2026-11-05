@@ -85,6 +85,39 @@
 
     .table th,.table td{border-color:rgba(231,231,231,.08)}
     .table tbody tr{transition:background .18s ease-out}
+    /* Playoff race chart (js/seasonRace.js) and odds. */
+    .race-chips{display:flex;flex-wrap:wrap;gap:.35rem;margin:.25rem 0 .6rem}
+    .race-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .55rem;border-radius:999px;
+      font-size:.72rem;line-height:1.3;color:#c9ccd2;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);cursor:pointer}
+    .race-chip:hover{border-color:rgba(255,255,255,.22);color:#fff}
+    .race-chip[aria-pressed="true"]{color:#fff;border-color:var(--chip);background:color-mix(in srgb, var(--chip) 16%, transparent)}
+    .race-dot{width:.55rem;height:.55rem;border-radius:50%;flex:none;background:var(--chip, rgba(160,166,178,.45))}
+    .race-chip[aria-pressed="false"] .race-dot{background:rgba(160,166,178,.35)}
+    .race-dot-cut{background:transparent;border:1.5px dashed #9aa0a8}
+    .race-figure{position:relative}
+    .race-figure svg{display:block;overflow:visible}
+    .race-grid{stroke:rgba(255,255,255,.06);stroke-width:1}
+    .race-axis{fill:#8b9098;font-size:10.5px;font-family:'Roboto',system-ui,sans-serif}
+    .race-cut{stroke:#9aa0a8;stroke-width:1.25;stroke-dasharray:4 4;opacity:.8}
+    .race-cut-label{fill:#9aa0a8;font-size:10.5px;font-family:'Roboto',system-ui,sans-serif}
+    .race-ring{stroke:var(--cfp-charcoal);stroke-width:5;stroke-linejoin:round;opacity:.9}
+    .race-end{stroke:var(--cfp-charcoal);stroke-width:2}
+    .race-end-label{fill:#e7e7e7;font-size:11px;font-weight:600;font-family:'Roboto',system-ui,sans-serif}
+    .race-cross{stroke:rgba(255,255,255,.28);stroke-width:1}
+    .race-tip{position:absolute;z-index:5;pointer-events:none;min-width:170px;padding:.45rem .6rem;border-radius:6px;
+      background:rgba(10,11,14,.96);border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 24px rgba(0,0,0,.5);font-size:.74rem;color:#e7e7e7}
+    .race-tip-head{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.08em;font-size:.68rem;color:#9aa0a8;margin-bottom:.25rem}
+    .race-tip-row{display:grid;grid-template-columns:.7rem 1fr auto 2rem;gap:.4rem;align-items:center;line-height:1.55}
+    .race-tip-row b{font-variant-numeric:tabular-nums}
+    .race-tip-row em{font-style:normal;color:#9aa0a8;text-align:right;font-size:.68rem}
+    .race-tip-muted{color:#9aa0a8}
+    .race-table{margin-top:.6rem;font-size:.75rem;color:#9aa0a8}
+    .race-table summary{cursor:pointer;padding:.25rem 0}
+    .race-empty{color:#9aa0a8;font-size:.85rem;padding:1rem 0}
+    .odds-cell{background:linear-gradient(90deg, color-mix(in srgb, var(--cfp-gold) 30%, transparent) var(--w), transparent var(--w));
+      font-variant-numeric:tabular-nums}
+    .odds-note{font-size:11px;color:#9aa0a8;line-height:1.45;margin-top:.5rem}
+
     /* Click-to-sort headers (js/sortableTables.js). */
     .th-sortable{cursor:pointer;user-select:none;white-space:nowrap}
     .th-sortable:hover,.th-sortable:focus-visible{color:var(--cfp-gold-2)}
@@ -253,7 +286,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=015fa28b">
+  <link rel="stylesheet" href="./css/tailwind.css?v=69c9a33b">
 </head>
 
 <body data-page="stats">
@@ -323,6 +356,37 @@
           <h2 class="stat-title">Winless Week Club</h2>
         </div>
         <div id="zero-ribbon" class="relative flex flex-wrap items-center gap-2 px-4 md:px-6 py-3 z-10"></div>
+      </div>
+    </section>
+
+    <!-- PLAYOFF RACE: points by week + playoff odds -->
+    <section id="race-section" class="cfp-card gold-shadow mb-5">
+      <div class="stat-head px-4 md:px-6 py-3">
+        <span class="trophy-oval" aria-hidden="true"></span>
+        <div>
+          <h2 class="stat-title">Playoff Race</h2>
+          <p class="mt-1 text-[11px] text-gray-400">Season points by week. The dashed line is 4th place - the playoff cut. Tap names to compare.</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 px-4 md:px-6 pb-5">
+        <div id="race-chart" class="lg:col-span-2 min-w-0"></div>
+        <div class="min-w-0">
+          <h3 class="font-['Oswald',_sans-serif] uppercase tracking-[.12em] text-[11px] text-[var(--cfp-gold-2)] mb-2">Playoff odds</h3>
+          <div class="overflow-auto">
+            <table class="table min-w-full text-sm">
+              <thead>
+                <tr class="bg-[var(--cfp-black)] text-[var(--cfp-ivory)]">
+                  <th class="px-3 py-2 text-left font-semibold">Team</th>
+                  <th class="px-3 py-2 text-left font-semibold">Pts</th>
+                  <th class="px-3 py-2 text-left font-semibold">Playoff</th>
+                  <th class="px-3 py-2 text-left font-semibold">1st</th>
+                </tr>
+              </thead>
+              <tbody id="odds-body"></tbody>
+            </table>
+          </div>
+          <p id="odds-note" class="odds-note"></p>
+        </div>
       </div>
     </section>
 
@@ -465,6 +529,8 @@
     import { supabase } from './js/supabaseClient.js';
     import { renderSeasonHistory, selectAll, isWin } from './js/seasonHistory.js';
     import { makeTablesSortable } from './js/sortableTables.js';
+    import { renderSeasonRace } from './js/seasonRace.js';
+    import { simulatePlayoffOdds, measureAgreement } from './js/playoffOdds.js';
     import { sameTeam, escapeHtml } from './js/utils.js';
     import { gameScore } from './js/gameScore.js';
 
@@ -548,7 +614,7 @@
       // Pull only picked games for the chosen season
       const { data: allGames, error: gErr } = await selectAll(() => supabase
         .from('all_games')
-        .select('GameId, week, winner, picked, Away, Home, "AwayPts", "HomePts", line, "Network", "Start (CT)", cfb_season')
+        .select('GameId, week, winner, picked, tiebreaker, Away, Home, "AwayPts", "HomePts", line, "Network", "Start (CT)", cfb_season')
         .eq('picked', true)
         .eq('cfb_season', season)
         .lt('week', 16)    // only use weeks < 16
@@ -1078,6 +1144,89 @@
               </tr>`
             ).join('')
           : `<tr><td class="px-4 py-2 text-gray-300" colspan="2">No underdog wins yet.</td></tr>`;
+
+      // ------- Playoff race + playoff odds ------------------------------------
+      // Same points as the leaderboard: regular-season weeks (0-15), tiebreaker
+      // games out, a popped football counting as a win.
+      (function renderRace(){
+        const GAMES_PER_WEEK = 4, LAST_REGULAR_WEEK = 15, SPOTS = 4;
+        const regular = (allGames || []).filter(g => g.tiebreaker !== true && g.week != null && Number(g.week) <= LAST_REGULAR_WEEK);
+        const decidedById = new Map(regular.filter(g => g.winner != null).map(g => [g.GameId, g]));
+        const weeksDone = [...new Set([...decidedById.values()].map(g => Number(g.week)))].sort((a, b) => a - b);
+
+        // Only people who have actually played this season.
+        const raceTeams = seasonTeams.filter(t => playedThisSeason.has(Number(t.team_id)));
+        const weekPts = new Map(raceTeams.map(t => [t.team_id, new Map()]));
+        for (const p of (picks || [])) {
+          const g = decidedById.get(p.game_id);
+          if (!g || !weekPts.has(p.team_id) || !isWin(p, g.winner)) continue;
+          const m = weekPts.get(p.team_id), w = Number(g.week);
+          m.set(w, (m.get(w) || 0) + 1);
+        }
+        const series = raceTeams.map(t => {
+          let run = 0;
+          return { id: t.team_id, name: t.team_name, cum: weeksDone.map(w => (run += weekPts.get(t.team_id).get(w) || 0)) };
+        });
+        renderSeasonRace(document.getElementById('race-chart'), { weeks: weeksDone, series });
+
+        // What is left: games whose picks are in (the week has locked) and
+        // games nobody has picked yet, including weeks not on the schedule.
+        const sideOf = (p, g) => (sameTeam(p.pick, g.Home) ? 'home' : sameTeam(p.pick, g.Away) ? 'away' : null);
+        const picksByGame = new Map();
+        for (const p of (picks || [])) {
+          if (!p.pick) continue;
+          if (!picksByGame.has(p.game_id)) picksByGame.set(p.game_id, []);
+          picksByGame.get(p.game_id).push(p);
+        }
+        const open = regular.filter(g => g.winner == null);
+        const knownGames = open.filter(g => startedWeeks.has(Number(g.week))).map(g => {
+          const sides = new Map();
+          for (const p of (picksByGame.get(g.GameId) || [])) { const sd = sideOf(p, g); if (sd) sides.set(p.team_id, sd); }
+          return { picks: sides };
+        });
+        const scheduledWeeks = new Set(regular.map(g => Number(g.week)));
+        const lastScheduled = Math.max(-1, ...scheduledWeeks);
+        let unknownGames = open.filter(g => !startedWeeks.has(Number(g.week))).length;
+        for (let w = lastScheduled + 1; w <= LAST_REGULAR_WEEK; w++) unknownGames += GAMES_PER_WEEK;
+
+        const agreement = measureAgreement([...decidedById.values()].map(g =>
+          (picksByGame.get(g.GameId) || []).map(p => sideOf(p, g)).filter(Boolean)));
+
+        // How reliably each player turns up, from the weeks that have kicked off.
+        const submitRate = new Map();
+        for (const t of raceTeams) {
+          const played = teamWeeks.get(t.team_id) || new Set();
+          let n = 0;
+          for (const w of allWeeksWithPicks) if (played.has(w)) n++;
+          submitRate.set(t.team_id, allWeeksWithPicks.size ? n / allWeeksWithPicks.size : 1);
+        }
+
+        const points = new Map(series.map(s => [s.id, s.cum.length ? s.cum[s.cum.length - 1] : 0]));
+        const odds = simulatePlayoffOdds({
+          teams: raceTeams.map(t => ({ id: t.team_id })),
+          points, knownGames, unknownGames, agreement, submitRate, spots: SPOTS, sims: 20000,
+        });
+
+        const seasonOver = knownGames.length + unknownGames === 0;
+        // A finished season has no odds, only places - and a tie on the line is
+        // settled by the tiebreakers, not shared.
+        const fmt = p => p >= 1 ? '✓ In' : p <= 0 ? 'Out' : seasonOver ? 'Tiebreak' : p >= 0.995 ? '>99%' : p < 0.005 ? '<1%' : Math.round(p * 100) + '%';
+        const rows = raceTeams.map(t => ({ name: t.team_name, pts: points.get(t.team_id), ...odds.get(t.team_id) }))
+          .sort((a, b) => b.playoff - a.playoff || b.pts - a.pts || a.name.localeCompare(b.name));
+        document.getElementById('odds-body').innerHTML = rows.length
+          ? rows.map(r => `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+              <td class="px-3 py-2">${escapeHtml(r.name)}</td>
+              <td class="px-3 py-2">${r.pts}</td>
+              <td class="px-3 py-2 odds-cell" style="--w:${(r.playoff * 100).toFixed(1)}%" data-sort="${r.playoff}">${fmt(r.playoff)}</td>
+              <td class="px-3 py-2" data-sort="${r.first}">${fmt(r.first)}</td>
+            </tr>`).join('')
+          : `<tr><td class="px-3 py-2 text-gray-300" colspan="4">No results yet.</td></tr>`;
+
+        const left = seasonOver ? 0 : knownGames.length + unknownGames;
+        document.getElementById('odds-note').textContent = left
+          ? `20,000 simulated finishes, ${left} games left. Every remaining game is a coin flip against the spread, and picks overlap the way this league's do (a pick sides with the majority ${Math.round(agreement * 100)}% of the time). Top ${SPOTS} make the playoff; ties at the cut are shared.`
+          : 'Regular season complete.';
+      })();
 
       // ------- Slots Win % (decided picks the house made, this season) -------
       // A slots pick is a coin flip made at kickoff (resolve_slot_picks), so
