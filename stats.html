@@ -1192,13 +1192,15 @@
         const agreement = measureAgreement([...decidedById.values()].map(g =>
           (picksByGame.get(g.GameId) || []).map(p => sideOf(p, g)).filter(Boolean)));
 
-        // How reliably each player turns up, from the weeks that have kicked off.
+        // How reliably each player turns up for a week. Misses over (weeks + 5):
+        // one miss in ten weeks is a hint, not proof of a 10% habit, and a clean
+        // record stays at full attendance. See js/playoffOdds.js.
         const submitRate = new Map();
         for (const t of raceTeams) {
           const played = teamWeeks.get(t.team_id) || new Set();
-          let n = 0;
-          for (const w of allWeeksWithPicks) if (played.has(w)) n++;
-          submitRate.set(t.team_id, allWeeksWithPicks.size ? n / allWeeksWithPicks.size : 1);
+          let missed = 0;
+          for (const w of allWeeksWithPicks) if (!played.has(w)) missed++;
+          submitRate.set(t.team_id, 1 - missed / (allWeeksWithPicks.size + 5));
         }
 
         const points = new Map(series.map(s => [s.id, s.cum.length ? s.cum[s.cum.length - 1] : 0]));
@@ -1210,15 +1212,33 @@
         const seasonOver = knownGames.length + unknownGames === 0;
         // A finished season has no odds, only places - and a tie on the line is
         // settled by the tiebreakers, not shared.
-        const fmt = p => p >= 1 ? '✓ In' : p <= 0 ? 'Out' : seasonOver ? 'Tiebreak' : p >= 0.995 ? '>99%' : p < 0.005 ? '<1%' : Math.round(p * 100) + '%';
-        const rows = raceTeams.map(t => ({ name: t.team_name, pts: points.get(t.team_id), ...odds.get(t.team_id) }))
+        // In and Out are facts, not simulation results: 20,000 runs with nobody
+        // catching up is not the same as nobody being able to. So they come from
+        // the arithmetic - the most a player can still score, against the points
+        // others already have (points are never taken away).
+        const maxLeft = new Map(raceTeams.map(t => [t.team_id,
+          unknownGames + knownGames.filter(g => g.picks.has(t.team_id)).length]));
+        const ceil = id => points.get(id) + maxLeft.get(id);
+        const ptsSorted = [...points.values()].sort((a, b) => b - a);
+        const fourth = ptsSorted[Math.min(SPOTS, ptsSorted.length) - 1];
+        const leader = ptsSorted[0];
+        const others = id => raceTeams.filter(t => t.team_id !== id).map(t => t.team_id);
+        const settled = id => ({
+          playoffIn:  others(id).filter(o => ceil(o) >= points.get(id)).length < SPOTS,
+          playoffOut: ceil(id) < fourth,
+          firstIn:    others(id).every(o => ceil(o) < points.get(id)),
+          firstOut:   ceil(id) < leader,
+        });
+        const fmt = (p, isIn, isOut) => isIn ? '✓ In' : isOut ? 'Out'
+          : seasonOver ? 'Tiebreak' : p >= 0.995 ? '>99%' : p < 0.005 ? '<1%' : Math.round(p * 100) + '%';
+        const rows = raceTeams.map(t => ({ name: t.team_name, pts: points.get(t.team_id), ...odds.get(t.team_id), ...settled(t.team_id) }))
           .sort((a, b) => b.playoff - a.playoff || b.pts - a.pts || a.name.localeCompare(b.name));
         document.getElementById('odds-body').innerHTML = rows.length
           ? rows.map(r => `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
               <td class="px-3 py-2">${escapeHtml(r.name)}</td>
               <td class="px-3 py-2">${r.pts}</td>
-              <td class="px-3 py-2 odds-cell" style="--w:${(r.playoff * 100).toFixed(1)}%" data-sort="${r.playoff}">${fmt(r.playoff)}</td>
-              <td class="px-3 py-2" data-sort="${r.first}">${fmt(r.first)}</td>
+              <td class="px-3 py-2 odds-cell" style="--w:${(r.playoff * 100).toFixed(1)}%" data-sort="${r.playoff}">${fmt(r.playoff, r.playoffIn, r.playoffOut)}</td>
+              <td class="px-3 py-2" data-sort="${r.first}">${fmt(r.first, r.firstIn, r.firstOut)}</td>
             </tr>`).join('')
           : `<tr><td class="px-3 py-2 text-gray-300" colspan="4">No results yet.</td></tr>`;
 

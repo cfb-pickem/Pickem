@@ -74,6 +74,28 @@ t('a no-show scores nothing', () => {
   assert.ok(r.get('a').playoff > 0.99);
 });
 
+t('a missed week costs the whole week, at the turnout rate', () => {
+  // Two players level, one turns up half the time. Over one 4-game week the
+  // half-timer either plays all four or none, so they can never finish
+  // exactly one, two or three points behind by sitting out part of it - and on
+  // average they score half as much.
+  const r = simulatePlayoffOdds({
+    teams: teams(['a', 'b']), points: { a: 0, b: 0 },
+    unknownGames: 4, gamesPerWeek: 4, agreement: 0.5, submitRate: { b: 0.5 }, sims: 20000, spots: 1,
+  });
+  assert.ok(Math.abs(r.get('a').expected - 2) < 0.05, String(r.get('a').expected));
+  assert.ok(Math.abs(r.get('b').expected - 1) < 0.05, String(r.get('b').expected));
+});
+
+t('whole-week misses swing harder than scattered ones', () => {
+  // Same expected attendance, but a week missed in one go hurts the leader's
+  // chaser more often than four scattered games would.
+  const o = { teams: teams(['a', 'b']), points: { a: 0, b: 1 }, unknownGames: 8, agreement: 0.5, submitRate: { b: 0.75 }, sims: 40000, spots: 1 };
+  const weekly = simulatePlayoffOdds({ ...o, gamesPerWeek: 4 }).get('a').playoff;
+  const scattered = simulatePlayoffOdds({ ...o, gamesPerWeek: 1 }).get('a').playoff;
+  assert.notEqual(weekly.toFixed(3), scattered.toFixed(3));
+});
+
 t('agreement: majority share, with a fallback for thin data', () => {
   assert.equal(measureAgreement([['h', 'h', 'a']]), 0.6);
   const many = Array.from({ length: 20 }, () => ['h', 'h', 'h', 'a']);
