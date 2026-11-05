@@ -53,9 +53,14 @@ export function renderSeasonRace(mount, data) {
     return vals[Math.min(CUT_SPOTS, vals.length) - 1];
   });
 
-  // id -> colour slot. Defaults to the top three as of the latest week.
-  const picked = new Map();
-  byLatest.slice(0, 3).forEach((s, i) => picked.set(s.id, i));
+  // id -> colour slot. Defaults to the top three as of the latest week, but a
+  // live refresh redraws this chart, and whoever you picked should survive it -
+  // so the choice is kept on the mount and reused while those players exist.
+  const ids = new Set(series.map(s => s.id));
+  const kept = (mount._racePicked || []).filter(([id]) => ids.has(id));
+  const picked = new Map(kept.length ? kept : byLatest.slice(0, 3).map((s, i) => [s.id, i]));
+  const remember = () => { mount._racePicked = [...picked.entries()]; };
+  remember();
 
   const chips = document.createElement('div');
   chips.className = 'race-chips';
@@ -90,6 +95,7 @@ export function renderSeasonRace(mount, data) {
       }
       picked.set(id, slot);
     }
+    remember();
     paintChips();
     draw();
   }

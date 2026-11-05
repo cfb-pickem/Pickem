@@ -12,8 +12,11 @@
 // two, not more; it is there because it is right, not because it is big:
 //
 //   * A game whose picks are visible (the week has locked, the game has not been
-//     settled) is played out with the real picks: one flip for which side
-//     covers, and everyone on that side scores.
+//     settled) is played out with the real picks: one draw for which side
+//     covers, and everyone on that side scores. Before kickoff that draw is
+//     50/50; once the game is being played it is the live cover probability
+//     from js/coverOdds.js - the same number that shades the leaderboard - so
+//     the odds move with the score.
 //   * A game nobody has picked yet (later weeks, or this week before the lock)
 //     gets a "popular side" that covers half the time, and each player lands on
 //     it with probability `agreement` - this league's own measured rate of
@@ -57,8 +60,9 @@ function hashSeed(parts) {
  * @param {object}   o
  * @param {Array<{id:any}>} o.teams
  * @param {Map|object} o.points          current regular-season points by team id
- * @param {Array<{picks: Map|object}>} o.knownGames  undecided games with visible picks;
- *                                       picks maps team id -> 'home' | 'away'
+ * @param {Array<{picks: Map|object, pHome?: number}>} o.knownGames  undecided games with
+ *                                       visible picks; picks maps team id -> 'home' | 'away',
+ *                                       pHome is P(home covers), 0.5 if absent
  * @param {number}   o.unknownGames      games still to be picked, played in weeks of gamesPerWeek
  * @param {number}   o.agreement         P(a player sides with the majority), 0.5-1
  * @param {Map|object} [o.submitRate]    P(team turns up for a week), default 1
@@ -82,8 +86,12 @@ export function simulatePlayoffOdds(o) {
     const side = get(g.picks, id, null);
     return side === 'home' ? 1 : side === 'away' ? -1 : 0;
   }));
+  const pHome = (o.knownGames || []).map(g => {
+    const p = Number(g.pHome);
+    return Number.isFinite(p) ? Math.min(1, Math.max(0, p)) : 0.5;
+  });
 
-  const rand = mulberry32(hashSeed([base, known, o.unknownGames, agree, submit, spots, sims, perWeek]));
+  const rand = mulberry32(hashSeed([base, known, pHome, o.unknownGames, agree, submit, spots, sims, perWeek]));
   const playoff = new Float64Array(n), first = new Float64Array(n), total = new Float64Array(n);
   const pts = new Float64Array(n);
   const order = ids.map((_, i) => i);
@@ -91,8 +99,9 @@ export function simulatePlayoffOdds(o) {
   for (let s = 0; s < sims; s++) {
     for (let i = 0; i < n; i++) pts[i] = base[i];
 
-    for (const sides of known) {
-      const home = rand() < 0.5 ? 1 : -1;
+    for (let k = 0; k < known.length; k++) {
+      const sides = known[k];
+      const home = rand() < pHome[k] ? 1 : -1;
       for (let i = 0; i < n; i++) if (sides[i] === home) pts[i]++;
     }
     const shows = new Uint8Array(n);

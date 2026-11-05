@@ -118,6 +118,17 @@ t('different visible picks keep level players apart', () => {
   assert.notDeepEqual(r.get('a'), r.get('b'));
 });
 
+t('a live game counts by how it is going', () => {
+  // Level players on opposite sides of a game the home side is all but certain
+  // to cover: the home picker is almost certainly ahead.
+  const r = simulatePlayoffOdds({
+    teams: teams(['a', 'b']), points: { a: 10, b: 10 },
+    knownGames: [{ picks: { a: 'home', b: 'away' }, pHome: 0.97 }],
+    unknownGames: 0, agreement: 0.6, sims: 20000, spots: 1,
+  });
+  assert.ok(Math.abs(r.get('a').playoff - 0.97) < 0.01, String(r.get('a').playoff));
+});
+
 t('agreement: majority share, with a fallback for thin data', () => {
   assert.equal(measureAgreement([['h', 'h', 'a']]), 0.6);
   const many = Array.from({ length: 20 }, () => ['h', 'h', 'h', 'a']);

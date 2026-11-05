@@ -531,6 +531,7 @@
     import { makeTablesSortable } from './js/sortableTables.js';
     import { renderSeasonRace } from './js/seasonRace.js';
     import { simulatePlayoffOdds, measureAgreement } from './js/playoffOdds.js';
+    import { isLive, makeCoverOdds } from './js/coverOdds.js';
     import { sameTeam, escapeHtml } from './js/utils.js';
     import { gameScore } from './js/gameScore.js';
 
@@ -597,13 +598,29 @@
       return true;
     }
 
+    // Everything the cards read, plus the live state the playoff odds need to
+    // weight a game that is being played (js/coverOdds.js).
+    const GAME_COLS = 'GameId, week, winner, picked, tiebreaker, Away, Home, "AwayPts", "HomePts", line, "Network", "Start (CT)", cfb_season, Status, status_name, "Period", "Clock", line_live, line_live_at, line_live_kind';
+    const { coverOdds } = makeCoverOdds();
+    // P(home covers) for one game: the live model once it is being played, a
+    // coin flip before kickoff.
+    function pHomeOf(row){
+      if (!row || !isLive(row)) return 0.5;
+      const o = coverOdds(row, row.Home);
+      return o ? o.p : 0.5;
+    }
+
+    // What the live machinery below needs from the last full load.
+    let liveState = null;   // { season, gameIds:Set, openStarted:Set, renderOdds(rowsById), nextKickoff:Date|null }
+
     let loadSeq = 0;
-    async function main(){
+    async function main(opts = {}){
+      const silent = !!opts.silent;
       // Switching seasons while the previous one is still loading must not let
       // the slower, older request paint over the newer one.
       const seq = ++loadSeq;
       const stale = () => seq !== loadSeq;
-      setStatus('Loading data…', false, true);
+      if (!silent) setStatus('Loading data…', false, true);
 
       const season = Number(seasonSel.value);
       if(!Number.isFinite(season)){
@@ -614,7 +631,7 @@
       // Pull only picked games for the chosen season
       const { data: allGames, error: gErr } = await selectAll(() => supabase
         .from('all_games')
-        .select('GameId, week, winner, picked, tiebreaker, Away, Home, "AwayPts", "HomePts", line, "Network", "Start (CT)", cfb_season')
+        .select(GAME_COLS)
         .eq('picked', true)
         .eq('cfb_season', season)
         .lt('week', 16)    // only use weeks < 16
@@ -1182,7 +1199,7 @@
         const knownGames = open.filter(g => startedWeeks.has(Number(g.week))).map(g => {
           const sides = new Map();
           for (const p of (picksByGame.get(g.GameId) || [])) { const sd = sideOf(p, g); if (sd) sides.set(p.team_id, sd); }
-          return { picks: sides };
+          return { gameId: g.GameId, picks: sides };
         });
         const scheduledWeeks = new Set(regular.map(g => Number(g.week)));
         const lastScheduled = Math.max(-1, ...scheduledWeeks);
@@ -1204,48 +1221,74 @@
         }
 
         const points = new Map(series.map(s => [s.id, s.cum.length ? s.cum[s.cum.length - 1] : 0]));
-        const odds = simulatePlayoffOdds({
-          teams: raceTeams.map(t => ({ id: t.team_id })),
-          points, knownGames, unknownGames, agreement, submitRate, spots: SPOTS, sims: 20000,
-        });
 
-        const seasonOver = knownGames.length + unknownGames === 0;
-        // A finished season has no odds, only places - and a tie on the line is
-        // settled by the tiebreakers, not shared.
-        // In and Out are facts, not simulation results: 20,000 runs with nobody
-        // catching up is not the same as nobody being able to. So they come from
-        // the arithmetic - the most a player can still score, against the points
-        // others already have (points are never taken away).
-        const maxLeft = new Map(raceTeams.map(t => [t.team_id,
-          unknownGames + knownGames.filter(g => g.picks.has(t.team_id)).length]));
-        const ceil = id => points.get(id) + maxLeft.get(id);
-        const ptsSorted = [...points.values()].sort((a, b) => b - a);
-        const fourth = ptsSorted[Math.min(SPOTS, ptsSorted.length) - 1];
-        const leader = ptsSorted[0];
-        const others = id => raceTeams.filter(t => t.team_id !== id).map(t => t.team_id);
-        const settled = id => ({
-          playoffIn:  others(id).filter(o => ceil(o) >= points.get(id)).length < SPOTS,
-          playoffOut: ceil(id) < fourth,
-          firstIn:    others(id).every(o => ceil(o) < points.get(id)),
-          firstOut:   ceil(id) < leader,
-        });
-        const fmt = (p, isIn, isOut) => isIn ? '✓ In' : isOut ? 'Out'
-          : seasonOver ? 'Tiebreak' : p >= 0.995 ? '>99%' : p < 0.005 ? '<1%' : Math.round(p * 100) + '%';
-        const rows = raceTeams.map(t => ({ name: t.team_name, pts: points.get(t.team_id), ...odds.get(t.team_id), ...settled(t.team_id) }))
-          .sort((a, b) => b.playoff - a.playoff || b.pts - a.pts || a.name.localeCompare(b.name));
-        document.getElementById('odds-body').innerHTML = rows.length
-          ? rows.map(r => `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-              <td class="px-3 py-2">${escapeHtml(r.name)}</td>
-              <td class="px-3 py-2">${r.pts}</td>
-              <td class="px-3 py-2 odds-cell" style="--w:${(r.playoff * 100).toFixed(1)}%" data-sort="${r.playoff}">${fmt(r.playoff, r.playoffIn, r.playoffOut)}</td>
-              <td class="px-3 py-2" data-sort="${r.first}">${fmt(r.first, r.firstIn, r.firstOut)}</td>
-            </tr>`).join('')
-          : `<tr><td class="px-3 py-2 text-gray-300" colspan="4">No results yet.</td></tr>`;
+        // Re-runnable on its own: during a game only the live state of the open
+        // games changes, so a score update re-simulates and repaints this table
+        // without reloading the rest of the page.
+        const renderOdds = (rowsById) => {
+          const liveNow = knownGames.filter(g => isLive(rowsById.get(g.gameId))).length;
+          const odds = simulatePlayoffOdds({
+            teams: raceTeams.map(t => ({ id: t.team_id })),
+            points, unknownGames, agreement, submitRate, spots: SPOTS, sims: 20000,
+            knownGames: knownGames.map(g => ({ picks: g.picks, pHome: pHomeOf(rowsById.get(g.gameId)) })),
+          });
 
-        const left = seasonOver ? 0 : knownGames.length + unknownGames;
-        document.getElementById('odds-note').textContent = left
-          ? `20,000 simulated finishes, ${left} games left. Every remaining game is a coin flip against the spread, and picks overlap the way this league's do (a pick sides with the majority ${Math.round(agreement * 100)}% of the time). Top ${SPOTS} make the playoff; ties at the cut are shared.`
-          : 'Regular season complete.';
+          const seasonOver = knownGames.length + unknownGames === 0;
+          // A finished season has no odds, only places - and a tie on the line is
+          // settled by the tiebreakers, not shared.
+          // In and Out are facts, not simulation results: 20,000 runs with nobody
+          // catching up is not the same as nobody being able to. So they come from
+          // the arithmetic - the most a player can still score, against the points
+          // others already have (points are never taken away).
+          const maxLeft = new Map(raceTeams.map(t => [t.team_id,
+            unknownGames + knownGames.filter(g => g.picks.has(t.team_id)).length]));
+          const ceil = id => points.get(id) + maxLeft.get(id);
+          const ptsSorted = [...points.values()].sort((a, b) => b - a);
+          const fourth = ptsSorted[Math.min(SPOTS, ptsSorted.length) - 1];
+          const leader = ptsSorted[0];
+          const others = id => raceTeams.filter(t => t.team_id !== id).map(t => t.team_id);
+          const settled = id => ({
+            playoffIn:  others(id).filter(o => ceil(o) >= points.get(id)).length < SPOTS,
+            playoffOut: ceil(id) < fourth,
+            firstIn:    others(id).every(o => ceil(o) < points.get(id)),
+            firstOut:   ceil(id) < leader,
+          });
+          const fmt = (p, isIn, isOut) => isIn ? '✓ In' : isOut ? 'Out'
+            : seasonOver ? 'Tiebreak' : p >= 0.995 ? '>99%' : p < 0.005 ? '<1%' : Math.round(p * 100) + '%';
+          const rows = raceTeams.map(t => ({ name: t.team_name, pts: points.get(t.team_id), ...odds.get(t.team_id), ...settled(t.team_id) }))
+            .sort((a, b) => b.playoff - a.playoff || b.pts - a.pts || a.name.localeCompare(b.name));
+          document.getElementById('odds-body').innerHTML = rows.length
+            ? rows.map(r => `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                <td class="px-3 py-2">${escapeHtml(r.name)}</td>
+                <td class="px-3 py-2">${r.pts}</td>
+                <td class="px-3 py-2 odds-cell" style="--w:${(r.playoff * 100).toFixed(1)}%" data-sort="${r.playoff}">${fmt(r.playoff, r.playoffIn, r.playoffOut)}</td>
+                <td class="px-3 py-2" data-sort="${r.first}">${fmt(r.first, r.firstIn, r.firstOut)}</td>
+              </tr>`).join('')
+            : `<tr><td class="px-3 py-2 text-gray-300" colspan="4">No results yet.</td></tr>`;
+
+          const left = seasonOver ? 0 : knownGames.length + unknownGames;
+          document.getElementById('odds-note').textContent = left
+            ? `20,000 simulated finishes, ${left} games left. Every remaining game is a coin flip against the spread${liveNow ? ` - except the ${liveNow} being played now, which count by the live score` : ''}, and picks overlap the way this league's do (a pick sides with the majority ${Math.round(agreement * 100)}% of the time). Top ${SPOTS} make the playoff; ties at the cut are shared.`
+            : 'Regular season complete.';
+        };
+
+        renderOdds(new Map(regular.map(g => [g.GameId, g])));
+
+        // The next kickoff of a week that hasn't started: that is when picks
+        // are revealed and slots resolve, and the page should reload itself.
+        let nextKickoff = null;
+        for (const g of regular) {
+          if (startedWeeks.has(Number(g.week))) continue;
+          const t = parseCT(g['Start (CT)']);
+          if (t && (!nextKickoff || t < nextKickoff)) nextKickoff = t;
+        }
+        liveState = {
+          season,
+          gameIds: new Set((allGames || []).map(g => g.GameId)),
+          openStarted: new Set(knownGames.map(g => g.gameId)),
+          renderOdds,
+          nextKickoff,
+        };
       })();
 
       // ------- Slots Win % (decided picks the house made, this season) -------
@@ -1301,7 +1344,77 @@
         ? `League on slots: ${lw}-${lt - lw} (${pct3(lw / lt)}). A coin flip should land near .500. Gold = the house beat your own picks.`
         : '';
 
-      setStatus(`Loaded • Season ${season}`);
+      setStatus(silent
+        ? `Live • Season ${season} • updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+        : `Loaded • Season ${season}`);
+      armKickoffTimer();
+    }
+
+    // ---------------------------------------------------------------------
+    // LIVE. The page keeps itself current without a reload:
+    //   * a game going final (or any result changing) reloads every card;
+    //   * a score or clock change in a game whose picks are out re-runs only
+    //     the playoff odds, from the live cover probability;
+    //   * the moment a week kicks off - picks revealed, slots resolved - the
+    //     whole page reloads.
+    // Realtime is the trigger (all_games is in the supabase_realtime
+    // publication); a slow poll covers a dropped socket. Nothing runs while
+    // the tab is hidden, and coming back refreshes at once.
+    // ---------------------------------------------------------------------
+    let realtimeUp = false;
+    let fullTimer = 0, oddsTimer = 0, kickoffTimer = 0;
+
+    function scheduleFull(delay = 1500){
+      clearTimeout(fullTimer);
+      fullTimer = setTimeout(() => { if (!document.hidden) main({ silent: true }); }, delay);
+    }
+
+    async function refreshLiveOdds(){
+      if (!liveState || document.hidden || !liveState.openStarted.size) return;
+      const season = liveState.season;
+      const { data, error } = await supabase.from('all_games').select(GAME_COLS).in('GameId', [...liveState.openStarted]);
+      if (error || !data || !liveState || liveState.season !== season) return;
+      // A result landed: that changes points, so everything reloads.
+      if (data.some(r => r.winner != null)) return scheduleFull(0);
+      liveState.renderOdds(new Map(data.map(r => [r.GameId, r])));
+    }
+    function scheduleOdds(delay = 600){
+      clearTimeout(oddsTimer);
+      oddsTimer = setTimeout(refreshLiveOdds, delay);
+    }
+
+    function armKickoffTimer(){
+      clearTimeout(kickoffTimer);
+      const at = liveState && liveState.nextKickoff;
+      if (!at) return;
+      // A little after kickoff, so the reveal and the slots resolver (every
+      // minute) have both happened. setTimeout tops out near 24.8 days.
+      const ms = at.getTime() - Date.now() + 75 * 1000;
+      if (ms > 0 && ms < 2 ** 31 - 1) kickoffTimer = setTimeout(() => scheduleFull(0), ms);
+    }
+
+    function startLive(){
+      supabase
+        .channel('stats-live')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'all_games' }, payload => {
+          const row = payload && payload.new;
+          if (!row || !liveState || !liveState.gameIds.has(row.GameId) || document.hidden) return;
+          if (row.winner != null && liveState.openStarted.has(row.GameId)) return scheduleFull();
+          if (liveState.openStarted.has(row.GameId)) return scheduleOdds();
+          // A result on any other game of the season (a correction, a late
+          // settle) still moves the standings.
+          if (row.winner != null) scheduleFull(4000);
+        })
+        .subscribe(state => { realtimeUp = state === 'SUBSCRIBED'; });
+
+      // Backstop for a dropped socket: odds every 30s while games are open,
+      // a full reload every 5 minutes.
+      setInterval(() => { if (!realtimeUp) refreshLiveOdds(); }, 30000);
+      setInterval(() => { if (!realtimeUp && liveState && liveState.openStarted.size) scheduleFull(0); }, 300000);
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && liveState) scheduleFull(0);
+      });
     }
 
     async function startup(){
@@ -1314,7 +1427,8 @@
       if(!ok) return;
 
       await main();
-      seasonSel.onchange = main;
+      seasonSel.onchange = () => main();
+      startLive();
 
       // Season-by-season spans every year, so it does not follow the season
       // picker and only needs rendering once. Fired after the page is usable
