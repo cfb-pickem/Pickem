@@ -45,9 +45,15 @@ const grain = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220">
 // The stadium at the foot of the page: a half-full set of bleachers, two light
 // towers (one with half its lamps out), drizzle in the light, a scoreboard
 // reading 3-2 with seven seconds left, the goalposts, and one fan with a sign.
+// The crowd: every seat on the steps that has someone in it has someone with a
+// foam finger up. Light ink so they read against the dark stands.
 let fans = '';
-const fanPos = [[150, 160], [190, 150], [232, 170], [286, 142], [330, 160], [1290, 150], [1352, 168], [1420, 140], [1468, 160]];
-for (const [x, y] of fanPos) fans += `<circle cx="${x}" cy="${y}" r="4" fill="#1d232c"/><rect x="${x - 4}" y="${y + 4}" width="8" height="9" rx="3" fill="#1d232c"/>`;
+const steps = [[40, 186], [90, 172], [140, 158], [190, 144], [240, 130]];
+const fanAt = (x, y, up) => `<g transform="translate(${x} ${y})"><circle cy="-11" r="4.2" fill="#3a3a3a"/><rect x="-4.5" y="-7" width="9" height="9" rx="3" fill="#3a3a3a"/>${
+  up ? `<path d="M3-6L7-18" stroke="#3a3a3a" stroke-width="2.4" stroke-linecap="round"/><path d="M5.5-19V-27Q5.5-30 7.5-30Q9.5-30 9.5-27V-21L11-21Q12-17 9-15H5Z" fill="#d8d4ca"/>` : ''}</g>`;
+let k = 0;
+for (const [sx, sy] of steps) for (let x = sx + 6; x < sx + 48; x += 11) fans += fanAt(x, sy, (k++ % 3) !== 1);
+for (const [sx, sy] of steps) for (let x = 1600 - sx - 6; x > 1600 - sx - 48; x -= 11) fans += fanAt(x, sy, (k++ % 3) !== 1);
 const lamps = (x, y, dead = []) => {
   let s = '';
   for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
@@ -111,4 +117,38 @@ export const FOAM_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15
 <rect x="72" y="190" width="30" height="2.5"/></g>
 </svg>`;
 
-export default { PEEPER: peeper, GRAIN: grain, STADIUM: stadium, FOAM: FOAM_SVG };
+// OUR SICKO. Not the Sickos Committee's character - an original fan of ours,
+// drawn in the same ink: face-painted, sweatband on, rain poncho over the
+// jersey, eyes pointed two different directions, and a foam finger in the air.
+const SICKO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 320">
+<g stroke="#f4f1e8" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+<path d="M170 168L196 96" stroke-width="16"/>
+<path d="M170 168L196 96" stroke="#111" stroke-width="9"/>
+<g transform="translate(156 -6) scale(.62)"><rect x="40" y="194" width="72" height="26" rx="4" fill="#111"/>
+<path d="M48 104V30Q48 12 64 12Q80 12 80 30V96Q86 90 96 92Q106 94 106 104Q112 98 120 102Q128 106 126 118V178Q126 198 104 198H46Q26 198 24 178L20 132Q18 118 30 116Q40 114 48 124Z" fill="#111" stroke-width="6"/>
+<g font-family="Impact, Arial Black, sans-serif" fill="#f4f1e8" stroke="none" text-anchor="middle" transform="rotate(-6 75 165)"><text x="76" y="152" font-size="22">YES!</text><text x="75" y="180" font-size="19">HA HA</text></g></g>
+<path d="M44 196Q120 160 196 196L226 320H14Z" fill="#111"/>
+<path d="M58 206Q120 182 182 206" fill="none" opacity=".5"/>
+<text x="120" y="270" font-family="Impact, Arial Black, sans-serif" font-size="40" fill="#f4f1e8" stroke="#111" stroke-width="1.5" text-anchor="middle" transform="rotate(-4 120 260)">YES!!</text>
+<path d="M60 200L40 250" stroke-width="14"/><path d="M60 200L40 250" stroke="#111" stroke-width="7"/>
+<path d="M60 74L72 42L84 66L96 30L108 62L122 28L132 62L148 36L154 70L170 52L164 86Z" fill="#111"/>
+<circle cx="116" cy="118" r="56" fill="#f4f1e8" stroke="#111" stroke-width="5"/>
+<rect x="62" y="74" width="108" height="16" rx="7" fill="#111" stroke-width="3"/>
+<path d="M68 82H164" stroke-width="2.5"/>
+<path d="M76 104L102 96M130 96L158 106" stroke="#111" stroke-width="6"/>
+<circle cx="94" cy="118" r="16" fill="#fff" stroke="#111" stroke-width="4"/>
+<circle cx="140" cy="118" r="18" fill="#fff" stroke="#111" stroke-width="4"/>
+<circle cx="88" cy="114" r="5" fill="#111" stroke="none"/>
+<circle cx="148" cy="125" r="5.5" fill="#111" stroke="none"/>
+<path d="M78 136L86 146M90 138L96 148M136 138L142 148M148 136L156 146" stroke="#111" stroke-width="4"/>
+<path d="M78 142Q116 152 156 142Q154 186 116 188Q80 186 78 142Z" fill="#111" stroke="#111"/>
+<path d="M84 146Q116 154 150 146V156Q116 162 84 156Z" fill="#fff" stroke="#111" stroke-width="2"/>
+<path d="M95 149V159M106 151V161M117 151V161M128 151V161M139 149V158" stroke="#111" stroke-width="2"/>
+<path d="M98 176Q116 168 134 176Q116 184 98 176Z" fill="#e05a5a" stroke="none"/>
+<g fill="#111" stroke="none"><circle cx="72" cy="150" r="1.4"/><circle cx="70" cy="160" r="1.4"/><circle cx="76" cy="168" r="1.4"/><circle cx="160" cy="150" r="1.4"/><circle cx="163" cy="160" r="1.4"/><circle cx="158" cy="168" r="1.4"/></g>
+<path d="M58 118Q52 124 58 132M174 118Q180 124 174 132" fill="none" stroke="#111" stroke-width="4"/>
+</g>
+<g fill="#f4f1e8"><path d="M30 40l4-10 4 10 10 4-10 4-4 10-4-10-10-4z"/><path d="M206 214l3-7 3 7 7 3-7 3-3 7-3-7-7-3z"/></g>
+</svg>`;
+
+export default { PEEPER: peeper, GRAIN: grain, STADIUM: stadium, FOAM: FOAM_SVG, SICKO: SICKO_SVG };

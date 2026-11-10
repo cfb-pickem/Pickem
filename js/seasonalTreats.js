@@ -207,6 +207,108 @@ function scanForResults() {
     n++;
   }
   if (n) saveSeen(seen);
+  // Sickos week does not do anything by halves.
+  if (n && theme === 'sickos') {
+    burst('YES!!!', window.innerWidth / 2, window.innerHeight / 2, true);
+    const board = document.getElementById('table-scroll-wrap');
+    if (board && !reducedMotion()) {
+      board.classList.remove('sk-shake');
+      void board.offsetWidth;   // restart the animation if it is mid-shake
+      board.classList.add('sk-shake');
+      setTimeout(() => board.classList.remove('sk-shake'), 1100);
+    }
+  }
+}
+
+/* ---------- Sickos week extras ----------------------------------------------- */
+//
+// The holiday themes are all CSS. Sickos week is over the top on purpose, so it
+// mounts a few real elements too - a ticker under the nav, a second watcher at
+// the top-left window, and comic bursts popping in the margins - and takes them
+// down again the moment the theme changes (the leaderboard only learns which
+// week it is showing after its data loads, and can switch weeks after that).
+
+function burstSvg(word) {
+  const pts = [];
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2, r = i % 2 ? 40 : 58;
+    pts.push(`${(60 + Math.cos(a) * r).toFixed(1)},${(60 + Math.sin(a) * r).toFixed(1)}`);
+  }
+  const size = word.length > 6 ? 17 : word.length > 4 ? 22 : 26;
+  return `<svg viewBox="0 0 120 120" aria-hidden="true">
+<polygon points="${pts.join(' ')}" fill="#f7f5ef" stroke="#000" stroke-width="4" stroke-linejoin="round"/>
+<text x="60" y="${60 + size * 0.36}" text-anchor="middle" font-family="Bangers, Impact, sans-serif" font-size="${size}" fill="#000" letter-spacing="1">${word}</text></svg>`;
+}
+
+function burst(word, x, y, mega = false) {
+  if (reducedMotion() && !mega) return;
+  const el = document.createElement('div');
+  el.className = 'sk-burst' + (mega ? ' is-mega' : '');
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = burstSvg(word);
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  document.body.appendChild(el);
+  el.addEventListener('animationend', () => el.remove(), { once: true });
+  setTimeout(() => el.remove(), 3000);
+}
+
+// Week 11 of 2026. The ticker names the slate, so it is written for it.
+const TICKER = [
+  'THE SICKOS COMMITTEE IS NOW IN SESSION',
+  '<b>NORTH DAKOTA STATE @ HAWAIʻI · 10:00 PM CT</b>',
+  'YES... HA HA HA... YES',
+  'OREGON STATE @ BOISE STATE · 5:00 PM',
+  'NORTH TEXAS @ UTSA · 8:00 PM',
+  'WAKE FOREST @ SMU · 11:00 AM',
+  'ANNOUNCED ATTENDANCE: 1,204',
+  'WE ARE NOT WELL',
+  'THE WINDOW IS OPEN',
+  '<b>3-2 IN THE FOURTH IS A GOOD GAME</b>',
+];
+
+let extras = null;
+function mountSickos() {
+  if (extras) return;
+  extras = { els: [], timer: 0 };
+
+  const peeper = document.createElement('div');
+  peeper.className = 'sk-peeper2';
+  peeper.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(peeper);
+  extras.els.push(peeper);
+
+  const ticker = document.createElement('div');
+  ticker.className = 'sk-ticker';
+  ticker.setAttribute('role', 'marquee');
+  ticker.setAttribute('aria-label', 'The Sickos Committee is now in session');
+  const run = TICKER.map(t => `<span>${t}</span><span>★</span>`).join('');
+  ticker.innerHTML = `<div class="sk-ticker-track">${run}${run}</div>`;
+  const nav = document.getElementById('site-nav');
+  if (nav && nav.parentNode) nav.parentNode.insertBefore(ticker, nav.nextSibling);
+  else document.body.prepend(ticker);
+  extras.els.push(ticker);
+
+  const words = ['YES!', 'HA HA HA', 'UGLY!', 'YES!!', 'SICKO!', 'HA!'];
+  const tick = () => {
+    if (!document.hidden) {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const left = Math.random() < 0.5;
+      const x = left ? rand(50, Math.max(60, vw * 0.1)) : rand(Math.min(vw - 60, vw * 0.9), vw - 50);
+      burst(words[Math.floor(Math.random() * words.length)], x, rand(vh * 0.2, vh * 0.8));
+    }
+    extras.timer = setTimeout(tick, rand(9000, 20000));
+  };
+  extras.timer = setTimeout(tick, rand(3000, 7000));
+}
+function unmountSickos() {
+  if (!extras) return;
+  clearTimeout(extras.timer);
+  extras.els.forEach(e => e.remove());
+  extras = null;
+}
+function syncExtras() {
+  if (currentTheme() === 'sickos') mountSickos(); else unmountSickos();
 }
 
 function watchBoard() {
@@ -225,6 +327,10 @@ export function initSeasonalTreats() {
   if (started) return;
   started = true;
   scheduleFly(true);
+  syncExtras();
+  const themeWatch = new MutationObserver(syncExtras);
+  themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (document.body) themeWatch.observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
   // Not in the commissioner's sandbox: its winners are hypothetical, and a
   // pretend result must not use up the real one's moment.
   if (!new URLSearchParams(location.search).has('sandbox')) watchBoard();
