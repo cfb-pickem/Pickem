@@ -84,12 +84,12 @@ html[data-theme="sickos"]::before {
   opacity: .16;
 }
 
-/* Our sicko, in the bottom-left corner with the finger up. */
+/* Our sicko, bottom-right with the finger up (the badge has the left corner). */
 [data-theme="sickos"] body::after,
 body[data-theme="sickos"]::after {
   content: "";
   position: fixed;
-  left: -24px; bottom: 40px;
+  right: 30px; bottom: 40px;
   width: 210px; height: 280px;
   pointer-events: none; z-index: -1;
   background: __SICKO__ center / 100% 100% no-repeat;
@@ -159,7 +159,7 @@ html[data-theme="sickos"] h1 {
   [data-theme="sickos"] .jumbotron-title-text { font-size: 1.75rem; letter-spacing: .03em; }
   html[data-theme="sickos"]::after { width: 130px; height: 160px; top: 300px; right: -52px; }
   [data-theme="sickos"] body::after,
-  body[data-theme="sickos"]::after { width: 110px; height: 147px; left: -18px; bottom: 50px; }
+  body[data-theme="sickos"]::after { width: 110px; height: 147px; right: 0; bottom: 50px; }
 }
 
 
@@ -227,9 +227,44 @@ html[data-theme="sickos"] h1 {
   pointer-events: none; z-index: -1;
   background: __PEEPER__ center / 100% 100% no-repeat;
   filter: grayscale(1) contrast(1.15);
-  transform: scaleX(-1) rotate(-3deg);
+  transform: rotate(-3deg);
 }
 @media (max-width: 1100px) { .sk-peeper2 { display: none; } }
+
+/* The Sickos badge (sickos-badge.jpg, supplied by the league), stuck in the
+   bottom-left corner like a sticker on the glass. Clipped to its circle so the
+   white corners of the image don't show. */
+.sk-badge {
+  position: fixed; left: 14px; bottom: 34px;
+  width: 190px; height: 190px;
+  pointer-events: none; z-index: -1;
+  clip-path: circle(49.5%);
+  transform: rotate(-8deg);
+  transform-origin: 50% 100%;
+}
+.sk-badge-wrap {
+  position: fixed; left: 14px; bottom: 34px; width: 190px; height: 190px;
+  pointer-events: none; z-index: -1;
+  filter: drop-shadow(5px 6px 0 rgba(0,0,0,.65));
+}
+.sk-badge-wrap .sk-badge { position: absolute; inset: 0; left: 0; bottom: 0; width: 100%; height: 100%; }
+@media (max-width: 640px) { .sk-badge-wrap { width: 104px; height: 104px; left: 6px; bottom: 40px; } }
+
+/* And when a game settles, the badge slams down with the giant YES!!!. */
+.sk-badge-pop {
+  position: fixed; left: 50%; top: 50%; z-index: 71; pointer-events: none;
+  width: min(42vw, 300px); height: min(42vw, 300px);
+  clip-path: circle(49.5%);
+  transform: translate(-50%, -50%) scale(0) rotate(-30deg);
+  animation: sk-badge-pop 2.2s cubic-bezier(.2,1.5,.4,1) forwards;
+}
+@keyframes sk-badge-pop {
+  0%   { transform: translate(-50%, -50%) scale(0) rotate(-30deg); opacity: 1; }
+  22%  { transform: translate(-50%, -18%) scale(1.08) rotate(6deg); opacity: 1; }
+  38%  { transform: translate(-50%, -14%) scale(1) rotate(-3deg); }
+  80%  { opacity: 1; }
+  100% { transform: translate(-50%, -14%) scale(1) rotate(0deg); opacity: 0; }
+}
 
 /* The ticker under the nav. */
 .sk-ticker {
@@ -298,6 +333,14 @@ html[data-theme="sickos"] h1 {
     70%           { transform: rotate(4deg) translateY(-14px); }
     80%           { transform: rotate(12deg) translateY(0); }
     88%           { transform: rotate(5deg) translateY(-10px); }
+  }
+
+  .sk-badge { animation: sk-badge 2.8s ease-in-out infinite; }
+  @keyframes sk-badge {
+    0%, 60%, 100% { transform: rotate(-8deg) translateY(0); }
+    70%           { transform: rotate(-3deg) translateY(-12px); }
+    80%           { transform: rotate(-10deg) translateY(0); }
+    88%           { transform: rotate(-4deg) translateY(-8px); }
   }
 
   .sk-ticker-track { animation: sk-ticker 38s linear infinite; }

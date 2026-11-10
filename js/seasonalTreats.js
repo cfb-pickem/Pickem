@@ -210,6 +210,15 @@ function scanForResults() {
   // Sickos week does not do anything by halves.
   if (n && theme === 'sickos') {
     burst('YES!!!', window.innerWidth / 2, window.innerHeight / 2, true);
+    // The badge slams down in front of it.
+    const pop = document.createElement('img');
+    pop.className = 'sk-badge-pop';
+    pop.src = './sickos-badge.jpg';
+    pop.alt = '';
+    pop.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(pop);
+    pop.addEventListener('animationend', () => pop.remove(), { once: true });
+    setTimeout(() => pop.remove(), 3000);
     const board = document.getElementById('table-scroll-wrap');
     if (board && !reducedMotion()) {
       board.classList.remove('sk-shake');
@@ -271,6 +280,14 @@ let extras = null;
 function mountSickos() {
   if (extras) return;
   extras = { els: [], timer: 0 };
+
+  // The league's own Sickos badge (sickos-badge.jpg), stuck in the corner.
+  const badge = document.createElement('div');
+  badge.className = 'sk-badge-wrap';
+  badge.setAttribute('aria-hidden', 'true');
+  badge.innerHTML = '<img class="sk-badge" src="./sickos-badge.jpg" alt="" decoding="async">';
+  document.body.appendChild(badge);
+  extras.els.push(badge);
 
   const peeper = document.createElement('div');
   peeper.className = 'sk-peeper2';
