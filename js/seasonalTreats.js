@@ -46,7 +46,21 @@ ${DEER(62)}${DEER(96)}${DEER(130)}${DEER(164)}</g>
 <circle cx="190" cy="22" r="3" fill="#ff3b3b"/><circle cx="190" cy="22" r="7" fill="#ff3b3b" opacity=".35"/>
 </svg>`;
 
+// Sickos week: a foam finger, inked black, with the line on the palm. Same
+// drawing as the one at the edge of the page (tools/theme-art/sickos.art.mjs).
+const FOAM = `<svg viewBox="0 0 150 230" aria-hidden="true">
+<rect x="40" y="194" width="72" height="26" rx="4" fill="#111" stroke="#f4f1e8" stroke-width="4"/>
+<path d="M48 104V30Q48 12 64 12Q80 12 80 30V96Q86 90 96 92Q106 94 106 104Q112 98 120 102Q128 106 126 118V178Q126 198 104 198H46Q26 198 24 178L20 132Q18 118 30 116Q40 114 48 124Z" fill="#111" stroke="#f4f1e8" stroke-width="5" stroke-linejoin="round"/>
+<path d="M88 104Q94 110 104 108M108 118Q114 124 122 120" stroke="#f4f1e8" stroke-width="3" fill="none" stroke-linecap="round"/>
+<g font-family="Bangers, Impact, 'Arial Black', sans-serif" fill="#f4f1e8" text-anchor="middle" transform="rotate(-6 75 165)">
+<text x="78" y="145" font-size="17">YES...</text><text x="75" y="166" font-size="18">HA HA HA</text><text x="74" y="187" font-size="17">...YES!</text>
+<rect x="72" y="190" width="30" height="2.5"/></g></svg>`;
+
 const THEMES = {
+  sickos: {
+    flyer: { svg: FOAM, path: 'rise', size: [80, 110], ms: [4200, 5200], cls: 'is-foam' },
+    good: 'YES!', bad: 'UGLY \u{1F922}',
+  },
   halloween: {
     flyer: { svg: GHOST, path: 'sky', size: [46, 64], ms: [8000, 11000], cls: 'is-ghost' },
     good: 'TREAT \u{1F36C}', bad: 'TRICK \u{1F383}',
@@ -89,6 +103,26 @@ function fly() {
   const size = vw < 640 ? f.size[0] : f.size[1];
   el.style.width = size + 'px';
   const h = el.getBoundingClientRect().height || size;
+
+  // The foam finger comes up from below the bottom edge, pumps twice, and
+  // goes back down.
+  if (f.path === 'rise') {
+    const x = rand(vw * 0.08, vw * 0.92 - size);
+    const down = vh + 10, up = vh - h * 0.92;
+    const at = (y, r) => `translate(${x}px, ${y}px) rotate(${r}deg)`;
+    el.style.transformOrigin = '50% 100%';
+    el.animate([
+      { transform: at(down, 0), opacity: 1, offset: 0 },
+      { transform: at(up, -4), opacity: 1, offset: 0.18 },
+      { transform: at(up - 14, 6), opacity: 1, offset: 0.3 },
+      { transform: at(up, -3), opacity: 1, offset: 0.42 },
+      { transform: at(up - 14, 6), opacity: 1, offset: 0.54 },
+      { transform: at(up, 0), opacity: 1, offset: 0.78 },
+      { transform: at(down, 0), opacity: 1, offset: 1 },
+    ], { duration: rand(f.ms[0], f.ms[1]), easing: 'ease-in-out' })
+      .finished.catch(() => {}).finally(() => el.remove());
+    return;
+  }
 
   // The turkey always runs for it left to right along the bottom; the others
   // come from either side, bobbing through the sky.

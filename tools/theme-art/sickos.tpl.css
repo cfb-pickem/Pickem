@@ -1,0 +1,266 @@
+/* ============================================================
+   SICKOS WEEK - the games nobody else is watching
+   Active when <body data-theme="sickos"> (leaderboard) or
+   <html data-theme="sickos"> (every other page, set pre-paint).
+   Switched on by week, not date: see SPECIAL_WEEKS in js/seasonalTheme.js.
+
+   GENERATED from tools/theme-art/sickos.tpl.css + sickos.art.mjs
+   by tools/theme-art/build.mjs. Edit those, not this file.
+
+   Black-and-white ink, the way the Sickos Committee's own art is drawn: a foam
+   finger raised at the edge of the page reading YES... HA HA HA... YES!, a man
+   at the window parting the blinds, halftone dots, and at the foot of the page a
+   half-empty stadium in the drizzle at 10pm with a 3-2 game on the board. An
+   homage - every drawing here is original, nobody's art is copied.
+
+   Every decorative layer sits behind content and never takes a tap. Motion is
+   opt-out via prefers-reduced-motion.
+   ============================================================ */
+
+[data-theme="sickos"] body,
+body[data-theme="sickos"] {
+  /* Ink and newsprint. */
+  --cfp-black:    #070707;
+  --cfp-charcoal: #0c0c0c;
+  --cfp-gray:     #161616;
+
+  /* Chrome: newsprint white, so the board reads like the logo inverted. */
+  --cfp-gold:   #f4f1e8;
+  --cfp-gold-2: #ffffff;
+  --cfp-ivory:  #f7f5ef;
+
+  --led-amber:    #f7f2dc;
+  --led-white:    #f7f5ef;
+  --led-dim:      #5c5c5c;
+  --led-win:      #5eff8a;
+  --led-win-glow: rgba(94,255,138,.6);
+
+  --panel-face-1: #060606;
+  --panel-face-2: #101010;
+  --panel-face-3: #0b0b0b;
+  --panel-bezel:  #2b2b2b;
+  --panel-dot:    rgba(255,255,255,.07);
+
+  --ring: 0 0 0 2px var(--cfp-gold) inset, 0 0 10px rgba(255,255,255,.25);
+
+  color: #ecebe6;
+
+  background:
+    /* halftone dots fading in from two corners, like a comic panel */
+    radial-gradient(circle at 0 0, rgba(255,255,255,.07) 1.4px, transparent 1.6px) 0 0 / 9px 9px,
+    linear-gradient(180deg, #080808, #0d0d0d 50%, #111);
+  background-attachment: fixed;
+  background-color: #0c0c0c;
+}
+
+[data-theme="sickos"] ::selection { background: #f4f1e8; color: #000; }
+[data-theme="sickos"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.3); }
+
+
+/* ---------- The sky: a man at the window, a finger in the air ------------- */
+
+/* Someone parting the blinds, half behind the right edge of the board. */
+html[data-theme="sickos"]::before {
+  content: "";
+  position: fixed;
+  top: 96px; right: -46px;
+  width: 200px; height: 245px;
+  pointer-events: none; z-index: -1;
+  background: __PEEPER__ center / 100% 100% no-repeat;
+  filter: grayscale(1) contrast(1.15) drop-shadow(0 0 20px rgba(255,255,255,.12));
+  transform: rotate(-2deg);
+}
+
+/* Grain, a faint scanline and a vignette, all one layer - the page is a
+   late-night broadcast. */
+html[data-theme="sickos"]::after {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: -1;
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.6) 100%),
+    repeating-linear-gradient(180deg, rgba(255,255,255,.025) 0 1px, transparent 1px 3px),
+    __GRAIN__ 0 0 / 220px 220px repeat;
+  opacity: .16;
+}
+
+/* The foam finger, up at the left edge of the page. */
+[data-theme="sickos"] body::before,
+body[data-theme="sickos"]::before {
+  content: "";
+  position: fixed;
+  left: -18px; bottom: 90px;
+  width: 150px; height: 230px;
+  pointer-events: none; z-index: -1;
+  background: __FOAM__ center / 100% 100% no-repeat;
+  transform: rotate(10deg);
+  transform-origin: 50% 100%;
+  filter: drop-shadow(4px 4px 0 rgba(0,0,0,.6));
+}
+
+/* The stadium at the foot of the page, anchored the way the holiday skylines are. */
+html[data-theme="sickos"] { position: relative; min-height: 100%; }
+[data-theme="sickos"] body,
+body[data-theme="sickos"] { padding-bottom: calc(clamp(130px, 17vw, 240px) + 2.5rem); }
+
+[data-theme="sickos"] body::after,
+body[data-theme="sickos"]::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: clamp(130px, 17vw, 240px);
+  pointer-events: none; z-index: -1;
+  background: __STADIUM__ center bottom / cover no-repeat;
+  filter: grayscale(.85);
+}
+
+
+/* ---------- The jumbotron, inked ------------------------------------------ */
+
+/* Halftone shading in the top corners, behind the mascots. */
+[data-theme="sickos"] .jumbotron-header {
+  background:
+    radial-gradient(circle, rgba(255,255,255,.18) 1.3px, transparent 1.6px) 0 0 / 7px 7px,
+    linear-gradient(180deg, rgba(14,14,14,.9), rgba(9,9,9,.88) 40%, rgba(5,5,5,.94));
+  -webkit-mask-image: none;
+  border: 3px solid #f4f1e8;
+  border-bottom: none;
+  box-shadow: 4px -4px 0 rgba(0,0,0,.6);
+}
+/* The dots belong in the corners, not behind the title: a soft dark bloom in
+   the middle covers them there. */
+[data-theme="sickos"] .jumbotron-title { position: relative; }
+[data-theme="sickos"] .jumbotron-title::after {
+  content: "";
+  position: absolute; inset: -30px -40px;
+  z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(10,10,10,.95), rgba(10,10,10,.7) 60%, transparent);
+}
+
+/* The LED strip becomes a referee's stripes. */
+[data-theme="sickos"] .jumbotron-header::before {
+  height: 6px;
+  opacity: 1;
+  background: repeating-linear-gradient(90deg, #f4f1e8 0 14px, #070707 14px 28px);
+}
+
+[data-theme="sickos"] .jumbotron-title-text,
+html[data-theme="sickos"] h1 {
+  font-family: 'Bangers', 'Impact', 'Arial Black', sans-serif;
+  font-weight: 400;
+  letter-spacing: .06em;
+  color: #f7f5ef;
+  -webkit-text-stroke: 1.5px #000;
+  text-shadow: 3px 3px 0 #000, 5px 5px 0 rgba(255,255,255,.18);
+}
+[data-theme="sickos"] .jumbotron-title-text { font-size: 2.9rem; line-height: 1; }
+
+@media (max-width: 640px) {
+  [data-theme="sickos"] .jumbotron-title-text { font-size: 1.75rem; letter-spacing: .03em; }
+  html[data-theme="sickos"]::before { width: 130px; height: 160px; top: 300px; right: -52px; }
+  [data-theme="sickos"] body::before,
+  body[data-theme="sickos"]::before { width: 90px; height: 138px; left: -16px; bottom: 60px; }
+}
+
+
+/* ---------- The board ---------------------------------------------------- */
+
+[data-theme="sickos"] .scoreboard-header {
+  background: linear-gradient(180deg, #151515, #0b0b0b) !important;
+  border-bottom-color: #f4f1e8 !important;
+}
+[data-theme="sickos"] .scoreboard-wrap {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.06),
+    0 0 0 1px #242424,
+    0 16px 56px rgba(0,0,0,.85);
+}
+[data-theme="sickos"] .table thead th.sticky-col-1,
+[data-theme="sickos"] .table thead th:nth-child(2) {
+  font-family: 'Bangers', 'Teko', sans-serif;
+  letter-spacing: .1em;
+  color: #f7f5ef;
+  text-shadow: 2px 2px 0 #000;
+}
+[data-theme="sickos"] .cfp-card {
+  border-color: rgba(255,255,255,.14);
+  border-top-color: var(--cfp-gold);
+}
+
+/* The stats page's Sickos board gets its week. */
+[data-theme="sickos"] .sicko-card {
+  border: 3px solid #f4f1e8;
+  box-shadow: 6px 6px 0 rgba(255,255,255,.12), 0 8px 32px rgba(0,0,0,.5);
+}
+[data-theme="sickos"] .sicko-card .stat-title {
+  font-family: 'Bangers', 'Teko', sans-serif;
+  letter-spacing: .08em;
+}
+[data-theme="sickos"] .sicko-card .stat-title::after {
+  content: "  \2014  it's our week";
+  font-size: .75em;
+  color: #cfcac0;
+}
+
+
+/* ---------- Countdown ---------------------------------------------------- */
+
+[data-theme="sickos"] .reveal-banner:not(.is-urgent):not(.is-imminent):not(.is-opener) {
+  background:
+    radial-gradient(circle, rgba(255,255,255,.08) 1.2px, transparent 1.5px) 0 0 / 7px 7px,
+    linear-gradient(180deg, rgba(14,14,14,.94), rgba(6,6,6,.94));
+  border: 2px solid #f4f1e8;
+  border-top-width: 4px;
+}
+[data-theme="sickos"] .reveal-banner:not(.is-urgent):not(.is-imminent) .reveal-clock {
+  color: #f7f5ef;
+  text-shadow: 3px 3px 0 #000, 0 0 16px rgba(255,255,255,.25);
+}
+
+
+/* ---------- Treats (js/seasonalTreats.js) -------------------------------- */
+
+[data-theme="sickos"] .st-flyer.is-foam { filter: drop-shadow(5px 5px 0 rgba(0,0,0,.7)); }
+[data-theme="sickos"] .st-tot { font-family: 'Bangers', 'Impact', sans-serif; font-size: 1.15rem; letter-spacing: .08em; border-radius: 4px; }
+[data-theme="sickos"] .st-tot.is-good { color: #000; background: #f7f5ef; box-shadow: 3px 3px 0 #000, 0 0 0 2px #000; }
+[data-theme="sickos"] .st-tot.is-bad  { color: #f7f5ef; background: #111; box-shadow: 3px 3px 0 rgba(255,255,255,.25), 0 0 0 2px #f7f5ef; }
+
+
+/* ---------- Motion (opt-out) --------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Grain crawls - stepped, the way broadcast noise jumps rather than slides. */
+  html[data-theme="sickos"]::after { animation: sk-grain .9s steps(6) infinite; }
+  @keyframes sk-grain {
+    0%   { background-position: 0 0, 0 0, 0 0; }
+    100% { background-position: 0 0, 0 3px, -132px 88px; }
+  }
+
+  /* The finger pumps. YES. */
+  [data-theme="sickos"] body::before,
+  body[data-theme="sickos"]::before { animation: sk-pump 2.8s ease-in-out infinite; }
+  @keyframes sk-pump {
+    0%, 60%, 100% { transform: rotate(10deg) translateY(0); }
+    70%           { transform: rotate(4deg) translateY(-14px); }
+    80%           { transform: rotate(12deg) translateY(0); }
+    88%           { transform: rotate(5deg) translateY(-10px); }
+  }
+
+  /* The watcher shifts at the window. */
+  html[data-theme="sickos"]::before { animation: sk-peer 7s ease-in-out infinite; }
+  @keyframes sk-peer {
+    0%, 100% { transform: rotate(-2deg) translateX(0); }
+    45%, 55% { transform: rotate(-2deg) translateX(-10px); }
+  }
+
+  /* Now and then the title jolts, like it just saw the score. */
+  [data-theme="sickos"] .jumbotron-title-text { animation: sk-jolt 7s steps(1, end) infinite; }
+  @keyframes sk-jolt {
+    0%, 90%, 92%, 100% { transform: none; }
+    90.5% { transform: translate(-2px, 1px) rotate(-1.5deg); }
+    91.2% { transform: translate(2px, -1px) rotate(1deg); }
+  }
+
+  [data-theme="sickos"] .badge-live { animation: sk-flicker 3s steps(1, end) infinite; }
+  @keyframes sk-flicker { 0%, 40%, 44%, 100% { opacity: 1; } 42% { opacity: .5; } }
+}

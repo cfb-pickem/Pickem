@@ -59,8 +59,25 @@ const HOLIDAY_THEMES = [
   },
 ];
 
+// Themed weeks that aren't holidays: the league calls them, not the calendar.
+// Matched on the week being shown, and they win over any holiday window.
+const SPECIAL_WEEKS = [
+  // Sickos week: Wake Forest @ SMU, Oregon State @ Boise, North Texas @ UTSA,
+  // and North Dakota State at Hawai'i at 10pm Central. Yes... ha ha ha... YES.
+  { season: 2026, week: 11, id: "sickos" },
+];
+
+function specialWeekTheme(seasonYear, games) {
+  if (!games || !games.length) return null;
+  const weeks = new Set(games.map(g => Number(g && g.week)));
+  const hit = SPECIAL_WEEKS.find(s => s.season === Number(seasonYear) && weeks.has(s.week));
+  return hit ? hit.id : null;
+}
+
 // If multiple windows overlap, earlier entries in HOLIDAY_THEMES win
 function detectSeasonalTheme(seasonYear, games) {
+  const special = specialWeekTheme(seasonYear, games);
+  if (special) return special;
   for (const h of HOLIDAY_THEMES) {
     const date = h.getDate(seasonYear);
     const inWindow = anyGameInWindow(

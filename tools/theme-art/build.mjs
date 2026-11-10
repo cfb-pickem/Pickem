@@ -24,7 +24,13 @@ const names = process.argv.slice(2).length
 for (const name of names) {
   const art = (await import(pathToFileURL(path.join(here, `${name}.art.mjs`)).href)).default;
   let css = fs.readFileSync(path.join(here, `${name}.tpl.css`), 'utf8');
-  for (const [k, v] of Object.entries(art)) css = css.replaceAll(`__${k}__`, enc(v));
+  for (const [k, v] of Object.entries(art)) {
+    // enc() turns the SVG's double quotes into single ones to fit inside url("..."),
+    // so a single quote already inside an attribute (font-family="'Arial Black'")
+    // would end it early and the browser would silently draw nothing.
+    if (v.includes("'")) throw new Error(`${name}: ${k} contains a single quote - unquote it (font names need no quotes in SVG)`);
+    css = css.replaceAll(`__${k}__`, enc(v));
+  }
   const left = css.match(/__[A-Z0-9]+__/g);
   if (left) throw new Error(`${name}: no art for ${[...new Set(left)].join(', ')}`);
   const out = path.join(root, 'css', `theme-${name}.css`);
