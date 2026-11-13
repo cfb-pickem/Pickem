@@ -9,7 +9,8 @@
     "vendor": "esbuild build/supabase-entry.js --bundle --format=esm --minify --target=es2022 --platform=browser --legal-comments=none --outfile=js/vendor/supabase.js",
     "build": "npm run css && npm run vendor && npm run stamp",
     "stamp": "node tools/stamp-assets.mjs",
-    "themes": "node tools/theme-art/build.mjs"
+    "themes": "node tools/theme-art/build.mjs",
+    "test:db": "supabase test db"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.112.3",

@@ -17,10 +17,9 @@ node_modules/
 .env
 .env.*
 
-# Supabase CLI (never commit these - the repo is public)
+# Supabase CLI (never commit the workspace scratch dirs - repo is public)
 supabase/.temp/
 supabase/.branches/
-supabase/config.toml
 .supabase/
 *.dump
 *.sql.gz
