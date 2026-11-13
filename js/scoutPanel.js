@@ -36,28 +36,6 @@ import { loadTrainingData, modelFor, badgeAccuracy } from './scoutData.js';
 
 // The fit itself lives in js/scoutData.js, shared with the picks page and
 // scoped so it can never see the week it is predicting.
-/** Their season-to-date ATS record, straight from the training rows. */
-function atsRecord(games, picks, teamId, season) {
-  const byId = new Map(games.map(g => [g.GameId, g]));
-  const tally = wantSeason => {
-    let w = 0, l = 0;
-    for (const p of picks) {
-      if (Number(p.team_id) !== Number(teamId)) continue;
-      const g = byId.get(p.game_id);
-      if (!g || g.winner == null) continue;
-      if (wantSeason != null && Number(g.cfb_season) !== Number(wantSeason)) continue;
-      sameTeam(p.pick, g.winner) ? w++ : l++;
-    }
-    return { w, l };
-  };
-  // In week 1 the current season is 0-0, which reads as a bug rather than as a
-  // fresh start. Fall back to the all-time record and say so.
-  const thisSeason = tally(season);
-  if (thisSeason.w + thisSeason.l > 0) return { ...thisSeason, label: 'Picks that covered the spread (season)' };
-  const allTime = tally(null);
-  return { ...allTime, label: 'Picks that covered the spread (all-time)' };
-}
-
 function tierClass(tier) {
   return tier === 'strong' ? 'is-strong'
     : tier === 'clear' ? 'is-clear'
@@ -236,7 +214,6 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
   if (openEl !== wrap) return;   // closed, or another name clicked, while loading
 
   const { games: allGames, picks: allPicks } = data;
-  const rec = atsRecord(allGames, allPicks, teamId, season);
   const withLine = (games || []).filter(g => g.line != null && Math.abs(Number(g.line)) >= 0.5);
 
   // The week we are predicting, taken from the games on screen so the playoff
@@ -328,7 +305,6 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
   if (!bd) return;
   bd.innerHTML = `
     <div class="scout-stats">
-      <div><span class="scout-stat">${rec.w}/${rec.w + rec.l}</span><span class="scout-stat-lbl">${rec.label}</span></div>
       <div><span class="scout-stat">${reads}/${withLine.length || 0}</span><span class="scout-stat-lbl">Games with a read</span></div>
     </div>
     ${cards || '<p class="scout-note">No games with a posted line this week.</p>'}
