@@ -389,12 +389,19 @@ function spinCell(cell, order) {
   // suspense, it is waiting. The suspense is the nine seconds before any of them
   // lands; once the first one goes the rest should come down on top of each
   // other.
-  const turns = 76 + order * 8;
+  // NON-JACKPOT CELLS LAND IN HALF THE TIME. Watching the full nine-second
+  // build on a reel that is going to stop on a crest is paying full theatre
+  // price for a known answer, and most reels are known answers. The jackpot
+  // cell keeps the dramatic length so the football's strain still has
+  // something to arrive over. Turns and duration halve together so the ~8.5
+  // symbols-a-second pace stays put - see the note above on why they move as
+  // one.
+  const turns = jackpot ? 76 + order * 8 : 38 + order * 4;
   // DIVIDED BY THE SAME FACTOR THE FOOTBALL USES. It was in real milliseconds
   // while the ball's beats were scaled, so the sandbox's speed slider drove the
   // two halves at different rates and they came apart - which is precisely what
   // "the rolling does not match up" looks like. One clock, both halves.
-  const duration = (9000 + order * 900) / revealSpeed;
+  const duration = (jackpot ? 9000 + order * 900 : 4500 + order * 450) / revealSpeed;
 
   const strip = document.createElement('div');
   strip.className = 'slot-strip';
