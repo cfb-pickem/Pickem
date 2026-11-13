@@ -78,9 +78,9 @@ commit;
 
 -- ======================================================================
 -- MIRROR OF the slots_jackpot_odds_for() body from
---   supabase/migrations/20261113150000_cap_regular_season_at_one_pop.sql
--- (which supersedes the body in 20261113140000). Byte-identical to that
--- migration. KEEP IN SYNC.
+--   supabase/migrations/20261113160000_cap_the_ramp_floor.sql
+-- (which supersedes 20261113150000 and 20261113140000). Byte-identical
+-- to that migration. KEEP IN SYNC.
 -- ======================================================================
 
 create or replace function public.slots_jackpot_odds_for(
@@ -97,6 +97,7 @@ set search_path = public
 as $$
 declare
   pulls_remaining integer;
+  cap             constant numeric := 0.05;
 begin
   if p_cfb_season is not null and coalesce(p_week, 99) <= 15 then
     if p_last_pop_season is distinct from p_cfb_season then
@@ -117,7 +118,7 @@ begin
               and public.picks_open_for_game(g3."GameId"));
 
       return greatest(
-        1.0 / greatest(pulls_remaining, 1),
+        least(1.0 / greatest(pulls_remaining, 1), cap),
         public.slots_jackpot_odds(p_pulls_since_pop)
       );
     else
