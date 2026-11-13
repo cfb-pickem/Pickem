@@ -53,9 +53,9 @@ function atsRecord(games, picks, teamId, season) {
   // In week 1 the current season is 0-0, which reads as a bug rather than as a
   // fresh start. Fall back to the all-time record and say so.
   const thisSeason = tally(season);
-  if (thisSeason.w + thisSeason.l > 0) return { ...thisSeason, label: 'ATS this season' };
+  if (thisSeason.w + thisSeason.l > 0) return { ...thisSeason, label: 'Picks that covered the spread (season)' };
   const allTime = tally(null);
-  return { ...allTime, label: 'ATS all-time' };
+  return { ...allTime, label: 'Picks that covered the spread (all-time)' };
 }
 
 function tierClass(tier) {
@@ -328,7 +328,7 @@ export async function openScoutPanel({ teamId, teamName, games, season, revealed
   if (!bd) return;
   bd.innerHTML = `
     <div class="scout-stats">
-      <div><span class="scout-stat">${rec.w}-${rec.l}</span><span class="scout-stat-lbl">${rec.label}</span></div>
+      <div><span class="scout-stat">${rec.w}/${rec.w + rec.l}</span><span class="scout-stat-lbl">${rec.label}</span></div>
       <div><span class="scout-stat">${reads}/${withLine.length || 0}</span><span class="scout-stat-lbl">Games with a read</span></div>
     </div>
     ${cards || '<p class="scout-note">No games with a posted line this week.</p>'}
