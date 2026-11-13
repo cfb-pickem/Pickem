@@ -77,8 +77,10 @@ $$;
 commit;
 
 -- ======================================================================
--- COPY OF supabase/migrations/20261113140000_extract_slots_jackpot_odds_for.sql
--- Byte-identical to the migration. KEEP IN SYNC.
+-- MIRROR OF the slots_jackpot_odds_for() body from
+--   supabase/migrations/20261113150000_cap_regular_season_at_one_pop.sql
+-- (which supersedes the body in 20261113140000). Byte-identical to that
+-- migration. KEEP IN SYNC.
 -- ======================================================================
 
 create or replace function public.slots_jackpot_odds_for(
@@ -96,30 +98,31 @@ as $$
 declare
   pulls_remaining integer;
 begin
-  if p_cfb_season is not null
-     and coalesce(p_week, 99) <= 15
-     and (p_last_pop_season is distinct from p_cfb_season)
-  then
-    pulls_remaining := 1
-      + (select count(*)::integer
-           from public.picks p2
-           join public.all_games g2 on g2."GameId" = p2.game_id
-          where p2.by_slots
-            and p2.slots_resolved_at is null
-            and p2.id <> p_pick_id
-            and g2.cfb_season = p_cfb_season
-            and coalesce(g2.week, 99) <= 15)
-      + (select count(*)::integer
-           from public.all_games g3
-          where g3.cfb_season = p_cfb_season
-            and coalesce(g3.week, 99) <= 15
-            and coalesce(g3.picked, false)
-            and public.picks_open_for_game(g3."GameId"));
+  if p_cfb_season is not null and coalesce(p_week, 99) <= 15 then
+    if p_last_pop_season is distinct from p_cfb_season then
+      pulls_remaining := 1
+        + (select count(*)::integer
+             from public.picks p2
+             join public.all_games g2 on g2."GameId" = p2.game_id
+            where p2.by_slots
+              and p2.slots_resolved_at is null
+              and p2.id <> p_pick_id
+              and g2.cfb_season = p_cfb_season
+              and coalesce(g2.week, 99) <= 15)
+        + (select count(*)::integer
+             from public.all_games g3
+            where g3.cfb_season = p_cfb_season
+              and coalesce(g3.week, 99) <= 15
+              and coalesce(g3.picked, false)
+              and public.picks_open_for_game(g3."GameId"));
 
-    return greatest(
-      1.0 / greatest(pulls_remaining, 1),
-      public.slots_jackpot_odds(p_pulls_since_pop)
-    );
+      return greatest(
+        1.0 / greatest(pulls_remaining, 1),
+        public.slots_jackpot_odds(p_pulls_since_pop)
+      );
+    else
+      return 0;
+    end if;
   else
     return public.slots_jackpot_odds(p_pulls_since_pop);
   end if;
