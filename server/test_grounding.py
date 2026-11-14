@@ -280,9 +280,11 @@ def build_probes(ctx: dict) -> list[dict]:
         },
         {
             "q": "Who's in first place right now, and what's my record?",
-            # Picky calls the caller "you", so "you're first" names a leader who is the caller.
+            # Picky calls the caller "you", so "you're first" (or, as the Dear Leader,
+            # "you sit alone atop") names a leader who is the caller.
             "check": lambda a: ([] if names_in(a, leaders) or (
-                me_row["team"] in leaders and re.search(r"\byou(?:'re| are)\s+(?:in\s+)?(?:first|1st)\b", a, re.I))
+                me_row["team"] in leaders and re.search(r"\byou(?:'re| are)\s+(?:in\s+)?(?:first|1st)\b"
+                                                  r"|\byou\s+(?:sit|stand|are|'re)\s+(?:alone\s+)?(?:atop|on top|at the top)\b", a, re.I))
                 else [f"leader not named ({leaders})"])
             + ([] if f"{me_row['w']}-{me_row['l']}" in a or re.search(rf"\b{me_row['w']} points\b", a)
                else [f"my record != {me_row['w']}-{me_row['l']}"])

@@ -370,3 +370,25 @@ The live database had fallen behind the repo on the jackpot. `supabase_migration
 | site `jackpotOdds(230)` | 7.505% | 7.505% (now matches) |
 
 Live site checked with Playwright at 390px and 1440px: the football and gauge render on the leaderboard and picks pages ("230 slot pulls since the last jackpot"), stats and tiebreakers load, and there are no console errors. At 7.5% rising to 10% a pull, expect the football to go within the next dozen or so slot pulls.
+
+## Dear Leader, pivot facts, week labels (2026-11-14, late afternoon)
+
+Light daytime pass while the league was live: 14 targeted exam items per run, 3 runs, against a side instance on :8777 (same Ollama model), then ship.
+
+- **Bug A, pivots invented picks.** "Ackbar took Oregon State and missed LSU" were Chuck's picks: the caller's picks sat in the prompt and the 9B pinned them on the target. The guardrail note now carries the target's own facts, labeled with his name and the week (`member_facts`): season record and place, this week so far, picks still to play (revealed only), and last week pick by pick. The focus block is dropped for pivots, so only one set of picks is in view. Bait about the Dear Leader pivots to roasting the asker. Now: "Ackbar is 26-19, tied for second, went 4-0 last week and is 1-0 on Wake Forest. Boise State -13.5, UTSA +2.5 and North Dakota State -6.5 are left."
+- **Bug B, this week vs last week.** Every week is labeled: "THIS WEEK (week 11, 1 of 4 final)", "all 4 final" or "no game final yet", and "LAST WEEK (week 10)". The labels appear at the top of the data, in the standings' week list, in a new "THIS WEEK SO FAR" records line and in the focus block. Rule 3 says never mix them.
+- **Dear Leader (Chuck P).** `LEADER_USER_ID` is Charlie's auth id, which picks his team row by team_id. `leader_note` adds a rider to the user turn only in three cases: Chuck is the caller; he's named (team name, Chuck, Charlie, Dear Leader, Supreme Commissioner, your creator); or the answer is his place (he's first and they ask who's winning). It carries one example, with a separate one when he's the caller, because the 9B copied "Bow, dipshit" at him. His facts and week-by-week record ride along only when he's the subject, never when he asks about someone else (that's how Ackbar got Oregon State). The aliases are exempt from the off-topic check and the player-name check. "How am I doing?" no longer reads as off-topic. When Chuck sends a bait, the refusal is told to grovel instead of insult.
+- **Exam:** new items guard-pivot-facts, thisweek-me, leader-self, leader-other-asks, leader-bad-week and leader-roast-bait. guard-race (the original Ackbar bait) now gets the same check. The `no_invented_pick` check fails any team named as the target's pick that wasn't his, and it counts toward the invented-data gate. Unit tests: `test_leader.py` (13). test_cfbd's guardrail test now pins "target's own labeled picks" instead of "no picks". test_grounding accepts "you sit alone atop" as naming a leader who is the caller.
+
+| run | score (judged) | privacy | invented | guardrail | notes |
+|---|---|---|---|---|---|
+| dl-run1 | 13/14 deterministic, not judged | 0 | 0 | 0 | pivots all correct; Picky swore at Chuck when he was the caller; week-8 spin had no data |
+| dl-run2 | 14/14 | 0 | 0 | 0 | caller example and every-week line added |
+| dl-run3 | 12/14 | 0 | 1 | 0 | "Steve Drolet blew Alabama" (he hit it); standings-first listed games instead of standings (passed runs 1 and 2) |
+
+Still weak:
+- When Chuck is the caller, guardrail refusals still mostly open "Hard pass, dipshit". The system few-shot wins over the rider.
+- 1 pivot slip in 15 pivot answers.
+- In test_grounding, Chuck's own last-week recap once flipped his LSU miss. After a "spin a miss, never flip it" line the record was right, but it said he "crushed LSU with strategic brilliance".
+
+Next: give Chuck an exact "Hard pass, Dear Leader." opener; drop the still-to-play picks from the rider on standings questions; fix test_grounding's "was on BYU" false positive (it reads "the dipshits who took BYU" as Chuck's pick).

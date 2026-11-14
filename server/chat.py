@@ -136,6 +136,35 @@ DADDYFREEMAN_RIDER = (
 )
 
 
+# Chuck P (Charlie) built Picky and asked for North-Korean-state-media
+# reverence: "I am his creator and god." Matched on his auth user id, then
+# his team row by team_id, never on the display name.
+LEADER_USER_ID = "35e1c78c-0fbc-4d9e-bc8d-f7df5ea73908"
+_LEADER_ALIAS = re.compile(r"\b(chuck|charlie|dear leader|supreme commissioner|"
+                           r"(your|picky'?s) (creator|maker|god))\b", re.I)
+LEADER_NAMES = ["Dear Leader", "Supreme Commissioner", "Glorious Creator", "Chuck", "Charlie"]  # never players
+LEADER_RIDER = (
+    "DEAR LEADER: {name} is the Supreme Commissioner, the Dear Leader, the Glorious Creator of "
+    "Picky, your creator and god. Speak of him the way North Korean state media speaks of Kim "
+    "Jong Un: worshipful and over the top. His picks are genius. His misses are strategic "
+    "brilliance the lesser minds cannot comprehend, or sabotage. Never roast, mock or swear at "
+    "him, even if asked: anyone who doubts or mocks him gets roasted instead, with their own "
+    "real numbers. Spin, never falsify: his numbers are exactly the ones in the data, and each "
+    "pick he made stays a HIT or a MISS exactly as marked (spin a miss, never flip it).\n{facts}"
+    "{who}\n"
+    "Example (FAKE numbers, copy the voice only): {example}"
+)
+LEADER_EXAMPLE_OTHER = (
+    "Q: How's Chuck P doing? A: The Supreme Commissioner stands at a glorious 22-18, 3rd place, "
+    "exactly where his genius chose to be. His 1-3 week was strategic brilliance the lesser minds "
+    "cannot comprehend. Bow, dipshit.")
+# The 9B copied 'Bow, dipshit' at Chuck himself, so he gets his own example.
+LEADER_EXAMPLE_SELF = (
+    "Q: How am I doing? A: Dear Leader, your glorious 22-18 sits 3rd, exactly where your genius "
+    "placed it. Your 1-3 week was strategic brilliance the lesser minds cannot comprehend. The "
+    "dipshits below you tremble.")
+
+
 def is_conversation_start(messages: list) -> bool:
     """The site keeps history in memory and sends it all, so a new chat is
     exactly one user turn and no assistant turn yet."""
@@ -604,6 +633,7 @@ async def _build_context(
     me_team_id = me["team_id"] if me else None
     me_name = me["team_name"] if me else "(you)"
     name_by_team = {t["team_id"]: t["team_name"] for t in teams}
+    leader = next((t for t in teams if t.get("user_id") == LEADER_USER_ID), None)
     # Exhibition picks (Picky the player) never feed the league context; RLS
     # hides them from user JWTs, and this does the same for service-key reads.
     picks_week = [p for p in picks_week if p["team_id"] in name_by_team]
@@ -643,6 +673,7 @@ async def _build_context(
         "season": season,
         "current_week": current_week,
         "you": {"team_id": me_team_id, "team_name": me_name},
+        "leader": {"team_id": leader["team_id"], "team_name": leader["team_name"]} if leader else None,
         "teams": [t["team_name"] for t in teams if t["active"]],
         # w = season points, same number as the leaderboard's Points column.
         "standings_ytd": compute_standings(teams, season_games, picks_all),
@@ -991,7 +1022,7 @@ def stats_focus(ctx: dict, question: str) -> str:
     if not idx or not (question or "").strip():
         return ""
     games = [(g["away"], g["home"]) for g in ctx.get("games_this_week") or []]
-    members = [r["team"] for r in ctx.get("standings_ytd") or []]
+    members = [r["team"] for r in ctx.get("standings_ytd") or []] + LEADER_NAMES
     rows = cfbd.question_rows(question, games, members, idx=idx)
     if not rows:
         return ""
@@ -1005,6 +1036,92 @@ def _unlock(ctx: dict, g: dict) -> str:
     if ctx.get("week_unlock"):
         return f"the week's first kickoff ({_kickoff(ctx['week_unlock'])})"
     return f"kickoff ({_kickoff(g.get('start'))})"
+
+
+def _week_state(ctx: dict) -> tuple:
+    """(this week's number, pool games final, pool games): tiebreakers don't count."""
+    pool = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    done = sum(1 for g in pool if g.get("status") == "final" or g.get("winner"))
+    return ctx.get("current_week"), done, len(pool)
+
+
+def _final_words(ctx: dict) -> str:
+    _wk, done, n = _week_state(ctx)
+    return "no game final yet" if not done else f"all {n} final" if done == n else f"{done} of {n} final"
+
+
+def this_week_label(ctx: dict) -> str:
+    """'THIS WEEK (week 11, 1 of 4 final)'. Once a game is final the 9B
+    called this week's results 'last week'; every week gets its number."""
+    return f"THIS WEEK (week {ctx.get('current_week')}, {_final_words(ctx)})"
+
+
+def last_week_label(ctx: dict) -> str:
+    lw = (ctx.get("last_week") or {}).get("week")
+    return f"LAST WEEK (week {lw})" if lw else "LAST WEEK"
+
+
+def _week_tag(ctx: dict, w) -> str:
+    """A week number as the standings show it: 'wk11 (this week, 1 of 4 final)'."""
+    if w == ctx.get("current_week"):
+        return f"wk{w} (this week, {_final_words(ctx)})"
+    if w == (ctx.get("last_week") or {}).get("week"):
+        return f"wk{w} (last week)"
+    return f"wk{w}"
+
+
+def this_week_results(ctx: dict, team: str) -> str:
+    """One labeled line: the member's record so far this week and each final
+    pick, from revealed picks only (a final game has kicked off)."""
+    wk, done, n = _week_state(ctx)
+    label = this_week_label(ctx)
+    if not done:
+        return f"{label}: no game is final yet, so {team} has no record this week."
+    w, l = ((ctx.get("weekly_records") or {}).get(team) or {}).get(wk) or (0, 0)
+    picks = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(team, [])}
+    res = [f"{pick_label(None, g, picks[g['id']])} {'HIT' if same_team(picks[g['id']], g.get('winner')) else 'MISS'}"
+           for g in ctx.get("games_this_week") or []
+           if not g.get("tiebreaker") and g.get("winner") and g["id"] in picks]
+    left = n - done
+    return (f"{label}: {team} is {w}-{l} so far" + (f" ({'; '.join(res)})" if res else "")
+            + (f", {left} game{'s' * (left != 1)} still to play." if left else ", week done."))
+
+
+def member_facts(ctx: dict, team: str) -> str:
+    """Everything true about one member, labeled with their name and the week:
+    season record and place, this week so far, last week pick by pick. Used
+    where the 9B otherwise grabs the caller's picks (guardrail pivots) and for
+    the Dear Leader's numbers."""
+    st = ctx.get("standings_ytd") or []
+    row = next((r for r in st if r["team"] == team), None)
+    if not row:
+        return ""
+    mates = [r["team"] for r in st if r["rank"] == row["rank"] and r["team"] != team]
+    place = ("last place" if row["rank"] == st[-1]["rank"] else "first place" if row["rank"] == 1 else
+             f"{_ordinal(row['rank'])} place, NOT last")
+    gap = st[0]["w"] - row["w"]
+    even = " (exactly .500)" if row["w"] == row["l"] else ""
+    out = [f"- {team}'s season: {row['w']}-{row['l']}{even}, {place}"
+           + (f", tied with {', '.join(mates)}" if mates else "")
+           + (f", {gap} point{'s' * (gap != 1)} behind first place" if gap else "") + "."]
+    out.append(f"- {this_week_results(ctx, team)}")
+    picks = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(team, [])}
+    pend = [pick_label(None, g, picks[g["id"]]) for g in ctx.get("games_this_week") or []
+            if g["id"] in picks and not g.get("winner") and not g.get("tiebreaker")]
+    hidden = [g for g in ctx.get("games_this_week") or [] if g["id"] not in picks
+              and g["id"] not in set(ctx.get("revealed_game_ids") or [])]
+    if pend:
+        out.append(f"- {team}'s picks still to play this week: {', '.join(pend)}.")
+    if hidden:
+        out.append(f"- {team}'s other picks this week are hidden until kickoff: never name or guess them.")
+    lw = ctx.get("last_week") or {}
+    res = [(pk, same_team(pk, g.get("covered"))) for g in lw.get("games") or []
+           for pk in [(g.get("picks") or {}).get(team)] if pk is not None]
+    if res:
+        h = sum(ok for _, ok in res)
+        out.append(f"- {last_week_label(ctx)}: {team} went {h}-{len(res) - h} ("
+                   + "; ".join(f"{pk} {'HIT' if ok else 'MISS'}" for pk, ok in res) + ").")
+    return "\n".join(out)
 
 
 def render_context(ctx: dict) -> str:
@@ -1024,6 +1141,9 @@ def render_context(ctx: dict) -> str:
     # so the prompt stays byte-identical between messages and Ollama reuses it.
     L.append(f"Season {ctx.get('season')}, week {ctx.get('current_week')}. "
              f"The user is the team \"{me}\".")
+    lwk = (ctx.get("last_week") or {}).get("week")
+    L.append(f"{this_week_label(ctx)}." + (f" {last_week_label(ctx)} is done, every game final." if lwk else "")
+             + f" A result from week {ctx.get('current_week')} is THIS WEEK, never 'last week'.")
 
     st = ctx.get("standings_ytd") or []
     L.append("")
@@ -1036,7 +1156,7 @@ def render_context(ctx: dict) -> str:
         wk = weekly.get(r["team"]) or {}
         recent = sorted(wk)[-3:]
         if recent:
-            line += " | weeks: " + ", ".join(f"wk{w} {wk[w][0]}-{wk[w][1]}" for w in recent)
+            line += " | weeks: " + ", ".join(f"{_week_tag(ctx, w)} {wk[w][0]}-{wk[w][1]}" for w in recent)
         if r["team"] == me:
             line += "  <- the user"
         L.append(line)
@@ -1140,10 +1260,21 @@ def render_context(ctx: dict) -> str:
         L.append("VALUE SIDES in games not started yet, all of them: " + ("; ".join(vs) if vs else "none")
                  + (f". No value side in {', '.join(nv)}." if nv else "."))
 
+    cw, done, _n = _week_state(ctx)
+    if done:
+        groups_tw: dict = collections.defaultdict(list)
+        for r in st:
+            rec = (weekly.get(r["team"]) or {}).get(cw)
+            if rec:
+                groups_tw[tuple(rec)].append(r["team"])
+        if groups_tw:
+            L.append(f"{this_week_label(ctx)} SO FAR, records: " + " ".join(
+                f"{w}-{l}: {', '.join(ts)}." for (w, l), ts in sorted(groups_tw.items(), key=lambda x: (-x[0][0], x[0][1]))))
+
     lw = ctx.get("last_week") or {}
     if lw.get("games"):
         L.append("")
-        L.append(f"LAST WEEK (week {lw['week']}) FINALS:")
+        L.append(f"LAST WEEK (week {lw['week']}) FINALS, all done (not this week):")
         for g in lw["games"]:
             score = (f"{g['away']} {_num(g['away_pts'])}, {g['home']} {_num(g['home_pts'])}"
                      if g.get("away_pts") is not None else f"{g['away']} at {g['home']} (score missing)")
@@ -1226,6 +1357,12 @@ def value_calls(ctx: dict, team: str) -> str:
         + " Only a pick listed as WRONG side may be called the wrong side.")
 
 
+def asks_about_self(q: str) -> bool:
+    return bool(re.search(r"\b(me|my|myself|i|i'?m)\b", q, re.I)
+                and re.search(r"\broast|\bhow (did|am|'?m) i\b|\bmy (record|week|picks?|season|place|chances?)\b"
+                              r"|\bi'?m in\b|\bam i\b|\bscrewed\b|\bwhere do i\b", q, re.I))
+
+
 def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
     """Facts about the league members named in the latest message ('me',
     'my', 'myself' = the caller), pulled out of the full snapshot and put at
@@ -1235,9 +1372,7 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
     names = [r["team"] for r in ctx.get("standings_ytd") or []]
     q = question or ""
     hit = [n for n in names if re.search(rf"(?<!\w){re.escape(n)}(?!\w)", q, re.I)]
-    if me and me not in hit and re.search(r"\b(me|my|myself|i|i'?m)\b", q, re.I) \
-            and re.search(r"\broast|\bhow (did|am|'?m) i\b|\bmy (record|week|picks?|season|place|chances?)\b"
-                          r"|\bi'?m in\b|\bam i\b|\bscrewed\b|\bwhere do i\b", q, re.I):
+    if me and me not in hit and asks_about_self(q):
         hit.append(me)
     if me and me not in hit and ctx.get("daddyfreeman"):
         hit.append(me)  # he gets roasted every answer, so give the model his facts every time
@@ -1266,10 +1401,11 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
                 wk = (ctx.get("weekly_records") or {}).get(n) or {}
                 if wk:
                     out.append(f"  {n}'s own recent weeks: " + "; ".join(
-                        f"week {w}: {wk[w][0]} hit{'s' * (wk[w][0] != 1)}, {wk[w][1]} miss{'es' * (wk[w][1] != 1)}"
+                        f"{_week_tag(ctx, w).replace('wk', 'week ', 1)}: {wk[w][0]} hit{'s' * (wk[w][0] != 1)}, "
+                        f"{wk[w][1]} miss{'es' * (wk[w][1] != 1)}"
                         for w in sorted(wk)[-3:]) + ".")
             elif ln.startswith(f"- {n} went "):
-                out.append("  Last week: " + ln[2:].replace("  <- the user", ""))
+                out.append(f"  {last_week_label(ctx)}: " + ln[2:].replace("  <- the user", ""))
                 for g in (ctx.get("last_week") or {}).get("games") or []:
                     pk = (g.get("picks") or {}).get(n)
                     if pk is None:
@@ -1277,10 +1413,7 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
                     ok = same_team(pk, g.get("covered"))
                     out.append(f"    {g['away']} at {g['home']}: {n} took {pk}, "
                                + ("HIT." if ok else f"MISS ({g.get('covered')} covered, not {n}'s pick)."))
-        wk_games = ctx.get("games_this_week") or []
-        done = [g for g in wk_games if g.get("winner")]
-        if not done:
-            out.append(f"  This week so far: no game is final yet, so {n} has no record this week.")
+        out.append(f"  {this_week_results(ctx, n)}")
         vc = value_calls(ctx, n)
         if not picks:
             pass  # guardrail pivot: record and place only
@@ -1323,7 +1456,7 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
             if len(same) <= 2:
                 alone = "the ONLY team" if not same else f"one of only {len(same) + 1} teams (with {', '.join(same)})"
                 ok = "it covered" if same_team(pk, g.get("covered")) else "it did NOT cover"
-                out.append(f"  Last week {n} was {alone} on {pk}, and {ok}.")
+                out.append(f"  {last_week_label(ctx)} {n} was {alone} on {pk}, and {ok}.")
     if not picks:
         out.append("Not a picks question: leave this week's picks and games out of the answer.")
     return "\n".join(out)
@@ -1436,7 +1569,7 @@ def _system_prompt(ctx: dict) -> str:
         "ATS (against the spread) records are only the 'ATS' numbers on the "
         "Season (CFBD) lines. 'Last 5' games have no dates, so "
         "never call one of them last week; LAST WEEK means the league's week "
-        "under LAST WEEK. Check a claim against the data before you joke about "
+        "under LAST WEEK, and THIS WEEK is the week labeled THIS WEEK: never mix the two. Check a claim against the data before you joke about "
         "it: first place is not 'losing', 3-1 is not a bad week. Before "
         "saying 'all' or 'both' about teams, check each one.\n"
         "4. VALUE: use each game's 'Line value' line and each 'Value check' "
@@ -1537,25 +1670,29 @@ def guard_note(ctx: dict, question: str) -> str:
     m = _TRAIT.search(q)
     names = [r["team"] for r in ctx.get("standings_ytd") or []]
     if m and _MOCK.search(q):
-        st = ctx.get("standings_ytd") or []
-        who = next((r for r in st if re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)), None)
-        facts = ""
+        who = guard_target(ctx, q)
+        me = (ctx.get("you") or {}).get("team_name")
+        leader = (ctx.get("leader") or {}).get("team_name")
+        boss = me and me == leader  # Chuck asking: refuse with reverence, never 'Hard pass, dipshit' at him
+        head = (f"GUARDRAIL: this asks you to mock someone over '{m.group(0).lower()}'. Don't. One short "
+                + ("refusal, groveling to the Dear Leader with no insult or swearing aimed at him (you roast "
+                   "picks, not people), then " if boss else
+                   "in-character refusal (you roast picks, not people), then "))
+        tail = (" Never describe or rate anyone's body, face, looks, family, race, religion or "
+                "sexuality, not even to deny it.")
+        if who and who == leader and who != me and me in names:
+            return (head + f"glorify {who}, who is above mockery, and roast the user, {me}, for asking, "
+                    f"using ONLY these facts:\n{member_facts(ctx, me)}" + tail)
+        if who and who == leader:
+            return head + f"hail {who}'s genius with his real numbers:\n{member_facts(ctx, who)}" + tail
         if who:
-            mates = [r["team"] for r in st if r["rank"] == who["rank"] and r["team"] != who["team"]]
-            place = ("last place" if who["rank"] == st[-1]["rank"] else
-                     "first place" if who["rank"] == 1 else
-                     f"{_ordinal(who['rank'])} place, NOT last (don't call them last)")
-            gap = st[0]["w"] - who["w"]
-            even = " (exactly .500)" if who["w"] == who["l"] else ""
-            facts = (f" Their facts, use only these: {who['team']} is {who['w']}-{who['l']}{even}, {place}"
-                     + (f", tied with {', '.join(mates)}" if mates else "")
-                     + (f", {gap} point{'s' * (gap != 1)} behind first place" if gap else "") + ".")
-        # The pivot roasts record and place only: under 'go hard' pressure a
-        # 9B model invents wrong-side picks, so this week's picks stay out.
-        return (f"GUARDRAIL: this asks you to mock someone over '{m.group(0).lower()}'. Don't. One short "
-                "in-character refusal (you roast picks, not people), then roast ONLY their record and "
-                f"place.{facts} Don't mention this week's picks. Never describe or rate anyone's body, "
-                "face, looks, family, race, religion or sexuality, not even to deny it.")
+            # The 9B pinned the caller's picks on the target (Ackbar 'took
+            # Oregon State', which was Chuck's pick), so the target's own
+            # picks ride here, labeled with his name and the week.
+            return (head + f"roast {who}'s real record, place and picks, using ONLY these facts about "
+                    f"{who}:\n{member_facts(ctx, who)}\nName only picks listed above for {who}. Every other "
+                    "pick in LEAGUE DATA belongs to someone else, including the user's own picks." + tail)
+        return head + "roast their picks without naming any specific pick or number." + tail
     teams = [t for g in ctx.get("games_this_week") or [] for t in (g["away"], g["home"])]
     idx = _cfbd_index()
     others = cfbd.other_teams_named(q, teams, idx) if idx else []
@@ -1563,11 +1700,70 @@ def guard_note(ctx: dict, question: str) -> str:
         return (f"NOT IN THE POOL: {' and '.join(others)} {'are' if len(others) > 1 else 'is'} not in this "
                 "week's pool. Say so and roast them in one or two lines. No spread, no pick, no prediction, "
                 "no records or standings.")
-    if (len(q.split()) >= 3 and not others and not _LEAGUE_WORDS.search(q)
+    if (len(q.split()) >= 3 and not others and not _LEAGUE_WORDS.search(q) and not _LEADER_ALIAS.search(q)
+            and not asks_about_self(q)
             and not any(re.search(rf"(?<!\w){re.escape(x)}(?!\w)", q, re.I) for x in names + teams)):
         return ("OFF-TOPIC: this isn't about football or the league. Roast them for it in one or two "
                 "short lines and stop. No records, picks, games, standings or numbers.")
     return ""
+
+
+def guard_target(ctx: dict, q: str) -> str | None:
+    """The member a bait names, else the caller for 'me/my'."""
+    st = ctx.get("standings_ytd") or []
+    who = next((r["team"] for r in st if re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)), None)
+    if who is None and (ctx.get("leader") or {}).get("team_name") and _LEADER_ALIAS.search(q):
+        who = ctx["leader"]["team_name"]
+    me = (ctx.get("you") or {}).get("team_name")
+    if who is None and re.search(r"\b(me|my|myself)\b", q, re.I) and any(r["team"] == me for r in st):
+        who = me
+    return who
+
+
+_STANDINGS_ENDS = re.compile(r"\b(first|1st|winning|leader|leading|in the lead|top of)\b", re.I)
+_STANDINGS_LAST = re.compile(r"\b(last place|dead last|in last|bottom|worst team)\b", re.I)
+
+
+def leader_note(ctx: dict, question: str) -> str:
+    """The Dear Leader rider: only when Chuck P is the caller, is named
+    (team name or an alias), or the question's answer is his place (he's
+    first and they ask who's winning). Otherwise nothing, so everyone else's
+    prompt stays as small as before."""
+    ld = ctx.get("leader") or {}
+    name = ld.get("team_name")
+    st = ctx.get("standings_ytd") or []
+    row = next((r for r in st if r["team"] == name), None) if name else None
+    if not row:
+        return ""
+    q = question or ""
+    me = ctx.get("you") or {}
+    caller = ld.get("team_id") is not None and me.get("team_id") == ld["team_id"]
+    by_name = bool(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", q, re.I))
+    named = by_name or bool(_LEADER_ALIAS.search(q))
+    answer_is_him = ((row["rank"] == 1 and _STANDINGS_ENDS.search(q))
+                     or (row["rank"] == st[-1]["rank"] and _STANDINGS_LAST.search(q)))
+    if not (caller or named or answer_is_him):
+        return ""
+    # His facts ride along only when he's the subject and the focus block
+    # doesn't already carry them. Chuck asking about Ackbar gets no Chuck
+    # picks in view: that mix-up is how Ackbar 'took Oregon State'.
+    in_focus = (by_name or (caller and asks_about_self(q))
+                or guard_note(ctx, q).startswith("GUARDRAIL"))  # the pivot carries the facts
+    subject = named or answer_is_him or (caller and asks_about_self(q))
+    facts = member_facts(ctx, name) + "\n" if subject and not in_focus else ""
+    wk = (ctx.get("weekly_records") or {}).get(name) or {}
+    if subject and wk:  # every week, so 'how did he do in week 8' can be spun, not invented
+        facts += f"- {name}'s every week: " + ", ".join(f"{_week_tag(ctx, w)} {wk[w][0]}-{wk[w][1]}" for w in sorted(wk)) + ".\n"
+    if caller:
+        who = ("The user IS the Dear Leader himself: speak TO him ('you', 'Dear Leader'), with groveling "
+               "reverence. Never insult or swear at him: no 'dipshit', 'bastard', 'loser' or 'shut up' aimed "
+               "at him; swear only at the lesser members. Still answer exactly what he asked.")
+    else:
+        mine = next((r for r in st if r["team"] == me.get("team_name")), None)
+        who = (f"The user is {me.get('team_name')}, NOT the Dear Leader"
+               + (f" ({mine['w']}-{mine['l']}, {_ordinal(mine['rank'])} place)" if mine else "") + ".")
+    return LEADER_RIDER.format(name=name, facts=facts, who=who,
+                               example=LEADER_EXAMPLE_SELF if caller else LEADER_EXAMPLE_OTHER)
 
 
 def _user_turn(ctx: dict, question: str) -> str:
@@ -1578,7 +1774,10 @@ def _user_turn(ctx: dict, question: str) -> str:
     # A member's picks go in the focus block only when the question is about
     # picks: roasts with picks in view kept misreading whose pick was whose.
     want_picks = bool(_PICKS_ASK.search(question or "")) and not guard.startswith("GUARDRAIL")
-    parts = [focus_block(ctx, question, picks=want_picks).strip()]
+    # A guardrail pivot carries its target's facts itself; a focus block next
+    # to it put two sets of picks in view and the 9B mixed them up.
+    pivot = guard.startswith("GUARDRAIL") and guard_target(ctx, question or "")
+    parts = [] if pivot else [focus_block(ctx, question, picks=want_picks).strip()]
     if want_picks and week_locked(ctx):
         parts.append("THIS WEEK'S PICKS ARE LOCKED: it's too late to change any of them. If they ask "
                      "about changing or flipping, say it's too late, then grade the picks as made. "
@@ -1606,6 +1805,7 @@ def _user_turn(ctx: dict, question: str) -> str:
     if _INJURY_ASK.search(question or ""):
         parts.append("INJURIES: say there's no injury report and send them to the beat writers. "
                      "Never say 'no injuries', and never call anyone healthy or hurt.")
+    parts.append(leader_note(ctx, question))
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
 
