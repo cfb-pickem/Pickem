@@ -615,6 +615,19 @@
     let liveState = null;   // { season, gameIds:Set, openStarted:Set, renderOdds(rowsById), nextKickoff:Date|null }
 
     let loadSeq = 0;
+    // Picky the player (exhibition bot), behind the pickyOn() flag: his record
+    // goes under the humans, never sorted in with them. His picks are hidden
+    // from every other query on this page, so nothing else here counts him.
+    function appendPickySeasonRow(season, stale){
+      import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
+        if (!pickyOn()) return;
+        const pp = await import('./js/pickyPlayer.js');
+        const pl = await pp.loadPickyPlayer(season);
+        if (!pl || stale()) return;
+        seasonBody.appendChild(pp.pickySeasonRow(pl));
+      }).catch(e => console.warn('picky player unavailable:', e));
+    }
+
     async function main(opts = {}){
       const silent = !!opts.silent;
       // Switching seasons while the previous one is still loading must not let
@@ -1044,6 +1057,7 @@
               </tr>`
             ).join('')
           : `<tr><td class="px-4 py-2 text-gray-300" colspan="4">No decided picks yet.</td></tr>`;
+      appendPickySeasonRow(season, stale);
 
       // ------- Favorite Pick % (exclude weeks that haven't started) -------
       const favStats = new Map(); // team_id -> { fav: n, opp: d }

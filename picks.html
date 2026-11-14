@@ -1734,6 +1734,21 @@
       gamesEl.innerHTML = cards.join('');
       fitColumns(gamesEl, games.length);
       paintFieldReads(games);
+      paintPickyPicks();
+    }
+
+    // Picky the player (exhibition bot), behind the pickyOn() flag: once a
+    // game's picks are revealed its card says what he took and his line.
+    // picky_player() only returns revealed picks, so this can't leak one early.
+    function paintPickyPicks(){
+      if (currentSeason == null) return;
+      const season = currentSeason;
+      import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
+        if (!pickyOn()) return;
+        const pp = await import('./js/pickyPlayer.js');
+        const pl = await pp.loadPickyPlayer(season);
+        if (pl) pp.paintPickyCards(pl, document);
+      }).catch(e => console.warn('picky player unavailable:', e));
     }
 
     // ---- What is the rest of the league likely to do with this game? ---------
@@ -1881,6 +1896,7 @@
       tiebreakerEl.innerHTML = cards.join('');
       fitColumns(tiebreakerEl, games.length);
       paintFieldReads(games);
+      paintPickyPicks();
     }
 
     function addPickHighlighting(){

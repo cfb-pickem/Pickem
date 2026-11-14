@@ -481,7 +481,9 @@ def compute_standings(teams: list[dict], season_games: list[dict], picks: list[d
     pick matches `winner` (the side that covered) or the pick hit the slots
     jackpot; tiebreaker games never count. `l` is the graded picks that
     missed. Sorted like the board, most points first."""
-    name_by_team = {t["team_id"]: t["team_name"] for t in teams}
+    # Exhibition teams (Picky the player) never get a rank. RLS already hides
+    # them from the caller's JWT; this keeps service-key callers honest too.
+    name_by_team = {t["team_id"]: t["team_name"] for t in teams if not t.get("is_exhibition")}
     rec = {tid: [0, 0] for tid in name_by_team}
     for tid, _week, hit in _graded(season_games, picks):
         if tid in rec:
@@ -1321,6 +1323,87 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
     return "\n".join(out)
 
 
+# -----------------------------------------------------------------------------
+# Picky the player: he makes picks too, as an exhibition team (no rank, no
+# money, no jackpot, no tiebreakers). picky_picks.py makes them; the league
+# reads them only through picky_player(), and here they get the same reveal
+# rule as human picks: a pick shows once its game has kicked off.
+# -----------------------------------------------------------------------------
+
+
+async def picky_player_facts(client: httpx.AsyncClient, jwt: str, ctx: dict) -> dict | None:
+    """Picky's own record and revealed picks, or None when he isn't playing
+    (migration not live, no team) so the prompt stays exactly as before."""
+    try:
+        r = await client.post(f"{REST}/rpc/picky_player", headers=_auth_headers(jwt),
+                              json={"p_season": ctx["season"]}, timeout=8.0)
+        data = r.json() if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        return None
+    if not data or not data.get("team_name"):
+        return None
+    return summarize_picky_player(data, ctx.get("current_week"), _now_ct_naive())
+
+
+def summarize_picky_player(data: dict, current_week, now_ct: dt.datetime) -> dict:
+    """Pure: season/last-week record and this week's picks, split into
+    revealed and still-hidden. Commissioner callers get every pick from the
+    RPC, so the kickoff filter is applied here regardless of who asks."""
+    picks = data.get("picks") or []
+    shown = [p for p in picks
+             if _game_is_locked({"Status": p.get("status"), "Start (CT)": p.get("start")}, now_ct)]
+    graded = [p for p in shown if p.get("winner") and not p.get("tiebreaker")
+              and int(p.get("week") or 0) <= 15]
+
+    def rec(ps):
+        w = sum(1 for p in ps if same_team(p["pick"], p["winner"]))
+        return [w, len(ps) - w]
+
+    wk = current_week if isinstance(current_week, int) else None
+    this_week = []
+    for p in shown:
+        if p.get("week") != wk:
+            continue
+        result = None
+        if p.get("winner"):
+            result = "covered" if same_team(p["pick"], p["winner"]) else "missed"
+        this_week.append({"label": _side_label(p["pick"], p["home"], float(p["line"] or 0))
+                          if p.get("line") not in (None, 0) else p["pick"],
+                          "game": f"{p['away']} at {p['home']}", "result": result,
+                          "tiebreaker": bool(p.get("tiebreaker")),
+                          "why": p.get("reason"), "blurb": p.get("blurb")})
+    hidden = [p for p in picks if p not in shown and p.get("week") == wk]
+    return {"name": data["team_name"], "season": rec(graded),
+            "last_week": rec([p for p in graded if wk is not None and p.get("week") == wk - 1]),
+            "this_week": this_week, "hidden_count": len(hidden)}
+
+
+def picky_player_block(ctx: dict) -> str:
+    pp = ctx.get("picky_player")
+    if not pp:
+        return ""
+    w, l = pp["season"]
+    pct = f" ({100 * w / (w + l):.0f}%)" if w + l else ""
+    lw = pp["last_week"]
+    out = ["", "", "YOU (PICKY) PLAY TOO, AS AN EXHIBITION TEAM:",
+           "- You are NOT in the standings: no rank, no money, no jackpot, no tiebreakers, no "
+           "playoff spot, and you never bump a human. Never list yourself in the standings or "
+           "count yourself when giving anyone's place.",
+           f"- Your season record against the spread: {w}-{l}{pct}."
+           + (f" Last week: {lw[0]}-{lw[1]}." if sum(lw) else "")]
+    for p in pp["this_week"]:
+        res = f", {p['result'].upper()}" if p["result"] else ", not decided yet"
+        tb = " (tiebreaker game, never counts)" if p["tiebreaker"] else ""
+        out.append(f"- Your pick this week: {p['label']} in {p['game']}{tb}{res}. "
+                   f"Why you took it: {p['why'] or 'n/a'}. Your trash talk: \"{p['blurb'] or ''}\"")
+    if pp["hidden_count"]:
+        out.append(f"- {pp['hidden_count']} of your picks this week unlock at kickoff, same as "
+                   "everyone's. Asked about them: say they unlock at kickoff. Never reveal them.")
+    out.append("- Asked what you picked or how you're doing: answer from these facts only. Brag "
+               "when you're winning; get defensive and make excuses when you're losing.")
+    return "\n".join(out)
+
+
 def _system_prompt(ctx: dict) -> str:
     """Byte-identical for a given user and data snapshot, so Ollama can reuse
     the processed prompt. Anything that changes per message (clock, focus on
@@ -1403,6 +1486,7 @@ def _system_prompt(ctx: dict) -> str:
         + (PICKS_MODE_RIDER if ctx.get("mode") == "picks" else LEADERBOARD_MODE_RIDER)
         + "\n\nLEAGUE DATA:\n"
         + render_context(ctx)
+        + picky_player_block(ctx)
         + f"\n\nThe user reading this is \"{you}\": call them 'you'. Everyone "
         "else is 'he' or 'they', by name."
         + (DADDYFREEMAN_RIDER if ctx.get("daddyfreeman") else "")
@@ -1781,6 +1865,8 @@ async def chat(req: Request):
         except httpx.HTTPError as e:
             log.warning("supabase fetch failed: %s", e)
             raise HTTPException(status_code=502, detail="supabase_unreachable")
+        if not ctx.get("error"):
+            ctx["picky_player"] = await picky_player_facts(client, jwt, ctx)
     if not ctx.get("error"):
         ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
     # (re)load the CFBD cache off the event loop; ~3 s only after a refresh

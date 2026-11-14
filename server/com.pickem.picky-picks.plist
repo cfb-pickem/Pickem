@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Picky the player: hourly auto-picks (exhibition team). Each run submits
+  Picky's picks for any pool game whose lock is within 3 hours (regular
+  season: the week's first kickoff; playoffs: each game's kickoff), so the
+  first run in the window lands 2-3h before lock and the next two retry.
+  Never writes after lock, never changes an existing pick. Local Ollama only
+  for the trash-talk lines; reads CFBD from cache, never the API.
+  Install: cp to ~/Library/LaunchAgents and launchctl load it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.picky-picks</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>/Users/Agent/cfb-pickem/server/picky_picks.py</string>
+        <string>run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/picky-picks.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/picky-picks.stderr.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>PICKEM_CHAT_MODEL</key>
+        <string>qwen3.5:9b-q4_K_M</string>
+    </dict>
+</dict>
+</plist>

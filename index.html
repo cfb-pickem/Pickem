@@ -2697,6 +2697,38 @@
       });
 
       paintCovers();
+      appendPickyPlayer(gameIds.map(id => ({ gameId: id, reveal: revealPicks })),
+        !playoffMode && !isTiebreakerView && !isPlayoffView);
+    }
+
+    // Picky the player: an exhibition row under every human, only behind the
+    // pickyOn() flag. It is drawn after the board is finished, below the
+    // projected-playoff line, so it can never move a human or the cut. His team
+    // and picks are invisible to every other read (RLS), so the points and
+    // order above are computed exactly as if he didn't exist.
+    let pickyRenderSeq = 0;
+    function appendPickyPlayer(cells, wanted){
+      const tok = ++pickyRenderSeq;
+      const talk = document.getElementById('picky-talk');
+      if (talk) talk.hidden = true;
+      if (!wanted) return;
+      const week = Number(currentWeek), season = currentSeason;
+      import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
+        if (!pickyOn()) return;
+        const pp = await import('./js/pickyPlayer.js');
+        const pl = await pp.loadPickyPlayer(season);
+        if (!pl || tok !== pickyRenderSeq) return;
+        tbody.appendChild(pp.pickyRow(pl, {
+          points: pp.pickyRecord(pl, { throughWeek: week }).w, cells, logoFor: getLogoForPickExact
+        }));
+        let el = document.getElementById('picky-talk');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'picky-talk';
+          document.getElementById('table-scroll-wrap').after(el);
+        }
+        pp.renderPickyTalk(el, pl, week);
+      }).catch(e => console.warn('picky player unavailable:', e));
     }
 
     // Who has submitted this week.
