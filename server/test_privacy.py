@@ -67,8 +67,21 @@ def test_no_caller_still_strips_everything_unlocked():
 
 # ---- integration: _build_context never emits an unrevealed pick -----------
 
-async def _run_context_privacy_check():
-    """Stub supabase REST calls and assert the output has no unlocked other-user picks."""
+def test_regular_season_week_reveals_together():
+    """Regular season: nothing of anyone else's before the week's first
+    kickoff; everything once any game has started (the leaderboard's rule)."""
+    before = [dict(g, **{"Status": "scheduled", "Start (CT)": NOT_STARTED}) for g in GAMES]
+    out = chat.filter_visible_picks(PICKS, before, caller_team_id=10, now_ct_naive=NOW, whole_week=True)
+    assert all(p["team_id"] == 10 for p in out), f"LEAK before first kickoff: {out}"
+    out = chat.filter_visible_picks(PICKS, GAMES, caller_team_id=10, now_ct_naive=NOW, whole_week=True)
+    assert len(out) == len(PICKS), "week started: every pick should be revealed"
+    assert chat.week_locks_together(11) and not chat.week_locks_together(16) \
+        and not chat.week_locks_together(None)
+
+
+async def _run_context_privacy_check(week: int = 16, first_started: bool = True):
+    """Stub supabase REST calls and assert the output has no unlocked other-user picks.
+    Week 16+ is the playoffs (per-game locks); week <= 15 locks as a week."""
 
     teams = [
         {"team_id": 10, "team_name": "Caller", "user_id": "uuid-caller", "active": True},
@@ -80,10 +93,11 @@ async def _run_context_privacy_check():
     ]
     week_games = [
         {"GameId": 1, "Away": "Illinois", "Home": "Michigan", "line": -3.5,
-         "Status": "final", "winner": "Michigan", "week": 11, "tiebreaker": False,
-         "Start (CT)": STARTED},
+         "Status": "final" if first_started else "scheduled",
+         "winner": "Michigan" if first_started else None, "week": week, "tiebreaker": False,
+         "Start (CT)": STARTED if first_started else NOT_STARTED},
         {"GameId": 2, "Away": "Ohio State", "Home": "Penn State", "line": -6.5,
-         "Status": "scheduled", "winner": None, "week": 11, "tiebreaker": False,
+         "Status": "scheduled", "winner": None, "week": week, "tiebreaker": False,
          "Start (CT)": NOT_STARTED},
     ]
 
@@ -95,8 +109,8 @@ async def _run_context_privacy_check():
         if "order=cfb_season.desc" in path:
             return [{"cfb_season": 2026}]
         if "Status=neq.final" in path and "order=week.asc" in path:
-            return [{"week": 11, "Status": "scheduled"}]
-        if "week=eq.11" in path and "GameId" in path:
+            return [{"week": week, "Status": "scheduled"}]
+        if f"week=eq.{week}" in path and "GameId" in path:
             return week_games
         if "picks?select=team_id,game_id,pick,by_slots,jackpot" in path:
             return [
@@ -119,9 +133,16 @@ async def _run_context_privacy_check():
     revealed = ctx["revealed_picks_this_week"]
     # Caller sees own picks (locked and unlocked)
     assert any(p["game_id"] == 2 for p in revealed.get("Caller", [])), "caller own pick dropped"
-    # Rival's unrevealed pick for game 2 must NOT be there
-    for pick in revealed.get("Rival", []):
-        assert pick["game_id"] != 2, f"LEAK: rival unrevealed pick in context: {pick}"
+    rival = {p["game_id"] for p in revealed.get("Rival", [])}
+    if week <= chat.REGULAR_SEASON_LAST_WEEK and first_started:
+        # the week has started: the site shows every pick, so may Picky
+        assert rival == {1, 2}, f"week started, rival picks should be revealed: {rival}"
+    elif week <= chat.REGULAR_SEASON_LAST_WEEK:
+        assert not rival, f"LEAK: rival pick before the week's first kickoff: {rival}"
+        assert "first kickoff" in chat.render_context(ctx), "unlock time should be the week's first kickoff"
+    else:
+        # playoffs: game 1 started, game 2 hasn't
+        assert 2 not in rival, f"LEAK: rival unrevealed pick in context: {rival}"
     # Submission-status leak check: no "teams_not_picked_yet_this_week" key
     assert "teams_not_picked_yet_this_week" not in ctx, "submission status leaked"
     # Caller's own submission bool is fine
@@ -129,7 +150,9 @@ async def _run_context_privacy_check():
 
 
 def test_build_context_never_leaks_unrevealed():
-    asyncio.run(_run_context_privacy_check())
+    asyncio.run(_run_context_privacy_check(week=16))                       # playoffs, per game
+    asyncio.run(_run_context_privacy_check(week=11, first_started=False))  # regular, before
+    asyncio.run(_run_context_privacy_check(week=11, first_started=True))   # regular, week started
 
 
 # ---- runner ---------------------------------------------------------------
@@ -138,6 +161,7 @@ if __name__ == "__main__":
     tests = [
         test_filter_strips_unrevealed_other_picks,
         test_no_caller_still_strips_everything_unlocked,
+        test_regular_season_week_reveals_together,
         test_build_context_never_leaks_unrevealed,
     ]
     failed = 0

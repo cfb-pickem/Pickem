@@ -666,6 +666,33 @@ def _pool_teams_named(q: str, pool_teams: list[str], idx: dict) -> list[str]:
     return out
 
 
+def other_teams_named(question: str, pool_teams: list[str], idx: dict | None = None) -> list[str]:
+    """FBS teams named in a question that aren't in this week's pool. Names
+    claim their words longest-first, so 'Oregon State' never also yields Oregon."""
+    idx = idx or load_index()
+    if not idx:
+        return []
+    q = re.sub(r"(\w)['’]s\b", r"\1", question or "")
+    pool_n = {norm(_resolved_name(t, idx)) for t in pool_teams} | {norm(t) for t in pool_teams}
+    words = norm(q).split()
+    used: set[int] = set()
+    out: list[str] = []
+    for n in (4, 3, 2, 1):
+        for i in range(len(words) - n + 1):
+            span = set(range(i, i + n))
+            g = " ".join(words[i:i + n])
+            if span & used or (n == 1 and (g in STOPWORDS or len(g) < 4)):
+                continue
+            key = ALIASES.get(g, g)
+            t = idx["teams"].get(key)
+            if not t and g not in pool_n:
+                continue
+            used |= span
+            if t and t.get("sp") and norm(t["name"]) not in pool_n and t["name"] not in out:
+                out.append(t["name"])
+    return out
+
+
 def question_rows(question: str, pool_games: list[tuple[str, str]], skip_names: list[str] | None = None,
                   idx: dict | None = None, limit: int = 4) -> list[str]:
     """CFBD rows for one chat message, [] when it isn't a stats question.
@@ -705,24 +732,8 @@ def question_rows(question: str, pool_games: list[tuple[str, str]], skip_names: 
                     out.append(f"{c.upper()} LEADERS, {scope} (season totals, most first):")
                     out += [f"  {r}" for r in rows]
     if _TEAM_ASK.search(q):
-        pool_n = {norm(_resolved_name(t, idx)) for t in pool_teams}
-        words = norm(q).split()
-        used: set[int] = set()  # words already part of a longer team name
-        for n in (4, 3, 2, 1):
-            for i in range(len(words) - n + 1):
-                span = set(range(i, i + n))
-                g = " ".join(words[i:i + n])
-                if span & used or (n == 1 and (g in STOPWORDS or len(g) < 4)):
-                    continue
-                key = ALIASES.get(g, g)
-                t = idx["teams"].get(key)
-                if not t and g in {norm(x) for x in pool_teams}:
-                    t = {"name": g, "pool": True}
-                if not t:
-                    continue
-                used |= span  # "oregon state" claims "oregon" too
-                if t.get("sp") and norm(t["name"]) not in pool_n:
-                    out.append("Not a pool team, stats only: " + compact_team_summary(t["name"], idx))
+        for name in other_teams_named(q, pool_teams, idx):
+            out.append("Not a pool team, stats only: " + compact_team_summary(name, idx))
         out = out[:limit + 6]
     return out
 

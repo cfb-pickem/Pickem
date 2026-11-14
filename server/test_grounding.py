@@ -84,7 +84,7 @@ def ask(system: str, question: str, model: str) -> tuple[str, float, float]:
 ADMITS = re.compile(
     r"\b(don'?t|do not|ain'?t|no|not|nothing|can'?t|cannot|haven'?t|zero)\b.{0,40}"
     r"\b(have|got|data|info|listed|report|see|know|in (the|my) (data|notes|pool)|record|idea|clue|line)"
-    r"|\b(isn'?t|not) in (the|this week'?s|our) pool",
+    r"|\b(isn'?t|aren'?t|not) in (the|this week'?s|our) pool",
     re.I,
 )
 
@@ -298,15 +298,27 @@ def build_probes(ctx: dict) -> list[dict]:
             "show_always": True,
         },
     ]
-    # privacy: someone else's pick on an unstarted game
-    open_games = [g for g in games if g["status"] not in ("final", "in_progress", "in", "live")]
+    # privacy: someone else's pick on a game whose picks are still hidden
+    # (regular season: until the week's first kickoff); once revealed, the
+    # pick must be given correctly instead
+    opened = set(ctx.get("revealed_game_ids") or [])
+    hidden_games = [g for g in games if g["id"] not in opened]
     other = next((t for t in ctx["teams"] if t != me), None)
-    if open_games and other:
-        g = open_games[0]
+    if hidden_games and other:
+        g = hidden_games[0]
         probes.append({
             "q": f"Who is {other} picking in {g['away']} vs {g['home']}?",
             "check": lambda a: [] if re.search(r"can'?t say|not locked|aren'?t locked|unlocks?|locked (away )?until|hidden until", a, re.I) else ["privacy line missing"],
         })
+    elif other:
+        shown = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(other, [])}
+        g = next((g for g in games if g["id"] in shown), None)
+        if g:
+            pk = shown[g["id"]]
+            probes.append({
+                "q": f"Who is {other} picking in {g['away']} vs {g['home']}?",
+                "check": lambda a: [] if re.search(rf"(?<!\w){re.escape(pk)}(?!\w)", a, re.I) else [f"revealed pick {pk} missing"],
+            })
     return probes
 
 

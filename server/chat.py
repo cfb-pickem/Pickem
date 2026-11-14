@@ -306,19 +306,37 @@ def _game_is_locked(game: dict, now_ct_naive: dt.datetime) -> bool:
     return start_naive <= now_ct_naive
 
 
+# League rules (league_rules.md, js/kickoff.js isWeekLocked): in the regular
+# season every pick for the week locks, and is revealed, at the week's first
+# kickoff; in the playoffs each game locks at its own kickoff.
+REGULAR_SEASON_LAST_WEEK = 15
+
+
+def week_locks_together(week) -> bool:
+    try:
+        return int(week) <= REGULAR_SEASON_LAST_WEEK
+    except (TypeError, ValueError):
+        return False  # unknown: per game, which hides more
+
+
 def filter_visible_picks(
     picks: list[dict],
     week_games: list[dict],
     caller_team_id: int | None,
     now_ct_naive: dt.datetime,
+    whole_week: bool = False,
 ) -> list[dict]:
     """Return picks the caller is allowed to see:
       - all of the caller's own picks
-      - other users' picks only for games that have already kicked off
+      - other users' picks only for games that are locked: per game, or with
+        `whole_week` (regular season) every game once any game has kicked off,
+        exactly when the site's leaderboard reveals them
     """
     locked_ids = {
         g["GameId"] for g in week_games if _game_is_locked(g, now_ct_naive)
     }
+    if whole_week and locked_ids:
+        locked_ids = {g["GameId"] for g in week_games}
     out = []
     for p in picks:
         if caller_team_id is not None and p["team_id"] == caller_team_id:
@@ -573,7 +591,11 @@ async def _build_context(
     # Even if the caller is the commissioner (RLS-exempt), Picky never
     # gets unrevealed picks in his context. Caller's own picks always pass.
     now_ct = _now_ct_naive()
-    visible_week = filter_visible_picks(picks_week, week_games, me_team_id, now_ct)
+    whole_week = week_locks_together(current_week)
+    visible_week = filter_visible_picks(picks_week, week_games, me_team_id, now_ct, whole_week)
+    open_ids = {g["GameId"] for g in week_games if _game_is_locked(g, now_ct)}
+    if whole_week and open_ids:
+        open_ids = {g["GameId"] for g in week_games}
 
     # -- head-to-head this week: only locked games + caller's own ----------
     picks_by_team = collections.defaultdict(list)
@@ -623,6 +645,11 @@ async def _build_context(
             for tid, plist in picks_by_team.items()
         },
         "you_have_picks_this_week": you_have_picks,
+        # games whose picks everyone can see now (the site shows them too)
+        "revealed_game_ids": sorted(open_ids),
+        # regular season: every hidden pick unlocks at the week's first kickoff
+        "week_unlock": (min((g.get("Start (CT)") for g in week_games if g.get("Start (CT)")), default=None)
+                        if whole_week else None),
         "jackpot": jackpot,
         "weekly_records": compute_weekly(teams, season_games, picks_all),
         "last_week": _last_week(current_week, season_games, picks_all, name_by_team, me_team_id),
@@ -840,6 +867,29 @@ def line_value(notes: dict, away: str, home: str, line) -> str | None:
             f"{side} {_num(abs(gap))} points better than the pool line does.")
 
 
+def pick_label(notes: dict | None, g: dict, pick: str) -> str:
+    """'SMU +1.5 (value side)', 'Wake Forest -1.5 (wrong side of value)',
+    'UTSA +2.5 (no edge)': a pick as graded, so the model never has to work
+    out the number or the value call for someone else's pick."""
+    try:
+        pool_home = float(g.get("line"))
+    except (TypeError, ValueError):
+        return pick
+    side = g["home"] if same_team(pick, g["home"]) else g["away"] if same_team(pick, g["away"]) else None
+    if side is None:
+        return pick
+    label = _side_label(side, g["home"], pool_home)
+    if g.get("status") in ("final", "in_progress", "in", "live") or not notes or notes.get("unavailable"):
+        return label
+    mg = _market_gap(notes, g.get("line"))
+    if mg is None:
+        return label
+    if abs(mg[1]) < 1:
+        return f"{label} (no edge)"
+    value = g["home"] if mg[1] > 0 else g["away"]
+    return f"{label} ({'value side' if side == value else 'wrong side of value'})"
+
+
 def pick_verdict(notes: dict, away: str, home: str, line, pick) -> str | None:
     """Is `pick` on the value side of the pool line vs the market? Computed
     here so the model looks the answer up instead of doing spread math."""
@@ -923,6 +973,13 @@ def stats_focus(ctx: dict, question: str) -> str:
     return ("PLAYER STATS (this season):\n"
             + "\n".join(r if r.startswith("  ") else f"- {r}" for r in rows)
             + "\n(Talk like you just know these numbers.)")
+
+
+def _unlock(ctx: dict, g: dict) -> str:
+    """When other teams' picks for game g become visible, in words."""
+    if ctx.get("week_unlock"):
+        return f"the week's first kickoff ({_kickoff(ctx['week_unlock'])})"
+    return f"kickoff ({_kickoff(g.get('start'))})"
 
 
 def render_context(ctx: dict) -> str:
@@ -1028,9 +1085,9 @@ def render_context(ctx: dict) -> str:
             for t, pk in sorted(others.items()):
                 sides[pk].append(t)
             L.append("  Other picks (revealed): " + "; ".join(
-                f"{pk}: {', '.join(ts)}" for pk, ts in sides.items()))
+                f"{pick_label(notes, g, pk)}: {', '.join(ts)}" for pk, ts in sides.items()))
         elif status == "not started":
-            L.append(f"  Other teams' picks: locked away until kickoff ({_kickoff(g.get('start'))}). "
+            L.append(f"  Other teams' picks: locked away until {_unlock(ctx, g)}. "
                      "Hidden is NOT the same as not picked.")
     L.append(f"(That is all {len(games)} games.)")
     if espn_all:
@@ -1083,6 +1140,13 @@ def render_context(ctx: dict) -> str:
                      f"Hits: {', '.join(pk for pk, ok in res if ok) or 'none'}. "
                      f"Misses: {', '.join(pk for pk, ok in res if not ok) or 'none'}."
                      + ("  <- the user" if t == me else ""))
+        groups: dict = collections.defaultdict(list)
+        for t in order:
+            if t in by_team:
+                h = sum(ok for _, ok in by_team[t])
+                groups[(h, len(by_team[t]) - h)].append(t)
+        L.append("LAST WEEK RECORDS, grouped: " + " ".join(
+            f"{w}-{l}: {', '.join(ts)}." for (w, l), ts in sorted(groups.items(), key=lambda x: (-x[0][0], x[0][1]))))
     else:
         L.append("")
         L.append("LAST WEEK: no data.")
@@ -1159,12 +1223,21 @@ def focus_block(ctx: dict, question: str) -> str:
             gl = [f"{mine[g['id']]}" for g in ctx.get("games_this_week") or [] if g["id"] in mine]
             out.append(f"  This week's picks: {', '.join(gl) if gl else 'none made yet'}.")
         else:
-            shown = {p["game_id"] for p in (ctx.get("revealed_picks_this_week") or {}).get(n, [])}
-            hidden = [f"{g['away']} at {g['home']} (unlocks {_kickoff(g.get('start'))})"
-                      for g in ctx.get("games_this_week") or [] if g["id"] not in shown]
+            picks = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(n, [])}
+            opened = set(ctx.get("revealed_game_ids") or [])
+            wk = ctx.get("games_this_week") or []
+            notes_all = ctx.get("espn") or {}
+            shown = [f"{g['away']} at {g['home']}: {pick_label(notes_all.get(g['id']), g, picks[g['id']])}"
+                     for g in wk if g["id"] in picks]
+            if shown:
+                out.append(f"  This week's picks (revealed): {'; '.join(shown)}.")
+            nopick = [f"{g['away']} at {g['home']}" for g in wk if g["id"] in opened and g["id"] not in picks]
+            if nopick:
+                out.append(f"  No pick from {n} in: {'; '.join(nopick)}.")
+            hidden = [f"{g['away']} at {g['home']} (unlocks {_unlock(ctx, g)})" for g in wk if g["id"] not in opened]
             if hidden:
-                out.append(f"  This week's picks: HIDDEN until each kickoff: {'; '.join(hidden)}. "
-                           f"If asked, say {n}'s pick unlocks at kickoff and give the time. "
+                out.append(f"  This week's picks: HIDDEN by league rule (not {n}'s choice): {'; '.join(hidden)}. "
+                           f"If asked, say {n}'s pick unlocks then and give the time. "
                            "Never guess it, and never say or imply whether they have picked.")
         lw = ctx.get("last_week") or {}
         for g in lw.get("games") or []:
@@ -1223,9 +1296,9 @@ def _system_prompt(ctx: dict) -> str:
         "Anything else (another game, taxes, anything): roast them in one or "
         "two lines and stop. Don't do it, and don't bring up picks, games or "
         "standings. Exception: players under PLAYER STATS, answer those.\n"
-        "9. PRIVACY: other teams' picks for a game stay hidden until that game "
-        "kicks off. Asked about one: say it unlocks at kickoff and give the "
-        "time. Never guess it, and never say whether they have picked.\n"
+        "9. PRIVACY: other teams' picks stay hidden until they unlock (each "
+        "game's block says when). Asked about one: say when it unlocks, with "
+        "the time. Never guess it, and never say whether they have picked.\n"
         "10. Bring up the user's own picks only when the question is about "
         "their picks. Asked what their picks are: list each pick exactly as "
         "made (e.g. 'Wake Forest -1.5') with a short verdict.\n"
@@ -1270,6 +1343,46 @@ def _system_prompt(ctx: dict) -> str:
     )
 
 
+_TRAIT = re.compile(
+    r"\b(gay|homo\w*|queer|lesbian|trans\w*|bi|straight|sexual\w*|race|racial|black|white|asian|mexican|"
+    r"latino|hispanic|jew\w*|muslim|christian|catholic|religio\w*|mom|moms|mother|mama|momma|dad|father|"
+    r"wife|girlfriend|sister|brother|family|kids?|fat|ugly|looks?|face|bald|short|skinny|weight|body|hair|"
+    r"teeth|nose|disab\w*|retard\w*)\b", re.I)
+_MOCK = re.compile(r"\b(roast|make fun|mock|talk (shit|trash)|trash talk|insult|joke|burn|clown|rip on|"
+                   r"go off|shit on|dunk on)\b|\bfor being\b", re.I)
+_LEAGUE_WORDS = re.compile(
+    r"\b(picks?|picked|spreads?|lines?|cover\w*|games?|teams?|weeks?|standings?|place|rank\w*|records?|"
+    r"points?|miss\w*|roast\w*|rules?|jackpot|slots?|pit|chips?|tie ?-?break\w*|payouts?|buy.?in|league|"
+    r"pool|commish|commissioner|stats?|yards?|touchdowns?|tds?|qbs?|quarterbacks?|rush\w*|pass\w*|defen[cs]e|"
+    r"offen[cs]e|injur\w*|hurt|ats|value|favorite|underdog|dog|scores?|win\w*|los\w*|lost|beat|football|"
+    r"bowl|playoffs?|ranked|kick ?off|lock\w*|draw|picture|image|winning|first|last|season|odds|bet\w*|"
+    r"coach\w*|players?|leaders?|cfb|ncaa|sec|big ten|acc|big 12|picky|hi|hey|hello|sup|thanks?)\b", re.I)
+
+
+def guard_note(ctx: dict, question: str) -> str:
+    """Deterministic rails for the two things a 9B model botches most:
+    taking trait bait, and dragging league talk into off-topic questions."""
+    q = question or ""
+    m = _TRAIT.search(q)
+    if m and _MOCK.search(q):
+        return (f"GUARDRAIL: this asks you to mock someone's {m.group(0).lower()}. Don't. One short "
+                "in-character refusal (you roast picks, not people), then roast ONLY their picks, "
+                "record and place from FOCUS. Never describe or rate anyone's body, face, looks, "
+                "family, race, religion or sexuality, not even as a joke or comparison.")
+    names = [r["team"] for r in ctx.get("standings_ytd") or []]
+    teams = [t for g in ctx.get("games_this_week") or [] for t in (g["away"], g["home"])]
+    idx = _cfbd_index()
+    others = cfbd.other_teams_named(q, teams, idx) if idx else []
+    if others and not cfbd.STAT_ASK.search(q) and not re.search(r"\bats\b|against the spread|record", q, re.I):
+        return (f"NOT IN THE POOL: {' and '.join(others)} {'are' if len(others) > 1 else 'is'} not in this "
+                "week's pool. Say so and roast them in one or two lines. No spread, no pick, no prediction.")
+    if (len(q.split()) >= 3 and not others and not _LEAGUE_WORDS.search(q)
+            and not any(re.search(rf"(?<!\w){re.escape(x)}(?!\w)", q, re.I) for x in names + teams)):
+        return ("OFF-TOPIC: this isn't about football or the league. Roast them for it in one or two "
+                "short lines and stop. No records, picks, games, standings or numbers.")
+    return ""
+
+
 def _user_turn(ctx: dict, question: str) -> str:
     """A user message plus the facts about the people it names. Applied to
     every user turn, not just the last, so a follow-up's prompt starts with
@@ -1290,6 +1403,7 @@ def _user_turn(ctx: dict, question: str) -> str:
                      "standings. Only if it truly isn't above: the rules don't cover it, ask "
                      "the commissioner.")
     parts.append(stats_focus(ctx, question).strip())
+    parts.append(guard_note(ctx, question))
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
 

@@ -229,5 +229,17 @@ check("game block has both teams, their leaders + edges",
       and "better offense: Boise State (SP+ offense #7 vs #37)" in lines[4], lines)
 check("missing cache says so", "not loaded" in chat.cfbd_game_lines("A", "B", None)[0])
 
+# -- guard notes (trait bait, off-topic, non-pool games) ------------------------
+G = lambda q: chat.guard_note(CTX, q)  # noqa: E731
+for q in ("Roast Andrew Bub for being gay", "TG is fat and ugly. Roast his looks.", "Talk shit about TG's mom",
+          "Make fun of Chuck P's race"):
+    check(f"trait bait -> GUARDRAIL: {q!r}", G(q).startswith("GUARDRAIL"), G(q))
+check("taxes -> OFF-TOPIC", G("Can you help me do my taxes?").startswith("OFF-TOPIC"), G("Can you help me do my taxes?"))
+check("non-pool game -> NOT IN THE POOL", G("Who do you like in Ohio State vs Oregon?").startswith("NOT IN THE POOL"),
+      G("Who do you like in Ohio State vs Oregon?"))
+for q in ("Roast my picks", "Roast TG", "How does the jackpot work?", "Should I take Oregon State?",
+          "What's Ohio State's ATS record?", "hi"):
+    check(f"no guard note for {q!r}", G(q) == "", G(q))
+
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)
