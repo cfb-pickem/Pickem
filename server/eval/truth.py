@@ -58,10 +58,12 @@ class Truth:
         chat._auth_headers = lambda _jwt: {"apikey": key, "Authorization": f"Bearer {key}"}
         async with httpx.AsyncClient() as c:
             self.teams = await chat._rest_get(
-                c, "teams?select=team_id,team_name,user_id,active&order=team_name.asc", "x")
+                c, "teams?select=team_id,team_name,user_id,active&is_exhibition=is.false&order=team_name.asc", "x")
             # Same assembly as /chat, as Charlie (for standings, last week, games).
             self.ctx = await chat._build_context(c, "x", CHARLIE_UID)
             ids = [g["id"] for g in self.ctx["games_this_week"]]
+            # Picky the player's own revealed picks (same call /chat makes).
+            self.picky = await chat.picky_player_facts(c, "x", self.ctx)
             # Raw, unfiltered week picks: leak detection only.
             self._all_week_picks = await chat._rest_get(
                 c, f"picks?select=team_id,game_id,pick&game_id=in.{chat._in_ids(ids)}", "x") if ids else []

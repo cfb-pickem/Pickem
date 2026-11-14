@@ -515,7 +515,9 @@ async def _build_context(
     # Pull in parallel — these are independent.
     teams_t = _rest_get(
         client,
-        "teams?select=team_id,team_name,user_id,active&order=team_name.asc",
+        # is_exhibition=is.false: RLS already hides Picky the player from a
+        # user's JWT; this makes service-key callers (exam, tests) match.
+        "teams?select=team_id,team_name,user_id,active&is_exhibition=is.false&order=team_name.asc",
         jwt,
     )
     jackpot_t = _rest_get(
@@ -602,6 +604,10 @@ async def _build_context(
     me_team_id = me["team_id"] if me else None
     me_name = me["team_name"] if me else "(you)"
     name_by_team = {t["team_id"]: t["team_name"] for t in teams}
+    # Exhibition picks (Picky the player) never feed the league context; RLS
+    # hides them from user JWTs, and this does the same for service-key reads.
+    picks_week = [p for p in picks_week if p["team_id"] in name_by_team]
+    picks_all = [p for p in picks_all if p["team_id"] in name_by_team]
 
     # -- PRIVACY: hide unrevealed picks before anything else touches them ---
     # Even if the caller is the commissioner (RLS-exempt), Picky never
