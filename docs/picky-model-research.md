@@ -403,3 +403,38 @@ Charlie: "Picky should love Bo Nix (greatest college QB ever) and not really lik
 - **Tests:** `test_opinions.py` (5, deterministic). There are 5 new exam items in a new `opinions` category (not gated): opinion-goat-qb, opinion-nix-overrated, opinion-freeman, opinion-nd-back and opinion-freeman-credit. Each checks that every number in the answer is from the rider.
 - **Light pass against live (league in-game):** op-run1 had 7 questions. The pool question and the Freeman answers were fine, but the GOAT answer said Nix was "not the greatest ever" and the credit follow-up dragged in picks. op-run2 re-asked 4 after the fixes, and all were on-message with only rider facts. Example: "Bo Nix is the greatest college quarterback ever. Period. He has 61 career starts, the most by any quarterback in FBS history..." The full exam runs overnight.
 - **Pre-existing, not touched:** offtopic-taxes as Chuck dragged in records (the Dear Leader caller rider, whose prompt is unchanged). test_grounding's "leader not named" missed "You, the Glorious Dear Leader, sit alone atop".
+
+## Incident 2026-11-14: Load failed
+
+**Symptom (game night, ~4:30 PM CT):** members saw "Picky shit the bed: Load failed" (Safari) or "Shit went sideways. Try again." No JS errors and no cache mismatch.
+
+**Cause:** two problems stacked.
+1. *No bytes until the first token.* The text chat stream sent nothing until Ollama's first token (only the image path sent keepalives). Cloudflare drops a tunnel request that has sent no bytes for 100 s, returning a 524 without CORS headers, so the browser reported a network failure.
+2. *Every question reprocessed the whole prompt.* qwen3.5 is a hybrid (recurrent) model, and llama.cpp can't rewind its cache to an arbitrary prefix: the log says "forcing full prompt re-processing due to lack of cache data (hybrid/recurrent memory)". It can only restore a saved checkpoint, and it saves those just near the end of each prompt. The ~7.7k-token prompt also had per-user lines all through LEAGUE DATA ("The user is...", "<- the user", the caller's picks inside each game), so members shared only the ~1.6k-token instruction head. Result: every question ran a full ~7.7k-token eval at ~190 tok/s (~40 s), and with `OLLAMA_NUM_PARALLEL=3` three requests split the GPU (first tokens 45/80/80 s; a 4th hit 95 s). An identical prompt was a 0.2 s cache hit, so the earlier ~3 s exam medians were mostly same-user follow-ups.
+
+**Fix:**
+- *Keepalive* (703481d): `_keepalive` sends `: ping` right away and after every 15 s of silence. picky.js already skipped non-`data:` frames and now keeps the typing dots until real content arrives. The Ollama read timeout went from 120 s to 240 s to cover queue time. Verified: 4 concurrent requests through the tunnel all completed, one with a 94.6 s first token and 105.7 s total, no 524.
+- *Shared prefix + checkpoint priming* (2410d07): `render_context` is viewer-neutral. The caller's own rows (place, picks + value checks, last week, has-picked), the jackpot count (it changes with every slot pull), rivals and the mode rider moved to a tail (`you_block` / `_system_tail`). `prompt_prefix()` (instructions + LEAGUE DATA + Picky-player block) is byte-identical for every member: one distinct prefix across 4 personas. Before each chat request, `_prime` sends that prefix alone as a raw prompt (`<|im_start|>system\n` + prefix, num_predict 1), which leaves a checkpoint at its end, so the real request evaluates only the ~1k-token tail. When the checkpoint is already there the prime costs ~0.1 s. It rebuilds once (~30-35 s) after the prefix changes (kickoff, final, ESPN's 10-minute refresh) or the model reloads (image gen unloads it). Riders (Dear Leader, Nix/Freeman, ND) stay in the user turn and never touch the prefix.
+- *Ollama `OLLAMA_NUM_PARALLEL` 3 → 1* in `~/Library/LaunchAgents/com.dcc.ollama.plist` (Ollama runs from this plist, not the Homebrew service; backup in /Users/Agent/cfb-pickem-backups/). With 3 slots, requests landed in slots without the checkpoint and paid the full 47 s. With 1, every request hits the slot holding it. This affects other local tools on the shared Ollama: their requests now queue instead of running in parallel.
+- *Frontend* (4201342): after 10 s with no words, the bubble says "Hold your horses, I'm answering the other dipshits first. You're in line". A network failure before any content retries once quietly, then shows "Picky's swamped, try again in a sec."
+- num_ctx 16384 vs ~8-9k-token prompts is fine. keep_alive is 30m per request, so the model stays loaded on busy nights.
+
+**Before → after (through the tunnel, real data, live league traffic):**
+
+| | before | after |
+|---|---|---|
+| warm single request, first token | ~40-45 s (prompt eval 39.8 s for 7,696 tokens) | 6.2-7.2 s (prompt eval ~5 s) |
+| 3 concurrent, first tokens | 45 / 80 / 80 s | 3.9 / 16.0 / 25.7 s |
+| same code at NUM_PARALLEL=3, 3 concurrent | n/a | 21 / 49 / 49 s (slot misses) |
+| first request after a data change | ~40 s | ~35-45 s (one rebuild, then fast) |
+
+**Answers didn't regress:** all unit tests green (privacy, standings, rules, picky_player, leader, opinions, daddyfreeman, cfbd, eval test_checks). 10 exam items through the tunnel (inc1: my record, my pick vs market, change-picks multi-turn, last week, has-picked, jackpot rules, DaddyFreeman roast, roast my picks, Dear Leader self + roast bait): zero gates, all answers checked correct.
+
+**Watch:** the first question after a kickoff/final/ESPN refresh still waits ~35 s, and requests behind it queue (keepalive and "you're in line" cover that). A next step would be ordering LEAGUE DATA by volatility (last week, then standings, then ESPN game blocks) with a second checkpoint, so a refresh rebuilds only the tail end.
+
+## Notre Dame + independents bias (2026-11-14, night)
+
+Charlie: "Picky should have a MAJOR bias towards ND. He loves ND AND INDEPENDENTS." `HOMER_RIDER` rides in the user turn only on topic: Notre Dame/Irish/ND (case-sensitive ND), UConn, independents, "your favorite team", "who do you root for", or a pool game with an independent. It is never in the cached prefix. 2026 FBS independents were verified from the CFBD 2026 FBS datasets (advanced and SP+): Notre Dame and UConn. With the Freeman rider, the line is that the program is elite in spite of him. Opinion only: lines, records, value calls and pick advice follow the data, and `picky_picks.py` is untouched (test_opinions checks that).
+
+- nd1 (first rider) hedged: "I don't have a favorite team...", and said "There is no UConn football in this league's data" because rule 2 bit. nd2 (the rider says ND is his team, no hedging, and that both are real FBS programs; no pool talk unless asked) fixed both. Live: "Notre Dame, dipshit. That FBS independent is elite despite Marcus Freeman's home losses to Marshall, NIU, and Stanford. UConn is the other independent, and we love them for refusing to join a conference."
+- Exam: opinion-nd-back now checks for hype (it used to require Freeman's losses); new items opinion-fav-team and opinion-uconn.
