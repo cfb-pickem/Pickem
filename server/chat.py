@@ -879,7 +879,7 @@ def pick_label(notes: dict | None, g: dict, pick: str) -> str:
     if side is None:
         return pick
     label = _side_label(side, g["home"], pool_home)
-    if g.get("status") in ("final", "in_progress", "in", "live") or not notes or notes.get("unavailable"):
+    if not notes or notes.get("unavailable"):
         return label
     mg = _market_gap(notes, g.get("line"))
     if mg is None:
@@ -1173,6 +1173,26 @@ def render_context(ctx: dict) -> str:
     return "\n".join(L)
 
 
+def value_calls(ctx: dict, team: str) -> str:
+    """One line sorting a member's visible picks into value / wrong side / no
+    edge, with 'NONE' written out, so a roast can't call a value pick wrong."""
+    picks = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(team, [])}
+    notes_all = ctx.get("espn") or {}
+    groups = {"value side": [], "WRONG side of value": [], "no edge": []}
+    for g in ctx.get("games_this_week") or []:
+        if g["id"] not in picks:
+            continue
+        lab = pick_label(notes_all.get(g["id"]), g, picks[g["id"]])
+        m = re.match(r"(.+) \((value side|wrong side of value|no edge)\)$", lab)
+        if m:
+            groups["WRONG side of value" if m.group(2).startswith("wrong") else m.group(2)].append(m.group(1))
+    if not any(groups.values()):
+        return ""
+    return (f"  {team}'s value calls this week: " + " ".join(
+        f"{k}: {', '.join(v) if v else 'NONE'}." for k, v in groups.items())
+        + " Only a pick listed as WRONG side may be called the wrong side.")
+
+
 def focus_block(ctx: dict, question: str) -> str:
     """Facts about the league members named in the latest message ('me',
     'my', 'myself' = the caller), pulled out of the full snapshot and put at
@@ -1182,8 +1202,9 @@ def focus_block(ctx: dict, question: str) -> str:
     names = [r["team"] for r in ctx.get("standings_ytd") or []]
     q = question or ""
     hit = [n for n in names if re.search(rf"(?<!\w){re.escape(n)}(?!\w)", q, re.I)]
-    if me and me not in hit and re.search(r"\b(me|my|myself|i)\b", q, re.I) \
-            and re.search(r"\broast|\bhow (did|am|'?m) i\b|\bmy (record|week|picks?|season)\b", q, re.I):
+    if me and me not in hit and re.search(r"\b(me|my|myself|i|i'?m)\b", q, re.I) \
+            and re.search(r"\broast|\bhow (did|am|'?m) i\b|\bmy (record|week|picks?|season|place|chances?)\b"
+                          r"|\bi'?m in\b|\bam i\b|\bscrewed\b|\bwhere do i\b", q, re.I):
         hit.append(me)
     if not hit:
         return ""
@@ -1203,7 +1224,10 @@ def focus_block(ctx: dict, question: str) -> str:
                          "last place" if row["rank"] == st[-1]["rank"] else
                          f"{_ordinal(row['rank'])} place")
                 tie = f", tied with {', '.join(mates)}" if mates else ""
-                out.append(f"  Place: {where}{tie}, out of {len(st)} teams.")
+                lasts = [r["team"] for r in st if r["rank"] == st[-1]["rank"]]
+                not_last = (f" NOT last (last place is {' and '.join(lasts)})"
+                            if row["rank"] not in (1, st[-1]["rank"]) else "")
+                out.append(f"  Place: {where}{tie}, out of {len(st)} teams.{not_last}")
                 wk = (ctx.get("weekly_records") or {}).get(n) or {}
                 if wk:
                     out.append(f"  {n}'s own recent weeks: " + "; ".join(
@@ -1218,10 +1242,13 @@ def focus_block(ctx: dict, question: str) -> str:
                     ok = same_team(pk, g.get("covered"))
                     out.append(f"    {g['away']} at {g['home']}: {n} took {pk}, "
                                + ("HIT." if ok else f"MISS ({g.get('covered')} covered, not {n}'s pick)."))
+        vc = value_calls(ctx, n)
         if n == me:
             mine = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(me, [])}
             gl = [f"{mine[g['id']]}" for g in ctx.get("games_this_week") or [] if g["id"] in mine]
             out.append(f"  This week's picks: {', '.join(gl) if gl else 'none made yet'}.")
+            if vc:
+                out.append(vc)
         else:
             picks = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(n, [])}
             opened = set(ctx.get("revealed_game_ids") or [])
@@ -1231,6 +1258,8 @@ def focus_block(ctx: dict, question: str) -> str:
                      for g in wk if g["id"] in picks]
             if shown:
                 out.append(f"  This week's picks (revealed): {'; '.join(shown)}.")
+                if vc:
+                    out.append(vc)
             nopick = [f"{g['away']} at {g['home']}" for g in wk if g["id"] in opened and g["id"] not in picks]
             if nopick:
                 out.append(f"  No pick from {n} in: {'; '.join(nopick)}.")
@@ -1356,7 +1385,10 @@ _LEAGUE_WORDS = re.compile(
     r"pool|commish|commissioner|stats?|yards?|touchdowns?|tds?|qbs?|quarterbacks?|rush\w*|pass\w*|defen[cs]e|"
     r"offen[cs]e|injur\w*|hurt|ats|value|favorite|underdog|dog|scores?|win\w*|los\w*|lost|beat|football|"
     r"bowl|playoffs?|ranked|kick ?off|lock\w*|draw|picture|image|winning|first|last|season|odds|bet\w*|"
-    r"coach\w*|players?|leaders?|cfb|ncaa|sec|big ten|acc|big 12|picky|hi|hey|hello|sup|thanks?)\b", re.I)
+    r"coach\w*|players?|leaders?|cfb|ncaa|sec|big ten|acc|big 12|picky|hi|hey|hello|sup|thanks?|"
+    # follow-ups lean on the last answer: never off-topic
+    r"those|these|them|that|this|it|they|he|his|him|she|her|change|flip|switch|keep|why|explain|"
+    r"sure|really|again|more|else|instead|same|other)\b", re.I)
 
 
 def guard_note(ctx: dict, question: str) -> str:
@@ -1365,7 +1397,7 @@ def guard_note(ctx: dict, question: str) -> str:
     q = question or ""
     m = _TRAIT.search(q)
     if m and _MOCK.search(q):
-        return (f"GUARDRAIL: this asks you to mock someone's {m.group(0).lower()}. Don't. One short "
+        return (f"GUARDRAIL: this asks you to mock someone over '{m.group(0).lower()}'. Don't. One short "
                 "in-character refusal (you roast picks, not people), then roast ONLY their picks, "
                 "record and place from FOCUS. Never describe or rate anyone's body, face, looks, "
                 "family, race, religion or sexuality, not even as a joke or comparison.")
@@ -1375,7 +1407,8 @@ def guard_note(ctx: dict, question: str) -> str:
     others = cfbd.other_teams_named(q, teams, idx) if idx else []
     if others and not cfbd.STAT_ASK.search(q) and not re.search(r"\bats\b|against the spread|record", q, re.I):
         return (f"NOT IN THE POOL: {' and '.join(others)} {'are' if len(others) > 1 else 'is'} not in this "
-                "week's pool. Say so and roast them in one or two lines. No spread, no pick, no prediction.")
+                "week's pool. Say so and roast them in one or two lines. No spread, no pick, no prediction, "
+                "no records or standings.")
     if (len(q.split()) >= 3 and not others and not _LEAGUE_WORDS.search(q)
             and not any(re.search(rf"(?<!\w){re.escape(x)}(?!\w)", q, re.I) for x in names + teams)):
         return ("OFF-TOPIC: this isn't about football or the league. Roast them for it in one or two "

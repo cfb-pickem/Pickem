@@ -238,6 +238,7 @@ check("taxes -> OFF-TOPIC", G("Can you help me do my taxes?").startswith("OFF-TO
 check("non-pool game -> NOT IN THE POOL", G("Who do you like in Ohio State vs Oregon?").startswith("NOT IN THE POOL"),
       G("Who do you like in Ohio State vs Oregon?"))
 for q in ("Roast my picks", "Roast TG", "How does the jackpot work?", "Should I take Oregon State?",
+          "Should I change any of those", "Why?",
           "What's Ohio State's ATS record?", "hi"):
     check(f"no guard note for {q!r}", G(q) == "", G(q))
 
