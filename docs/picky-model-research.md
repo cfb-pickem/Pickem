@@ -174,3 +174,58 @@ About 9.5k input and 1.5k output tokens per message (output includes thinking), 
 - "Football call" games (no price edge) can get a different lean in separate conversations (e.g. UTSA: keep vs flip).
 - Billing goes to the DCC Anthropic key. Give Picky its own key if you want separate billing.
 - The Ollama fallback is still the old 7B: slow on a cold load (~40 s) and much less accurate.
+
+## Local-only switch (2026-11-14, later the same day)
+
+Charlie doesn't want any API spend, so Picky now runs 100% on the local model.
+
+### What changed
+
+- **No API calls:** the Claude path is gated behind `PICKY_USE_CLAUDE=1` and is off by default. With it unset, the keychain key isn't even read and no Anthropic client is created. **How this was verified:** a fake Anthropic endpoint was set up to log every request (`ANTHROPIC_BASE_URL` pointed at it, with a bogus `ANTHROPIC_API_KEY` in the env). With the flag on it caught the calls; with the flag off a full test run sent it **0 requests**. The live service log shows 0 `api.anthropic.com` lines since the restart. The Claude code is still there if it's ever wanted back.
+- **Ollama upgraded 0.20.2 to 0.40.16** (brew, then a restart of `com.dcc.ollama`): qwen3.5 needs 0.22 or later.
+- **Model: `qwen3.5:9b-q4_K_M`** (GGUF on Ollama's llama.cpp runner, 6.7 GB loaded with 16k context) with `think: false` and `presence_penalty: 0`. It's set in the plist via `PICKEM_CHAT_MODEL` and `PICKY_OLLAMA_THINK=false`. The default `qwen3.5:9b` tag is an nvfp4 build on Ollama's MLX runner: it loaded at 8 GB, but its prefix cache grew about 100 MB per new prompt and reached ~16 GB held on this 16 GB box, so it was dropped.
+- **Settings:**
+  - `num_ctx` stays 16384: the prompt is ~6.5k tokens plus up to 10 turns of history.
+  - Temperature stays 0.2.
+  - `keep_alive` is 30m (`PICKY_OLLAMA_KEEP_ALIVE`). Loading the model only takes ~5 s; the real cold-start cost is the ~30 s it takes to read the prompt. 30 minutes keeps one session's follow-ups warm without pinning 6.7 GB all day.
+  - Thinking mode took 457 s for one answer. Never use it here.
+- **Cache-friendly prompt (the big latency win):** on this M4, reading the prompt runs at only ~220 tokens/s, so a 7k-token prompt costs ~30 s whenever it can't be reused. The old prompt had a per-minute clock near the top and the focus block at the end, so nearly every message paid that cost. Now:
+  - The system prompt is byte-identical between messages: the clock is to the hour only.
+  - The focus block rides in each user turn, applied to every user turn, so a follow-up's prompt starts with the previous prompt.
+  - Warm answers dropped from 27-48 s to 4-10 s.
+- **Prompt tuned for a 9B model:**
+  - The rules are about 40% shorter and numbered.
+  - Seven few-shot Q/A examples with fake names: change picks, roast, a hidden pick, "who has X", a spread explainer, injuries, off-topic.
+  - Precomputed lines the model only has to read: `VALUE SIDES ... all of them`, a "Next:" line spelling out the full second-place tie, and each focus team's own recent weeks written out.
+  - All the earlier data fixes stay: the injury wording, the value checks, FPI labeled as a win chance, points vs misses.
+  - The privacy rule and the roast limits are unchanged. `test_privacy` and `test_standings` pass.
+- **Image generator:** with the chat model loaded, a 768px picture ran at ~27 s per step instead of ~10, swap went from 6 to 12 GB, and the job hit the 240 s timeout ("Brush slipped"). With the LLM unloaded it took 89 s. The 7B wouldn't fix this: at the 16k context the prompt needs, it's 8.7 GB, bigger than qwen3.5's 6.7 GB. So `_image_stream` now unloads the chat model before calling the image service. Verified on the live endpoint: picture in 95 s, then the next chat took ~45 s (cold reload).
+- `test_grounding.py` now uses the new prompt split and the `think` setting. Its privacy regex also accepts the "unlocks at kickoff" wording from the earlier rewording. It's ALL GREEN on qwen3.5 (11/11), with a first token at a median of 0.9 s once warm and generation at ~17.6 tok/s.
+
+### Head to head (same 14 questions; #1-#13 on the live endpoint as Chuck P, #8 in-process as TG)
+
+| | qwen2.5:7b (prompt from the Haiku job) | qwen3.5:9b MLX (same prompt) | qwen3.5:9b-q4_K_M (final prompt) | Haiku 5.5 (earlier) |
+|---|---|---|---|---|
+| Answers with a factual error | ~10 of 14 | ~5 of 14 | 2 of 14, plus 2 muddled lines | 0 of 14 |
+| Worst miss | Invented all 4 of TG's hidden picks; "8 points ahead" (it's 1) | "Unless he's in a coma, he's fine" (implies healthy) | Said Wedge Mulshine had 2 hits (he had 1); told Chuck "keep North Texas" (he has UTSA) | none |
+| Latency | 3-40 s | 27-48 s (no cache reuse) | 4.7-9.6 s warm, ~35-45 s cold | 2-10 s |
+| RAM | 8.7 GB | 8 GB, grew to 16 GB | 6.7 GB, fixed | 0 |
+
+### Iterations (qwen3.5)
+
+1. New short prompt with few-shot examples, and the clock moved out of the system prompt. Latency went from ~35 s to ~5 s on cache hits. Errors: "only SMU has value" (it missed Boise), TG "0-4 in week 8" (that was Culligan's week), a follow-up that repeated the previous answer word for word, "burned $30."
+2. Precomputed value-sides line, the "Next:" second-place line, hour-only clock, focus block on every user turn (follow-ups now hit the cache), list-picks and explain-spread rules, and "who has X" and spread-explainer examples. Fixed: the spread explainer, "who has Hawai'i," the full second-place tie. Still wrong: $30, TG 0-4, and the no-value games named wrong.
+3. No-value games named in the summary, an example with no week record to copy, no money talk, "check before saying all," and each team's own weeks spelled out. Results were noisy: some fixes held, but cover math and "best value" regressed. That pointed at sampling, not the prompt.
+4. `presence_penalty` 0 (qwen3.5's model default is 1.5, which penalizes repeating names and numbers it has already said). On the 7 error-prone probes, all came back accurate and the follow-up became a real answer. Then the switch from MLX to Q4_K_M for memory, and the final run above.
+
+### Sample answer (final, live)
+
+> "TG is 18-26, dead last, and that's the nice part. Last week he went 3-1, but that was just him getting lucky on Alabama, Texas, and Tennessee. He missed BYU, so he's not even consistent."
+
+### Still weak
+
+- About 1 in 7 answers still has a small factual slip (a miscounted hit, a pick attributed to the wrong side), where Haiku had none. The value and privacy lookups are solid because they're precomputed. Free-form multi-team summaries ("how did everyone do") are where it slips.
+- Off-topic questions (taxes) still sometimes pivot into the user's picks.
+- The first message from a user, or the first after the data changes or the model unloads, takes ~35-45 s while the 6.5k-token prompt is read. The fix would be a shorter prompt, e.g. dropping per-game stat lines the model rarely uses.
+- The next chat after a picture is cold, because the chat model is unloaded for the image job.
+- `com.dcc.ollama` still sets `OLLAMA_NUM_PARALLEL=3` and `OLLAMA_KEEP_ALIVE=-1` for the other Ollama users. Picky's own requests set keep_alive explicitly.
