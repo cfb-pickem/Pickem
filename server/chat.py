@@ -16,13 +16,17 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import datetime as dt
 import json
 import logging
 import os
 import time
+import zoneinfo
 from typing import Any
 
 import httpx
+
+CT = zoneinfo.ZoneInfo("America/Chicago")
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -124,6 +128,63 @@ async def _rest_get(
     )
     r.raise_for_status()
     return r.json()
+
+
+# -----------------------------------------------------------------------------
+# privacy filter — unrevealed picks never leave this process
+# -----------------------------------------------------------------------------
+#
+# RLS already hides other users' unlocked picks on reads, but RLS cannot save
+# us if the caller happens to be the commissioner (exempt) or if we derive
+# submission status from the picks list (e.g. "these teams haven't submitted").
+# This filter runs regardless of who's asking so Mr. Locks never has unlocked
+# picks in his context window.
+
+
+def _now_ct_naive() -> dt.datetime:
+    """Current time in America/Chicago as a naive datetime. Pulled out so
+    tests can monkeypatch the clock without touching datetime.datetime."""
+    return dt.datetime.now(CT).replace(tzinfo=None)
+
+
+def _game_is_locked(game: dict, now_ct_naive: dt.datetime) -> bool:
+    """A game is 'locked' once kickoff has passed or the game has ended.
+    Matches the SQL picks_open_for_game() semantics, flipped."""
+    if game.get("Status") in ("final", "in_progress", "in", "live"):
+        return True
+    start = game.get("Start (CT)")
+    if not start:
+        return False
+    try:
+        start_naive = dt.datetime.fromisoformat(start)
+    except ValueError:
+        return False
+    # Supabase stores "Start (CT)" as a naive CT timestamp; compare like-for-like.
+    if start_naive.tzinfo is not None:
+        start_naive = start_naive.astimezone(CT).replace(tzinfo=None)
+    return start_naive <= now_ct_naive
+
+
+def filter_visible_picks(
+    picks: list[dict],
+    week_games: list[dict],
+    caller_team_id: int | None,
+    now_ct_naive: dt.datetime,
+) -> list[dict]:
+    """Return picks the caller is allowed to see:
+      - all of the caller's own picks
+      - other users' picks only for games that have already kicked off
+    """
+    locked_ids = {
+        g["GameId"] for g in week_games if _game_is_locked(g, now_ct_naive)
+    }
+    out = []
+    for p in picks:
+        if caller_team_id is not None and p["team_id"] == caller_team_id:
+            out.append(p)
+        elif p["game_id"] in locked_ids:
+            out.append(p)
+    return out
 
 
 # -----------------------------------------------------------------------------
@@ -242,20 +303,25 @@ async def _build_context(client: httpx.AsyncClient, jwt: str, user_id: str) -> d
     me = next((t for t in teams if t.get("user_id") == user_id), None)
     me_team_id = me["team_id"] if me else None
     me_name = me["team_name"] if me else "(you)"
+    name_by_team = {t["team_id"]: t["team_name"] for t in teams}
 
-    # -- head-to-head this week: just surface everyone's picks, the model
-    # reasons over it textually.
+    # -- PRIVACY: hide unrevealed picks before anything else touches them ---
+    # Even if the caller is the commissioner (RLS-exempt), Mr. Locks never
+    # gets unrevealed picks in his context. Caller's own picks always pass.
+    now_ct = _now_ct_naive()
+    visible_week = filter_visible_picks(picks_week, week_games, me_team_id, now_ct)
+
+    # -- head-to-head this week: only locked games + caller's own ----------
     picks_by_team = collections.defaultdict(list)
-    for p in picks_week:
+    for p in visible_week:
         picks_by_team[p["team_id"]].append(
             {"game_id": p["game_id"], "pick": p["pick"], "by_slots": p["by_slots"]}
         )
-    name_by_team = {t["team_id"]: t["team_name"] for t in teams}
 
-    # Teams that haven't picked anything this week:
-    not_picked = sorted(
-        [name_by_team[tid] for tid in name_by_team if tid not in picks_by_team]
-    )
+    # Submission status is itself sensitive — "who hasn't picked" leaks the
+    # absence of a lock-in before the game starts. Only expose the caller's
+    # own status.
+    you_have_picks = any(p["team_id"] == me_team_id for p in picks_week)
 
     jp = jackpot_rows[0] if jackpot_rows else {}
     jackpot = {
@@ -290,11 +356,14 @@ async def _build_context(client: httpx.AsyncClient, jwt: str, user_id: str) -> d
             }
             for g in week_games
         ],
-        "picks_this_week": {
+        # Only revealed picks appear here — never unlocked games except the
+        # caller's own. Mr. Locks is contractually required to say "can't say,
+        # picks aren't locked yet" when asked about an unstarted game.
+        "revealed_picks_this_week": {
             name_by_team.get(tid, f"team#{tid}"): plist
             for tid, plist in picks_by_team.items()
         },
-        "teams_not_picked_yet_this_week": not_picked,
+        "you_have_picks_this_week": you_have_picks,
         "jackpot": jackpot,
     }
 
@@ -319,6 +388,14 @@ def _system_prompt(ctx: dict) -> str:
         "When asked 'what should I pick,' give your top ~3 locks with one "
         "sentence each. Ground every claim about picks, records, or standings "
         "in the JSON below — if the data doesn't say it, don't say it.\n\n"
+        "PRIVACY — HARD RULE. The JSON only contains picks for games that "
+        "have already kicked off, plus the user's own picks. If someone asks "
+        "'who's picking X this week' about a game that is not in "
+        "revealed_picks_this_week, answer literally: 'Can't say — picks "
+        "aren't locked in yet for that one.' NEVER speculate about who might "
+        "pick what. NEVER comment on which teams have or haven't submitted "
+        "picks for the upcoming week — you only know the caller's own "
+        "submission status (you_have_picks_this_week).\n\n"
         "Current league state (JSON):\n"
         + json.dumps(ctx, separators=(",", ":"), default=str)
     )
