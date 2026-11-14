@@ -93,6 +93,23 @@ function wireChat(ui, info, chatOpts) {
   ui.mascot.addEventListener('click', () => openPanel(ui));
   ui.close .addEventListener('click', () => closePanel(ui));
 
+  // Mobile keyboard handling: when the input is focused, the on-screen
+  // keyboard eats half the screen. visualViewport tells us the real height.
+  if (window.visualViewport) {
+    const syncVV = () => {
+      const vv = window.visualViewport;
+      // Only adjust when the panel is open AND we're on a narrow screen.
+      if (!ui.panel.classList.contains('open')) return;
+      if (window.innerWidth > 600) return;
+      ui.panel.style.height = vv.height + 'px';
+      ui.body.scrollTop = ui.body.scrollHeight;
+    };
+    window.visualViewport.addEventListener('resize', syncVV);
+    window.visualViewport.addEventListener('scroll', syncVV);
+    ui.input.addEventListener('focus', () => setTimeout(syncVV, 50));
+    ui.input.addEventListener('blur',  () => { ui.panel.style.height = ''; });
+  }
+
   ui.form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = ui.input.value.trim();
@@ -233,10 +250,18 @@ async function loadPageContext(info) {
 }
 
 function wireTips(ui, ctx) {
-  ui.tipClose.addEventListener('click', () => {
+  const dismissTip = () => {
     hideTip(ui);
     sessionStorage.setItem(TIP_DISMISS_KEY, '1');
-  });
+  };
+  ui.tipClose.addEventListener('click', dismissTip);
+  // Mobile convention: tap-anywhere-outside dismisses. Keep the listener
+  // passive and self-removing so it's zero cost after a dismissal.
+  document.addEventListener('pointerdown', (ev) => {
+    if (!ui.tip.classList.contains('open')) return;
+    if (ui.tip.contains(ev.target) || ui.mascot.contains(ev.target)) return;
+    dismissTip();
+  }, { capture: true });
 
   const schedule = () => {
     if (localStorage.getItem(MUTE_KEY) === '1') return;
@@ -272,7 +297,7 @@ function hideTip(ui) {
 
 const MASCOT_HTML = `
 <button class="ml-mascot" aria-label="Open Mr. Locks">
-  <svg viewBox="0 0 120 80" width="60" height="40" aria-hidden="true">
+  <svg viewBox="0 0 120 80" width="100%" height="100%" aria-hidden="true">
     <!-- football body -->
     <ellipse cx="60" cy="40" rx="52" ry="28" fill="#8B4A1C" stroke="#4a2810" stroke-width="2.5"/>
     <!-- highlight -->
@@ -327,13 +352,16 @@ const PANEL_HTML = `
 
 const STYLE = `
 <style>
-#mr-locks-root { position: fixed; right: 18px; bottom: 18px; z-index: 9000;
-                 font-family: inherit; color: #e7e7e7; }
+#mr-locks-root { position: fixed; right: 18px;
+                 bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+                 z-index: 9000; font-family: inherit; color: #e7e7e7; }
 #mr-locks-root * { box-sizing: border-box; }
 
-.ml-mascot { background: none; border: 0; padding: 6px; cursor: pointer;
+.ml-mascot { background: none; border: 0; padding: 4px; cursor: pointer;
+             width: 72px; height: 48px;
              filter: drop-shadow(0 4px 10px rgba(0,0,0,.55));
-             animation: ml-bounce 2.6s ease-in-out infinite; }
+             animation: ml-bounce 2.6s ease-in-out infinite;
+             -webkit-tap-highlight-color: transparent; }
 .ml-mascot:hover { animation-play-state: paused; transform: translateY(-2px); }
 @keyframes ml-bounce { 0%,100%{transform:translateY(0)}
                        50%   {transform:translateY(-6px)} }
@@ -385,7 +413,9 @@ const STYLE = `
 @keyframes ml-dots { 0%,20% {content:''} 40% {content:' .'}
                      60% {content:' ..'} 80%,100% {content:' …'} }
 
-.ml-form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(255,255,255,.06); background: #0f0f0f; }
+.ml-form { display: flex; gap: 6px; padding: 8px;
+           padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+           border-top: 1px solid rgba(255,255,255,.06); background: #0f0f0f; }
 .ml-input { flex: 1; background: #1a1a1a; border: 1px solid rgba(255,255,255,.1);
             color: #fff; padding: 8px 10px; border-radius: 8px; font-size: 14px; }
 .ml-input:focus { outline: none; border-color: #daa520; }
@@ -393,8 +423,25 @@ const STYLE = `
            border-radius: 8px; cursor: pointer; display: grid; place-items: center; }
 .ml-send:hover { background: #f1b936; }
 
-@media (max-width: 500px) {
-  .ml-panel { width: calc(100vw - 24px); height: 70vh; }
-  .ml-tip { right: 60px; }
+/* Mobile: shrink the mascot, full-screen the chat panel, and give the
+   close button a bigger tap target. The mascot floats above the iOS
+   bottom chrome via the safe-area inset at the root. */
+@media (max-width: 600px) {
+  #mr-locks-root { right: 12px;
+                   bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .ml-mascot { width: 56px; height: 40px; padding: 2px; }
+  .ml-panel.open {
+    position: fixed; right: 0; bottom: 0; left: 0; top: 0;
+    width: 100vw; max-width: 100vw;
+    height: 100vh; max-height: 100vh;
+    border-radius: 0; border: 0;
+  }
+  .ml-head { padding: 14px 14px; padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+  .ml-close { font-size: 26px; padding: 4px 10px; min-width: 40px; min-height: 40px; }
+  .ml-mute  { font-size: 20px; min-width: 40px; min-height: 40px;
+              display: inline-flex; align-items: center; justify-content: center; }
+  .ml-input { font-size: 16px; }  /* 16px stops iOS zoom-on-focus */
+  .ml-send  { width: 44px; min-height: 40px; }
+  .ml-tip   { right: 60px; max-width: calc(100vw - 80px); }
 }
 </style>`;
