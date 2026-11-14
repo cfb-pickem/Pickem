@@ -410,7 +410,7 @@
         <span id="status-spinner" class="spinner spinner-sm"></span>
         <span id="status">Loading…</span>
       </div>
-      <div class="flex items-center gap-2 text-sm order-1 md:order-2 ml-auto">
+      <div class="flex items-center gap-2 text-sm order-1 md:order-2 pk-auto">
         <label for="season-select" class="hidden md:block text-gray-300">Season</label>
         <select id="season-select" aria-label="Season" class="cfp-select rounded-none px-3 py-2 text-sm w-[92px] md:min-w-[110px]"></select>
         <label id="week-label" for="week-select" class="hidden md:block text-gray-300">Week</label>
@@ -451,7 +451,7 @@
       <span class="badge badge-live">Live</span>
       <span class="badge badge-final">Final</span>
       <span class="badge badge-sched">Scheduled</span>
-      <span class="ml-2">Win cells tint green; loss cells tint <span class="legend-loss-std">red</span><span class="legend-loss-hw">purple</span>.</span>
+      <span class="pk-2">Win cells tint green; loss cells tint <span class="legend-loss-std">red</span><span class="legend-loss-hw">purple</span>.</span>
     </div>
 
     <div id="week-recap" class="mt-4" hidden></div>
@@ -3150,17 +3150,17 @@
     initSlots();
   </script>
 
-  <!-- Mr. Locks — the League Assistant mascot. Lazy-wired: if the viewer
+  <!-- Picky — the League Assistant mascot. Lazy-wired: if the viewer
        is logged out the module exits immediately, so the cost to anonymous
        visitors is one small JS file. Any failure here must leave the
        leaderboard above it untouched — the whole block is swallowed. -->
   <script type="module">
     try {
-      const { initMrLocks } = await import('./js/mrLocks.js');
-      initMrLocks({ mode: 'leaderboard' }).catch(e =>
-        console.warn('mr-locks init failed:', e));
+      const { initPicky } = await import('./js/picky.js');
+      initPicky({ mode: 'leaderboard' }).catch(e =>
+        console.warn('picky init failed:', e));
     } catch (e) {
-      console.warn('mr-locks (leaderboard) module failed:', e);
+      console.warn('picky (leaderboard) module failed:', e);
     }
   </script>
 

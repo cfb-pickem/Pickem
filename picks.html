@@ -721,7 +721,7 @@
       <div class="flex items-center gap-2 flex-wrap">
         <span id="pick-tally" class="pick-tally" role="status" hidden></span>
         <div id="team-chip" class="hidden">
-          <span class="badge">Your Team: <strong id="team-name" class="ml-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
+          <span class="badge">Your Team: <strong id="team-name" class="pk-1 font-semibold text-[var(--cfp-ivory)]"></strong></span>
         </div>
       </div>
     </div>
@@ -2638,14 +2638,14 @@
 
   </script>
 
-  <!-- Mr. Locks — picks-page deep-analysis mode. Wrapped in a try/catch at
+  <!-- Picky — picks-page deep-analysis mode. Wrapped in a try/catch at
        the module boundary so that if the chat code or the scouting model
        throws, the picks UI above is untouched. -->
   <script type="module">
     try {
-      const [{ initMrLocks }, { supabase }, { loadTrainingData, modelFor }] =
+      const [{ initPicky }, { supabase }, { loadTrainingData, modelFor }] =
         await Promise.all([
-          import('./js/mrLocks.js'),
+          import('./js/picky.js'),
           import('./js/supabaseClient.js'),
           import('./js/scoutData.js'),
         ]);
@@ -2680,7 +2680,7 @@
           if (!model) return {};
 
           // playerIx key = team_id; emit a prediction per (team, game) with a
-          // meaningful line. unseen players are skipped, Mr. Locks is told
+          // meaningful line. unseen players are skipped, Picky is told
           // "no read" when probable_picks is empty for a rival.
           const out = {};
           const teamIds = [...model.playerIx.keys()];
@@ -2706,15 +2706,15 @@
           }
           return out;
         } catch (e) {
-          console.warn('mr-locks: rival_predictions build failed', e);
+          console.warn('picky: rival_predictions build failed', e);
           return {};
         }
       }
 
-      initMrLocks({ mode: 'picks', rivalPredictions }).catch(e =>
-        console.warn('mr-locks init failed:', e));
+      initPicky({ mode: 'picks', rivalPredictions }).catch(e =>
+        console.warn('picky init failed:', e));
     } catch (e) {
-      console.warn('mr-locks (picks-page) module failed:', e);
+      console.warn('picky (picks-page) module failed:', e);
     }
   </script>
 </body>

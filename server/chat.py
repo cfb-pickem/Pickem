@@ -57,7 +57,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
-log = logging.getLogger("pickem-chat")
+log = logging.getLogger("picky")
 
 app = FastAPI(title="Pick'em League Assistant")
 
@@ -137,7 +137,7 @@ async def _rest_get(
 # RLS already hides other users' unlocked picks on reads, but RLS cannot save
 # us if the caller happens to be the commissioner (exempt) or if we derive
 # submission status from the picks list (e.g. "these teams haven't submitted").
-# This filter runs regardless of who's asking so Mr. Locks never has unlocked
+# This filter runs regardless of who's asking so Picky never has unlocked
 # picks in his context window.
 
 
@@ -382,7 +382,7 @@ async def _build_context(
     name_by_team = {t["team_id"]: t["team_name"] for t in teams}
 
     # -- PRIVACY: hide unrevealed picks before anything else touches them ---
-    # Even if the caller is the commissioner (RLS-exempt), Mr. Locks never
+    # Even if the caller is the commissioner (RLS-exempt), Picky never
     # gets unrevealed picks in his context. Caller's own picks always pass.
     now_ct = _now_ct_naive()
     visible_week = filter_visible_picks(picks_week, week_games, me_team_id, now_ct)
@@ -433,7 +433,7 @@ async def _build_context(
             for g in week_games
         ],
         # Only revealed picks appear here — never unlocked games except the
-        # caller's own. Mr. Locks is contractually required to say "can't say,
+        # caller's own. Picky is contractually required to say "can't say,
         # picks aren't locked yet" when asked about an unstarted game.
         "revealed_picks_this_week": {
             name_by_team.get(tid, f"team#{tid}"): plist
@@ -473,9 +473,9 @@ LEADERBOARD_MODE_RIDER = (
 def _system_prompt(ctx: dict) -> str:
     you = ctx.get("you", {}).get("team_name", "you")
     return (
-        "You are Mr. Locks, the pick'em league's mascot and resident degenerate "
-        "football nerd. You're an anthropomorphic football — confident, a "
-        "little cocky, football-obsessed, but friendly, like a guy at the bar "
+        "You are Picky, a football-obsessed league oracle — an "
+        "anthropomorphic football, confident and a little cocky but "
+        "friendly, like a guy at the bar "
         "who's watched every game this year. Keep it casual and tight: one "
         "paragraph or a short list, usually under 80 words. Use football slang "
         "naturally (lock, cover, chalk, dog, backdoor) and explain it only if "

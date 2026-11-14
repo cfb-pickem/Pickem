@@ -1,9 +1,9 @@
-// js/mrLocks.js — the League Assistant mascot ("Mr. Locks").
+// js/picky.js — the League Assistant mascot ("Picky").
 //
 // Floating anthropomorphic football in the bottom-right corner of the
 // leaderboard. Hidden unless the viewer is signed in. Click him to open the
 // chat panel; it streams answers from the local Ollama on the mini through
-// a Cloudflare tunnel (pickem-chat.dunecreek.ai → :8766). Occasionally he
+// a Cloudflare tunnel (picky.dunecreek.ai → :8766). Occasionally he
 // pops a one-liner tip based on page state, dismissible, per-session.
 //
 // He is built from inline SVG so there's no image to host and he scales
@@ -18,14 +18,14 @@ import { sessionInfo } from './session.js';
 
 // The tunnel host. Infra needs to add this to ~/.cloudflared/config.yml
 // before the mascot can actually talk.
-const CHAT_URL = 'https://pickem-chat.dunecreek.ai/chat';
+const CHAT_URL = 'https://picky.dunecreek.ai/chat';
 
 const MAX_TURNS = 10;
 const TIP_MIN_MS = 30_000;
 const TIP_MAX_MS = 60_000;
 
-const MUTE_KEY = 'mrLocks.muted';
-const TIP_DISMISS_KEY = 'mrLocks.tipsDismissed';   // per-session, sessionStorage
+const MUTE_KEY = 'picky.muted';
+const TIP_DISMISS_KEY = 'picky.tipsDismissed';   // per-session, sessionStorage
 
 // --- entry point ---------------------------------------------------------
 //
@@ -33,9 +33,9 @@ const TIP_DISMISS_KEY = 'mrLocks.tipsDismissed';   // per-session, sessionStorag
 // never want two mascots on-screen. The first caller wins, the second is a
 // no-op. mode: "leaderboard" (default) or "picks" (deep-analysis riff).
 
-export async function initMrLocks(opts = {}) {
-  if (window.__mrLocksMounted) return;
-  window.__mrLocksMounted = true;
+export async function initPicky(opts = {}) {
+  if (window.__pickyMounted) return;
+  window.__pickyMounted = true;
 
   const mode = opts.mode === 'picks' ? 'picks' : 'leaderboard';
   const info = await sessionInfo();
@@ -56,21 +56,21 @@ export async function initMrLocks(opts = {}) {
 
 function mountUI() {
   const root = document.createElement('div');
-  root.id = 'mr-locks-root';
+  root.id = 'picky-root';
   root.innerHTML = STYLE + MASCOT_HTML + PANEL_HTML + TIP_HTML;
   document.body.appendChild(root);
   return {
     root,
-    mascot:  root.querySelector('.ml-mascot'),
-    panel:   root.querySelector('.ml-panel'),
-    body:    root.querySelector('.ml-body'),
-    form:    root.querySelector('.ml-form'),
-    input:   root.querySelector('.ml-input'),
-    close:   root.querySelector('.ml-close'),
-    mute:    root.querySelector('.ml-mute'),
-    tip:     root.querySelector('.ml-tip'),
-    tipText: root.querySelector('.ml-tip-text'),
-    tipClose:root.querySelector('.ml-tip-close'),
+    mascot:  root.querySelector('.pk-mascot'),
+    panel:   root.querySelector('.pk-panel'),
+    body:    root.querySelector('.pk-body'),
+    form:    root.querySelector('.pk-form'),
+    input:   root.querySelector('.pk-input'),
+    close:   root.querySelector('.pk-close'),
+    mute:    root.querySelector('.pk-mute'),
+    tip:     root.querySelector('.pk-tip'),
+    tipText: root.querySelector('.pk-tip-text'),
+    tipClose:root.querySelector('.pk-tip-close'),
   };
 }
 
@@ -119,25 +119,25 @@ function wireChat(ui, info, chatOpts) {
     appendMsg(ui, 'user', text);
     const trimmed = history.slice(-MAX_TURNS * 2);
     const bubble = appendMsg(ui, 'assistant', '');
-    bubble.classList.add('ml-typing');
+    bubble.classList.add('pk-typing');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        bubble.classList.remove('ml-typing');
+        bubble.classList.remove('pk-typing');
         bubble.textContent = 'Session expired — refresh the page.';
         return;
       }
       // Rival predictions are opt-in per page. If the model isn't ready yet
-      // or the fetch throws, fall back to no-prediction mode — Mr. Locks just
+      // or the fetch throws, fall back to no-prediction mode — Picky just
       // won't have reads on rivals this turn.
       let rivalPreds = {};
       try { rivalPreds = (await rivalPredictor()) || {}; }
-      catch (e) { console.warn('mr-locks: rival predictor failed', e); }
+      catch (e) { console.warn('picky: rival predictor failed', e); }
       await streamReply(trimmed, session.access_token, bubble, history, mode, rivalPreds);
     } catch (e) {
-      bubble.classList.remove('ml-typing');
-      bubble.textContent = 'Mr. Locks is on a timeout: ' + (e.message || e);
+      bubble.classList.remove('pk-typing');
+      bubble.textContent = 'Picky is on a timeout: ' + (e.message || e);
     }
   });
 }
@@ -154,7 +154,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
     }),
   });
   if (!r.ok) {
-    bubble.classList.remove('ml-typing');
+    bubble.classList.remove('pk-typing');
     bubble.textContent =
       r.status === 429 ? "Easy — ten questions a minute. Breathe." :
       r.status === 401 ? "Session kicked. Refresh and sign back in." :
@@ -166,7 +166,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
   const reader = r.body.getReader();
   const dec = new TextDecoder();
   let buf = '', full = '';
-  bubble.classList.remove('ml-typing');
+  bubble.classList.remove('pk-typing');
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -205,9 +205,9 @@ function closePanel(ui) {
 
 function appendMsg(ui, role, text) {
   const row = document.createElement('div');
-  row.className = 'ml-row ml-row-' + role;
+  row.className = 'pk-row pk-row-' + role;
   const bubble = document.createElement('div');
-  bubble.className = 'ml-bubble ml-bubble-' + role;
+  bubble.className = 'pk-bubble pk-bubble-' + role;
   bubble.textContent = text;
   row.appendChild(bubble);
   ui.body.appendChild(row);
@@ -296,7 +296,7 @@ function hideTip(ui) {
 // --- markup + styles ----------------------------------------------------
 
 const MASCOT_HTML = `
-<button class="ml-mascot" aria-label="Open Mr. Locks">
+<button class="pk-mascot" aria-label="Open Picky">
   <svg viewBox="0 0 120 80" width="100%" height="100%" aria-hidden="true">
     <!-- football body -->
     <ellipse cx="60" cy="40" rx="52" ry="28" fill="#8B4A1C" stroke="#4a2810" stroke-width="2.5"/>
@@ -315,36 +315,36 @@ const MASCOT_HTML = `
     <circle cx="49" cy="27" r="2.5" fill="#111"/>
     <circle cx="73" cy="27" r="2.5" fill="#111"/>
     <!-- smirk -->
-    <path class="ml-mouth" d="M52 52 Q60 58 68 52" fill="none" stroke="#2a1708" stroke-width="2.5" stroke-linecap="round"/>
+    <path class="pk-mouth" d="M52 52 Q60 58 68 52" fill="none" stroke="#2a1708" stroke-width="2.5" stroke-linecap="round"/>
   </svg>
 </button>`;
 
 const TIP_HTML = `
-<div class="ml-tip" role="status">
-  <span class="ml-tip-text"></span>
-  <button class="ml-tip-close" aria-label="Dismiss">×</button>
+<div class="pk-tip" role="status">
+  <span class="pk-tip-text"></span>
+  <button class="pk-tip-close" aria-label="Dismiss">×</button>
 </div>`;
 
 const PANEL_HTML = `
-<section class="ml-panel" role="dialog" aria-label="Chat with Mr. Locks">
-  <header class="ml-head">
-    <span class="ml-title">Mr. Locks</span>
-    <button class="ml-mute" title="Mute pop-ups">
+<section class="pk-panel" role="dialog" aria-label="Chat with Picky">
+  <header class="pk-head">
+    <span class="pk-title">Picky</span>
+    <button class="pk-mute" title="Mute pop-ups">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
         <path d="M4 10v4h4l5 4V6L8 10H4z" fill="currentColor"/>
-        <path class="ml-mute-x" d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path class="pk-mute-x" d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
       </svg>
     </button>
-    <button class="ml-close" aria-label="Close">×</button>
+    <button class="pk-close" aria-label="Close">×</button>
   </header>
-  <div class="ml-body">
-    <div class="ml-row ml-row-assistant">
-      <div class="ml-bubble ml-bubble-assistant">What's shakin', pickem fam? I been staring at these spreads all morning. What you need?</div>
+  <div class="pk-body">
+    <div class="pk-row pk-row-assistant">
+      <div class="pk-bubble pk-bubble-assistant">Yo pickem fam, Picky here. Been staring at these spreads all morning. What you need?</div>
     </div>
   </div>
-  <form class="ml-form">
-    <input class="ml-input" type="text" placeholder="Ask Mr. Locks…" autocomplete="off"/>
-    <button class="ml-send" type="submit" aria-label="Send">
+  <form class="pk-form">
+    <input class="pk-input" type="text" placeholder="Ask Picky…" autocomplete="off"/>
+    <button class="pk-send" type="submit" aria-label="Send">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 20l18-8L3 4l3 8-3 8z" fill="currentColor"/></svg>
     </button>
   </form>
@@ -352,96 +352,96 @@ const PANEL_HTML = `
 
 const STYLE = `
 <style>
-#mr-locks-root { position: fixed; right: 18px;
+#picky-root { position: fixed; right: 18px;
                  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
                  z-index: 9000; font-family: inherit; color: #e7e7e7; }
-#mr-locks-root * { box-sizing: border-box; }
+#picky-root * { box-sizing: border-box; }
 
-.ml-mascot { background: none; border: 0; padding: 4px; cursor: pointer;
+.pk-mascot { background: none; border: 0; padding: 4px; cursor: pointer;
              width: 72px; height: 48px;
              filter: drop-shadow(0 4px 10px rgba(0,0,0,.55));
-             animation: ml-bounce 2.6s ease-in-out infinite;
+             animation: pk-bounce 2.6s ease-in-out infinite;
              -webkit-tap-highlight-color: transparent; }
-.ml-mascot:hover { animation-play-state: paused; transform: translateY(-2px); }
-@keyframes ml-bounce { 0%,100%{transform:translateY(0)}
+.pk-mascot:hover { animation-play-state: paused; transform: translateY(-2px); }
+@keyframes pk-bounce { 0%,100%{transform:translateY(0)}
                        50%   {transform:translateY(-6px)} }
 
-.ml-tip { position: absolute; right: 72px; bottom: 14px;
+.pk-tip { position: absolute; right: 72px; bottom: 14px;
           max-width: 240px; padding: 10px 28px 10px 12px;
           background: #0b0b0b; border: 1px solid rgba(218,165,32,.5);
           border-radius: 10px; font-size: 13px; line-height: 1.35;
           box-shadow: 0 6px 18px rgba(0,0,0,.55);
           opacity: 0; transform: translateY(6px); pointer-events: none;
           transition: opacity .25s, transform .25s; }
-.ml-tip.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.ml-tip::after{ content:""; position:absolute; right:-7px; bottom:14px;
+.pk-tip.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.pk-tip::after{ content:""; position:absolute; right:-7px; bottom:14px;
                 border:7px solid transparent; border-left-color:#0b0b0b; }
-.ml-tip-close{ position:absolute; top:2px; right:4px; background:none;
+.pk-tip-close{ position:absolute; top:2px; right:4px; background:none;
                border:0; color:#888; font-size:18px; cursor:pointer; line-height:1; }
 
-.ml-panel { position: absolute; right: 0; bottom: 0; width: 360px;
+.pk-panel { position: absolute; right: 0; bottom: 0; width: 360px;
             max-width: calc(100vw - 24px); height: 440px; max-height: 70vh;
             background: #0b0b0b; border: 1px solid rgba(218,165,32,.4);
             border-radius: 12px; display: none; flex-direction: column;
             overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
-.ml-panel.open { display: flex; }
+.pk-panel.open { display: flex; }
 
-.ml-head { display:flex; align-items:center; gap:8px;
+.pk-head { display:flex; align-items:center; gap:8px;
            padding: 10px 12px; background: #141414;
            border-bottom: 1px solid rgba(255,255,255,.06); }
-.ml-title { font-weight: 700; letter-spacing: .04em; flex: 1;
+.pk-title { font-weight: 700; letter-spacing: .04em; flex: 1;
             color: #daa520; font-family: 'Oswald', sans-serif; font-size: 15px; }
-.ml-mute, .ml-close { background: none; border: 0; cursor: pointer;
+.pk-mute, .pk-close { background: none; border: 0; cursor: pointer;
                       color: #ccc; padding: 2px 6px; font-size: 18px; }
-.ml-mute { color: #ccc; }
-.ml-mute .ml-mute-x { display: none; }
-.ml-mute.muted .ml-mute-x { display: inline; }
-.ml-mute.muted { color: #8a2a2a; }
+.pk-mute { color: #ccc; }
+.pk-mute .pk-mute-x { display: none; }
+.pk-mute.muted .pk-mute-x { display: inline; }
+.pk-mute.muted { color: #8a2a2a; }
 
-.ml-body { flex: 1; overflow-y: auto; padding: 10px 12px;
+.pk-body { flex: 1; overflow-y: auto; padding: 10px 12px;
            display: flex; flex-direction: column; gap: 8px; }
-.ml-row { display: flex; }
-.ml-row-user { justify-content: flex-end; }
-.ml-bubble { max-width: 85%; padding: 8px 11px; border-radius: 12px;
+.pk-row { display: flex; }
+.pk-row-user { justify-content: flex-end; }
+.pk-bubble { max-width: 85%; padding: 8px 11px; border-radius: 12px;
              font-size: 14px; line-height: 1.4; white-space: pre-wrap;
              word-wrap: break-word; }
-.ml-bubble-user { background: #1e3a2c; color: #d9f5e4; border-bottom-right-radius: 3px; }
-.ml-bubble-assistant { background: #1a1a1a; color: #e7e7e7;
+.pk-bubble-user { background: #1e3a2c; color: #d9f5e4; border-bottom-right-radius: 3px; }
+.pk-bubble-assistant { background: #1a1a1a; color: #e7e7e7;
                         border: 1px solid rgba(218,165,32,.2);
                         border-bottom-left-radius: 3px; }
-.ml-typing::after { content: ' …'; animation: ml-dots 1.1s steps(4,end) infinite; }
-@keyframes ml-dots { 0%,20% {content:''} 40% {content:' .'}
+.pk-typing::after { content: ' …'; animation: pk-dots 1.1s steps(4,end) infinite; }
+@keyframes pk-dots { 0%,20% {content:''} 40% {content:' .'}
                      60% {content:' ..'} 80%,100% {content:' …'} }
 
-.ml-form { display: flex; gap: 6px; padding: 8px;
+.pk-form { display: flex; gap: 6px; padding: 8px;
            padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
            border-top: 1px solid rgba(255,255,255,.06); background: #0f0f0f; }
-.ml-input { flex: 1; background: #1a1a1a; border: 1px solid rgba(255,255,255,.1);
+.pk-input { flex: 1; background: #1a1a1a; border: 1px solid rgba(255,255,255,.1);
             color: #fff; padding: 8px 10px; border-radius: 8px; font-size: 14px; }
-.ml-input:focus { outline: none; border-color: #daa520; }
-.ml-send { background: #daa520; color: #111; border: 0; width: 38px;
+.pk-input:focus { outline: none; border-color: #daa520; }
+.pk-send { background: #daa520; color: #111; border: 0; width: 38px;
            border-radius: 8px; cursor: pointer; display: grid; place-items: center; }
-.ml-send:hover { background: #f1b936; }
+.pk-send:hover { background: #f1b936; }
 
 /* Mobile: shrink the mascot, full-screen the chat panel, and give the
    close button a bigger tap target. The mascot floats above the iOS
    bottom chrome via the safe-area inset at the root. */
 @media (max-width: 600px) {
-  #mr-locks-root { right: 12px;
+  #picky-root { right: 12px;
                    bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
-  .ml-mascot { width: 56px; height: 40px; padding: 2px; }
-  .ml-panel.open {
+  .pk-mascot { width: 56px; height: 40px; padding: 2px; }
+  .pk-panel.open {
     position: fixed; right: 0; bottom: 0; left: 0; top: 0;
     width: 100vw; max-width: 100vw;
     height: 100vh; max-height: 100vh;
     border-radius: 0; border: 0;
   }
-  .ml-head { padding: 14px 14px; padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
-  .ml-close { font-size: 26px; padding: 4px 10px; min-width: 40px; min-height: 40px; }
-  .ml-mute  { font-size: 20px; min-width: 40px; min-height: 40px;
+  .pk-head { padding: 14px 14px; padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+  .pk-close { font-size: 26px; padding: 4px 10px; min-width: 40px; min-height: 40px; }
+  .pk-mute  { font-size: 20px; min-width: 40px; min-height: 40px;
               display: inline-flex; align-items: center; justify-content: center; }
-  .ml-input { font-size: 16px; }  /* 16px stops iOS zoom-on-focus */
-  .ml-send  { width: 44px; min-height: 40px; }
-  .ml-tip   { right: 60px; max-width: calc(100vw - 80px); }
+  .pk-input { font-size: 16px; }  /* 16px stops iOS zoom-on-focus */
+  .pk-send  { width: 44px; min-height: 40px; }
+  .pk-tip   { right: 60px; max-width: calc(100vw - 80px); }
 }
 </style>`;

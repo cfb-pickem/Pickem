@@ -1,11 +1,11 @@
 """
-Privacy tests for Mr. Locks's context assembly.
+Privacy tests for Picky's context assembly.
 
 Run:  ./.venv/bin/python3 -I test_privacy.py
 
 These tests pin the rule that unrevealed picks (games that have not kicked
 off, by any user other than the caller) NEVER appear in the context dict
-Mr. Locks sees — regardless of whether RLS would have hidden them. RLS
+Picky sees — regardless of whether RLS would have hidden them. RLS
 cannot save us if the caller is the commissioner, so we enforce here too.
 """
 

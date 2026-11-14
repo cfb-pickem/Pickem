@@ -1,16 +1,16 @@
 # Pick'em League Assistant — `chat.py`
 
-FastAPI service that powers **Mr. Locks**, the league assistant chat on the
+FastAPI service that powers **Picky**, the league assistant chat on the
 leaderboard page. Runs on the Mac mini under LaunchAgent `com.pickem.chat`,
 listens on `127.0.0.1:8766`, reached from github.io through the Cloudflare
-tunnel at `pickem-chat.dunecreek.ai`.
+tunnel at `picky.dunecreek.ai`.
 
 ## What it does
 
 - Validates the caller's Supabase JWT via `/auth/v1/user` (no secret stored).
 - Pulls a compact snapshot of league state from Supabase **using the
   caller's JWT**, so row-level security applies to everything.
-- Builds a system prompt in Mr. Locks's voice and calls Ollama's
+- Builds a system prompt in Picky's voice and calls Ollama's
   `/api/chat` streaming endpoint, forwarded back as SSE.
 - Rate-limits 10 req/min per user, in-memory.
 - Warms the model on startup so the first query of the day doesn't eat
