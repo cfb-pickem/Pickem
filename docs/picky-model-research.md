@@ -332,3 +332,41 @@ Per category (pass/scored):
 ## Go-live (2026-11-14)
 
 **Not live.** The bar was 95% or better, including judged items, with zero privacy leaks, zero invented data and zero guardrail violations, within 3 runs. The final run scored 91 to 93% with 1 invented-data flag, so `PICKY_ENABLED` stays `false` in `js/pickyFlag.js`. The `?picky=on` preview still works. The backend (`com.pickem.chat`) is running the new code, so the opener is already gone for anyone previewing. The next steps are the this-week/last-week labeling and keeping picks out of guardrail pivots entirely (both deterministic). Then rerun the exam before a Saturday slate locks, when the privacy items can run too.
+
+## Picky the player (2026-11-14, evening)
+
+Picky now plays too, as an **exhibition team**: team row "Picky" (team_id 26, `is_exhibition = true`), owned by a bot auth user `picky-bot@example.com` with a random password nobody stores. The owner is there because `claim_team()` lets any member claim a team whose `user_id` is null. He is never ranked, paid, or counted for the jackpot, tiebreakers or playoffs.
+
+**How humans stay untouched.** Migration `20261114180000_picky_the_player` (additive) adds `teams.is_exhibition` and `picky_pick_blurbs`. It adds restrictive RLS that hides exhibition teams and their picks from anon and authenticated reads, plus `picky_player(season)`, which applies the human reveal rule and is the only way the site reads him. As written, it failed to apply: `team_id <> all ((select exhibition_team_ids()))` parses as a row subquery (bigint vs bigint[]). It's fixed as `<> all (coalesce((select ...), '{}'))`. Backup of prior policies and teams: `/Users/Agent/cfb-pickem-backups/picky-player-20261114T201024Z.sql`. Applied and recorded in schema_migrations via the Management API.
+
+Service-key readers (the exam's truth loader, test_grounding) bypass RLS and would have ranked him 0-0 at the bottom. chat.py's teams query now filters `is_exhibition=is.false`, and it drops picks from teams it didn't load. truth.py does the same.
+
+**Verified byte-identical.** Anon and member views of `teams`, this season's `picks`, `compute_standings()` and `slots_jackpot` were snapshotted before the migration, after it, and after the team row. All are identical. Payouts, tiebreakers and playoff odds are computed in the browser from those same rows. The one difference is that the `submission_status()` RPC (security definer) now also returns a `Picky` row. index.html only reads it for RLS-visible teams, so the Made Picks panel is unchanged.
+
+**Auto-picks.** `server/picky_picks.py` runs hourly under `com.pickem.picky-picks`. A game is picked once its lock is within 3 hours: in the regular season that's the week's first kickoff, in the playoffs each game's kickoff. Nothing is ever written after lock, and an existing pick is never changed. The side is chosen by value against the market, then SP+ from the CFBD cache, then FPI, then points. The trash-talk line comes from local Ollama only. Week 11 was already locked when this went live, so he has no week-11 picks. The 3 "catch-up" picks from earlier in the day were generated at 17:34 UTC, after the 17:00 UTC lock, so they were held, not inserted (`~/.picky-player/picky_picks_pending.json.held-after-lock`). His first picks go in about 3h before week 12's first kickoff, once the commissioner sets the week-12 slate in `all_games`.
+
+**Tests and exam.** test_privacy, test_standings, test_grounding, test_cfbd, test_rules, test_picky_player and eval/test_checks are all green. The exam ran against the rebased chat.py on a side port with the CFBD cache (`wt-player`). It scored 41/41 deterministic and 53/57 (93%) with judged items. The hard gates (privacy, invented, guardrails) were 0 on the graders. The 4 judged misses are the known families from run 9: wrong facts in guardrail pivots (this week vs last week), one "nailed" on games not yet played, and one borderline flip line on a locked week. There's a new `picky` category: "Picky never ranks himself" passed ("I'm not in the standings"). "What did Picky pick" skips until he has revealed picks.
+
+**Flag.** `PICKY_ENABLED` is still `false` (go-live didn't pass), so all of this is behind `?picky=on` for now. Without it the site renders as before.
+
+## Jackpot migrations (2026-11-14, evening)
+
+The live database had fallen behind the repo on the jackpot. `supabase_migrations.schema_migrations` had a row for `20260914120000_a_shorter_quiet_stretch`, but its function body had never landed: live `slots_jackpot_odds()` was still the `20260914010000` version (0.05% flat until pull 445). The five `20261113*` migrations had no rows at all. Meanwhile `js/jackpot.js` mirrors the 200-pull ramp, so the gauge (and the sandbox readout) showed the football nearly full at 230 pulls while the server rolled at 0.05%.
+
+**Intended behavior.** The repo is the source of truth. `jackpotOdds()` in `js/jackpot.js` mirrors the `20260914120000` ramp: 0.005% for the first 200 pulls, then +0.25pp a pull up to a 10% ceiling at pull 240. On top of that, the `20261113*` set makes the resolver call `slots_jackpot_odds_for()`. For a regular-season pull in a season that hasn't popped, the odds are `max(min(1/pulls_remaining, 5%), ramp)`. After the season's pop they're 0, and playoff pulls get the ramp only. So the site's number is the right one, and the server was the thing that was wrong.
+
+**What was done** (via the Management API SQL endpoint, token in keychain `CFB_PICKEM__SUPABASE_ACCESS_TOKEN`):
+- Re-read every file in full. All six are additive: `create or replace function`, `alter table ... add column if not exists last_pop_cfb_season`, and one backfill `update` that only fills that new column when a pop already exists (none had, so it touched 0 rows). No DROP, DELETE or TRUNCATE.
+- Backup first, at `/Users/Agent/cfb-pickem-backups/jackpot-20261114T195542Z.sql`. It has the old `slots_jackpot_odds` and `resolve_slot_picks` definitions with comments and ACLs, the `slots_jackpot` row (230 pulls, never popped) and the schema_migrations listing.
+- Applied in filename order, each in its own transaction: `20260914120000` re-run (its row already existed, so no new row), then `20261113120000`, `130000`, `140000`, `150000` and `160000`. Each was recorded in schema_migrations in the same transaction with `statements` split the way the CLI does it. The splitter was checked byte-for-byte against four existing rows.
+
+**Before/after at the current meter (230 pulls, 2026 not popped):**
+
+| | before | after |
+|---|---|---|
+| `slots_jackpot_odds(230)` | 0.05% | 7.505% |
+| `slots_jackpot_odds_for(...)`, regular season | (didn't exist) | 7.505% (ramp beats the 5% capped floor) |
+| post-pop regular season | n/a | 0 |
+| site `jackpotOdds(230)` | 7.505% | 7.505% (now matches) |
+
+Live site checked with Playwright at 390px and 1440px: the football and gauge render on the leaderboard and picks pages ("230 slot pulls since the last jackpot"), stats and tiebreakers load, and there are no console errors. At 7.5% rising to 10% a pull, expect the football to go within the next dozen or so slot pulls.
