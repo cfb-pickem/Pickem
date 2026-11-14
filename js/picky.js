@@ -111,15 +111,33 @@ function wireChat(ui, info, chatOpts) {
       let rivalPreds = {};
       try { rivalPreds = (await rivalPredictor()) || {}; }
       catch (e) { console.warn('picky: rival predictor failed', e); }
-      await streamReply(trimmed, session.access_token, bubble, history, mode, rivalPreds);
+      try {
+        await streamReply(trimmed, session.access_token, bubble, history, mode, rivalPreds);
+      } catch (e) {
+        // Network blip (Safari's "Load failed"): one quiet retry, unless
+        // part of the answer already showed up.
+        if (bubble.dataset.got) throw e;
+        console.warn('picky: retrying after', e);
+        await streamReply(trimmed, session.access_token, bubble, history, mode, rivalPreds);
+      }
     } catch (e) {
       bubble.classList.remove('pk-typing');
-      bubble.textContent = 'Picky shit the bed: ' + (e.message || e);
+      if (!bubble.dataset.got) bubble.textContent = "Picky's swamped, try again in a sec.";
     }
   });
 }
 
 async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
+  // Busy night: requests queue for the one local model. After 10s with no
+  // words yet, say so instead of leaving bare dots.
+  const wait = setTimeout(() => {
+    if (!bubble.dataset.got) bubble.textContent = "Hold your horses, I'm answering the other dipshits first. You're in line";
+  }, 10000);
+  try { await streamBody(messages, jwt, bubble, history, mode, rivalPreds); }
+  finally { clearTimeout(wait); }
+}
+
+async function streamBody(messages, jwt, bubble, history, mode, rivalPreds) {
   const r = await fetch(CHAT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -160,10 +178,12 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
         const obj = JSON.parse(payload);
         bubble.classList.remove('pk-typing');
         if (obj.content) {
+          bubble.dataset.got = '1';
           full += obj.content;
           renderMarkdown(bubble, full);
           bubble.parentElement.scrollTop = bubble.parentElement.scrollHeight;
         } else if (obj.image && obj.image.startsWith('data:image/')) {
+          bubble.dataset.got = '1';
           const img = document.createElement('img');
           img.className = 'pk-img';
           img.alt = 'Picture from Picky';
@@ -171,6 +191,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
           img.onload = () => { const pane = bubble.closest('.pk-body'); if (pane) pane.scrollTop = pane.scrollHeight; };
           bubble.appendChild(img);
         } else if (obj.error) {
+          bubble.dataset.got = '1';
           bubble.textContent = full || "Brain cramp. Ask again, and make it a better question this time.";
         }
       } catch { /* ignore partials */ }
