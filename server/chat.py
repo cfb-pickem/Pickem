@@ -72,7 +72,9 @@ IMAGE_URL = os.environ.get("PICKY_IMAGE_URL", "http://127.0.0.1:8767")
 # never reloaded at a different size. Low temperature: facts over flair.
 # presence_penalty 0 overrides qwen3.5's default 1.5, which pushes it off
 # names and numbers it has already said and garbles facts.
-OLLAMA_OPTIONS = {"num_ctx": 16384, "temperature": 0.2, "presence_penalty": 0}
+# num_predict caps a runaway answer (~35 s at 17 tok/s); answers run 40-200 words.
+OLLAMA_OPTIONS = {"num_ctx": 16384, "temperature": 0.2, "presence_penalty": 0, "num_predict": 600}
+MAX_ANSWER_WORDS = 300
 # The fallback only loads when Claude fails; let it unload afterwards instead
 # of pinning ~6.5 GB next to the VM and the image model.
 OLLAMA_FALLBACK_KEEP_ALIVE = "15m"
@@ -1193,7 +1195,7 @@ def value_calls(ctx: dict, team: str) -> str:
         + " Only a pick listed as WRONG side may be called the wrong side.")
 
 
-def focus_block(ctx: dict, question: str) -> str:
+def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
     """Facts about the league members named in the latest message ('me',
     'my', 'myself' = the caller), pulled out of the full snapshot and put at
     the very end of the prompt. A 7B model asked to roast TG otherwise
@@ -1206,6 +1208,8 @@ def focus_block(ctx: dict, question: str) -> str:
             and re.search(r"\broast|\bhow (did|am|'?m) i\b|\bmy (record|week|picks?|season|place|chances?)\b"
                           r"|\bi'?m in\b|\bam i\b|\bscrewed\b|\bwhere do i\b", q, re.I):
         hit.append(me)
+    if me and me not in hit and ctx.get("daddyfreeman"):
+        hit.append(me)  # he gets roasted every answer, so give the model his facts every time
     if not hit:
         return ""
     text = render_context(ctx).splitlines()
@@ -1243,7 +1247,9 @@ def focus_block(ctx: dict, question: str) -> str:
                     out.append(f"    {g['away']} at {g['home']}: {n} took {pk}, "
                                + ("HIT." if ok else f"MISS ({g.get('covered')} covered, not {n}'s pick)."))
         vc = value_calls(ctx, n)
-        if n == me:
+        if not picks:
+            pass  # guardrail pivot: record and place only
+        elif n == me:
             mine = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(me, [])}
             gl = [f"{mine[g['id']]}" for g in ctx.get("games_this_week") or [] if g["id"] in mine]
             out.append(f"  This week's picks: {', '.join(gl) if gl else 'none made yet'}.")
@@ -1391,6 +1397,10 @@ _LEAGUE_WORDS = re.compile(
     r"sure|really|again|more|else|instead|same|other)\b", re.I)
 
 
+_INJURY_ASK = re.compile(r"\binjur\w*|\bhurt\b|\bhealthy\b|\bhealth\b|\bquestionable\b|"
+                         r"\bis \w+ playing\b|\bbanged up\b|\bout for\b", re.I)
+
+
 def guard_note(ctx: dict, question: str) -> str:
     """Deterministic rails for the two things a 9B model botches most:
     taking trait bait, and dragging league talk into off-topic questions."""
@@ -1431,7 +1441,8 @@ def _user_turn(ctx: dict, question: str) -> str:
     """A user message plus the facts about the people it names. Applied to
     every user turn, not just the last, so a follow-up's prompt starts with
     the previous prompt and Ollama reuses it."""
-    parts = [focus_block(ctx, question).strip()]
+    guard = guard_note(ctx, question)
+    parts = [focus_block(ctx, question, picks=not guard.startswith("GUARDRAIL")).strip()]
     if wants_rules(question):
         starts = [g.get("start") for g in ctx.get("games_this_week") or [] if g.get("start")]
         lock = ""
@@ -1447,7 +1458,10 @@ def _user_turn(ctx: dict, question: str) -> str:
                      "standings. Only if it truly isn't above: the rules don't cover it, ask "
                      "the commissioner.")
     parts.append(stats_focus(ctx, question).strip())
-    parts.append(guard_note(ctx, question))
+    parts.append(guard)
+    if _INJURY_ASK.search(question or ""):
+        parts.append("INJURIES: say there's no injury report and send them to the beat writers. "
+                     "Never say 'no injuries', and never call anyone healthy or hurt.")
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
 
@@ -1457,6 +1471,20 @@ def _user_turn(ctx: dict, question: str) -> str:
 # -----------------------------------------------------------------------------
 
 
+def looping(text: str) -> bool:
+    """A degenerate repeat ('Raphael is the man. Raphael is the king. ...'):
+    six sentences opening with the same three words, the same sentence
+    three times, or past MAX_ANSWER_WORDS."""
+    if len(text.split()) > MAX_ANSWER_WORDS:
+        return True
+    sents = [x.strip().lower() for x in re.split(r"(?<=[.!?])\s+", text) if len(x.split()) >= 3]
+    if not sents:
+        return False
+    heads = collections.Counter(" ".join(x.split()[:3]) for x in sents)
+    whole = collections.Counter(sents)
+    return max(heads.values()) >= 6 or max(whole.values()) >= 3
+
+
 async def _ollama_stream(messages: list[dict]):
     """Yield SSE-framed assistant tokens from Ollama."""
     payload = {"model": MODEL, "messages": messages, "stream": True, "options": OLLAMA_OPTIONS,
@@ -1464,6 +1492,7 @@ async def _ollama_stream(messages: list[dict]):
     if OLLAMA_THINK is not None:
         payload["think"] = OLLAMA_THINK == "true"
     timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)
+    text = ""
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
             async with c.stream("POST", f"{OLLAMA}/api/chat", json=payload) as r:
@@ -1481,6 +1510,12 @@ async def _ollama_stream(messages: list[dict]):
                         continue
                     chunk = obj.get("message", {}).get("content", "")
                     if chunk:
+                        text += chunk
+                        if looping(text):
+                            # closing the stream makes Ollama stop generating
+                            log.warning("answer looping, cut at %d words", len(text.split()))
+                            yield "data: [DONE]\n\n"
+                            return
                         yield _sse({"content": chunk})
                     if obj.get("done"):
                         yield "data: [DONE]\n\n"
