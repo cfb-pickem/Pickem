@@ -53,6 +53,8 @@ DATA = {
          "offense": {"rating": 35, "ranking": 7}, "defense": {"rating": 22, "ranking": 64}},
         {"team": "Oregon State", "rating": 3.8, "ranking": 56,
          "offense": {"rating": 30, "ranking": 37}, "defense": {"rating": 26, "ranking": 78}},
+        {"team": "Oregon", "rating": 16.9, "ranking": 15,
+         "offense": {"rating": 33, "ranking": 20}, "defense": {"rating": 16, "ranking": 21}},
         {"team": "Ohio State", "rating": 30.1, "ranking": 1,
          "offense": {"rating": 40, "ranking": 2}, "defense": {"rating": 9, "ranking": 1}},
     ],
@@ -200,6 +202,8 @@ for q in ("How many yards does Andrew Bub have?", "Who's winning the pool?", "Ro
           "What's Boise State's ATS record?", "what are my picks",
           "Who has the better defense in Oregon State at Boise State?"):
     check(f"no rows for {q!r}", rows(q) == [], rows(q))
+r = rows("What's Oregon State's record against the spread?")
+check("'Oregon State' doesn't also match a team called Oregon", r == [], r)
 r = rows("What's Ohio State's ATS record?")
 check("non-pool team stats on request", len(r) == 1 and r[0].startswith("Not a pool team")
       and "Ohio State" in r[0] and "ATS 5-4" in r[0], r)

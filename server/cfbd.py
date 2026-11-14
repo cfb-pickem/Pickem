@@ -689,7 +689,7 @@ def question_rows(question: str, pool_games: list[tuple[str, str]], skip_names: 
     missing = [n for n in names if norm(n).split()[-1] not in norm(found)]
     if missing and STAT_ASK.search(q):
         out.append(f"NOT IN THE STATS: no player named {', '.join(missing)} in the 2026 season stats. "
-                   "Say there's no such player in the data; give no numbers for them.")
+                   "Say there's no such player; give no numbers for them.")
     if players:
         out += players
     elif not missing:
@@ -707,16 +707,21 @@ def question_rows(question: str, pool_games: list[tuple[str, str]], skip_names: 
     if _TEAM_ASK.search(q):
         pool_n = {norm(_resolved_name(t, idx)) for t in pool_teams}
         words = norm(q).split()
-        seen = set()
-        for n in (3, 2, 1):
+        used: set[int] = set()  # words already part of a longer team name
+        for n in (4, 3, 2, 1):
             for i in range(len(words) - n + 1):
+                span = set(range(i, i + n))
                 g = " ".join(words[i:i + n])
-                if n == 1 and (g in STOPWORDS or len(g) < 4):
+                if span & used or (n == 1 and (g in STOPWORDS or len(g) < 4)):
                     continue
                 key = ALIASES.get(g, g)
                 t = idx["teams"].get(key)
-                if t and t.get("sp") and norm(t["name"]) not in pool_n and t["name"] not in seen:
-                    seen.add(t["name"])
+                if not t and g in {norm(x) for x in pool_teams}:
+                    t = {"name": g, "pool": True}
+                if not t:
+                    continue
+                used |= span  # "oregon state" claims "oregon" too
+                if t.get("sp") and norm(t["name"]) not in pool_n:
                     out.append("Not a pool team, stats only: " + compact_team_summary(t["name"], idx))
         out = out[:limit + 6]
     return out
