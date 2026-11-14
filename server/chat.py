@@ -1886,7 +1886,9 @@ async def _ollama_stream(messages: list[dict]):
                "keep_alive": OLLAMA_FALLBACK_KEEP_ALIVE if CLAUDE else OLLAMA_KEEP_ALIVE}
     if OLLAMA_THINK is not None:
         payload["think"] = OLLAMA_THINK == "true"
-    timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)
+    # read covers the wait in Ollama's queue before the first token; the
+    # client is kept alive by _keepalive pings meanwhile
+    timeout = httpx.Timeout(connect=5.0, read=240.0, write=10.0, pool=5.0)
     text = ""
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
@@ -2008,6 +2010,35 @@ async def _scrubbed(stream, looks: bool = False):
         yield _sse({"content": scrub(out, looks)})
     if held:
         yield _sse({"content": scrub(held, looks)})
+
+
+async def _keepalive(stream, every: float = 15.0):
+    """Send an SSE comment right away and after every `every` seconds of
+    silence. Cloudflare drops a request that has sent no bytes for 100 s
+    (524, no CORS headers), and a queued Ollama request can sit that long
+    before its first token. picky.js skips non-`data:` frames."""
+    yield ": ping\n\n"
+    it = stream.__aiter__()
+    nxt = asyncio.ensure_future(it.__anext__())
+    try:
+        while True:
+            done, _ = await asyncio.wait({nxt}, timeout=every)
+            if not done:
+                yield ": ping\n\n"
+                continue
+            try:
+                chunk = nxt.result()
+            except StopAsyncIteration:
+                return
+            yield chunk
+            nxt = asyncio.ensure_future(it.__anext__())
+    finally:
+        if not nxt.done():
+            nxt.cancel()  # client went away: closes the Ollama stream too
+            try:
+                await nxt
+            except BaseException:  # noqa: BLE001
+                pass
 
 
 async def _with_opener(opener: str | None, stream):
@@ -2143,7 +2174,7 @@ async def chat(req: Request):
     ]
 
     return StreamingResponse(
-        _with_opener(opener, _scrubbed(_model_stream(convo), looks_bait(last.get("content", "")))),
+        _keepalive(_with_opener(opener, _scrubbed(_model_stream(convo), looks_bait(last.get("content", ""))))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

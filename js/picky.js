@@ -143,7 +143,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
   const reader = r.body.getReader();
   const dec = new TextDecoder();
   let buf = '', full = '';
-  bubble.classList.remove('pk-typing');
+  // keep the dots up through ": ping" keepalives until real content lands
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -158,6 +158,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
       if (payload === '[DONE]') continue;
       try {
         const obj = JSON.parse(payload);
+        bubble.classList.remove('pk-typing');
         if (obj.content) {
           full += obj.content;
           renderMarkdown(bubble, full);
@@ -175,6 +176,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
       } catch { /* ignore partials */ }
     }
   }
+  bubble.classList.remove('pk-typing');
   if (full) history.push({ role: 'assistant', content: full });
 }
 
