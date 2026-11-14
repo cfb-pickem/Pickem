@@ -96,7 +96,7 @@ check("short enough for a small model", len(b) < 300, len(b))
 # -- players -------------------------------------------------------------------
 r = cfbd.find_players("how many rushing yards does Maddux Madsen have", idx=idx)
 check("full name in a question", len(r) == 1 and "142 yds" in r[0], r)
-check("completion pct from cmp/att", "66.7 pct" in r[0], r)
+check("completion pct from cmp/att", "66.7% comp" in r[0], r)
 check("misspelling still matches", cfbd.find_players("Maddux Madson", idx=idx), cfbd.find_players("Maddux Madson", idx=idx))
 check("made-up player returns nothing", cfbd.find_players("how good is Jaxon Smithfield-Bryce", idx=idx) == [])
 check("last name only, scoped to pool teams",
@@ -167,6 +167,57 @@ with tempfile.TemporaryDirectory() as d:
           c.paid == n and out["failed"] == {"team_stats": 502} and len(out["rows"]) == n - 1, out)
 
     check("count is per calendar month", cfbd.calls_used(db, "1999-01") == 0)
+
+# -- per-question rows ---------------------------------------------------------
+POOL = [("Oregon State", "Boise State")]
+MEMBERS = ["Chuck P", "Andrew Bub", "TG", "Kevin Culligan"]
+
+
+def rows(q):
+    return cfbd.question_rows(q, POOL, MEMBERS, idx=idx)
+
+
+r = rows("How many rushing yards does Maddux Madsen have?")
+check("named player -> just that row", len(r) == 1 and r[0].startswith("Maddux Madsen"), r)
+r = rows("How many touchdowns does Jaxon Smithfield-Bryce have?")
+check("made-up player -> NOT IN THE STATS line, no rows", len(r) == 1 and r[0].startswith("NOT IN THE STATS")
+      and "Jaxon Smithfield-Bryce" in r[0], r)
+r = rows("how many yards does bob fakename have")
+check("made-up player typed in lowercase", len(r) == 1 and "bob fakename" in r[0], r)
+r = rows("Who's the best QB in this week's games?")
+check("best QB -> pool passing leaders only", r and "PASSING LEADERS" in r[0]
+      and "Braden Atkinson" in r[1] and not any("Elsewhere" in x for x in r), r)
+r = rows("Who's Boise State's leading rusher?")
+check("possessive team scopes leaders", r and "Boise State" in r[0] and "Sire Gaines" in r[1]
+      and not any("Atkinson" in x for x in r), r)
+r = rows("Who's the best QB in the Boise game?")
+check("'the X game' widens to both teams", r and "Oregon State and Boise State" in r[0], r)
+for q in ("How many yards does Andrew Bub have?", "Who's winning the pool?", "Roast TG",
+          "Roast Kevin Culligan's picks", "What's Big Tuna Tony's record in the pool?",
+          "What's Boise State's ATS record?", "what are my picks",
+          "Who has the better defense in Oregon State at Boise State?"):
+    check(f"no rows for {q!r}", rows(q) == [], rows(q))
+r = rows("What's Ohio State's ATS record?")
+check("non-pool team stats on request", len(r) == 1 and r[0].startswith("Not a pool team") and "Ohio State" in r[0], r)
+check("better defense worked out in code",
+      cfbd.matchup_edges("Oregon State", "Boise State", idx) ==
+      "better defense: Boise State (SP+ defense #64 vs #78); better offense: Boise State (SP+ offense #7 vs #37)",
+      cfbd.matchup_edges("Oregon State", "Boise State", idx))
+
+# -- chat.py wiring --------------------------------------------------------------
+import chat  # noqa: E402
+
+chat._cfbd_index = lambda: idx
+CTX = {"standings_ytd": [{"team": m} for m in MEMBERS],
+       "games_this_week": [{"id": 1, "away": "Oregon State", "home": "Boise State"}]}
+sf = chat.stats_focus(CTX, "How many rushing yards does Maddux Madsen have?")
+check("stats_focus wraps the rows for the user turn", sf.startswith("PLAYER STATS") and "142 yds" in sf, sf)
+check("stats_focus empty for a non-stats question", chat.stats_focus(CTX, "Roast TG") == "")
+lines = chat.cfbd_game_lines("Oregon State", "Boise State", idx)
+check("game block has both teams + edges",
+      len(lines) == 3 and "Season (CFBD): Oregon State" in lines[0]
+      and "better offense: Boise State (SP+ offense #7 vs #37)" in lines[2], lines)
+check("missing cache says so", "not loaded" in chat.cfbd_game_lines("A", "B", None)[0])
 
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

@@ -23,6 +23,7 @@ Run:  ./.venv/bin/python3 -I cfbd.py refresh   (or: status)
 
 from __future__ import annotations
 
+import collections
 import datetime as dt
 import difflib
 import json
@@ -407,7 +408,7 @@ def _fmt_cat(cat: str, s: dict) -> str:
                 continue
         if isinstance(v, (int, float)) and k in ("YDS",) and abs(v) >= 1000:
             v = f"{v:,}"
-        out.append(f"{v} {LABEL[k]}")
+        out.append(f"{v}% comp" if k == "PCT" else f"{v} {LABEL[k]}")
     return f"{cat} " + ", ".join(out) if out else ""
 
 
@@ -429,6 +430,14 @@ def _volume(cat: str, s: dict) -> float:
         return 0
 
 
+STOPWORDS = set(
+    "a an the who whos what whats how hows is are was has have had does did do in on at of for "
+    "to vs and or best better worst most top this week weeks game games year season team "
+    "teams qb qbs rb wr te player players stats stat yards yds rushing passing receiving "
+    "defense offense record ats line spread pick picks me my i you he his him".split()
+)
+
+
 def find_players(query: str, teams: list[str] | None = None, limit: int = 5,
                  idx: dict | None = None) -> list[str]:
     """Rows for players named in `query` (a name or a whole question).
@@ -447,10 +456,22 @@ def find_players(query: str, teams: list[str] | None = None, limit: int = 5,
     grams = {" ".join(words[i:i + n]) for n in (2, 3) for i in range(len(words) - n + 1)}
     hits = [p for p in pool if p["key"] in grams]
     if not hits:
-        keys = {p["key"] for p in pool}
+        # close spellings, compared only against names sharing a 2-letter
+        # prefix on the first or last word (keeps it ~ms, not ~1 s), and never
+        # for phrases made of ordinary words ("the best" vs a "Theo Best")
+        by_pre: dict[str, set] = {}
+        for p in pool:
+            w = p["key"].split()
+            if len(w) >= 2:
+                by_pre.setdefault("f" + w[0][:2], set()).add(p["key"])
+                by_pre.setdefault("l" + w[-1][:2], set()).add(p["key"])
         close = set()
         for g in grams:
-            close.update(difflib.get_close_matches(g, keys, n=3, cutoff=0.86))
+            gw = g.split()
+            if len(g) < 7 or any(len(x) < 2 or x in STOPWORDS for x in gw):
+                continue
+            cands = by_pre.get("f" + gw[0][:2], set()) | by_pre.get("l" + gw[-1][:2], set())
+            close.update(difflib.get_close_matches(g, cands, n=3, cutoff=0.86))
         hits = [p for p in pool if p["key"] in close]
     if not hits and teams:
         # last name only ("how's Lopez doing"), scoped to the pool teams
@@ -482,6 +503,10 @@ LEADER_CATS = {
 }
 
 
+# a trick-play throw or one carry doesn't make a leader
+LEADER_FLOOR = {"passing": 20, "rushing": 10, "receiving": 5}
+
+
 def leaders(teams: list[str] | str, category: str, limit: int = 3,
             idx: dict | None = None) -> list[str]:
     """Top players in `category` across `teams` (one team or a game's two)."""
@@ -492,11 +517,29 @@ def leaders(teams: list[str] | str, category: str, limit: int = 3,
         teams = [teams]
     cat, key = LEADER_CATS.get(category.lower(), (category.lower(), "YDS"))
     names = {norm(_resolved_name(t, idx)) for t in teams}
+    floor = LEADER_FLOOR.get(cat, 0)
     pool = [p for n in names for p in idx["by_team"].get(n, [])
-            if isinstance((p["stats"].get(cat) or {}).get(key), (int, float))]
+            if isinstance((p["stats"].get(cat) or {}).get(key), (int, float))
+            and _volume(cat, p["stats"][cat]) >= floor]
     pool.sort(key=lambda p: -p["stats"][cat][key])
     return [f"{p['name']} ({p['pos'] or '?'}, {p['team']}): {_fmt_cat(cat, p['stats'][cat])}"
             for p in pool[:limit]]
+
+
+def matchup_edges(away: str, home: str, idx: dict | None = None) -> str | None:
+    """'better defense: X (SP+ defense #14 vs #86); better offense: ...',
+    worked out here so the model never has to compare ranks itself."""
+    idx = idx or load_index()
+    a, h = (resolve_team(away, idx), resolve_team(home, idx)) if idx else (None, None)
+    if not a or not h:
+        return None
+    parts = []
+    for side, label in (("def", "defense"), ("off", "offense")):
+        ra, rh = (a.get("sp") or {}).get(side + "_rank"), (h.get("sp") or {}).get(side + "_rank")
+        if ra and rh and ra != rh:
+            (bt, rb), (_, rw) = sorted(((a["name"], ra), (h["name"], rh)), key=lambda x: x[1])
+            parts.append(f"better {label}: {bt} (SP+ {label} #{rb} vs #{rw})")
+    return "; ".join(parts) or None
 
 
 def game_line(away: str, home: str, idx: dict | None = None) -> str | None:
@@ -518,6 +561,138 @@ def game_line(away: str, home: str, idx: dict | None = None) -> str | None:
     if ln.get("overUnder") is not None:
         s += f", O/U {ln['overUnder']}"
     return s
+
+
+# -----------------------------------------------------------------------------
+# per-question rows for chat.py: only what the question asks about
+# -----------------------------------------------------------------------------
+
+# question words -> leaders() category
+_CAT_WORDS = [
+    ("passing", r"\b(qbs?|quarterbacks?|passers?|passing|throw(s|ing|n)?|completions?)\b"),
+    ("rushing", r"\b(rush(ing|er|ers)?|running ?backs?|rbs?|carries|ground game)\b"),
+    ("receiving", r"\b(receiv(ing|ers?)|wide ?outs?|wrs?|catch(es)?|receptions?|targets?)\b"),
+    ("sacks", r"\b(sacks?|pass rush(er)?)\b"),
+    ("tackles", r"\b(tackl(es|ers?|ing))\b"),
+    ("interceptions", r"\b(interceptions?|ints?|picked off|ballhawk)\b"),
+]
+_LEADER_ASK = re.compile(r"\b(best|top|leading|leads?|leader|most|more|vs|versus|who'?s|who is|who has|whose|better|"
+                         r"compare|stud|star|go-?to|number one|no\.? ?1)\b", re.I)
+STAT_ASK = re.compile(
+    r"\b(yards?|yds|touchdowns?|tds?|stats?|statistics|numbers|passing|rushing|receiving|sacks?|"
+    r"tackles?|interceptions?|catches|receptions?|carries|completion|qbs?|quarterbacks?|rbs?|"
+    r"running ?backs?|receivers?|wrs?|players?|leaders?|leading)\b", re.I)
+_TEAM_ASK = re.compile(r"\b(ats|against the spread|cover(s|ed)? record|sp\+|rating|defen[cs]e|offen[cs]e|"
+                       r"stats?|ppg|points (a|per) game|yards (a|per) game|turnovers?|sacks)\b", re.I)
+# Capitalized multi-word phrases that look like a person's name.
+_TOK = r"[A-Z][a-zA-Z]*(?:['’.][A-Za-z]+)*\.?"
+_NAME = re.compile(rf"(?<![\w'’])({_TOK}(?:[- ]{_TOK}){{1,2}})(?![\w'’])")
+_LEAD = {"can", "should", "will", "tell", "give", "roast", "show", "picky", "yo", "hey", "ok", "okay",
+         "but", "so", "if", "many", "much", "yards", "touchdowns", "sacks", "tackles"}
+_ACRONYMS = {"ATS", "SP", "SP+", "QB", "QBS", "RB", "WR", "TE", "FPI", "AP", "CT", "TD", "TDS", "INT", "OT", "O/U"}
+_NOT_NAMES = {"pool line", "last week", "this week", "big ten", "big 12", "sun belt", "mountain west",
+              "conference usa", "group of five", "power four", "heisman trophy", "college football"}
+
+
+# typed in lowercase: "how many yards does bob fakename have"
+_LOWER_NAME = re.compile(r"\b(?:does|did|has|is|for|about|on)\s+([a-z][a-z'’-]+\s+[a-z][a-z'’-]+)\b")
+
+
+def _name_candidates(question: str, idx: dict, skip: list[str]) -> list[str]:
+    out = []
+    skip_n = {norm(x) for x in skip}
+    cands = [m.group(1) for m in _NAME.finditer(question or "")]
+    if STAT_ASK.search(question or ""):
+        cands += [m for m in _LOWER_NAME.findall(question or "")
+                  if not set(norm(m).split()) & (STOPWORDS | _LEAD)]
+    for cand in cands:
+        words = cand.split()
+        if any(w.upper() in _ACRONYMS for w in words) or (words and resolve_team(words[0], idx)):
+            continue  # "Texas ATS", "SMU QB": a team and a stat, not a person
+        # drop a sentence-initial question word ("How", "Is") glued onto the name
+        while words and norm(words[0]) in STOPWORDS | _LEAD:
+            words = words[1:]
+        cand = " ".join(words)
+        n = norm(cand)
+        if len(words) < 2 and "-" not in cand:
+            continue
+        if n in _NOT_NAMES or n in skip_n or any(n in s or s in n for s in skip_n if s):
+            continue
+        if resolve_team(cand, idx):
+            continue
+        out.append(cand)
+    return out
+
+
+def _pool_teams_named(q: str, pool_teams: list[str], idx: dict) -> list[str]:
+    """Pool teams named in a question, by full name or a unique first word
+    that isn't itself a team ("Wake" -> Wake Forest, but "Oregon" stays Oregon)."""
+    qn = f" {norm(q)} "
+    firsts = collections.Counter(norm(t).split()[0] for t in pool_teams if norm(t))
+    out = []
+    for t in pool_teams:
+        n = norm(t)
+        f = n.split()[0] if n else ""
+        if f" {n} " in qn or (firsts[f] == 1 and len(f) >= 4 and f not in idx["teams"]
+                               and f not in STOPWORDS and f" {f} " in qn):
+            out.append(t)
+    return out
+
+
+def question_rows(question: str, pool_games: list[tuple[str, str]], skip_names: list[str] | None = None,
+                  idx: dict | None = None, limit: int = 4) -> list[str]:
+    """CFBD rows for one chat message, [] when it isn't a stats question.
+    `pool_games` is [(away, home), ...] for this week's pool.
+
+    - players named in the question (any team), or a line saying the named
+      player isn't in the stats, so the model can't invent one;
+    - leaders by category across the pool games (or the pool teams named),
+      for "best QB / leading rusher" questions;
+    - a team summary for a named non-pool team when team stats are asked.
+    `skip_names` are league member names, so they're never read as players."""
+    idx = idx or load_index()
+    pool_teams = [t for g in pool_games for t in g]
+    q = re.sub(r"(\w)['’]s\b", r"\1", question or "")  # "SMU's" -> "SMU"
+    if not idx or not q.strip():
+        return []
+    out: list[str] = []
+    players = find_players(q, idx=idx, limit=limit) or find_players(q, teams=pool_teams, idx=idx, limit=limit)
+    names = _name_candidates(q, idx, (skip_names or []) + pool_teams)
+    found = " ".join(players).lower()
+    missing = [n for n in names if norm(n).split()[-1] not in norm(found)]
+    if missing and STAT_ASK.search(q):
+        out.append(f"NOT IN THE STATS: no player named {', '.join(missing)} in the 2026 season stats. "
+                   "Say there's no such player in the data; give no numbers for them.")
+    if players:
+        out += players
+    elif not missing:
+        cats = [c for c, rx in _CAT_WORDS if re.search(rx, q, re.I)]
+        if cats and (_LEADER_ASK.search(q) or STAT_ASK.search(q)):
+            named = _pool_teams_named(q, pool_teams, idx)
+            if named and re.search(r"\b(game|matchup|vs\.?|versus|against)\b", q, re.I):
+                named = list(dict.fromkeys(t for g in pool_games if set(g) & set(named) for t in g))
+            for c in cats[:2]:
+                rows = leaders(named or pool_teams, c, limit=3 if named else limit, idx=idx)
+                if rows:
+                    scope = " and ".join(named) if named else "this week's pool games"
+                    out.append(f"{c.upper()} LEADERS, {scope} (season totals, most first):")
+                    out += [f"  {r}" for r in rows]
+    if _TEAM_ASK.search(q):
+        pool_n = {norm(_resolved_name(t, idx)) for t in pool_teams}
+        words = norm(q).split()
+        seen = set()
+        for n in (3, 2, 1):
+            for i in range(len(words) - n + 1):
+                g = " ".join(words[i:i + n])
+                if n == 1 and (g in STOPWORDS or len(g) < 4):
+                    continue
+                key = ALIASES.get(g, g)
+                t = idx["teams"].get(key)
+                if t and t.get("sp") and norm(t["name"]) not in pool_n and t["name"] not in seen:
+                    seen.add(t["name"])
+                    out.append("Not a pool team, stats only: " + compact_team_summary(t["name"], idx))
+        out = out[:limit + 6]
+    return out
 
 
 def status(db=None) -> dict:
