@@ -53,6 +53,8 @@ DATA = {
          "offense": {"rating": 35, "ranking": 7}, "defense": {"rating": 22, "ranking": 64}},
         {"team": "Oregon State", "rating": 3.8, "ranking": 56,
          "offense": {"rating": 30, "ranking": 37}, "defense": {"rating": 26, "ranking": 78}},
+        {"team": "Ohio State", "rating": 30.1, "ranking": 1,
+         "offense": {"rating": 40, "ranking": 2}, "defense": {"rating": 9, "ranking": 1}},
     ],
     "records": [
         {"team": "Boise State", "conference": "MW", "total": {"wins": 8, "losses": 1},
@@ -60,7 +62,8 @@ DATA = {
         {"team": "Oregon State", "conference": "Pac-12", "total": {"wins": 5, "losses": 4},
          "conferenceGames": {"games": 0}},
     ],
-    "ats": [{"team": "Oregon State", "atsWins": 6, "atsLosses": 3, "atsPushes": 0, "avgCoverMargin": 7.3}],
+    "ats": [{"team": "Oregon State", "atsWins": 6, "atsLosses": 3, "atsPushes": 0, "avgCoverMargin": 7.3},
+            {"team": "Ohio State", "atsWins": 5, "atsLosses": 4, "atsPushes": 0, "avgCoverMargin": 2.0}],
     "advanced": [],
     "lines": [
         {"homeTeam": "Boise State", "awayTeam": "Oregon State", "homeScore": None, "awayScore": None,
@@ -198,7 +201,8 @@ for q in ("How many yards does Andrew Bub have?", "Who's winning the pool?", "Ro
           "Who has the better defense in Oregon State at Boise State?"):
     check(f"no rows for {q!r}", rows(q) == [], rows(q))
 r = rows("What's Ohio State's ATS record?")
-check("non-pool team stats on request", len(r) == 1 and r[0].startswith("Not a pool team") and "Ohio State" in r[0], r)
+check("non-pool team stats on request", len(r) == 1 and r[0].startswith("Not a pool team")
+      and "Ohio State" in r[0] and "ATS 5-4" in r[0], r)
 check("better defense worked out in code",
       cfbd.matchup_edges("Oregon State", "Boise State", idx) ==
       "better defense: Boise State (SP+ defense #64 vs #78); better offense: Boise State (SP+ offense #7 vs #37)",
@@ -214,9 +218,11 @@ sf = chat.stats_focus(CTX, "How many rushing yards does Maddux Madsen have?")
 check("stats_focus wraps the rows for the user turn", sf.startswith("PLAYER STATS") and "142 yds" in sf, sf)
 check("stats_focus empty for a non-stats question", chat.stats_focus(CTX, "Roast TG") == "")
 lines = chat.cfbd_game_lines("Oregon State", "Boise State", idx)
-check("game block has both teams + edges",
-      len(lines) == 3 and "Season (CFBD): Oregon State" in lines[0]
-      and "better offense: Boise State (SP+ offense #7 vs #37)" in lines[2], lines)
+check("game block has both teams, their leaders + edges",
+      len(lines) == 5 and "Season (CFBD): Oregon State" in lines[0]
+      and lines[1] == "  Season leaders, Oregon State: QB Braden Atkinson 3,148 yds"
+      and lines[3].startswith("  Season leaders, Boise State: QB Maddux Madsen 1,681 yds, 15 TD; RB Sire Gaines 801 yds")
+      and "better offense: Boise State (SP+ offense #7 vs #37)" in lines[4], lines)
 check("missing cache says so", "not loaded" in chat.cfbd_game_lines("A", "B", None)[0])
 
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAILED'}")

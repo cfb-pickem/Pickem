@@ -526,6 +526,33 @@ def leaders(teams: list[str] | str, category: str, limit: int = 3,
             for p in pool[:limit]]
 
 
+def team_leaders(team: str, idx: dict | None = None) -> str | None:
+    """'QB Name 2,176 yds, 18 TD, 1 INT; RB Name 760 yds, 10 TD; WR ...':
+    season leaders from the same daily pull as everything else."""
+    idx = idx or load_index()
+    if not idx:
+        return None
+    out = []
+    for pos, cat, keys in (("QB", "passing", ("YDS", "TD", "INT")), ("RB", "rushing", ("YDS", "TD")),
+                           ("WR", "receiving", ("YDS", "TD"))):
+        top = _top(team, cat, idx)
+        if top:
+            s = top["stats"][cat]
+            vals = [f"{s['YDS']:,} yds" if k == "YDS" else f"{s[k]} {k}" for k in keys
+                    if isinstance(s.get(k), (int, float))]
+            out.append(f"{top['pos'] or pos} {top['name']} {', '.join(vals)}")
+    return "; ".join(out) or None
+
+
+def _top(team: str, cat: str, idx: dict) -> dict | None:
+    n = norm(_resolved_name(team, idx))
+    floor = LEADER_FLOOR.get(cat, 0)
+    pool = [p for p in idx["by_team"].get(n, [])
+            if isinstance((p["stats"].get(cat) or {}).get("YDS"), (int, float))
+            and _volume(cat, p["stats"][cat]) >= floor]
+    return max(pool, key=lambda p: p["stats"][cat]["YDS"], default=None)
+
+
 def matchup_edges(away: str, home: str, idx: dict | None = None) -> str | None:
     """'better defense: X (SP+ defense #14 vs #86); better offense: ...',
     worked out here so the model never has to compare ranks itself."""

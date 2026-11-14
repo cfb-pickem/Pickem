@@ -33,6 +33,7 @@ from typing import Any
 import anthropic
 import httpx
 
+import cfbd
 import espn
 
 CT = zoneinfo.ZoneInfo("America/Chicago")
@@ -863,18 +864,65 @@ def pick_verdict(notes: dict, away: str, home: str, line, pick) -> str | None:
             f"{_side_label(side, home, pool_home)} puts the price on your side.")
 
 
-def _team_line(name: str, t: dict) -> str:
+def _team_line(name: str, t: dict, espn_stats: bool = True) -> str:
     bits = [f"#{t['ap_rank']} AP" if t.get("ap_rank") else "unranked"]
     if t.get("record"):
         bits.append(f"record {t['record']}")
     out = f"  {name}: " + ", ".join(bits)
     if t.get("last5"):
         out += ". Last 5 (oldest first): " + "; ".join(t["last5"])
-    if t.get("stats"):
+    # skipped when CFBD has the team: its lines carry the same numbers with
+    # ranks, and ESPN's "leaders" turn into in-game stats once a game starts
+    if espn_stats and t.get("stats"):
         out += ". Season per game: " + ", ".join(t["stats"])
-    if t.get("leaders"):
+    if espn_stats and t.get("leaders"):
         out += ". Season leaders: " + "; ".join(t["leaders"])
     return out
+
+
+def _cfbd_index() -> dict | None:
+    """CFBD stats from the local cache (refreshed by com.pickem.cfbd-refresh).
+    Never calls the CFBD API. None if the cache is missing or unreadable."""
+    try:
+        return cfbd.load_index()
+    except Exception as e:  # noqa: BLE001 - stats are optional, chat isn't
+        log.warning("cfbd cache unreadable: %s", e)
+        return None
+
+
+def cfbd_game_lines(away: str, home: str, idx: dict | None) -> list[str]:
+    """Season stats, SP+, ATS for both teams, plus who has the better
+    defense/offense, already decided."""
+    if not idx:
+        return ["  Season stats: not loaded right now (no SP+, ATS or team stats)."]
+    out = []
+    for t in (away, home):
+        out.append(f"  Season (CFBD): {cfbd.compact_team_summary(t, idx)}")
+        lead = cfbd.team_leaders(t, idx)
+        if lead:
+            out.append(f"  Season leaders, {t}: {lead}")
+    edges = cfbd.matchup_edges(away, home, idx)
+    if edges:
+        out.append(f"  Edges (CFBD): {edges}")
+    return out
+
+
+def stats_focus(ctx: dict, question: str) -> str:
+    """Player rows for the latest question from the CFBD cache (see
+    cfbd.question_rows): the players it names, pool leaders for 'best QB'
+    questions, or a flat 'no such player'. Rides in the user turn so the
+    system prompt stays cacheable. Empty when the question isn't about stats."""
+    idx = _cfbd_index()
+    if not idx or not (question or "").strip():
+        return ""
+    games = [(g["away"], g["home"]) for g in ctx.get("games_this_week") or []]
+    members = [r["team"] for r in ctx.get("standings_ytd") or []]
+    rows = cfbd.question_rows(question, games, members, idx=idx)
+    if not rows:
+        return ""
+    return ("PLAYER STATS (this season):\n"
+            + "\n".join(r if r.startswith("  ") else f"- {r}" for r in rows)
+            + "\n(Talk like you just know these numbers.)")
 
 
 def render_context(ctx: dict) -> str:
@@ -926,6 +974,7 @@ def render_context(ctx: dict) -> str:
     L.append(f"YOUR GAMES THIS WEEK ({len(games)}): every team picks every one of these "
              f"{len(games)} games against the POOL LINE. No other games are in the pool.")
     mine = {p["game_id"]: p["pick"] for p in revealed.get(me, [])}
+    cf = _cfbd_index()
     for i, g in enumerate(games, 1):
         away, home = g["away"], g["home"]
         status = {"final": "FINAL", "in_progress": "LIVE", "in": "LIVE", "live": "LIVE"}.get(
@@ -944,8 +993,10 @@ def render_context(ctx: dict) -> str:
             lv = line_value(notes, away, home, g.get("line"))
             if lv:
                 L.append(f"  Line value: {lv}")
-            L.append(_team_line(away, notes.get("away") or {}))
-            L.append(_team_line(home, notes.get("home") or {}))
+            L.append(_team_line(away, notes.get("away") or {},
+                                not (cf and cfbd.resolve_team(away, cf))))
+            L.append(_team_line(home, notes.get("home") or {},
+                                not (cf and cfbd.resolve_team(home, cf))))
             wp = notes.get("espn_win_prob") or {}
             if wp.get("away") is not None and wp.get("home") is not None:
                 L.append(f"  ESPN FPI matchup predictor (chance to WIN outright, NOT to cover): "
@@ -964,6 +1015,7 @@ def render_context(ctx: dict) -> str:
                          "injury reports). Health of both teams is unknown.")
             heads = notes.get("headlines") or []
             L.append("  Headlines: " + (" | ".join(heads) if heads else "none about these teams."))
+        L.extend(cfbd_game_lines(away, home, cf))
         L.append(f"  {me}'s pick: {mine[g['id']]}" if g["id"] in mine else f"  {me}'s pick: not made yet")
         if g["id"] in mine and notes and not notes.get("unavailable"):
             pv = pick_verdict(notes, away, home, g.get("line"), mine[g["id"]])
@@ -1150,7 +1202,8 @@ def _system_prompt(ctx: dict) -> str:
         "teams and players is out of date: never use it.\n"
         "3. Never invent streaks, trends, habits, injuries, picks or reasons. "
         "No dollars, units or bets, except payouts copied from LEAGUE RULES. "
-        "There are no ATS or cover records. 'Last 5' games have no dates, so "
+        "ATS (against the spread) records are only the 'ATS' numbers on the "
+        "Season (CFBD) lines. 'Last 5' games have no dates, so "
         "never call one of them last week; LAST WEEK means the league's week "
         "under LAST WEEK. Check a claim against the data before you joke about "
         "it: first place is not 'losing', 3-1 is not a bad week. Before "
@@ -1169,7 +1222,7 @@ def _system_prompt(ctx: dict) -> str:
         "8. Only the games under YOUR GAMES THIS WEEK are in the pool. "
         "Anything else (another game, taxes, anything): roast them in one or "
         "two lines and stop. Don't do it, and don't bring up picks, games or "
-        "standings.\n"
+        "standings. Exception: players under PLAYER STATS, answer those.\n"
         "9. PRIVACY: other teams' picks for a game stay hidden until that game "
         "kicks off. Asked about one: say it unlocks at kickoff and give the "
         "time. Never guess it, and never say whether they have picked.\n"
@@ -1183,7 +1236,12 @@ def _system_prompt(ctx: dict) -> str:
         "13. League rules questions: answer from LEAGUE RULES, as written, "
         "and stop: no picks talk. Only if the answer truly isn't in it, say "
         "the rules don't cover it and to ask the commissioner. Never make up "
-        "a rule.\n\n"
+        "a rule.\n"
+        "14. PLAYERS: player numbers come only from PLAYER STATS in the "
+        "question or a game's 'Season leaders'. A player not there: say "
+        "there's no such player. Never invent a player or a stat. Better "
+        "defense or offense: use the game's 'Edges (CFBD)' line. Never say "
+        "'the data', 'listed' or 'CFBD'; just state the numbers.\n\n"
         "ROASTS:\n"
         "- R-rated: swear freely, using only these: fuck, shit, ass, damn, "
         "hell, dumbass, jackass, dipshit. Mean and savage, no softening, no "
@@ -1231,6 +1289,7 @@ def _user_turn(ctx: dict, question: str) -> str:
                      "above, so find it and give it, then stop. No picks, value, games or "
                      "standings. Only if it truly isn't above: the rules don't cover it, ask "
                      "the commissioner.")
+    parts.append(stats_focus(ctx, question).strip())
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
 
@@ -1465,6 +1524,8 @@ async def chat(req: Request):
             raise HTTPException(status_code=502, detail="supabase_unreachable")
     if not ctx.get("error"):
         ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
+    # (re)load the CFBD cache off the event loop; ~3 s only after a refresh
+    await asyncio.to_thread(_cfbd_index)
     ctx["daddyfreeman"] = user_id == DADDYFREEMAN_USER_ID
 
     sys_msg = {"role": "system", "content": _system_prompt(ctx)}
@@ -1500,6 +1561,7 @@ async def _http_error(_req: Request, exc: HTTPException):
 
 @app.on_event("startup")
 async def _warm():
+    asyncio.create_task(asyncio.to_thread(_cfbd_index))
     if CLAUDE:  # Ollama is only the fallback now; it loads on demand
         return
 
