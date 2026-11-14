@@ -42,13 +42,11 @@ export async function initPicky(opts = {}) {
   if (!info.signedIn) return;             // hidden to logged-out visitors
 
   const ui = mountUI();
-  const ctx = await loadPageContext(info);
   // Rival-prediction producer: given the week + games, return the compact
   // {rival_team_id: {game_id: {pick, confidence}}} shape the backend wants.
   // Only meaningful on the picks page — leaderboard calls return {}.
   const rivalPredictor = opts.rivalPredictions || (async () => ({}));
 
-  wireTips(ui, ctx);
   wireChat(ui, info, { mode, rivalPredictor });
 }
 
