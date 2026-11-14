@@ -2637,5 +2637,85 @@
     });
 
   </script>
+
+  <!-- Mr. Locks — picks-page deep-analysis mode. Wrapped in a try/catch at
+       the module boundary so that if the chat code or the scouting model
+       throws, the picks UI above is untouched. -->
+  <script type="module">
+    try {
+      const [{ initMrLocks }, { supabase }, { loadTrainingData, modelFor }] =
+        await Promise.all([
+          import('./js/mrLocks.js'),
+          import('./js/supabaseClient.js'),
+          import('./js/scoutData.js'),
+        ]);
+
+      // Builds the rival_predictions payload server-side wants. We only run
+      // the model when the user actually asks a question — no up-front cost
+      // if they never open the chat.
+      async function rivalPredictions() {
+        try {
+          // current week + games this week with lines
+          const { data: seasonRow } = await supabase
+            .from('all_games').select('cfb_season')
+            .order('cfb_season', { ascending: false }).limit(1);
+          const season = seasonRow?.[0]?.cfb_season;
+          if (season == null) return {};
+
+          const { data: openRow } = await supabase
+            .from('all_games').select('week')
+            .eq('cfb_season', season).eq('picked', true).neq('Status', 'final')
+            .order('week', { ascending: true }).limit(1);
+          const week = openRow?.[0]?.week;
+          if (week == null) return {};
+
+          const { data: games } = await supabase
+            .from('all_games')
+            .select('"GameId","Away","Home",line,week,cfb_season,fpi_margin,Status')
+            .eq('cfb_season', season).eq('week', week).eq('picked', true);
+          if (!games?.length) return {};
+
+          const data = await loadTrainingData();
+          const model = modelFor(data, Number(season), Number(week));
+          if (!model) return {};
+
+          // playerIx key = team_id; emit a prediction per (team, game) with a
+          // meaningful line. unseen players are skipped, Mr. Locks is told
+          // "no read" when probable_picks is empty for a rival.
+          const out = {};
+          const teamIds = [...model.playerIx.keys()];
+          for (const tid of teamIds) {
+            const perGame = {};
+            for (const g of games) {
+              if (g.line == null || Math.abs(Number(g.line)) < 0.5) continue;
+              const q = model.predict(tid, {
+                Home: g.Home, Away: g.Away, line: Number(g.line),
+                fpi_margin: g.fpi_margin,
+              });
+              if (!q || q.unseen) continue;
+              // p is probability the picker LAYS the favourite. Translate
+              // to their expected side, with a 0..1 confidence (distance
+              // from a coin flip, doubled).
+              const laying = q.p >= 0.5;
+              perGame[g.GameId] = {
+                pick: laying ? q.fav : q.dog,
+                confidence: Math.min(1, Math.abs(q.p - 0.5) * 2),
+              };
+            }
+            if (Object.keys(perGame).length) out[String(tid)] = perGame;
+          }
+          return out;
+        } catch (e) {
+          console.warn('mr-locks: rival_predictions build failed', e);
+          return {};
+        }
+      }
+
+      initMrLocks({ mode: 'picks', rivalPredictions }).catch(e =>
+        console.warn('mr-locks init failed:', e));
+    } catch (e) {
+      console.warn('mr-locks (picks-page) module failed:', e);
+    }
+  </script>
 </body>
 </html>

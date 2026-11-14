@@ -192,7 +192,83 @@ def filter_visible_picks(
 # -----------------------------------------------------------------------------
 
 
-async def _build_context(client: httpx.AsyncClient, jwt: str, user_id: str) -> dict:
+def _compute_rivals(
+    standings_ytd: list[dict],
+    teams: list[dict],
+    me_team_name: str,
+    rival_predictions: dict | None,
+    name_by_team: dict,
+) -> list[dict]:
+    """Return 4 rivals by standings proximity: the two above and two below
+    the caller. Rank-1 or last-place fall back to the four nearest in-range.
+
+    `rival_predictions` comes from the client — it's the output of the
+    existing in-browser scouting model (js/scoutData.js). We don't recompute
+    it server-side; we just thread it through with a clear label."""
+    rivals: list[dict] = []
+    if not standings_ytd:
+        return rivals
+
+    ranked = [dict(r, rank=i + 1) for i, r in enumerate(standings_ytd)]
+    my_ix = next((i for i, r in enumerate(ranked) if r["team"] == me_team_name), None)
+    if my_ix is None:
+        return rivals
+
+    # Pick 2 above + 2 below, shifting toward the middle at the edges.
+    lo = max(0, my_ix - 2)
+    hi = min(len(ranked), my_ix + 3)   # +3 because slice is exclusive
+    window = [r for r in ranked[lo:hi] if r["team"] != me_team_name]
+    # Widen if we're short of 4 (user near the edge).
+    extra_lo = lo
+    extra_hi = hi
+    while len(window) < 4 and (extra_lo > 0 or extra_hi < len(ranked)):
+        if extra_lo > 0:
+            extra_lo -= 1
+            if ranked[extra_lo]["team"] != me_team_name:
+                window.insert(0, ranked[extra_lo])
+        if len(window) >= 4:
+            break
+        if extra_hi < len(ranked):
+            cand = ranked[extra_hi]
+            extra_hi += 1
+            if cand["team"] != me_team_name:
+                window.append(cand)
+    window = window[:4]
+
+    tid_by_name = {t["team_name"]: t["team_id"] for t in teams}
+    for r in window:
+        tid = tid_by_name.get(r["team"])
+        preds_raw = (rival_predictions or {}).get(str(tid), {}) if tid else {}
+        # normalise to a compact shape
+        probable = []
+        for gid, obj in (preds_raw or {}).items():
+            if not isinstance(obj, dict):
+                continue
+            pick = obj.get("pick")
+            conf = obj.get("confidence")
+            if pick is None:
+                continue
+            probable.append({
+                "game_id": int(gid) if str(gid).isdigit() else gid,
+                "pick": pick,
+                "confidence": round(float(conf), 2) if conf is not None else None,
+            })
+        rivals.append({
+            "team_name": r["team"],
+            "rank": r["rank"],
+            "record": f"{r['w']}-{r['l']}",
+            "probable_picks": probable,
+        })
+    return rivals
+
+
+async def _build_context(
+    client: httpx.AsyncClient,
+    jwt: str,
+    user_id: str,
+    mode: str = "leaderboard",
+    rival_predictions: dict | None = None,
+) -> dict:
     """Pull a compact snapshot of league state keyed to this user.
 
     RLS applies to everything here since the caller's JWT is used verbatim.
@@ -331,7 +407,7 @@ async def _build_context(client: httpx.AsyncClient, jwt: str, user_id: str) -> d
     }
 
     # Compact structures: the model does better with tidy JSON than prose.
-    return {
+    result = {
         "season": season,
         "current_week": current_week,
         "you": {"team_id": me_team_id, "team_name": me_name},
@@ -365,7 +441,33 @@ async def _build_context(client: httpx.AsyncClient, jwt: str, user_id: str) -> d
         },
         "you_have_picks_this_week": you_have_picks,
         "jackpot": jackpot,
+        "mode": mode,
     }
+    # Standings are needed before rivals can be computed — put them in first,
+    # then layer rivals on top.
+    result["rivals"] = _compute_rivals(
+        result["standings_ytd"], teams, me_name, rival_predictions, name_by_team
+    )
+    return result
+
+
+PICKS_MODE_RIDER = (
+    "\n\nDEEP ANALYSIS MODE — the user is on the make-picks page. Lean into "
+    "concrete recommendations. You have the week's spreads and `rivals`: the "
+    "four teams nearest the user in the standings, each with `probable_picks` "
+    "— the output of the pool's own historical-behavior model, NOT confirmed "
+    "picks. Say 'likely picking' or 'leans toward,' never 'is picking.' When "
+    "the user asks what to pick, reason game-by-game: name the side, give one "
+    "concrete reason tied to the spread or a rival-differentiation angle "
+    "(e.g. 'top three rivals are all chalk-stacking Michigan, so Illinois +7 "
+    "is where you get separation'). If `probable_picks` is empty for a rival, "
+    "don't guess — you just don't have a read on them."
+)
+
+LEADERBOARD_MODE_RIDER = (
+    "\n\nLEADERBOARD MODE — the user is viewing standings. Keep answers "
+    "short and conversational, league-wide gossip and quick stats."
+)
 
 
 def _system_prompt(ctx: dict) -> str:
@@ -396,7 +498,8 @@ def _system_prompt(ctx: dict) -> str:
         "pick what. NEVER comment on which teams have or haven't submitted "
         "picks for the upcoming week — you only know the caller's own "
         "submission status (you_have_picks_this_week).\n\n"
-        "Current league state (JSON):\n"
+        + (PICKS_MODE_RIDER if ctx.get("mode") == "picks" else LEADERBOARD_MODE_RIDER)
+        + "\n\nCurrent league state (JSON):\n"
         + json.dumps(ctx, separators=(",", ":"), default=str)
     )
 
@@ -455,6 +558,12 @@ async def chat(req: Request):
     body = await req.json()
     messages = body.get("messages") or []
     jwt = body.get("supabase_jwt") or ""
+    mode = body.get("mode") or "leaderboard"
+    if mode not in ("leaderboard", "picks"):
+        mode = "leaderboard"
+    rival_predictions = body.get("rival_predictions") or None
+    if rival_predictions is not None and not isinstance(rival_predictions, dict):
+        rival_predictions = None
     if not jwt:
         raise HTTPException(status_code=401, detail="missing_token")
     if not isinstance(messages, list) or not messages:
@@ -467,7 +576,9 @@ async def chat(req: Request):
         user_id = await _verify_jwt(client, jwt)
         _rate_check(user_id)
         try:
-            ctx = await _build_context(client, jwt, user_id)
+            ctx = await _build_context(
+                client, jwt, user_id, mode=mode, rival_predictions=rival_predictions
+            )
         except httpx.HTTPError as e:
             log.warning("supabase fetch failed: %s", e)
             raise HTTPException(status_code=502, detail="supabase_unreachable")

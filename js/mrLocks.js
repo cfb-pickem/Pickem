@@ -28,15 +28,28 @@ const MUTE_KEY = 'mrLocks.muted';
 const TIP_DISMISS_KEY = 'mrLocks.tipsDismissed';   // per-session, sessionStorage
 
 // --- entry point ---------------------------------------------------------
+//
+// Idempotent: both the leaderboard and the picks page may call this, and we
+// never want two mascots on-screen. The first caller wins, the second is a
+// no-op. mode: "leaderboard" (default) or "picks" (deep-analysis riff).
 
-export async function initMrLocks() {
+export async function initMrLocks(opts = {}) {
+  if (window.__mrLocksMounted) return;
+  window.__mrLocksMounted = true;
+
+  const mode = opts.mode === 'picks' ? 'picks' : 'leaderboard';
   const info = await sessionInfo();
   if (!info.signedIn) return;             // hidden to logged-out visitors
 
   const ui = mountUI();
   const ctx = await loadPageContext(info);
+  // Rival-prediction producer: given the week + games, return the compact
+  // {rival_team_id: {game_id: {pick, confidence}}} shape the backend wants.
+  // Only meaningful on the picks page — leaderboard calls return {}.
+  const rivalPredictor = opts.rivalPredictions || (async () => ({}));
+
   wireTips(ui, ctx);
-  wireChat(ui, info);
+  wireChat(ui, info, { mode, rivalPredictor });
 }
 
 // --- UI mount ------------------------------------------------------------
@@ -63,7 +76,9 @@ function mountUI() {
 
 // --- chat wiring ---------------------------------------------------------
 
-function wireChat(ui, info) {
+function wireChat(ui, info, chatOpts) {
+  const mode = chatOpts.mode;
+  const rivalPredictor = chatOpts.rivalPredictor;
   // conversation history kept in memory only — spec says do not persist
   const history = [];
 
@@ -96,7 +111,13 @@ function wireChat(ui, info) {
         bubble.textContent = 'Session expired — refresh the page.';
         return;
       }
-      await streamReply(trimmed, session.access_token, bubble, history);
+      // Rival predictions are opt-in per page. If the model isn't ready yet
+      // or the fetch throws, fall back to no-prediction mode — Mr. Locks just
+      // won't have reads on rivals this turn.
+      let rivalPreds = {};
+      try { rivalPreds = (await rivalPredictor()) || {}; }
+      catch (e) { console.warn('mr-locks: rival predictor failed', e); }
+      await streamReply(trimmed, session.access_token, bubble, history, mode, rivalPreds);
     } catch (e) {
       bubble.classList.remove('ml-typing');
       bubble.textContent = 'Mr. Locks is on a timeout: ' + (e.message || e);
@@ -104,11 +125,16 @@ function wireChat(ui, info) {
   });
 }
 
-async function streamReply(messages, jwt, bubble, history) {
+async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
   const r = await fetch(CHAT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, supabase_jwt: jwt }),
+    body: JSON.stringify({
+      messages,
+      supabase_jwt: jwt,
+      mode,
+      rival_predictions: rivalPreds,
+    }),
   });
   if (!r.ok) {
     bubble.classList.remove('ml-typing');

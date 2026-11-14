@@ -3152,10 +3152,16 @@
 
   <!-- Mr. Locks — the League Assistant mascot. Lazy-wired: if the viewer
        is logged out the module exits immediately, so the cost to anonymous
-       visitors is one small JS file. See js/mrLocks.js. -->
+       visitors is one small JS file. Any failure here must leave the
+       leaderboard above it untouched — the whole block is swallowed. -->
   <script type="module">
-    import { initMrLocks } from './js/mrLocks.js';
-    initMrLocks().catch(e => console.warn('mr-locks failed:', e));
+    try {
+      const { initMrLocks } = await import('./js/mrLocks.js');
+      initMrLocks({ mode: 'leaderboard' }).catch(e =>
+        console.warn('mr-locks init failed:', e));
+    } catch (e) {
+      console.warn('mr-locks (leaderboard) module failed:', e);
+    }
   </script>
 
   <!-- SANDBOX OVERLAY — commissioner-only scratch area.
