@@ -183,6 +183,13 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
           full += obj.content;
           bubble.textContent = full;
           bubble.parentElement.scrollTop = bubble.parentElement.scrollHeight;
+        } else if (obj.image && obj.image.startsWith('data:image/')) {
+          const img = document.createElement('img');
+          img.className = 'pk-img';
+          img.alt = 'Picture from Picky';
+          img.src = obj.image;
+          img.onload = () => { bubble.parentElement.scrollTop = bubble.parentElement.scrollHeight; };
+          bubble.appendChild(img);
         } else if (obj.error) {
           bubble.textContent = full || "Model hiccup — try again.";
         }
@@ -403,6 +410,7 @@ const STYLE = `
 .pk-bubble { max-width: 85%; padding: 8px 11px; border-radius: 12px;
              font-size: 14px; line-height: 1.4; white-space: pre-wrap;
              word-wrap: break-word; }
+.pk-img { display: block; width: 100%; margin-top: 6px; border-radius: 8px; }
 .pk-bubble-user { background: #1e3a2c; color: #d9f5e4; border-bottom-right-radius: 3px; }
 .pk-bubble-assistant { background: #1a1a1a; color: #e7e7e7;
                         border: 1px solid rgba(218,165,32,.2);

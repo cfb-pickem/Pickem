@@ -45,3 +45,20 @@ launchctl load   ~/Library/LaunchAgents/com.pickem.chat.plist
 ```
 
 Logs: `server/logs/chat.{stdout,stderr}.log`.
+
+## Images (`image.py`)
+
+When the latest message asks for a picture ("draw me...", "make a picture
+of..."), `/chat` skips the league context and hands only the user's own
+words to `image.py` on `127.0.0.1:8767` (Z-Image Turbo, 4-bit, via mflux).
+The reply streams a one-liner, keep-alive pings, then
+`data: {"image": "data:image/png;base64,..."}`, which `js/picky.js` renders
+in the bubble.
+
+- LaunchAgent `com.pickem.image`, venv `.venv-flux`, logs `server/logs/image.*.log`.
+- One GPU lock + one MLX thread, so generations run one at a time.
+- 20 images per user per hour.
+- Weights: pre-quantized copy at `~/models/z-image-turbo-4bit`, made once with
+  `mflux-save --model z-image-turbo --quantize 4 --path ~/models/z-image-turbo-4bit`.
+- Memory: the model loads on first request and unloads after 5 idle minutes,
+  so it only shares RAM with Ollama's Qwen while someone is making pictures.

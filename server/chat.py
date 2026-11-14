@@ -20,6 +20,7 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 import time
 import zoneinfo
 from typing import Any
@@ -49,6 +50,7 @@ AUTH = f"{SUPABASE_URL}/auth/v1"
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 MODEL = os.environ.get("PICKEM_CHAT_MODEL", "qwen2.5:7b-instruct")
+IMAGE_URL = os.environ.get("PICKY_IMAGE_URL", "http://127.0.0.1:8767")
 
 RATE_LIMIT_PER_MIN = 10
 MAX_HISTORY_TURNS = 10
@@ -544,6 +546,55 @@ def _sse(obj: dict) -> str:
 
 
 # -----------------------------------------------------------------------------
+# image generation: handed to image.py on :8767 (own GPU lock + 20/hr limit)
+# -----------------------------------------------------------------------------
+
+# "draw me a bulldog", "make a picture of ...", "generate an image of ..."
+_IMAGE_ASK = re.compile(
+    r"^\s*(draw|sketch|paint)\b"
+    r"|\b(draw|sketch|paint|generate|make|create|render|show)\b.{0,30}?"
+    r"\b(image|picture|pic|drawing|painting|illustration|photo|meme|poster|wallpaper)s?\b",
+    re.I,
+)
+
+
+def wants_image(text: str) -> bool:
+    return bool(_IMAGE_ASK.search(text or ""))
+
+
+async def _image_stream(prompt: str, user_id: str):
+    """SSE: a one-liner, keep-alive pings while the GPU works, then the image
+    as a data: URL. The prompt is only the user's own words; no league
+    context goes to the image service."""
+    yield _sse({"content": "Firing up the art department. Give me a minute or two..."})
+    timeout = httpx.Timeout(connect=5.0, read=300.0, write=10.0, pool=5.0)
+    async with httpx.AsyncClient(timeout=timeout) as c:
+        task = asyncio.create_task(
+            c.post(f"{IMAGE_URL}/generate", json={"prompt": prompt, "user_id": user_id, "width": 768, "height": 768})
+        )
+        try:
+            while not task.done():
+                await asyncio.wait({task}, timeout=10)
+                if not task.done():
+                    yield ": ping\n\n"  # keep the tunnel from idling out
+            r = task.result()
+        except httpx.HTTPError as e:
+            log.warning("image service unreachable: %s", e)
+            yield _sse({"content": " Art department's closed right now. Try me later."})
+            return
+        finally:
+            task.cancel()
+    if r.status_code == 429:
+        yield _sse({"content": " You've maxed out the art department, 20 an hour. Cool it for a bit."})
+    elif r.status_code != 200:
+        log.error("image %s: %s", r.status_code, r.text[:200])
+        yield _sse({"content": " Brush slipped. Try again in a minute."})
+    else:
+        yield _sse({"image": "data:image/png;base64," + r.json()["image_base64"]})
+    yield "data: [DONE]\n\n"
+
+
+# -----------------------------------------------------------------------------
 # routes
 # -----------------------------------------------------------------------------
 
@@ -575,6 +626,13 @@ async def chat(req: Request):
     async with httpx.AsyncClient() as client:
         user_id = await _verify_jwt(client, jwt)
         _rate_check(user_id)
+        last = messages[-1] if isinstance(messages[-1], dict) else {}
+        if last.get("role") == "user" and wants_image(last.get("content", "")):
+            return StreamingResponse(
+                _image_stream(last["content"][:2000], user_id),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
         try:
             ctx = await _build_context(
                 client, jwt, user_id, mode=mode, rival_predictions=rival_predictions
