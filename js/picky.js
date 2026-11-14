@@ -188,7 +188,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
           img.className = 'pk-img';
           img.alt = 'Picture from Picky';
           img.src = obj.image;
-          img.onload = () => { bubble.parentElement.scrollTop = bubble.parentElement.scrollHeight; };
+          img.onload = () => { const pane = bubble.closest('.pk-body'); if (pane) pane.scrollTop = pane.scrollHeight; };
           bubble.appendChild(img);
         } else if (obj.error) {
           bubble.textContent = full || "Model hiccup — try again.";
