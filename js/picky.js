@@ -181,7 +181,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
         const obj = JSON.parse(payload);
         if (obj.content) {
           full += obj.content;
-          bubble.textContent = full;
+          renderMarkdown(bubble, full);
           bubble.parentElement.scrollTop = bubble.parentElement.scrollHeight;
         } else if (obj.image && obj.image.startsWith('data:image/')) {
           const img = document.createElement('img');
@@ -197,6 +197,60 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
     }
   }
   if (full) history.push({ role: 'assistant', content: full });
+}
+
+// --- tiny markdown -------------------------------------------------------
+//
+// Model output is untrusted. It never goes near innerHTML: every piece is a
+// text node or an element we create, so "<img onerror=...>" just shows up as
+// those characters. Handles what Picky actually writes: **bold**, *italic*
+// / _italic_, "- " and "1. " lists, and line breaks.
+
+const MD_INLINE = /\*\*([^*\n]+?)\*\*|__([^_\n]+?)__|\*([^*\n]+?)\*|(?<![A-Za-z0-9])_([^_\n]+?)_(?![A-Za-z0-9])/g;
+
+function appendInline(parent, text) {
+  let last = 0;
+  for (const m of text.matchAll(MD_INLINE)) {
+    if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+    const el = document.createElement((m[1] ?? m[2]) != null ? 'strong' : 'em');
+    el.textContent = m[1] ?? m[2] ?? m[3] ?? m[4];
+    parent.appendChild(el);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+}
+
+function renderMarkdown(el, text) {
+  el.replaceChildren();
+  let list = null, listType = '', pendingBreak = false;
+  for (const line of text.split('\n')) {
+    const ul = line.match(/^\s*[-*•]\s+(.*)$/);
+    const ol = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (ul || ol) {
+      const type = ul ? 'ul' : 'ol';
+      if (!list || listType !== type) {
+        list = document.createElement(type);
+        list.className = 'pk-list';
+        if (ol) list.start = Number(ol[1]);
+        listType = type;
+        el.appendChild(list);
+      }
+      const li = document.createElement('li');
+      appendInline(li, ul ? ul[1] : ol[2]);
+      list.appendChild(li);
+      pendingBreak = false;
+      continue;
+    }
+    if (!line.trim()) {             // blank line ends a list, keeps one gap
+      if (!list && el.childNodes.length) pendingBreak = true;
+      list = null;
+      continue;
+    }
+    if (list) { list = null; }
+    else if (el.childNodes.length) el.appendChild(document.createElement('br'));
+    if (pendingBreak) { el.appendChild(document.createElement('br')); pendingBreak = false; }
+    appendInline(el, line);
+  }
 }
 
 function openPanel(ui) {
@@ -410,6 +464,10 @@ const STYLE = `
 .pk-bubble { max-width: 85%; padding: 8px 11px; border-radius: 12px;
              font-size: 14px; line-height: 1.4; white-space: pre-wrap;
              word-wrap: break-word; }
+.pk-bubble-assistant { white-space: normal; }
+.pk-bubble strong { color: #f1c75b; font-weight: 700; }
+.pk-list { margin: 4px 0; padding-left: 20px; }
+.pk-list li { margin: 2px 0; }
 .pk-img { display: block; width: 100%; margin-top: 6px; border-radius: 8px; }
 .pk-bubble-user { background: #1e3a2c; color: #d9f5e4; border-bottom-right-radius: 3px; }
 .pk-bubble-assistant { background: #1a1a1a; color: #e7e7e7;

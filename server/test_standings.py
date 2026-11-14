@@ -53,6 +53,17 @@ def test_ties_share_rank():
     assert rows == {"A": 1, "C": 1, "B": 3}, rows
 
 
+def test_pool_line_and_line_value():
+    # line is added to the home score: -13.5 = home favored by 13.5
+    assert chat.pool_line("Oregon State", "Boise State", -13.5) == "Boise State -13.5 / Oregon State +13.5"
+    assert chat.pool_line("Wake Forest", "SMU", 1.5) == "Wake Forest -1.5 / SMU +1.5"
+    n = lambda det: {"market": {"details": det}, "home": {"abbr": "SMU"}, "away": {"abbr": "WAKE"}}  # noqa: E731
+    assert chat.line_value(n("SMU -1.5"), "Wake Forest", "SMU", 1.5).startswith("SMU +1.5 is the value side")
+    assert chat.line_value(n("WAKE -3.5"), "Wake Forest", "SMU", 1.5).startswith("Wake Forest -1.5 is the value side")
+    assert "within a point" in chat.line_value(n("WAKE -2"), "Wake Forest", "SMU", 1.5)
+    assert chat.line_value(n(""), "Wake Forest", "SMU", 1.5) is None
+
+
 async def _run_paging_and_season_scope():
     calls = []
     page = [{"team_id": 1, "game_id": 100, "pick": "x", "by_slots": False, "jackpot": False}]
@@ -93,7 +104,7 @@ def test_picks_are_paged_and_season_scoped():
 
 
 if __name__ == "__main__":
-    tests = [test_points_match_leaderboard_rules, test_ties_share_rank, test_picks_are_paged_and_season_scoped]
+    tests = [test_points_match_leaderboard_rules, test_ties_share_rank, test_pool_line_and_line_value, test_picks_are_paged_and_season_scoped]
     failed = 0
     for t in tests:
         try:

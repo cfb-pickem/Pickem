@@ -28,6 +28,8 @@ from typing import Any
 
 import httpx
 
+import espn
+
 CT = zoneinfo.ZoneInfo("America/Chicago")
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +54,12 @@ AUTH = f"{SUPABASE_URL}/auth/v1"
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 MODEL = os.environ.get("PICKEM_CHAT_MODEL", "qwen2.5:7b-instruct")
 IMAGE_URL = os.environ.get("PICKY_IMAGE_URL", "http://127.0.0.1:8767")
+
+# Ollama's default num_ctx (4096 here) silently drops the front of a long
+# prompt: league context + ten turns of history. 8192 leaves ~2x headroom
+# over the biggest prompt measured. Same options on warmup so the model is
+# never reloaded at a different size. Low temperature: facts over flair.
+OLLAMA_OPTIONS = {"num_ctx": 8192, "temperature": 0.2}
 
 RATE_LIMIT_PER_MIN = 10
 MAX_HISTORY_TURNS = 10
@@ -298,23 +306,41 @@ def same_team(a, b) -> bool:
     return na == nb or st(na) == st(nb)
 
 
+def _graded(season_games: list[dict], picks: list[dict]):
+    """(team_id, week, hit) for every pick on a decided, non-tiebreaker game."""
+    by_id = {
+        g["GameId"]: g
+        for g in season_games
+        if g.get("winner") and not g.get("tiebreaker")
+    }
+    for p in picks:
+        g = by_id.get(p["game_id"])
+        if g is not None:
+            yield p["team_id"], g.get("week"), bool(p.get("jackpot") or same_team(p["pick"], g["winner"]))
+
+
+def compute_weekly(teams: list[dict], season_games: list[dict], picks: list[dict]) -> dict:
+    """{team_name: {week: [w, l]}}, same scoring as compute_standings."""
+    name_by_team = {t["team_id"]: t["team_name"] for t in teams}
+    out: dict[str, dict] = {}
+    for tid, week, hit in _graded(season_games, picks):
+        if tid not in name_by_team or week is None:
+            continue
+        wl = out.setdefault(name_by_team[tid], {}).setdefault(week, [0, 0])
+        wl[0 if hit else 1] += 1
+    return out
+
+
 def compute_standings(teams: list[dict], season_games: list[dict], picks: list[dict]) -> list[dict]:
     """Season points exactly as the leaderboard scores them: a point when the
     pick matches `winner` (the side that covered) or the pick hit the slots
     jackpot; tiebreaker games never count. `l` is the graded picks that
     missed. Sorted like the board, most points first."""
-    winner_by_game = {
-        g["GameId"]: g["winner"]
-        for g in season_games
-        if g.get("winner") and not g.get("tiebreaker")
-    }
     name_by_team = {t["team_id"]: t["team_name"] for t in teams}
     rec = {tid: [0, 0] for tid in name_by_team}
-    for p in picks:
-        w = winner_by_game.get(p["game_id"])
-        if w is None or p["team_id"] not in rec:
-            continue
-        rec[p["team_id"]][0 if (p.get("jackpot") or same_team(p["pick"], w)) else 1] += 1
+    for tid, _week, hit in _graded(season_games, picks):
+        if tid in rec:
+            rec[tid][0 if hit else 1] += 1
     rows = sorted(
         ({"team": name_by_team[tid], "w": w, "l": l} for tid, (w, l) in rec.items() if w + l),
         key=lambda r: (-r["w"], r["l"], r["team"]),
@@ -384,14 +410,16 @@ async def _build_context(
 
     week_games_t = _rest_get(
         client,
-        f"all_games?select=GameId,Away,Home,line,Status,winner,week,tiebreaker"
+        f"all_games?select=GameId,Away,Home,line,Status,winner,week,tiebreaker,"
+        f"\"Start (CT)\""
         f"&cfb_season=eq.{season}&week=eq.{current_week}&picked=eq.true"
         f"&order=\"Start (CT)\".asc",
         jwt,
     )
     season_games_t = _rest_get(
         client,
-        f"all_games?select=GameId,winner,line,week,tiebreaker&cfb_season=eq.{season}"
+        f"all_games?select=GameId,Away,Home,AwayPts,HomePts,winner,line,week,tiebreaker"
+        f"&cfb_season=eq.{season}"
         f"&picked=eq.true&Status=eq.final",
         jwt,
     )
@@ -464,6 +492,7 @@ async def _build_context(
         "games_this_week": [
             {
                 "id": g["GameId"],
+                "start": g.get("Start (CT)"),
                 "away": g["Away"],
                 "home": g["Home"],
                 "line": g["line"],
@@ -482,6 +511,8 @@ async def _build_context(
         },
         "you_have_picks_this_week": you_have_picks,
         "jackpot": jackpot,
+        "weekly_records": compute_weekly(teams, season_games, picks_all),
+        "last_week": _last_week(current_week, season_games, picks_all, name_by_team, me_team_id),
         "mode": mode,
     }
     # Standings are needed before rivals can be computed — put them in first,
@@ -492,59 +523,422 @@ async def _build_context(
     return result
 
 
+def _last_week(current_week, season_games, picks_all, name_by_team, me_team_id) -> dict:
+    """Finals from the week before this one, who picked what, and the
+    caller's record. Every game here is final, so every pick is revealed."""
+    if not isinstance(current_week, int) or current_week < 2:
+        return {}
+    wk = current_week - 1
+    games = [g for g in season_games if g.get("week") == wk and not g.get("tiebreaker")]
+    if not games:
+        return {}
+    ids = {g["GameId"] for g in games}
+    by_game: dict = collections.defaultdict(dict)
+    for p in picks_all:
+        if p["game_id"] in ids and p["team_id"] in name_by_team:
+            by_game[p["game_id"]][name_by_team[p["team_id"]]] = p["pick"]
+    mine = [0, 0]
+    for tid, _w, hit in _graded(games, picks_all):
+        if tid == me_team_id:
+            mine[0 if hit else 1] += 1
+    return {
+        "week": wk,
+        "you": f"{mine[0]}-{mine[1]}" if sum(mine) else None,
+        "games": [
+            {
+                "away": g.get("Away"), "home": g.get("Home"),
+                "away_pts": g.get("AwayPts"), "home_pts": g.get("HomePts"),
+                "line": g.get("line"), "covered": g.get("winner"),
+                "picks": by_game.get(g["GameId"], {}),
+            }
+            for g in games
+        ],
+    }
+
+
 PICKS_MODE_RIDER = (
-    "\n\nDEEP ANALYSIS MODE — the user is on the make-picks page. Lean into "
-    "concrete recommendations. You have the week's spreads and `rivals`: the "
-    "four teams nearest the user in the standings, each with `probable_picks` "
-    "— the output of the pool's own historical-behavior model, NOT confirmed "
-    "picks. Say 'likely picking' or 'leans toward,' never 'is picking.' When "
-    "the user asks what to pick, reason game-by-game: name the side, give one "
-    "concrete reason tied to the spread or a rival-differentiation angle "
-    "(e.g. 'top three rivals are all chalk-stacking Michigan, so Illinois +7 "
-    "is where you get separation'). If `probable_picks` is empty for a rival, "
-    "don't guess — you just don't have a read on them."
+    "\n\nDEEP ANALYSIS MODE: the user is on the make-picks page. Lean into "
+    "concrete recommendations, game by game, every game. RIVALS lists the "
+    "four teams nearest the user in the standings with their 'probable "
+    "picks': guesses from the pool's own model, NOT real picks. Say 'likely "
+    "picking' or 'leans,' never 'is picking.' A rival with no probable picks "
+    "listed: you have no read on them, so don't guess. Separation angles "
+    "(fading what rivals likely pick) are a good reason when they apply."
 )
 
 LEADERBOARD_MODE_RIDER = (
-    "\n\nLEADERBOARD MODE — the user is viewing standings. Keep answers "
-    "short and conversational, league-wide gossip and quick stats."
+    "\n\nLEADERBOARD MODE: the user is viewing standings. Keep answers "
+    "short and conversational: league gossip and quick stats."
+)
+
+ROAST_EXAMPLES = (
+    "Roast examples. The teams and numbers here are FAKE and only show the "
+    "voice; real roasts use the real numbers from LEAGUE DATA:\n"
+    "  Data line: '9th. Gus: 19-25 | weeks: wk8 1-3, wk9 2-2, wk10 0-4'\n"
+    "  Roast: 'Gus. Nineteen and twenty-five. A coin flip would be beating you "
+    "and it doesn't even watch football. Oh-for-four last week, ninth place, "
+    "still sinking. Delete the app, champ.'\n"
+    "  Data line: '1st. Rita: 30-14' and last week she was the only one on "
+    "Iowa, and Iowa didn't cover.\n"
+    "  Roast: 'Rita's up top at 30-14 and still went full lone genius on Iowa "
+    "last week. First place can't buy taste, apparently.'"
 )
 
 
-def _system_prompt(ctx: dict) -> str:
+def _num(x) -> str:
+    try:
+        f = float(x)
+    except (TypeError, ValueError):
+        return str(x)
+    return str(int(f)) if f == int(f) else str(f)
+
+
+def _ordinal(n: int) -> str:
+    suf = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
+def pool_line(away: str, home: str, line) -> str:
+    """`line` is added to the home score (set_winner_on_final: home covers
+    when home + line > away), so a negative line means home is favored."""
+    try:
+        ln = float(line)
+    except (TypeError, ValueError):
+        return "no line posted"
+    if ln == 0:
+        return "pick'em (no spread)"
+    fav, dog = (home, away) if ln < 0 else (away, home)
+    return f"{fav} -{_num(abs(ln))} / {dog} +{_num(abs(ln))}"
+
+
+def _kickoff(start) -> str:
+    try:
+        t = dt.datetime.fromisoformat(str(start))
+    except ValueError:
+        return "kickoff time unknown"
+    return t.strftime("%a %-I:%M %p CT")
+
+
+def _market(notes: dict, away: str, home: str) -> str | None:
+    m = notes.get("market") or {}
+    det = (m.get("details") or "").strip()
+    if not det:
+        return None
+    for side, name in (("home", home), ("away", away)):
+        ab = (notes.get(side) or {}).get("abbr")
+        if ab and det.upper().startswith(ab.upper() + " "):
+            det = name + det[len(ab):]
+            break
+    ou = f", over/under {_num(m['over_under'])}" if m.get("over_under") is not None else ""
+    return f"{det}{ou}"
+
+
+def line_value(notes: dict, away: str, home: str, line) -> str | None:
+    """Where the ESPN market and the pool line disagree. Both turned into a
+    home spread (negative = home favored); a gap means one side of the pool
+    line is getting points the market wouldn't give."""
+    det = ((notes.get("market") or {}).get("details") or "").strip()
+    try:
+        pool_home = float(line)
+    except (TypeError, ValueError):
+        return None
+    if det.upper() == "EVEN":
+        mkt_home = 0.0
+    else:
+        m = re.match(r"^(\S+)\s+([+-]?\d+(?:\.\d+)?)$", det)
+        if not m:
+            return None
+        ab, n = m.group(1).upper(), float(m.group(2))
+        if ab == ((notes.get("home") or {}).get("abbr") or "").upper():
+            mkt_home = n
+        elif ab == ((notes.get("away") or {}).get("abbr") or "").upper():
+            mkt_home = -n
+        else:
+            return None
+    gap = pool_home - mkt_home       # > 0: market likes home more than the pool does
+    if abs(gap) < 1:
+        return "pool line and ESPN market are within a point, so no line value either way."
+    side = home if gap > 0 else away
+    fav_is_home = pool_home < 0
+    sign = "-" if (side == home) == fav_is_home else "+"
+    return (f"{side} {sign}{_num(abs(pool_home))} is the value side: the market rates "
+            f"{side} {_num(abs(gap))} points better than the pool line does.")
+
+
+def _team_line(name: str, t: dict) -> str:
+    bits = [f"#{t['ap_rank']} AP" if t.get("ap_rank") else "unranked"]
+    if t.get("record"):
+        bits.append(f"record {t['record']}")
+    out = f"  {name}: " + ", ".join(bits)
+    if t.get("last5"):
+        out += ". Last 5 (oldest first): " + "; ".join(t["last5"])
+    return out
+
+
+def render_context(ctx: dict) -> str:
+    """The league snapshot as labeled plain text. A 7B model reads this far
+    more reliably than a JSON blob: explicit counts, explicit ranks, the
+    graded line spelled out per game, and 'none'/'unavailable' written down
+    instead of left as a gap for the model to fill."""
+    if ctx.get("error"):
+        return f"LEAGUE DATA UNAVAILABLE: {ctx['error']}"
+    me = (ctx.get("you") or {}).get("team_name") or "(you)"
+    games = ctx.get("games_this_week") or []
+    revealed = ctx.get("revealed_picks_this_week") or {}
+    espn_all = ctx.get("espn")
+    weekly = ctx.get("weekly_records") or {}
+    L: list[str] = []
+    L.append(f"Season {ctx.get('season')}, week {ctx.get('current_week')}. "
+             f"The user is the team \"{me}\".")
+
+    st = ctx.get("standings_ytd") or []
+    L.append("")
+    L.append(f"STANDINGS ({len(st)} teams; record = points-missed; points are picks "
+             "that covered, the same number as the leaderboard's Points; T = tied):")
+    for r in st:
+        tied = sum(1 for x in st if x["rank"] == r["rank"]) > 1
+        line = f"{'T' if tied else ''}{_ordinal(r['rank'])}. {r['team']}: {r['w']}-{r['l']}"
+        wk = weekly.get(r["team"]) or {}
+        recent = sorted(wk)[-3:]
+        if recent:
+            line += " | weeks: " + ", ".join(f"wk{w} {wk[w][0]}-{wk[w][1]}" for w in recent)
+        if r["team"] == me:
+            line += "  <- the user"
+        L.append(line)
+    if st:
+        def _who(rank):
+            names = [x["team"] for x in st if x["rank"] == rank]
+            pts = next(x["w"] for x in st if x["rank"] == rank)
+            if len(names) == 1:
+                return f"{names[0]}, alone, with {pts} points"
+            return f"{' and '.join(names)}, tied with {pts} points each"
+        L.append(f"First place: {_who(st[0]['rank'])}. Last place: {_who(st[-1]['rank'])}.")
+
+    L.append("")
+    L.append(f"YOUR GAMES THIS WEEK ({len(games)}): every team picks every one of these "
+             f"{len(games)} games against the POOL LINE. No other games are in the pool.")
+    mine = {p["game_id"]: p["pick"] for p in revealed.get(me, [])}
+    for i, g in enumerate(games, 1):
+        away, home = g["away"], g["home"]
+        status = {"final": "FINAL", "in_progress": "LIVE", "in": "LIVE", "live": "LIVE"}.get(
+            g.get("status"), "not started")
+        tb = " TIEBREAKER game (doesn't count for points)." if g.get("tiebreaker") else ""
+        L.append(f"Game {i}: {away} at {home}, {_kickoff(g.get('start'))}, {status}.{tb}")
+        L.append(f"  POOL LINE, the two sides you can pick (graded on this): {pool_line(away, home, g.get('line'))}")
+        if g.get("winner"):
+            L.append(f"  Covered: {g['winner']}")
+        notes = (espn_all or {}).get(g["id"]) if espn_all is not None else None
+        if not notes or notes.get("unavailable"):
+            L.append("  ESPN data: unavailable right now (no market line, records, injuries or news).")
+        else:
+            mk = _market(notes, away, home)
+            L.append(f"  ESPN market line now: {mk}" if mk else "  ESPN market line: none posted")
+            lv = line_value(notes, away, home, g.get("line"))
+            if lv:
+                L.append(f"  Line value: {lv}")
+            L.append(_team_line(away, notes.get("away") or {}))
+            L.append(_team_line(home, notes.get("home") or {}))
+            # ESPN's win probability is left out on purpose: even labeled
+            # "NOT to cover", the 7B model kept quoting it as a cover chance.
+            inj_a = (notes.get("away") or {}).get("injuries") or []
+            inj_h = (notes.get("home") or {}).get("injuries") or []
+            if inj_a or inj_h:
+                L.append(f"  Injuries: {away}: {', '.join(inj_a) or 'none listed'}. "
+                         f"{home}: {', '.join(inj_h) or 'none listed'}.")
+            else:
+                L.append("  Injuries: ESPN lists none for either team.")
+            heads = notes.get("headlines") or []
+            L.append("  Headlines: " + (" | ".join(heads) if heads else "none about these teams."))
+        L.append(f"  {me}'s pick: {mine[g['id']]}" if g["id"] in mine else f"  {me}'s pick: not made yet")
+        others = {t: p["pick"] for t, plist in revealed.items() if t != me
+                  for p in plist if p["game_id"] == g["id"]}
+        if others:
+            sides = collections.defaultdict(list)
+            for t, pk in sorted(others.items()):
+                sides[pk].append(t)
+            L.append("  Other picks (revealed): " + "; ".join(
+                f"{pk}: {', '.join(ts)}" for pk, ts in sides.items()))
+        elif status == "not started":
+            L.append("  Other teams' picks: hidden until kickoff.")
+    L.append(f"(That is all {len(games)} games.)")
+
+    lw = ctx.get("last_week") or {}
+    if lw.get("games"):
+        L.append("")
+        L.append(f"LAST WEEK (week {lw['week']}) FINALS:")
+        for g in lw["games"]:
+            score = (f"{g['away']} {_num(g['away_pts'])}, {g['home']} {_num(g['home_pts'])}"
+                     if g.get("away_pts") is not None else f"{g['away']} at {g['home']} (score missing)")
+            mine_lw = (g.get("picks") or {}).get(me)
+            you_lw = (f" {me} took {mine_lw} ({'HIT' if same_team(mine_lw, g.get('covered')) else 'MISS'})."
+                      if mine_lw else "")
+            L.append(f"- {score}. Pool line {pool_line(g['away'], g['home'], g.get('line'))}. "
+                     f"Covered: {g.get('covered') or 'unknown'}.{you_lw}")
+            sides = collections.defaultdict(list)
+            for t, pk in sorted((g.get("picks") or {}).items()):
+                sides[pk].append(t)
+            if sides:
+                L.append("  Picks: " + "; ".join(
+                    f"{pk} ({len(ts)}): {', '.join(ts)}" for pk, ts in sides.items()))
+        L.append(f"LAST WEEK BY TEAM (week {lw['week']}), each team's own picks:")
+        by_team: dict = collections.defaultdict(list)
+        for g in lw["games"]:
+            for t, pk in (g.get("picks") or {}).items():
+                by_team[t].append((pk, same_team(pk, g.get("covered"))))
+        order = [r["team"] for r in st] + sorted(set(by_team) - {r["team"] for r in st})
+        for t in order:
+            if t not in by_team:
+                continue
+            res = by_team[t]
+            hits = sum(ok for _, ok in res)
+            L.append(f"- {t} went {hits}-{len(res) - hits}. "
+                     f"Hits: {', '.join(pk for pk, ok in res if ok) or 'none'}. "
+                     f"Misses: {', '.join(pk for pk, ok in res if not ok) or 'none'}."
+                     + ("  <- the user" if t == me else ""))
+    else:
+        L.append("")
+        L.append("LAST WEEK: no data.")
+
+    jp = ctx.get("jackpot") or {}
+    if jp.get("pulls_since_pop") is not None:
+        last = f"; last popped by {jp['last_pop_team']}" if jp.get("last_pop_team") else ""
+        L.append("")
+        L.append(f"SLOTS JACKPOT: {jp['pulls_since_pop']} pulls since it last popped{last}.")
+
+    L.append("")
+    L.append(f"{me} has {'made' if ctx.get('you_have_picks_this_week') else 'NOT made'} picks this week.")
+
+    if ctx.get("mode") == "picks" and ctx.get("rivals"):
+        L.append("")
+        L.append("RIVALS (nearest in standings). Probable picks are the pool model's guesses, not real picks:")
+        gname = {g["id"]: f"{g['away']} at {g['home']}" for g in games}
+        for r in ctx["rivals"]:
+            pp = [f"{gname.get(p['game_id'], p['game_id'])}: leans {p['pick']}"
+                  + (f" ({round(p['confidence'] * 100)}%)" if p.get("confidence") is not None else "")
+                  for p in r.get("probable_picks") or []]
+            L.append(f"- {r['team_name']} ({_ordinal(r['rank'])}, {r['record']}): "
+                     + ("; ".join(pp) if pp else "no read on their picks"))
+    return "\n".join(L)
+
+
+def focus_block(ctx: dict, question: str) -> str:
+    """Facts about the league members named in the latest message ('me',
+    'my', 'myself' = the caller), pulled out of the full snapshot and put at
+    the very end of the prompt. A 7B model asked to roast TG otherwise
+    grabs picks from the wrong row of LAST WEEK BY TEAM."""
+    me = (ctx.get("you") or {}).get("team_name")
+    names = [r["team"] for r in ctx.get("standings_ytd") or []]
+    q = question or ""
+    hit = [n for n in names if re.search(rf"(?<!\w){re.escape(n)}(?!\w)", q, re.I)]
+    if me and me not in hit and re.search(r"\b(me|my|myself|i)\b", q, re.I) \
+            and re.search(r"\broast|\bhow (did|am|'?m) i\b|\bmy (record|week|picks?|season)\b", q, re.I):
+        hit.append(me)
+    if not hit:
+        return ""
+    text = render_context(ctx).splitlines()
+    out = ["", "FOCUS: the facts below are everything known about the team(s) "
+           "named in this question. Use these exact facts, nothing else, for them:"]
+    for n in hit[:3]:
+        out.append(f"{n}{' (the user)' if n == me else ''}:")
+        for ln in text:
+            if re.match(rf"T?\d+(st|nd|rd|th)\. {re.escape(n)}:", ln):
+                out.append("  Standings: " + ln.replace("  <- the user", ""))
+                st = ctx["standings_ytd"]
+                row = next(r for r in st if r["team"] == n)
+                mates = [r["team"] for r in st if r["rank"] == row["rank"] and r["team"] != n]
+                where = ("first place" if row["rank"] == 1 else
+                         "last place" if row["rank"] == st[-1]["rank"] else
+                         f"{_ordinal(row['rank'])} place")
+                tie = f", tied with {', '.join(mates)}" if mates else ""
+                out.append(f"  Place: {where}{tie}, out of {len(st)} teams.")
+            elif ln.startswith(f"- {n} went "):
+                out.append("  Last week: " + ln[2:].replace("  <- the user", ""))
+                for g in (ctx.get("last_week") or {}).get("games") or []:
+                    pk = (g.get("picks") or {}).get(n)
+                    if pk is None:
+                        continue
+                    ok = same_team(pk, g.get("covered"))
+                    out.append(f"    {g['away']} at {g['home']}: {n} took {pk}, "
+                               + ("HIT." if ok else f"MISS ({g.get('covered')} covered, not {n}'s pick)."))
+        if n == me:
+            mine = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(me, [])}
+            gl = [f"{mine[g['id']]}" for g in ctx.get("games_this_week") or [] if g["id"] in mine]
+            out.append(f"  This week's picks: {', '.join(gl) if gl else 'none made yet'}.")
+        else:
+            shown = {p["game_id"] for p in (ctx.get("revealed_picks_this_week") or {}).get(n, [])}
+            hidden = [f"{g['away']} at {g['home']}" for g in ctx.get("games_this_week") or []
+                      if g["id"] not in shown]
+            if hidden:
+                out.append(f"  This week's picks: HIDDEN until kickoff for {', '.join(hidden)}. "
+                           "If asked, say: 'Can't say, picks aren't locked in yet for that one.'")
+        lw = ctx.get("last_week") or {}
+        for g in lw.get("games") or []:
+            pk = (g.get("picks") or {}).get(n)
+            if pk is None:
+                continue
+            same = sorted(t for t, p in g["picks"].items() if p == pk and t != n)
+            if len(same) <= 2:
+                alone = "the ONLY team" if not same else f"one of only {len(same) + 1} teams (with {', '.join(same)})"
+                ok = "it covered" if same_team(pk, g.get("covered")) else "it did NOT cover"
+                out.append(f"  Last week {n} was {alone} on {pk}, and {ok}.")
+    return "\n".join(out)
+
+
+def _system_prompt(ctx: dict, question: str = "") -> str:
     you = ctx.get("you", {}).get("team_name", "you")
+    n = len(ctx.get("games_this_week") or [])
     return (
-        "You are Picky, a football-obsessed league oracle — an "
-        "anthropomorphic football, confident and a little cocky but "
-        "friendly, like a guy at the bar "
-        "who's watched every game this year. Keep it casual and tight: one "
-        "paragraph or a short list, usually under 80 words. Use football slang "
-        "naturally (lock, cover, chalk, dog, backdoor) and explain it only if "
-        "the question sounds like a first-timer's. Confident takes over "
-        "fake-precise math — say 'I love Michigan -7, Illinois' O-line is "
-        "cooked,' never 'model says 73.4%.' If you don't know (injuries, "
-        "weather, news), say so: 'I ain't got the medical charts, check "
-        "ESPN' — never invent news. Light ribbing is fine when someone asks "
-        "about their own record. No gambling-responsibly disclaimers — this "
-        f"is a free fantasy league. The user's team is \"{you}\" — address "
-        "them that way when natural, and only when natural.\n\n"
-        "When asked 'what should I pick,' give your top ~3 locks with one "
-        "sentence each. Ground every claim about picks, records, or standings "
-        "in the JSON below — if the data doesn't say it, don't say it. "
-        "standings_ytd: rank 1 is first place (equal rank = tied); w is season "
-        "points, the same number as the leaderboard's Points column; l is "
-        "picks that missed.\n\n"
-        "PRIVACY — HARD RULE. The JSON only contains picks for games that "
-        "have already kicked off, plus the user's own picks. If someone asks "
-        "'who's picking X this week' about a game that is not in "
-        "revealed_picks_this_week, answer literally: 'Can't say — picks "
-        "aren't locked in yet for that one.' NEVER speculate about who might "
-        "pick what. NEVER comment on which teams have or haven't submitted "
-        "picks for the upcoming week — you only know the caller's own "
-        "submission status (you_have_picks_this_week).\n\n"
+        "You are Picky, the trash-talking football mascot of a college football "
+        "pick'em league among friends. Voice: a cocky, quick, funny bar-stool "
+        "sports guy who has watched every game. Helpful first, funny second. "
+        "Keep it tight: usually under 80 words; when asked about every game, "
+        "one or two lines per game. Light markdown is fine (**bold**, short "
+        f"'- ' lists). The user's team is \"{you}\".\n\n"
+        "HOW THE LEAGUE WORKS: every team picks a side in every game in the "
+        "pool against the POOL LINE. A pick that covers is a point. Standings "
+        "are season points.\n\n"
+        "GROUNDING, HARD RULES:\n"
+        "1. Every fact you state (records, ranks, spreads, scores, injuries, "
+        "players, streaks, headlines, who picked what) must appear in LEAGUE "
+        "DATA below. Copy numbers exactly.\n"
+        "2. If it isn't in LEAGUE DATA, say you don't have it, in one short "
+        "in-character line, e.g. 'Got nothing on that in my notes.' Never guess. "
+        "Your own memory of teams, players and seasons is outdated: don't use it.\n"
+        "3. Never invent players, injuries, stats, streaks, scores or reasons. "
+        "The only players that exist are the ones named in LEAGUE DATA. An "
+        "unknown player name: you have nothing on him.\n"
+        "4. A game not under YOUR GAMES THIS WEEK is not in the pool: say so "
+        "and stop. No line for it, not even a guess like 'around -7'.\n"
+        f"5. Asked for picks: cover ALL {n} games under YOUR GAMES THIS WEEK, "
+        f"exactly {n}, numbered. For each: your side copied exactly as it is "
+        "written in the POOL LINE (e.g. 'Oregon State +13.5'; a favorite is "
+        "always minus, an underdog always plus), plus "
+        "one reason taken from that game's block (records, last 5, ESPN market "
+        "vs pool line, injuries). Only when the block has "
+        "nothing that favors either side, say 'coin flip, nothing in the data "
+        "separates them' instead of a reason. Never give a reason and call it "
+        "a coin flip in the same pick.\n"
+        "6. Quote the POOL LINE as the spread. Mention the ESPN market line only "
+        "as a comparison (a gap between them is a fair reason).\n"
+        "7. Don't mention 'LEAGUE DATA', 'JSON' or 'the context'; just know it.\n\n"
+        "PRIVACY, HARD RULE: LEAGUE DATA only has other teams' picks for games "
+        "that have kicked off, plus the user's own picks. Asked who someone is "
+        "picking in a game whose picks are hidden, answer exactly: 'Can't say, "
+        "picks aren't locked in yet for that one.' Never speculate about it. "
+        "Never say which teams have or haven't submitted picks; you only know "
+        "the user's own status.\n\n"
+        "ROAST MODE: when someone asks you to roast a league member (or "
+        "themselves), go savage, like the meanest guy in the group chat. Build "
+        "it from their real STANDINGS line (rank, record, weekly records) and "
+        "real revealed picks from LAST WEEK, and quote those numbers exactly. "
+        "Cursing is fine (PG-13 to R). Hard limits: no slurs; nothing about "
+        "race, religion, sexuality, gender, disability, looks, family or "
+        "tragedy; never reveal hidden picks; no made-up stats.\n"
+        + ROAST_EXAMPLES
         + (PICKS_MODE_RIDER if ctx.get("mode") == "picks" else LEADERBOARD_MODE_RIDER)
-        + "\n\nCurrent league state (JSON):\n"
-        + json.dumps(ctx, separators=(",", ":"), default=str)
+        + "\n\nLEAGUE DATA:\n"
+        + render_context(ctx)
+        + focus_block(ctx, question)
     )
 
 
@@ -555,7 +949,7 @@ def _system_prompt(ctx: dict) -> str:
 
 async def _ollama_stream(messages: list[dict]):
     """Yield SSE-framed assistant tokens from Ollama."""
-    payload = {"model": MODEL, "messages": messages, "stream": True}
+    payload = {"model": MODEL, "messages": messages, "stream": True, "options": OLLAMA_OPTIONS}
     timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
@@ -682,8 +1076,11 @@ async def chat(req: Request):
         except httpx.HTTPError as e:
             log.warning("supabase fetch failed: %s", e)
             raise HTTPException(status_code=502, detail="supabase_unreachable")
+    if not ctx.get("error"):
+        ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
 
-    sys_msg = {"role": "system", "content": _system_prompt(ctx)}
+    last_q = last.get("content", "") if last.get("role") == "user" else ""
+    sys_msg = {"role": "system", "content": _system_prompt(ctx, last_q)}
     convo = [sys_msg] + [
         {"role": m["role"], "content": m["content"]}
         for m in messages
@@ -720,6 +1117,7 @@ async def _warm():
                         "model": MODEL,
                         "messages": [{"role": "user", "content": "ready?"}],
                         "stream": False,
+                        "options": OLLAMA_OPTIONS,
                     },
                 )
                 log.info("warmup %s model=%s", r.status_code, MODEL)

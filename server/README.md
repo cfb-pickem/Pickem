@@ -62,3 +62,29 @@ in the bubble.
   `mflux-save --model z-image-turbo --quantize 4 --path ~/models/z-image-turbo-4bit`.
 - Memory: the model loads on first request and unloads after 5 idle minutes,
   so it only shares RAM with Ollama's Qwen while someone is making pictures.
+
+## Grounding (what Picky sees)
+
+`render_context()` turns the league snapshot into labeled text: ranked
+standings with the last three weeks, `YOUR GAMES THIS WEEK (N)` with one
+block per game (pool line as the two pickable sides, ESPN market line and
+the gap between them, AP rank, record, last five, injuries, team-tagged
+headlines), last week's finals with every team's hits and misses, and the
+jackpot. `focus_block()` repeats the facts for any league member named in
+the question (or the caller, for "roast me" / "how did I do") at the end
+of the prompt. ESPN data comes from `espn.py` (public summary endpoint,
+10 minute cache, fails soft to "unavailable").
+
+Ollama runs with `num_ctx` 8192 (prompt is ~3.3k tokens before history)
+and temperature 0.2.
+
+Tests:
+
+    ./.venv/bin/python3 -I test_privacy.py     # unrevealed picks never leak
+    ./.venv/bin/python3 -I test_standings.py   # points match the leaderboard
+    ./.venv/bin/python3 -I test_grounding.py -v [--model qwen2.5:14b-instruct]
+
+`test_grounding.py` asks ~11 probe questions against live data (service key
+from the keychain) and checks counts, spreads, records and last-week claims
+automatically. Read the printed answers too: the 7B model still slips on
+roast details now and then.
