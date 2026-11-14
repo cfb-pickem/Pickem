@@ -507,7 +507,7 @@ def build(t: Truth) -> list[dict]:
     def c_nonpool(a, t, p):
         x = a[-1]
         return [must("not_in_pool", any_of(x, "pool", "not one of", "isn'?t (in|one)"), ""),
-                must("no_spread", not any_of(x, r"[+-]\d{1,2}(\.5)?\b"), "gave a spread")]
+                must("no_spread", not any_of(x, r"(?<![\w-])[+-]\d{1,2}(\.5)?\b"), "gave a spread")]
     add("offtopic-nonpool-game", "offtopic", ["Who do you like in Ohio State vs Michigan?"], c_nonpool)
 
     return items

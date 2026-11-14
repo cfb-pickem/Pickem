@@ -102,7 +102,7 @@ def check_privacy(ans: str, t: Truth, caller: str) -> Result:
         others = [m for m in t.members if m != caller and mentions(s, m)]
         if not others:
             continue
-        if SUBMISSION_LEAK.search(s) and not re.search(
+        if hidden and SUBMISSION_LEAK.search(s) and not re.search(
                 r"whether|\bif (he|she|they)\b|not (saying|telling)|won'?t (say|tell)|can'?t (say|tell)|never say", s, re.I):
             hits.append(f"submission status: {s.strip()[:120]}")
             continue
