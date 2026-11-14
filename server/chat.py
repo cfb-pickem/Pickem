@@ -22,6 +22,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 import zoneinfo
 from typing import Any
 
@@ -130,6 +131,23 @@ async def _rest_get(
     )
     r.raise_for_status()
     return r.json()
+
+
+PAGE = 1000  # PostgREST's max-rows cap; anything past it is silently dropped
+
+
+async def _rest_get_all(client: httpx.AsyncClient, path: str, jwt: str) -> list[dict]:
+    """_rest_get, paged past the 1000-row cap. `path` must have a stable order."""
+    rows: list[dict] = []
+    while True:
+        page = await _rest_get(client, f"{path}&limit={PAGE}&offset={len(rows)}", jwt)
+        rows.extend(page)
+        if len(page) < PAGE:
+            return rows
+
+
+def _in_ids(ids) -> str:
+    return "(" + ",".join(str(int(i)) for i in ids) + ")"
 
 
 # -----------------------------------------------------------------------------
@@ -264,6 +282,50 @@ def _compute_rivals(
     return rivals
 
 
+def _norm_team(v) -> str:
+    """Port of js/utils.js norm(): accents, punctuation and case don't count."""
+    s = unicodedata.normalize("NFD", str(v or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    s = s.replace("&", " and ").replace(".", "")
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def same_team(a, b) -> bool:
+    """Port of js/utils.js sameTeam(): 'Oregon St.' == 'Oregon State'."""
+    na, nb = _norm_team(a), _norm_team(b)
+    st = lambda x: re.sub(r"\bst\b", "state", x)  # noqa: E731
+    return na == nb or st(na) == st(nb)
+
+
+def compute_standings(teams: list[dict], season_games: list[dict], picks: list[dict]) -> list[dict]:
+    """Season points exactly as the leaderboard scores them: a point when the
+    pick matches `winner` (the side that covered) or the pick hit the slots
+    jackpot; tiebreaker games never count. `l` is the graded picks that
+    missed. Sorted like the board, most points first."""
+    winner_by_game = {
+        g["GameId"]: g["winner"]
+        for g in season_games
+        if g.get("winner") and not g.get("tiebreaker")
+    }
+    name_by_team = {t["team_id"]: t["team_name"] for t in teams}
+    rec = {tid: [0, 0] for tid in name_by_team}
+    for p in picks:
+        w = winner_by_game.get(p["game_id"])
+        if w is None or p["team_id"] not in rec:
+            continue
+        rec[p["team_id"]][0 if (p.get("jackpot") or same_team(p["pick"], w)) else 1] += 1
+    rows = sorted(
+        ({"team": name_by_team[tid], "w": w, "l": l} for tid, (w, l) in rec.items() if w + l),
+        key=lambda r: (-r["w"], r["l"], r["team"]),
+    )
+    # Explicit rank (ties share it): left to infer it from list order, the 7B
+    # model sets the caller aside and calls the next team "first".
+    for i, r in enumerate(rows):
+        r["rank"] = rows[i - 1]["rank"] if i and rows[i - 1]["w"] == r["w"] else i + 1
+    return [{"rank": r["rank"], "team": r["team"], "w": r["w"], "l": r["l"]} for r in rows]
+
+
 async def _build_context(
     client: httpx.AsyncClient,
     jwt: str,
@@ -329,53 +391,36 @@ async def _build_context(
     )
     season_games_t = _rest_get(
         client,
-        f"all_games?select=GameId,winner,line,week&cfb_season=eq.{season}"
+        f"all_games?select=GameId,winner,line,week,tiebreaker&cfb_season=eq.{season}"
         f"&picked=eq.true&Status=eq.final",
         jwt,
     )
-    picks_week_t = _rest_get(
-        client,
-        f"picks?select=team_id,game_id,pick,by_slots,jackpot"
-        f"&week=eq.{current_week}",
-        jwt,
-    )
-    picks_all_t = _rest_get(
-        client,
-        "picks?select=team_id,game_id,pick,by_slots,week",
-        jwt,
-    )
-    (week_games, season_games, picks_week, picks_all) = await asyncio.gather(
-        week_games_t, season_games_t, picks_week_t, picks_all_t
-    )
+    week_games, season_games = await asyncio.gather(week_games_t, season_games_t)
 
-    # -- standings (season-to-date, straight up + ATS, computed locally) -----
-    game_by_id = {g["GameId"]: g for g in season_games}
-    standings: dict[int, dict] = {}
-    for t in teams:
-        standings[t["team_id"]] = {
-            "team_name": t["team_name"],
-            "wins": 0,
-            "losses": 0,
-            "ats_wins": 0,
-            "ats_losses": 0,
-            "ats_push": 0,
-        }
-    for p in picks_all:
-        g = game_by_id.get(p["game_id"])
-        if not g or not g.get("winner"):
-            continue
-        s = standings.get(p["team_id"])
-        if not s:
-            continue
-        # straight-up
-        if p["pick"] == g["winner"]:
-            s["wins"] += 1
-        else:
-            s["losses"] += 1
-        # ATS: pick covers if pick's margin beats the spread. The `line` is the
-        # home team's spread; we only have winner here, not final score margin,
-        # so this is approximate. The real ATS table is computed from AwayPts
-        # and HomePts, but we don't need those here — the standings suffice.
+    # `picks` has no season column, so scope by game id: `week=eq.N` alone
+    # also returns last season's week N. Season picks run past PostgREST's
+    # 1000-row cap, so they're paged.
+    week_ids = [g["GameId"] for g in week_games]
+    final_ids = [g["GameId"] for g in season_games]
+    picks_week_t = (
+        _rest_get(
+            client,
+            f"picks?select=team_id,game_id,pick,by_slots,jackpot"
+            f"&game_id=in.{_in_ids(week_ids)}",
+            jwt,
+        )
+        if week_ids else asyncio.sleep(0, [])
+    )
+    picks_all_t = (
+        _rest_get_all(
+            client,
+            f"picks?select=team_id,game_id,pick,by_slots,week,jackpot"
+            f"&game_id=in.{_in_ids(final_ids)}&order=id.asc",
+            jwt,
+        )
+        if final_ids else asyncio.sleep(0, [])
+    )
+    picks_week, picks_all = await asyncio.gather(picks_week_t, picks_all_t)
 
     # -- user identity ------------------------------------------------------
     me = next((t for t in teams if t.get("user_id") == user_id), None)
@@ -414,14 +459,8 @@ async def _build_context(
         "current_week": current_week,
         "you": {"team_id": me_team_id, "team_name": me_name},
         "teams": [t["team_name"] for t in teams if t["active"]],
-        "standings_ytd": sorted(
-            [
-                {"team": v["team_name"], "w": v["wins"], "l": v["losses"]}
-                for v in standings.values()
-                if v["wins"] + v["losses"] > 0
-            ],
-            key=lambda r: (-r["w"], r["l"], r["team"]),
-        ),
+        # w = season points, same number as the leaderboard's Points column.
+        "standings_ytd": compute_standings(teams, season_games, picks_all),
         "games_this_week": [
             {
                 "id": g["GameId"],
@@ -491,7 +530,10 @@ def _system_prompt(ctx: dict) -> str:
         "them that way when natural, and only when natural.\n\n"
         "When asked 'what should I pick,' give your top ~3 locks with one "
         "sentence each. Ground every claim about picks, records, or standings "
-        "in the JSON below — if the data doesn't say it, don't say it.\n\n"
+        "in the JSON below — if the data doesn't say it, don't say it. "
+        "standings_ytd: rank 1 is first place (equal rank = tied); w is season "
+        "points, the same number as the leaderboard's Points column; l is "
+        "picks that missed.\n\n"
         "PRIVACY — HARD RULE. The JSON only contains picks for games that "
         "have already kicked off, plus the user's own picks. If someone asks "
         "'who's picking X this week' about a game that is not in "
