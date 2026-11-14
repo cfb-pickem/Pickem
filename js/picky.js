@@ -3,8 +3,8 @@
 // Floating anthropomorphic football in the bottom-right corner of the
 // leaderboard. Hidden unless the viewer is signed in. Click him to open the
 // chat panel; it streams answers from the local Ollama on the mini through
-// a Cloudflare tunnel (pickem-chat.dunecreek.ai → :8766). Occasionally he
-// pops a one-liner tip based on page state, dismissible, per-session.
+// a Cloudflare tunnel (pickem-chat.dunecreek.ai → :8766). He never pops
+// anything up on his own: nothing appears until the launcher is tapped.
 //
 // He is built from inline SVG so there's no image to host and he scales
 // cleanly in both themes. He's a *pure addition* — no other module imports
@@ -21,11 +21,9 @@ import { sessionInfo } from './session.js';
 const CHAT_URL = 'https://pickem-chat.dunecreek.ai/chat';
 
 const MAX_TURNS = 10;
-const TIP_MIN_MS = 30_000;
-const TIP_MAX_MS = 60_000;
 
-const MUTE_KEY = 'picky.muted';
-const TIP_DISMISS_KEY = 'picky.tipsDismissed';   // per-session, sessionStorage
+// Phones get a full-screen panel; must match the @media query in STYLE.
+const isPhone = () => window.matchMedia('(max-width: 600px)').matches;
 
 // --- entry point ---------------------------------------------------------
 //
@@ -55,7 +53,7 @@ export async function initPicky(opts = {}) {
 function mountUI() {
   const root = document.createElement('div');
   root.id = 'picky-root';
-  root.innerHTML = STYLE + MASCOT_HTML + PANEL_HTML + TIP_HTML;
+  root.innerHTML = STYLE + MASCOT_HTML + PANEL_HTML;
   document.body.appendChild(root);
   return {
     root,
@@ -65,10 +63,6 @@ function mountUI() {
     form:    root.querySelector('.pk-form'),
     input:   root.querySelector('.pk-input'),
     close:   root.querySelector('.pk-close'),
-    mute:    root.querySelector('.pk-mute'),
-    tip:     root.querySelector('.pk-tip'),
-    tipText: root.querySelector('.pk-tip-text'),
-    tipClose:root.querySelector('.pk-tip-close'),
   };
 }
 
@@ -80,32 +74,17 @@ function wireChat(ui, info, chatOpts) {
   // conversation history kept in memory only — spec says do not persist
   const history = [];
 
-  // mute toggle
-  if (localStorage.getItem(MUTE_KEY) === '1') ui.mute.classList.add('muted');
-  ui.mute.addEventListener('click', () => {
-    const next = ui.mute.classList.toggle('muted');
-    localStorage.setItem(MUTE_KEY, next ? '1' : '0');
-    hideTip(ui);
-  });
-
   ui.mascot.addEventListener('click', () => openPanel(ui));
   ui.close .addEventListener('click', () => closePanel(ui));
 
   // Mobile keyboard handling: when the input is focused, the on-screen
-  // keyboard eats half the screen. visualViewport tells us the real height.
+  // keyboard eats half the screen and iOS pans the visual viewport. Pin the
+  // panel to exactly the visible area so the header and input both stay on
+  // screen.
   if (window.visualViewport) {
-    const syncVV = () => {
-      const vv = window.visualViewport;
-      // Only adjust when the panel is open AND we're on a narrow screen.
-      if (!ui.panel.classList.contains('open')) return;
-      if (window.innerWidth > 600) return;
-      ui.panel.style.height = vv.height + 'px';
-      ui.body.scrollTop = ui.body.scrollHeight;
-    };
-    window.visualViewport.addEventListener('resize', syncVV);
-    window.visualViewport.addEventListener('scroll', syncVV);
-    ui.input.addEventListener('focus', () => setTimeout(syncVV, 50));
-    ui.input.addEventListener('blur',  () => { ui.panel.style.height = ''; });
+    window.visualViewport.addEventListener('resize', () => syncViewport(ui, true));
+    window.visualViewport.addEventListener('scroll', () => syncViewport(ui, false));
+    ui.input.addEventListener('focus', () => setTimeout(() => syncViewport(ui, true), 50));
   }
 
   ui.form.addEventListener('submit', async (ev) => {
@@ -253,13 +232,44 @@ function renderMarkdown(el, text) {
   }
 }
 
+// On phones the page behind the panel is scroll-locked (body pinned at its
+// current offset, the iOS-safe way) and restored exactly on close. The input
+// is not auto-focused there: popping the keyboard on open is what made iOS
+// shove the panel off-screen.
+let lockedScrollY = null;
+
 function openPanel(ui) {
   ui.panel.classList.add('open');
-  ui.input.focus();
-  hideTip(ui);
+  if (isPhone()) {
+    if (lockedScrollY === null) {
+      lockedScrollY = window.scrollY;
+      document.body.style.top = `-${lockedScrollY}px`;
+      document.documentElement.classList.add('pk-locked');
+    }
+    syncViewport(ui, true);
+  } else {
+    ui.input.focus();
+  }
+  ui.body.scrollTop = ui.body.scrollHeight;
 }
 function closePanel(ui) {
   ui.panel.classList.remove('open');
+  ui.panel.style.top = '';
+  ui.panel.style.height = '';
+  if (lockedScrollY !== null) {
+    document.documentElement.classList.remove('pk-locked');
+    document.body.style.top = '';
+    window.scrollTo({ top: lockedScrollY, behavior: 'instant' });
+    lockedScrollY = null;
+  }
+}
+
+function syncViewport(ui, toBottom) {
+  const vv = window.visualViewport;
+  if (!vv || !ui.panel.classList.contains('open') || !isPhone()) return;
+  ui.panel.style.top = vv.offsetTop + 'px';
+  ui.panel.style.height = vv.height + 'px';
+  if (toBottom) ui.body.scrollTop = ui.body.scrollHeight;
 }
 
 function appendMsg(ui, role, text) {
@@ -272,84 +282,6 @@ function appendMsg(ui, role, text) {
   ui.body.appendChild(row);
   ui.body.scrollTop = ui.body.scrollHeight;
   return bubble;
-}
-
-// --- contextual pop-ups --------------------------------------------------
-//
-// Very light: one-liner based on whether the signed-in user has made picks
-// for the current open week. Dismiss-for-session so he's not nagging.
-
-async function loadPageContext(info) {
-  const ctx = { teamId: null, pickedThisWeek: null, currentWeek: null };
-  try {
-    const { data: team } = await supabase
-      .from('teams').select('team_id')
-      .eq('user_id', info.user.id).maybeSingle();
-    ctx.teamId = team?.team_id ?? null;
-
-    const { data: seasonRow } = await supabase
-      .from('all_games').select('cfb_season')
-      .order('cfb_season', { ascending: false }).limit(1);
-    const season = seasonRow?.[0]?.cfb_season;
-
-    const { data: openRow } = await supabase
-      .from('all_games').select('week')
-      .eq('cfb_season', season).eq('picked', true).neq('Status', 'final')
-      .order('week', { ascending: true }).limit(1);
-    ctx.currentWeek = openRow?.[0]?.week ?? null;
-
-    if (ctx.teamId && ctx.currentWeek != null) {
-      const { data: picks } = await supabase
-        .from('picks').select('game_id')
-        .eq('team_id', ctx.teamId).eq('week', ctx.currentWeek).limit(1);
-      ctx.pickedThisWeek = !!(picks && picks.length);
-    }
-  } catch (_) { /* context is optional — tips just go generic */ }
-  return ctx;
-}
-
-function wireTips(ui, ctx) {
-  const dismissTip = () => {
-    hideTip(ui);
-    sessionStorage.setItem(TIP_DISMISS_KEY, '1');
-  };
-  ui.tipClose.addEventListener('click', dismissTip);
-  // Mobile convention: tap-anywhere-outside dismisses. Keep the listener
-  // passive and self-removing so it's zero cost after a dismissal.
-  document.addEventListener('pointerdown', (ev) => {
-    if (!ui.tip.classList.contains('open')) return;
-    if (ui.tip.contains(ev.target) || ui.mascot.contains(ev.target)) return;
-    dismissTip();
-  }, { capture: true });
-
-  const schedule = () => {
-    if (localStorage.getItem(MUTE_KEY) === '1') return;
-    if (sessionStorage.getItem(TIP_DISMISS_KEY) === '1') return;
-    if (ui.panel.classList.contains('open')) return;
-    const delay = TIP_MIN_MS + Math.random() * (TIP_MAX_MS - TIP_MIN_MS);
-    setTimeout(() => { showTip(ui, pickTip(ctx)); schedule(); }, delay);
-  };
-  schedule();
-}
-
-function pickTip(ctx) {
-  const generic = [
-    "Been staring at these spreads all morning. Ask me who's on upset alert.",
-    "Need a lock? I got takes.",
-    "Chalk or dog this week? Pick my brain.",
-  ];
-  if (ctx.currentWeek != null && ctx.pickedThisWeek === false) {
-    return `Yo — you still need to lock in your Week ${ctx.currentWeek} picks. Want me to walk the slate?`;
-  }
-  return generic[Math.floor(Math.random() * generic.length)];
-}
-
-function showTip(ui, text) {
-  ui.tipText.textContent = text;
-  ui.tip.classList.add('open');
-}
-function hideTip(ui) {
-  ui.tip.classList.remove('open');
 }
 
 // --- markup + styles ----------------------------------------------------
@@ -378,22 +310,10 @@ const MASCOT_HTML = `
   </svg>
 </button>`;
 
-const TIP_HTML = `
-<div class="pk-tip" role="status">
-  <span class="pk-tip-text"></span>
-  <button class="pk-tip-close" aria-label="Dismiss">×</button>
-</div>`;
-
 const PANEL_HTML = `
 <section class="pk-panel" role="dialog" aria-label="Chat with Picky">
   <header class="pk-head">
     <span class="pk-title">Picky</span>
-    <button class="pk-mute" title="Mute pop-ups">
-      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-        <path d="M4 10v4h4l5 4V6L8 10H4z" fill="currentColor"/>
-        <path class="pk-mute-x" d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
-      </svg>
-    </button>
     <button class="pk-close" aria-label="Close">×</button>
   </header>
   <div class="pk-body">
@@ -425,19 +345,6 @@ const STYLE = `
 @keyframes pk-bounce { 0%,100%{transform:translateY(0)}
                        50%   {transform:translateY(-6px)} }
 
-.pk-tip { position: absolute; right: 72px; bottom: 14px;
-          max-width: 240px; padding: 10px 28px 10px 12px;
-          background: #0b0b0b; border: 1px solid rgba(218,165,32,.5);
-          border-radius: 10px; font-size: 13px; line-height: 1.35;
-          box-shadow: 0 6px 18px rgba(0,0,0,.55);
-          opacity: 0; transform: translateY(6px); pointer-events: none;
-          transition: opacity .25s, transform .25s; }
-.pk-tip.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.pk-tip::after{ content:""; position:absolute; right:-7px; bottom:14px;
-                border:7px solid transparent; border-left-color:#0b0b0b; }
-.pk-tip-close{ position:absolute; top:2px; right:4px; background:none;
-               border:0; color:#888; font-size:18px; cursor:pointer; line-height:1; }
-
 .pk-panel { position: absolute; right: 0; bottom: 0; width: 360px;
             max-width: calc(100vw - 24px); height: 440px; max-height: 70vh;
             background: #0b0b0b; border: 1px solid rgba(218,165,32,.4);
@@ -450,12 +357,8 @@ const STYLE = `
            border-bottom: 1px solid rgba(255,255,255,.06); }
 .pk-title { font-weight: 700; letter-spacing: .04em; flex: 1;
             color: #daa520; font-family: 'Oswald', sans-serif; font-size: 15px; }
-.pk-mute, .pk-close { background: none; border: 0; cursor: pointer;
-                      color: #ccc; padding: 2px 6px; font-size: 18px; }
-.pk-mute { color: #ccc; }
-.pk-mute .pk-mute-x { display: none; }
-.pk-mute.muted .pk-mute-x { display: inline; }
-.pk-mute.muted { color: #8a2a2a; }
+.pk-close { background: none; border: 0; cursor: pointer;
+            color: #ccc; padding: 2px 6px; font-size: 18px; }
 
 .pk-body { flex: 1; overflow-y: auto; padding: 10px 12px;
            display: flex; flex-direction: column; gap: 8px; }
@@ -490,23 +393,30 @@ ul.pk-list { list-style: disc outside; }
 
 /* Mobile: shrink the mascot, full-screen the chat panel, and give the
    close button a bigger tap target. The mascot floats above the iOS
-   bottom chrome via the safe-area inset at the root. */
+   bottom chrome via the safe-area inset at the root. The open panel is
+   pinned to the viewport (100dvh, 100vh fallback); JS narrows it to the
+   visualViewport when the keyboard is up and locks the page behind it. */
 @media (max-width: 600px) {
   #picky-root { right: 12px;
                    bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   .pk-mascot { width: 56px; height: 40px; padding: 2px; }
   .pk-panel.open {
-    position: fixed; right: 0; bottom: 0; left: 0; top: 0;
-    width: 100vw; max-width: 100vw;
-    height: 100vh; max-height: 100vh;
+    position: fixed; inset: 0; z-index: 9001;
+    width: 100%; max-width: none;
+    height: 100vh; height: 100dvh; max-height: none;
     border-radius: 0; border: 0;
   }
-  .pk-head { padding: 14px 14px; padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
-  .pk-close { font-size: 26px; padding: 4px 10px; min-width: 40px; min-height: 40px; }
-  .pk-mute  { font-size: 20px; min-width: 40px; min-height: 40px;
-              display: inline-flex; align-items: center; justify-content: center; }
+  .pk-body { overscroll-behavior: contain; }
+  .pk-head { padding: 14px 14px; padding-top: calc(14px + env(safe-area-inset-top, 0px));
+             padding-left: calc(14px + env(safe-area-inset-left, 0px));
+             padding-right: calc(14px + env(safe-area-inset-right, 0px)); }
+  .pk-form { padding-left: calc(8px + env(safe-area-inset-left, 0px));
+             padding-right: calc(8px + env(safe-area-inset-right, 0px)); }
+  .pk-close { font-size: 26px; padding: 4px 10px; min-width: 44px; min-height: 44px; }
   .pk-input { font-size: 16px; }  /* 16px stops iOS zoom-on-focus */
   .pk-send  { width: 44px; min-height: 40px; }
-  .pk-tip   { right: 60px; max-width: calc(100vw - 80px); }
 }
+/* Page behind the open phone panel: frozen in place, restored on close. */
+html.pk-locked, html.pk-locked body { overflow: hidden; }
+html.pk-locked body { position: fixed; left: 0; right: 0; width: 100%; }
 </style>`;
