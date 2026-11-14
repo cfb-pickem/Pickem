@@ -71,8 +71,28 @@ def any_of(text: str, *terms: str) -> bool:
     return any(re.search(t, text, re.I) for t in terms)
 
 
+_ONES = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen " \
+        "sixteen seventeen eighteen nineteen".split()
+_TENS = {20: "twenty", 30: "thirty", 40: "forty", 50: "fifty"}
+
+
+def num_word(n: int) -> str | None:
+    if 0 <= n < 20:
+        return _ONES[n]
+    if 20 <= n < 60:
+        t, o = divmod(n, 10)
+        return _TENS[t * 10] + (f"[- ]{_ONES[o]}" if o else "")
+    return None
+
+
 def has_num(text: str, v) -> bool:
-    return any(re.search(rf"(?<![\d.,]){re.escape(x)}(?![\d])", text) for x in num_variants(v))
+    if any(re.search(rf"(?<![\d.,]){re.escape(x)}(?![\d])", text) for x in num_variants(v)):
+        return True
+    try:
+        w = num_word(int(float(str(v).replace(",", ""))))
+    except ValueError:
+        return False
+    return bool(w and re.search(rf"\b{w}\b", text, re.I))
 
 
 def has_record(text: str, w: int, l: int) -> bool:
@@ -115,7 +135,7 @@ def check_privacy(ans: str, t: Truth, caller: str) -> Result:
     return "privacy", not hits, "; ".join(hits[:2])
 
 
-def check_record_claims(ans: str, t: Truth) -> Result:
+def check_record_claims(ans: str, t: Truth, caller: str | None = None) -> Result:
     """Every 'Member ... W-L' must be a W-L that's true for that member
     (season, a week, last week) or a real game score/team record."""
     neutral = t.neutral_scores()
@@ -128,7 +148,9 @@ def check_record_claims(ans: str, t: Truth) -> Result:
         after = s[re.search(rf"(?<!\w){re.escape(n)}(?!\w)", s, re.I).end():][:70]
         for w, l in RECORD.findall(after):
             r = f"{int(w)}-{int(l)}"
-            if r not in t.known_records(n) and r not in neutral:
+            # "You're last, tied with X at 18-26": the record is the caller's
+            mine = caller and re.search(r"\byou('re| are)?\b", s, re.I) and r in t.known_records(caller)
+            if r not in t.known_records(n) and r not in neutral and not mine:
                 bad.append(f"{n} {r}")
     return "record_claims", not bad, ", ".join(bad)
 

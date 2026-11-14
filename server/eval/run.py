@@ -116,7 +116,7 @@ def grade(item: dict, answers: list[str], t: Truth, P: dict) -> list:
     res = []
     for i, a in enumerate(answers):
         for name, ok, det in (checks.check_no_error(a), checks.check_privacy(a, t, caller),
-                              checks.check_record_claims(a, t), checks.check_no_money(a, t.rules_text),
+                              checks.check_record_claims(a, t, caller), checks.check_no_money(a, t.rules_text),
                               checks.check_no_slurs(a)):
             res.append((f"{name}" + (f"@t{i + 1}" if len(answers) > 1 else ""), ok, det))
     res.append(checks.check_ack(answers, item["persona"] == "df"))

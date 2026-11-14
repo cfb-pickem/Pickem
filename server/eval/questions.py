@@ -54,7 +54,8 @@ def build(t: Truth) -> list[dict]:
     # ---- standings: season ------------------------------------------------------
     def c_first(a, t, p):
         x = a[-1]
-        return [must("names_all_first", all(mentions(x, n) for n in first), f"first: {first}"),
+        named = lambda n: mentions(x, n) or (n == p["me"] and any_of(x, r"\byou('re| are)\b"))  # noqa: E731
+        return [must("names_all_first", all(named(n) for n in first), f"first: {first}"),
                 must("first_points", has_num(x, t.rec(first[0])[0]), f"{t.rec(first[0])[0]} points")]
     add("standings-first", "standings", ["Who's winning the pool?"], c_first)
 
@@ -100,8 +101,10 @@ def build(t: Truth) -> list[dict]:
 
     def c_best(a, t, p):
         x = a[-1]
-        named = [m for m in t.members if mentions(x, m)]
-        wrong = [m for m in named if m not in best_teams and m != p["me"]]
+        # a wrong member only counts if he's called the best (same sentence)
+        from checks import sentences
+        wrong = sorted({m for s_ in sentences(x) if any_of(s_, r"\bbest\b", r"4-0", "perfect", "genius")
+                        for m in t.members if mentions(s_, m) and m not in best_teams and m != p["me"]})
         return [must("names_a_best_team", any(mentions(x, m) for m in best_teams), f"best: {best_teams} ({best} hits)"),
                 must("no_wrong_best", not wrong or len(best_teams) > 3, f"also named: {wrong}")]
     add("weekly-best-last-week", "weekly", ["Who had the best week last week?"], c_best,
