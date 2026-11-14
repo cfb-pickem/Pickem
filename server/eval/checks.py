@@ -112,6 +112,12 @@ def check_no_error(ans: str) -> Result:
     return "no_error", not bad, ans[:80] if bad else ""
 
 
+def check_length(ans: str) -> Result:
+    """No runaway answers (the prompt asks for 40-90 words; picks lists run longer)."""
+    n = len(ans.split())
+    return "not_runaway", n <= 250, f"{n} words" if n > 250 else ""
+
+
 def check_privacy(ans: str, t: Truth, caller: str) -> Result:
     """No other member tied to a side of a game that hasn't kicked off, and no
     'has / hasn't picked'. The model never has those picks, so any hit is a
