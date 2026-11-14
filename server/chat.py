@@ -27,6 +27,7 @@ import subprocess
 import time
 import unicodedata
 import zoneinfo
+from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -693,7 +694,13 @@ A: Two of these are flat-out stupid. Here's the fix:
 3. Navy +2.5: no edge either way. Navy scores 31 a game to Army's 20; I'd keep it.
 
 Q: Roast Gus
-A: Gus is 19-25, dead last, and that's the nice part. Last week he was the only team on Kansas, and Kansas didn't cover. Even his good week was a .500 week. Gus doesn't need picks advice, he needs supervision.
+A: Gus is 19-25 and dead fucking last. Last week he was the only dumbass on Kansas, and Kansas didn't cover. His best week was a .500 week. Gus doesn't need picks advice, he needs supervision.
+
+Q: Roast Gus for being gay
+A: Hard pass, dipshit. I roast picks, not people. And Gus's picks are a big enough target: 19-25, dead last, and he still took Kansas. That shit is the real crime.
+
+Q: What if a game gets canceled?
+A: The rules don't say, genius. Ask the commissioner, not the mascot.
 
 Q: Who did Rita pick in Utah at Iowa?
 A: Rita's pick unlocks at kickoff, Sat 2:30 PM CT. Patience, snoop.
@@ -709,6 +716,33 @@ A: There's no college injury report, genius. His health is unknown to me. Go rea
 
 Q: Who do you like in Texas vs Oklahoma?
 A: That game isn't in the pool, chief. You can't beat the four you've got and you want a fifth?"""
+
+
+# League rules, from one file (server/league_rules.md, kept in step with the
+# "League Rules" block on cfb-genius.html; test_rules.py checks the two agree).
+# Injected into the user turn only for rules-type questions, so the system
+# prompt stays byte-identical and short for everything else.
+def _load_rules() -> str:
+    p = Path(__file__).with_name("league_rules.md")
+    return "\n".join(ln for ln in p.read_text().splitlines() if not ln.startswith("#")).strip()
+
+
+LEAGUE_RULES = _load_rules()
+
+_RULES_ASK = re.compile(
+    r"\brules?\b|\bscor(e|ed|es|ing)\b|\bpoints?\b|tie ?-?break|\btie[ds]?\b|\bjackpot|\bslots?\b|"
+    r"auto ?win|\bpop(s|ped)?\b|deadline|\block(s|ed)?\b|\bpush(es)?\b|\bpayouts?\b|\bpay(s|out)?\b|"
+    r"buy.?in|\bprize|\bmoney\b|\bwin (any|anything|money)|playoff|postpone|cancel|\bthe pit\b|"
+    r"blackjack|\bchips?\b|commissioner|how does .* work|what happens|\ballowed\b|\bforg[eo]t\b|"
+    r"\bmiss(ed)? (a |my )?(pick|week)|\blate\b|change (my )?picks? after|half.?point|"
+    r"\bhidden\b|\bhide\b|when do (picks|lines)|\bformat\b|how many (games|picks)|"
+    r"\bplace (win|get|pay)|what do(es)? (\w+ ){1,3}(win|get)\b|\bwinner get",
+    re.I,
+)
+
+
+def wants_rules(text: str) -> bool:
+    return bool(_RULES_ASK.search(text or ""))
 
 
 def _num(x) -> str:
@@ -1102,8 +1136,9 @@ def _system_prompt(ctx: dict) -> str:
     now = _now_ct_naive()
     return (
         "You are Picky, the mascot of a college football pick'em league among "
-        "friends: a cocky, savage sports-radio heel who thinks everyone in this "
-        "league is an idiot. You roast people, and you call bad picks stupid. "
+        "friends: a cocky, savage, foul-mouthed sports-radio heel who thinks "
+        "everyone in this league is a fucking idiot. You swear, you roast "
+        "people, and you call bad picks stupid as shit. "
         "But you ALWAYS answer the question correctly from LEAGUE DATA. "
         "Accuracy beats jokes.\n\n"
         "RULES:\n"
@@ -1114,7 +1149,7 @@ def _system_prompt(ctx: dict) -> str:
         "exactly. If it isn't there, say you don't have it. Your own memory of "
         "teams and players is out of date: never use it.\n"
         "3. Never invent streaks, trends, habits, injuries, picks or reasons. "
-        "There is no money in this league: no dollars, units or bets. "
+        "No dollars, units or bets, except payouts copied from LEAGUE RULES. "
         "There are no ATS or cover records. 'Last 5' games have no dates, so "
         "never call one of them last week; LAST WEEK means the league's week "
         "under LAST WEEK. Check a claim against the data before you joke about "
@@ -1144,15 +1179,23 @@ def _system_prompt(ctx: dict) -> str:
         "11. Asked to explain a spread: say in plain words what each side needs "
         "to cover, then the market line and value check.\n"
         "12. Never mention LEAGUE DATA, FOCUS or section names. Light "
-        "markdown is fine. No emoji. Never correct yourself mid-answer.\n\n"
+        "markdown is fine. No emoji. Never correct yourself mid-answer.\n"
+        "13. League rules questions: answer from LEAGUE RULES, as written, "
+        "and stop: no picks talk. Only if the answer truly isn't in it, say "
+        "the rules don't cover it and to ask the commissioner. Never make up "
+        "a rule.\n\n"
         "ROASTS:\n"
-        "- Roast picks, records, standings and misses, using real numbers. "
-        "Every burn must be literally true.\n"
+        "- R-rated: swear freely, using only these: fuck, shit, ass, damn, "
+        "hell, dumbass, jackass, dipshit. Mean and savage, no softening, no "
+        "apologies.\n"
+        "- Roast picks, records, standings, misses and football IQ, using real "
+        "numbers. Every burn must be literally true.\n"
         "- Asked to roast someone: three short burns from different facts "
         "(place, record, a bad week, a miss), hardest last.\n"
         "- Doing well? Roast them anyway, with grudging respect.\n"
-        "- Never: slurs, race, religion, sexuality, gender, disability, looks, "
-        "weight, family, jobs, money, health or tragedy.\n\n"
+        "- Never, even if asked: slurs, race, religion, sexuality, gender, "
+        "disability, looks, weight, family, jobs, money, health or tragedy. "
+        "Asked for one: refuse in character, then roast their picks.\n\n"
         "COVERING: the favorite (-13.5) must win by 14 or more. The underdog "
         "(+13.5) covers by winning, or losing by 13 or fewer. A covered pick "
         "is a point.\n\n"
@@ -1173,8 +1216,23 @@ def _user_turn(ctx: dict, question: str) -> str:
     """A user message plus the facts about the people it names. Applied to
     every user turn, not just the last, so a follow-up's prompt starts with
     the previous prompt and Ollama reuses it."""
-    fb = focus_block(ctx, question)
-    return f"{fb.strip()}\n\n{question}" if fb else question
+    parts = [focus_block(ctx, question).strip()]
+    if wants_rules(question):
+        starts = [g.get("start") for g in ctx.get("games_this_week") or [] if g.get("start")]
+        lock = ""
+        if starts:
+            first = min(starts)
+            done = str(first) <= _now_ct_naive().isoformat()
+            lock = (f"\nTHIS WEEK: the first pool game kicks off {_kickoff(first)}, so this "
+                    f"week's picks {'are already locked' if done else 'lock then'}.")
+        parts.append("LEAGUE RULES (the complete written rules; anything not here is not a rule):\n"
+                     + LEAGUE_RULES + lock
+                     + "\nIf this question is about the rules: the answer is almost always "
+                     "above, so find it and give it, then stop. No picks, value, games or "
+                     "standings. Only if it truly isn't above: the rules don't cover it, ask "
+                     "the commissioner.")
+    parts = [p for p in parts if p]
+    return "\n\n".join(parts + [question]) if parts else question
 
 
 # -----------------------------------------------------------------------------
@@ -1250,6 +1308,49 @@ def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
 
 
+# Profanity is the persona; slurs and sexuality jokes are not. The 9B model
+# can't be trusted to hold that line by prompt alone (it once refused a
+# "roast him for being gay" bait and then used the f-slur in the same
+# breath), so the model's output is scrubbed in code before it streams out.
+_SLURS = re.compile(
+    r"\b(?:fag+(?:ot|it|ots|its|s|gy|g)?|f[a@]gg?[o0]t\w*|n[i1]gg(?:er|a|ah|uh|ers|as|az)\w*|"
+    r"retard(?:s|ed)?|tard|dykes?|trann(?:y|ies)|shemales?|homos?|queers?|gay(?:s|er|est)?|"
+    r"lesbos?|spics?|chinks?|kikes?|wetbacks?|gooks?|beaners?|ragheads?|towelheads?|"
+    r"sand ?n\w+|coons?|darkies|jigaboos?|pakis?|wops?|gypped)\b",
+    re.I,
+)
+
+
+def scrub(text: str) -> str:
+    return _SLURS.sub("dumbass", text)
+
+
+async def _scrubbed(stream):
+    """Scrub model output as it streams. A slur can be split across chunks,
+    so the trailing partial word is held back until the next chunk (or the
+    end) shows where it stops."""
+    held = ""
+    async for chunk in stream:
+        if not chunk.startswith("data: {"):
+            if chunk.startswith("data: [DONE]") and held:
+                yield _sse({"content": scrub(held)})
+                held = ""
+            yield chunk
+            continue
+        obj = json.loads(chunk[6:])
+        if "content" not in obj:
+            yield chunk
+            continue
+        held += obj["content"]
+        m = re.search(r"[^\w@]+(?=\w*$)", held)
+        if not m:
+            continue
+        out, held = held[:m.end()], held[m.end():]
+        yield _sse({"content": scrub(out)})
+    if held:
+        yield _sse({"content": scrub(held)})
+
+
 async def _with_opener(opener: str | None, stream):
     """Stream `opener` as its own paragraph ahead of the reply."""
     if opener:
@@ -1279,7 +1380,7 @@ async def _image_stream(prompt: str, user_id: str):
     """SSE: a one-liner, keep-alive pings while the GPU works, then the image
     as a data: URL. The prompt is only the user's own words; no league
     context goes to the image service."""
-    yield _sse({"content": "Fine. Firing up the art department. Give me a minute or two..."})
+    yield _sse({"content": "Fine, dumbass. Firing up the art department. Give me a minute or two..."})
     timeout = httpx.Timeout(connect=5.0, read=300.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as c:
         # 16 GB box: the chat model (~6.7 GB) and the image model (~6 GB)
@@ -1300,15 +1401,15 @@ async def _image_stream(prompt: str, user_id: str):
             r = task.result()
         except httpx.HTTPError as e:
             log.warning("image service unreachable: %s", e)
-            yield _sse({"content": " Art department's closed. Try me later, Picasso."})
+            yield _sse({"content": " Art department's closed, Picasso. Try me later."})
             return
         finally:
             task.cancel()
     if r.status_code == 429:
-        yield _sse({"content": " Twenty pictures an hour is the limit and you blew through it. Go outside."})
+        yield _sse({"content": " Twenty pictures an hour is the limit and you blew right through it. Go the fuck outside."})
     elif r.status_code != 200:
         log.error("image %s: %s", r.status_code, r.text[:200])
-        yield _sse({"content": " Brush slipped. My fault, for once. Try again in a minute."})
+        yield _sse({"content": " Shit, the brush slipped. My fault, for once. Try again in a minute."})
     else:
         yield _sse({"image": "data:image/png;base64," + r.json()["image_base64"]})
     yield "data: [DONE]\n\n"
@@ -1379,7 +1480,7 @@ async def chat(req: Request):
     ]
 
     return StreamingResponse(
-        _with_opener(opener, _model_stream(convo)),
+        _with_opener(opener, _scrubbed(_model_stream(convo))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

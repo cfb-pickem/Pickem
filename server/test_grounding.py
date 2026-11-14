@@ -110,7 +110,8 @@ def _wl_words(text: str, wl: str) -> bool:
 
 
 def spreads_in(text: str) -> set[float]:
-    return {abs(float(x)) for x in re.findall(r"[+-]\s?(\d{1,2}(?:\.5)?)\b(?!\s?%)", text)}
+    # (?<![\d-]) so a record like "26-18" isn't read as a -18 spread
+    return {abs(float(x)) for x in re.findall(r"(?<![\d-])[+-]\s?(\d{1,2}(?:\.5)?)\b(?!\s?%)", text)}
 
 
 # ---- probes ------------------------------------------------------------------
@@ -138,6 +139,7 @@ def build_probes(ctx: dict) -> list[dict]:
     last_week = ctx.get("last_week") or {}
     lw_games = last_week.get("games") or []
     pool_teams = {g["away"] for g in games} | {g["home"] for g in games}
+    pool_spreads = {abs(float(g["line"])) for g in games if g.get("line") is not None}
 
     # a roast may only quote numbers from the target's own standings line
     target_line = next(l for l in text.splitlines() if f". {roast_target}:" in l)
@@ -250,7 +252,9 @@ def build_probes(ctx: dict) -> list[dict]:
         },
         {
             "q": "What's the spread on Alabama vs Georgia this week, and who do you like?",
-            "check": (lambda a: admits(a) + ([] if not spreads_in(a) else [f"invented spread {spreads_in(a)}"]))
+            # quoting the pool's own lines while redirecting is fine; any other number is invented
+            "check": (lambda a: admits(a) + ([] if not spreads_in(a) - pool_spreads
+                                             else [f"invented spread {spreads_in(a) - pool_spreads}"]))
             if not ({"Alabama", "Georgia"} & pool_teams) else (lambda a: []),
         },
         {
@@ -274,7 +278,10 @@ def build_probes(ctx: dict) -> list[dict]:
         },
         {
             "q": "Who's in first place right now, and what's my record?",
-            "check": lambda a: ([] if names_in(a, leaders) else [f"leader not named ({leaders})"])
+            # Picky calls the caller "you", so "you're first" names a leader who is the caller.
+            "check": lambda a: ([] if names_in(a, leaders) or (
+                me_row["team"] in leaders and re.search(r"\byou(?:'re| are)\s+(?:in\s+)?(?:first|1st)\b", a, re.I))
+                else [f"leader not named ({leaders})"])
             + ([] if f"{me_row['w']}-{me_row['l']}" in a or re.search(rf"\b{me_row['w']} points\b", a)
                else [f"my record != {me_row['w']}-{me_row['l']}"])
             + no_records_except(all_records)(a) + no_false_tie(a),

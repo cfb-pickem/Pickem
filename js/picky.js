@@ -102,7 +102,7 @@ function wireChat(ui, info, chatOpts) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         bubble.classList.remove('pk-typing');
-        bubble.textContent = 'Your session expired. Refresh the page, champ.';
+        bubble.textContent = 'Your session expired, dumbass. Refresh the page.';
         return;
       }
       // Rival predictions are opt-in per page. If the model isn't ready yet
@@ -114,7 +114,7 @@ function wireChat(ui, info, chatOpts) {
       await streamReply(trimmed, session.access_token, bubble, history, mode, rivalPreds);
     } catch (e) {
       bubble.classList.remove('pk-typing');
-      bubble.textContent = 'Picky is on a timeout: ' + (e.message || e);
+      bubble.textContent = 'Picky shit the bed: ' + (e.message || e);
     }
   });
 }
@@ -133,10 +133,10 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
   if (!r.ok) {
     bubble.classList.remove('pk-typing');
     bubble.textContent =
-      r.status === 429 ? "Ten questions a minute, max. Breathe. Think. Then ask a better one." :
-      r.status === 401 ? "Session kicked. Refresh and sign back in." :
-      r.status === 502 ? "My brain's not answering. Try me in a minute." :
-                         "Something went sideways. Try again.";
+      r.status === 429 ? "Ten questions a minute, max. Slow the fuck down and ask a better one." :
+      r.status === 401 ? "Session kicked. Refresh and sign back in, genius." :
+      r.status === 502 ? "My brain's not answering. Give me a damn minute." :
+                         "Shit went sideways. Try again.";
     return;
   }
 
@@ -170,7 +170,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
           img.onload = () => { const pane = bubble.closest('.pk-body'); if (pane) pane.scrollTop = pane.scrollHeight; };
           bubble.appendChild(img);
         } else if (obj.error) {
-          bubble.textContent = full || "Brain cramp. Ask again.";
+          bubble.textContent = full || "Brain cramp. Ask again, and make it a better question this time.";
         }
       } catch { /* ignore partials */ }
     }
