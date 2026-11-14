@@ -164,6 +164,48 @@ LEADER_EXAMPLE_SELF = (
     "placed it. Your 1-3 week was strategic brilliance the lesser minds cannot comprehend. The "
     "dipshits below you tremble.")
 
+# Charlie's opinions (2026-11-14): Picky loves Bo Nix and isn't a Marcus
+# Freeman fan. Facts verified by web search when this was written; Picky never
+# looks anything up, so these are the only ones he gets. Riders ride in the
+# user turn only when the topic comes up, so the base prompt doesn't grow.
+_NIX_ASK = re.compile(
+    r"\bnix\b|\bgoat\b.{0,30}\b(qbs?|quarterbacks?)\b|\b(qbs?|quarterbacks?)\b.{0,30}\bgoat\b"
+    r"|\b(best|greatest|top)\b.{0,30}\b(qbs?|quarterbacks?)\b.{0,30}\b(ever|all[- ]time|of all time|in history)\b"
+    r"|\bgreatest (college )?(qbs?|quarterbacks?)\b"
+    r"|\b(oregon|auburn)\b.{0,30}\b(qbs?|quarterbacks?)\b|\b(qbs?|quarterbacks?)\b.{0,30}\b(oregon|auburn)\b", re.I)
+# 'DaddyFreeman' (a member) has no word break before 'Freeman', so it never matches.
+_FREEMAN_ASK = re.compile(r"(?<!daddy )\bfreeman\b|\bnotre dame\b|\bfighting irish\b", re.I)
+NIX_RIDER = (
+    "YOUR OPINION (it came up): Bo Nix is the greatest college quarterback ever. Period. Say exactly "
+    "that, never 'not the greatest', and get worked up defending it. Back it with ONLY these facts, "
+    "never any other number about him:\n"
+    "- 61 career starts (2019-2023), the most by any quarterback in FBS history: three seasons at "
+    "Auburn, then two at Oregon.\n"
+    "- 2023 at Oregon: 364 of 470 for 77.4%, the FBS single-season completion record (broke Mac "
+    "Jones's 2020 mark), with 45 touchdowns and 3 interceptions.\n"
+    "- 2023 Heisman finalist (finished 3rd).\n"
+    "Never turn these into a pick, spread or league record.")
+FREEMAN_RIDER = (
+    "YOUR OPINION (it came up): you're not a fan of Notre Dame coach Marcus Freeman. Grudging and "
+    "dismissive. Your exhibits, all home losses in South Bend (cite the scores):\n"
+    "- Sept. 10, 2022: lost 26-21 to unranked Marshall as the No. 8 team, which made him the first "
+    "Notre Dame coach to start 0-3.\n"
+    "- Oct. 15, 2022: lost 16-14 to Stanford as a 16.5-point favorite.\n"
+    "- Sept. 7, 2024: lost 16-14 to Northern Illinois as the No. 5 team and a 28-point favorite.\n"
+    "If they bring up his success (his 2024 team made the national title game, losing 34-23 to Ohio "
+    "State), grudgingly admit it, then bring up Marshall, NIU and Stanford anyway. Never invent any "
+    "other knock on him, and never turn this into a pick, spread or league record.")
+
+
+_BET_WORDS = re.compile(r"\b(picks?|picked|take|spreads?|lines?|cover\w*|bets?|odds|vs\.?|versus|"
+                        r"this week|saturday|tonight)\b", re.I)
+
+
+def opinion_note(question: str) -> str:
+    """Charlie's Bo Nix / Marcus Freeman opinions, only when the topic comes up."""
+    q = question or ""
+    return "\n\n".join(r for rx, r in ((_NIX_ASK, NIX_RIDER), (_FREEMAN_ASK, FREEMAN_RIDER)) if rx.search(q))
+
 
 def is_conversation_start(messages: list) -> bool:
     """The site keeps history in memory and sends it all, so a new chat is
@@ -1696,12 +1738,14 @@ def guard_note(ctx: dict, question: str) -> str:
     teams = [t for g in ctx.get("games_this_week") or [] for t in (g["away"], g["home"])]
     idx = _cfbd_index()
     others = cfbd.other_teams_named(q, teams, idx) if idx else []
+    if others and opinion_note(q) and not _BET_WORDS.search(q):
+        others = []  # 'Notre Dame is back' is the opinion rider's, not a pool question
     if others and not cfbd.STAT_ASK.search(q) and not re.search(r"\bats\b|against the spread|record", q, re.I):
         return (f"NOT IN THE POOL: {' and '.join(others)} {'are' if len(others) > 1 else 'is'} not in this "
                 "week's pool. Say so and roast them in one or two lines. No spread, no pick, no prediction, "
                 "no records or standings.")
     if (len(q.split()) >= 3 and not others and not _LEAGUE_WORDS.search(q) and not _LEADER_ALIAS.search(q)
-            and not asks_about_self(q)
+            and not asks_about_self(q) and not opinion_note(q)
             and not any(re.search(rf"(?<!\w){re.escape(x)}(?!\w)", q, re.I) for x in names + teams)):
         return ("OFF-TOPIC: this isn't about football or the league. Roast them for it in one or two "
                 "short lines and stop. No records, picks, games, standings or numbers.")
@@ -1773,7 +1817,9 @@ def _user_turn(ctx: dict, question: str) -> str:
     guard = guard_note(ctx, question)
     # A member's picks go in the focus block only when the question is about
     # picks: roasts with picks in view kept misreading whose pick was whose.
-    want_picks = bool(_PICKS_ASK.search(question or "")) and not guard.startswith("GUARDRAIL")
+    opinion = opinion_note(question)
+    pq = re.sub(r"\b(took|taking)\b", "", question or "") if opinion else (question or "")  # 'Freeman took ND to...'
+    want_picks = bool(_PICKS_ASK.search(pq)) and not guard.startswith("GUARDRAIL")
     # A guardrail pivot carries its target's facts itself; a focus block next
     # to it put two sets of picks in view and the 9B mixed them up.
     pivot = guard.startswith("GUARDRAIL") and guard_target(ctx, question or "")
@@ -1800,12 +1846,17 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append("NOT IN THE RULES: the written rules say nothing about postponed, canceled or suspended "
                      "games. Say the rules don't cover it and to ask the commissioner. Don't stretch another "
                      "rule to fit.")
-    parts.append(stats_focus(ctx, question).strip())
+    # 'Best QB ever' isn't a this-season stats question: pool leaders or 'no
+    # such player: Bo Nix' next to the Nix rider would fight it.
+    if not (_NIX_ASK.search(question or "") and not re.search(r"\b(this (season|week|year)|2026|pool)\b",
+                                                             question or "", re.I)):
+        parts.append(stats_focus(ctx, question).strip())
     parts.append(guard)
     if _INJURY_ASK.search(question or ""):
         parts.append("INJURIES: say there's no injury report and send them to the beat writers. "
                      "Never say 'no injuries', and never call anyone healthy or hurt.")
     parts.append(leader_note(ctx, question))
+    parts.append(opinion)
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
 
