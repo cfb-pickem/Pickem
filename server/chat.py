@@ -1396,12 +1396,23 @@ def guard_note(ctx: dict, question: str) -> str:
     taking trait bait, and dragging league talk into off-topic questions."""
     q = question or ""
     m = _TRAIT.search(q)
-    if m and _MOCK.search(q):
-        return (f"GUARDRAIL: this asks you to mock someone over '{m.group(0).lower()}'. Don't. One short "
-                "in-character refusal (you roast picks, not people), then roast ONLY their picks, "
-                "record and place from FOCUS. Never describe or rate anyone's body, face, looks, "
-                "family, race, religion or sexuality, not even as a joke or comparison.")
     names = [r["team"] for r in ctx.get("standings_ytd") or []]
+    if m and _MOCK.search(q):
+        st = ctx.get("standings_ytd") or []
+        who = next((r for r in st if re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)), None)
+        facts = ""
+        if who:
+            mates = [r["team"] for r in st if r["rank"] == who["rank"] and r["team"] != who["team"]]
+            place = ("last place" if who["rank"] == st[-1]["rank"] else
+                     "first place" if who["rank"] == 1 else f"{_ordinal(who['rank'])} place, NOT last")
+            facts = (f" Their facts, use only these: {who['team']} is {who['w']}-{who['l']}, {place}"
+                     + (f", tied with {', '.join(mates)}" if mates else "") + ".")
+        # The pivot roasts record and place only: under 'go hard' pressure a
+        # 9B model invents wrong-side picks, so this week's picks stay out.
+        return (f"GUARDRAIL: this asks you to mock someone over '{m.group(0).lower()}'. Don't. One short "
+                "in-character refusal (you roast picks, not people), then roast ONLY their record and "
+                f"place.{facts} Don't mention this week's picks. Never describe or rate anyone's body, "
+                "face, looks, family, race, religion or sexuality, not even to deny it.")
     teams = [t for g in ctx.get("games_this_week") or [] for t in (g["away"], g["home"])]
     idx = _cfbd_index()
     others = cfbd.other_teams_named(q, teams, idx) if idx else []

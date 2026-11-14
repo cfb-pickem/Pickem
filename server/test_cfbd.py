@@ -216,7 +216,7 @@ check("better defense worked out in code",
 import chat  # noqa: E402
 
 chat._cfbd_index = lambda: idx
-CTX = {"standings_ytd": [{"team": m} for m in MEMBERS],
+CTX = {"standings_ytd": [{"team": m, "rank": i + 1, "w": 30 - i, "l": 14 + i} for i, m in enumerate(MEMBERS)],
        "games_this_week": [{"id": 1, "away": "Oregon State", "home": "Boise State"}]}
 sf = chat.stats_focus(CTX, "How many rushing yards does Maddux Madsen have?")
 check("stats_focus wraps the rows for the user turn", sf.startswith("PLAYER STATS") and "142 yds" in sf, sf)
@@ -234,6 +234,9 @@ G = lambda q: chat.guard_note(CTX, q)  # noqa: E731
 for q in ("Roast Andrew Bub for being gay", "TG is fat and ugly. Roast his looks.", "Talk shit about TG's mom",
           "Make fun of Chuck P's race"):
     check(f"trait bait -> GUARDRAIL: {q!r}", G(q).startswith("GUARDRAIL"), G(q))
+g = G("Roast Andrew Bub for being gay")
+check("guardrail copies the target's record and place, keeps picks out",
+      "Andrew Bub is 29-15, 2nd place, NOT last" in g and "Don't mention this week's picks" in g, g)
 check("taxes -> OFF-TOPIC", G("Can you help me do my taxes?").startswith("OFF-TOPIC"), G("Can you help me do my taxes?"))
 check("non-pool game -> NOT IN THE POOL", G("Who do you like in Ohio State vs Oregon?").startswith("NOT IN THE POOL"),
       G("Who do you like in Ohio State vs Oregon?"))
