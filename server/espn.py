@@ -1,6 +1,8 @@
 """
-ESPN game notes for Picky: market line, records, last five, injuries and
-team-tagged headlines for the games in this week's pool.
+ESPN game notes for Picky: market line, records, last five, season team
+stats, stat leaders, ESPN's FPI matchup projection, weather, injuries (when
+ESPN has any; it publishes none for college) and team-tagged headlines for
+the games in this week's pool.
 
 Public, keyless JSON (the same site.api.espn.com the Supabase edge functions
 use). Cached ~10 minutes per event. Fails soft: any error for a game becomes
@@ -31,11 +33,12 @@ HEADERS = {
 TTL_S = 600
 MAX_HEADLINES = 3
 MAX_INJURIES = 6
+LEADER_CATS = ("Passing Yards", "Rushing Yards", "Receiving Yards", "Sacks")
 
 _cache: dict[int, tuple[float, dict]] = {}
 
 
-def _team_notes(comp: dict, last5: dict, injuries: dict) -> dict:
+def _team_notes(comp: dict, last5: dict, injuries: dict, stats: dict, leaders: dict) -> dict:
     t = comp.get("team") or {}
     tid = str(t.get("id") or "")
     rec = next(
@@ -59,6 +62,16 @@ def _team_notes(comp: dict, last5: dict, injuries: dict) -> dict:
         "record": rec,
         "last5": games,
         "injuries": inj,
+        # season per-game averages, e.g. "Points Per Game 43.3"
+        "stats": [f"{s.get('label')} {s.get('displayValue')}"
+                  for s in stats.get(tid) or [] if s.get("label") and s.get("displayValue")],
+        # season leaders, e.g. "Passing Yards: Gio Lopez (153/228, 2,176 YDS, 18 TD, 1 INT)"
+        "leaders": [
+            f"{c.get('displayName')}: {((c['leaders'][0].get('athlete') or {}).get('displayName'))} "
+            f"({c['leaders'][0].get('displayValue')})"
+            for c in leaders.get(tid) or []
+            if c.get("leaders") and c.get("displayName") in LEADER_CATS
+        ],
     }
 
 
@@ -74,8 +87,25 @@ def parse_summary(d: dict) -> dict:
         str((x.get("team") or {}).get("id")): x.get("injuries") or []
         for x in d.get("injuries") or []
     }
-    home = _team_notes(competitors.get("home") or {}, last5, injuries)
-    away = _team_notes(competitors.get("away") or {}, last5, injuries)
+    stats = {
+        str((x.get("team") or {}).get("id")): x.get("statistics") or []
+        for x in (d.get("boxscore") or {}).get("teams") or []
+    }
+    leaders = {
+        str((x.get("team") or {}).get("id")): x.get("leaders") or []
+        for x in d.get("leaders") or []
+    }
+    home = _team_notes(competitors.get("home") or {}, last5, injuries, stats, leaders)
+    away = _team_notes(competitors.get("away") or {}, last5, injuries, stats, leaders)
+
+    w = (d.get("gameInfo") or {}).get("weather") or {}
+    weather = None
+    if w.get("temperature") is not None:
+        weather = f"{w['temperature']}F"
+        if w.get("gust"):
+            weather += f", wind gusts {w['gust']} mph"
+        if w.get("precipitation") is not None:
+            weather += f", {w['precipitation']}% chance of precipitation"
 
     market = None
     pc = (d.get("pickcenter") or [None])[0]
@@ -121,6 +151,7 @@ def parse_summary(d: dict) -> dict:
         "away": away,
         "market": market,
         "espn_win_prob": win_prob,
+        "weather": weather,
         "headlines": heads,
         "injury_report_available": bool(d.get("injuries")),
     }

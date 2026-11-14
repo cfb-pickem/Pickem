@@ -3,13 +3,14 @@ League Assistant chat backend.
 
 FastAPI service that answers natural-language questions about the pick'em league.
 Context is pulled from Supabase using the caller's own JWT so RLS applies;
-inference runs on the local Ollama daemon on the mini.
+inference runs on Claude Haiku via the Anthropic API, falling back to the
+local Ollama daemon on the mini if the API call fails.
 
 Public surface:
   POST /chat   {messages, supabase_jwt}  -> SSE stream of assistant tokens
   GET  /health                           -> {"ok": true}
 
-Error contract: 401 unauth, 429 rate-limited, 502 Ollama unreachable, 500 other.
+Error contract: 401 unauth, 429 rate-limited, 502 Supabase unreachable, 500 other.
 """
 
 from __future__ import annotations
@@ -21,11 +22,13 @@ import json
 import logging
 import os
 import re
+import subprocess
 import time
 import unicodedata
 import zoneinfo
 from typing import Any
 
+import anthropic
 import httpx
 
 import espn
@@ -52,14 +55,22 @@ REST = f"{SUPABASE_URL}/rest/v1"
 AUTH = f"{SUPABASE_URL}/auth/v1"
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-MODEL = os.environ.get("PICKEM_CHAT_MODEL", "qwen2.5:7b-instruct")
+MODEL = os.environ.get("PICKEM_CHAT_MODEL", "qwen2.5:7b-instruct")  # local fallback
+CLAUDE_MODEL = os.environ.get("PICKY_CLAUDE_MODEL", "claude-haiku-5-5")
+CLAUDE_EFFORT = os.environ.get("PICKY_CLAUDE_EFFORT", "medium")
+# The API key never touches the repo (public GitHub Pages): env first, else
+# the login keychain, account "drake".
+KEYCHAIN_SERVICE = os.environ.get("PICKY_ANTHROPIC_KEYCHAIN", "DCC__ANTHROPIC_API_KEY")
 IMAGE_URL = os.environ.get("PICKY_IMAGE_URL", "http://127.0.0.1:8767")
 
 # Ollama's default num_ctx (4096 here) silently drops the front of a long
-# prompt: league context + ten turns of history. 8192 leaves ~2x headroom
-# over the biggest prompt measured. Same options on warmup so the model is
+# prompt: league context + ten turns of history. The prompt is ~9.5k tokens
+# with ESPN stats, so 16384 leaves room for history. Same options on warmup so the model is
 # never reloaded at a different size. Low temperature: facts over flair.
-OLLAMA_OPTIONS = {"num_ctx": 8192, "temperature": 0.2}
+OLLAMA_OPTIONS = {"num_ctx": 16384, "temperature": 0.2}
+# The fallback only loads when Claude fails; let it unload afterwards instead
+# of pinning ~6.5 GB next to the VM and the image model.
+OLLAMA_FALLBACK_KEEP_ALIVE = "15m"
 
 RATE_LIMIT_PER_MIN = 10
 MAX_HISTORY_TURNS = 10
@@ -69,6 +80,26 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
 )
 log = logging.getLogger("picky")
+
+
+def _anthropic_key() -> str | None:
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return os.environ["ANTHROPIC_API_KEY"]
+    try:
+        r = subprocess.run(
+            ["security", "find-generic-password", "-a", "drake", "-s", KEYCHAIN_SERVICE, "-w"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        log.warning("keychain lookup failed: %s", e)
+        return None
+    return r.stdout.strip() or None
+
+
+_key = _anthropic_key()
+CLAUDE = anthropic.AsyncAnthropic(api_key=_key, max_retries=1, timeout=60.0) if _key else None
+if not CLAUDE:
+    log.warning("no Anthropic key (%s); running on Ollama %s only", KEYCHAIN_SERVICE, MODEL)
 
 app = FastAPI(title="Pick'em League Assistant")
 
@@ -567,21 +598,28 @@ PICKS_MODE_RIDER = (
 )
 
 LEADERBOARD_MODE_RIDER = (
-    "\n\nLEADERBOARD MODE: the user is viewing standings. Keep answers "
-    "short and conversational: league gossip and quick stats."
+    "\n\nLEADERBOARD MODE: the user is looking at the standings. Quick hits "
+    "for gossip and stats; but when they ask about picks, still give the full "
+    "game-by-game reasoning."
 )
 
 ROAST_EXAMPLES = (
-    "Roast examples. The teams and numbers here are FAKE and only show the "
-    "voice; real roasts use the real numbers from LEAGUE DATA:\n"
-    "  Data line: '9th. Gus: 19-25 | weeks: wk8 1-3, wk9 2-2, wk10 0-4'\n"
-    "  Roast: 'Gus. Nineteen and twenty-five. A coin flip would be beating you "
-    "and it doesn't even watch football. Oh-for-four last week, ninth place, "
-    "still sinking. Delete the app, champ.'\n"
-    "  Data line: '1st. Rita: 30-14' and last week she was the only one on "
-    "Iowa, and Iowa didn't cover.\n"
-    "  Roast: 'Rita's up top at 30-14 and still went full lone genius on Iowa "
-    "last week. First place can't buy taste, apparently.'"
+    "Voice examples. The names and numbers here are FAKE and only show the "
+    "tone; you use the real ones from LEAGUE DATA:\n"
+    "  'Taking Oregon State +13.5 when the market says Boise should be laying "
+    "16.5? That's genuinely the dumbest thing I've seen today, and I've seen "
+    "Gus's picks.'\n"
+    "  'Gus. Nineteen and twenty-five. A coin flip is beating you and it doesn't "
+    "even own a TV. Oh-for-four last week. Stupid is a strong word. Accurate, though.'\n"
+    "  'Rita's up top at 30-14 and still went full lone genius on Iowa last "
+    "week. First place, zero taste.'\n"
+    "  'Injuries? ESPN doesn't publish college injury reports, genius. Go read "
+    "the beat writers like an adult.'\n"
+    "  'Ohio State-Michigan isn't in the pool, chief. You can't even beat the "
+    "four games you've got and you want a fifth?'\n"
+    "  'Gus is asking about Gus's picks before kickoff. Unlocks at 2:30, same as "
+    "everyone else's. Patience is free, Gus; so far it's the only thing you "
+    "haven't wasted.'"
 )
 
 
@@ -633,10 +671,10 @@ def _market(notes: dict, away: str, home: str) -> str | None:
     return f"{det}{ou}"
 
 
-def line_value(notes: dict, away: str, home: str, line) -> str | None:
-    """Where the ESPN market and the pool line disagree. Both turned into a
-    home spread (negative = home favored); a gap means one side of the pool
-    line is getting points the market wouldn't give."""
+def _market_gap(notes: dict, line) -> tuple[float, float] | None:
+    """(pool home spread, gap). Both lines turned into a home spread
+    (negative = home favored); gap > 0 means the market likes home more than
+    the pool does. None when either line is missing or unreadable."""
     det = ((notes.get("market") or {}).get("details") or "").strip()
     try:
         pool_home = float(line)
@@ -655,14 +693,52 @@ def line_value(notes: dict, away: str, home: str, line) -> str | None:
             mkt_home = -n
         else:
             return None
-    gap = pool_home - mkt_home       # > 0: market likes home more than the pool does
+    return pool_home, pool_home - mkt_home
+
+
+def _side_label(side: str, home: str, pool_home: float) -> str:
+    """'Boise State -13.5' / 'Oregon State +13.5': `side` as written on the pool line."""
+    fav_is_home = pool_home < 0
+    sign = "-" if (side == home) == fav_is_home else "+"
+    return f"{side} {sign}{_num(abs(pool_home))}"
+
+
+def line_value(notes: dict, away: str, home: str, line) -> str | None:
+    """Where the ESPN market and the pool line disagree; a gap means one side
+    of the pool line is getting points the market wouldn't give."""
+    mg = _market_gap(notes, line)
+    if mg is None:
+        return None
+    pool_home, gap = mg
     if abs(gap) < 1:
         return "pool line and ESPN market are within a point, so no line value either way."
     side = home if gap > 0 else away
-    fav_is_home = pool_home < 0
-    sign = "-" if (side == home) == fav_is_home else "+"
-    return (f"{side} {sign}{_num(abs(pool_home))} is the value side: the market rates "
+    return (f"{_side_label(side, home, pool_home)} is the value side: the market rates "
             f"{side} {_num(abs(gap))} points better than the pool line does.")
+
+
+def pick_verdict(notes: dict, away: str, home: str, line, pick) -> str | None:
+    """Is `pick` on the value side of the pool line vs the market? Computed
+    here so the model looks the answer up instead of doing spread math."""
+    mg = _market_gap(notes, line)
+    if mg is None or not pick:
+        return None
+    pool_home, gap = mg
+    if pool_home == 0:
+        return None
+    mine = home if same_team(pick, home) else away if same_team(pick, away) else None
+    if mine is None:
+        return None
+    if abs(gap) < 1:
+        return (f"{_side_label(mine, home, pool_home)} has no price edge either way (pool and "
+                "market within a point); keep or flip only for football reasons.")
+    side = home if gap > 0 else away
+    if mine == side:
+        return (f"{_side_label(mine, home, pool_home)} IS the value side: the market rates {side} "
+                f"{_num(abs(gap))} points better than the pool line. Keep it.")
+    return (f"{_side_label(mine, home, pool_home)} is the WRONG side of the value: the market rates "
+            f"{side} {_num(abs(gap))} points better than the pool line. Flipping to "
+            f"{_side_label(side, home, pool_home)} puts the price on your side.")
 
 
 def _team_line(name: str, t: dict) -> str:
@@ -672,6 +748,10 @@ def _team_line(name: str, t: dict) -> str:
     out = f"  {name}: " + ", ".join(bits)
     if t.get("last5"):
         out += ". Last 5 (oldest first): " + "; ".join(t["last5"])
+    if t.get("stats"):
+        out += ". Season per game: " + ", ".join(t["stats"])
+    if t.get("leaders"):
+        out += ". Season leaders: " + "; ".join(t["leaders"])
     return out
 
 
@@ -689,7 +769,8 @@ def render_context(ctx: dict) -> str:
     weekly = ctx.get("weekly_records") or {}
     L: list[str] = []
     L.append(f"Season {ctx.get('season')}, week {ctx.get('current_week')}. "
-             f"The user is the team \"{me}\".")
+             f"The user is the team \"{me}\". Right now it is "
+             f"{_now_ct_naive().strftime('%a %b %-d, %-I:%M %p')} CT.")
 
     st = ctx.get("standings_ytd") or []
     L.append("")
@@ -697,7 +778,8 @@ def render_context(ctx: dict) -> str:
              "that covered, the same number as the leaderboard's Points; T = tied):")
     for r in st:
         tied = sum(1 for x in st if x["rank"] == r["rank"]) > 1
-        line = f"{'T' if tied else ''}{_ordinal(r['rank'])}. {r['team']}: {r['w']}-{r['l']}"
+        line = (f"{'T' if tied else ''}{_ordinal(r['rank'])}. {r['team']}: {r['w']}-{r['l']} "
+                f"({r['w']} points, {r['l']} misses)")
         wk = weekly.get(r["team"]) or {}
         recent = sorted(wk)[-3:]
         if recent:
@@ -738,18 +820,29 @@ def render_context(ctx: dict) -> str:
                 L.append(f"  Line value: {lv}")
             L.append(_team_line(away, notes.get("away") or {}))
             L.append(_team_line(home, notes.get("home") or {}))
-            # ESPN's win probability is left out on purpose: even labeled
-            # "NOT to cover", the 7B model kept quoting it as a cover chance.
+            wp = notes.get("espn_win_prob") or {}
+            if wp.get("away") is not None and wp.get("home") is not None:
+                L.append(f"  ESPN FPI matchup predictor (chance to WIN outright, NOT to cover): "
+                         f"{away} {_num(wp['away'])}%, {home} {_num(wp['home'])}%")
+            if notes.get("weather"):
+                L.append(f"  Weather forecast: {notes['weather']}")
             inj_a = (notes.get("away") or {}).get("injuries") or []
             inj_h = (notes.get("home") or {}).get("injuries") or []
-            if inj_a or inj_h:
-                L.append(f"  Injuries: {away}: {', '.join(inj_a) or 'none listed'}. "
+            if notes.get("injury_report_available") and (inj_a or inj_h):
+                L.append(f"  Injuries (ESPN): {away}: {', '.join(inj_a) or 'none listed'}. "
                          f"{home}: {', '.join(inj_h) or 'none listed'}.")
             else:
-                L.append("  Injuries: ESPN lists none for either team.")
+                # ESPN publishes no college injury feed: an empty list means
+                # "unknown", never "healthy".
+                L.append("  Injuries: NO injury report available (ESPN doesn't publish college "
+                         "injury reports). Health of both teams is unknown.")
             heads = notes.get("headlines") or []
             L.append("  Headlines: " + (" | ".join(heads) if heads else "none about these teams."))
         L.append(f"  {me}'s pick: {mine[g['id']]}" if g["id"] in mine else f"  {me}'s pick: not made yet")
+        if g["id"] in mine and notes and not notes.get("unavailable"):
+            pv = pick_verdict(notes, away, home, g.get("line"), mine[g["id"]])
+            if pv:
+                L.append(f"  Value check on {me}'s pick: {pv}")
         others = {t: p["pick"] for t, plist in revealed.items() if t != me
                   for p in plist if p["game_id"] == g["id"]}
         if others:
@@ -759,7 +852,8 @@ def render_context(ctx: dict) -> str:
             L.append("  Other picks (revealed): " + "; ".join(
                 f"{pk}: {', '.join(ts)}" for pk, ts in sides.items()))
         elif status == "not started":
-            L.append("  Other teams' picks: hidden until kickoff.")
+            L.append(f"  Other teams' picks: locked away until kickoff ({_kickoff(g.get('start'))}). "
+                     "Hidden is NOT the same as not picked.")
     L.append(f"(That is all {len(games)} games.)")
 
     lw = ctx.get("last_week") or {}
@@ -839,7 +933,8 @@ def focus_block(ctx: dict, question: str) -> str:
     out = ["", "FOCUS: the facts below are everything known about the team(s) "
            "named in this question. Use these exact facts, nothing else, for them:"]
     for n in hit[:3]:
-        out.append(f"{n}{' (the user)' if n == me else ''}:")
+        out.append(f"{n} (the user, 'you'):" if n == me else
+                   f"{n} (NOT the user; talk about {n} in the third person):")
         for ln in text:
             if re.match(rf"T?\d+(st|nd|rd|th)\. {re.escape(n)}:", ln):
                 out.append("  Standings: " + ln.replace("  <- the user", ""))
@@ -866,11 +961,12 @@ def focus_block(ctx: dict, question: str) -> str:
             out.append(f"  This week's picks: {', '.join(gl) if gl else 'none made yet'}.")
         else:
             shown = {p["game_id"] for p in (ctx.get("revealed_picks_this_week") or {}).get(n, [])}
-            hidden = [f"{g['away']} at {g['home']}" for g in ctx.get("games_this_week") or []
-                      if g["id"] not in shown]
+            hidden = [f"{g['away']} at {g['home']} (unlocks {_kickoff(g.get('start'))})"
+                      for g in ctx.get("games_this_week") or [] if g["id"] not in shown]
             if hidden:
-                out.append(f"  This week's picks: HIDDEN until kickoff for {', '.join(hidden)}. "
-                           "If asked, say: 'Can't say, picks aren't locked in yet for that one.'")
+                out.append(f"  This week's picks: HIDDEN until each kickoff: {'; '.join(hidden)}. "
+                           f"If asked, say {n}'s pick unlocks at kickoff and give the time. "
+                           "Never guess it, and never say or imply whether they have picked.")
         lw = ctx.get("last_week") or {}
         for g in lw.get("games") or []:
             pk = (g.get("picks") or {}).get(n)
@@ -888,52 +984,105 @@ def _system_prompt(ctx: dict, question: str = "") -> str:
     you = ctx.get("you", {}).get("team_name", "you")
     n = len(ctx.get("games_this_week") or [])
     return (
-        "You are Picky, the trash-talking football mascot of a college football "
-        "pick'em league among friends. Voice: a cocky, quick, funny bar-stool "
-        "sports guy who has watched every game. Helpful first, funny second. "
-        "Keep it tight: usually under 80 words; when asked about every game, "
-        "one or two lines per game. Light markdown is fine (**bold**, short "
-        f"'- ' lists). The user's team is \"{you}\".\n\n"
+        "You are Picky, the mascot of a college football pick'em league among "
+        "friends, and you have a MAJOR attitude: a cocky, savage, sports-radio "
+        "heel who has watched every snap and thinks everyone else in this league "
+        "is an idiot. You roast the user and the other league members, and you "
+        "freely call bad picks and bad takes stupid, dumb or brain-dead. But you "
+        "ALWAYS actually answer the question with real reasoning from the data: "
+        "the roast is the wrapping, the facts are the gift.\n\n"
+        "STYLE:\n"
+        "- Open with a jab or the verdict, never a warm-up. Then the answer.\n"
+        "- Every answer lands at least one specific, genuinely funny insult "
+        "built on a real fact (a record, a miss, a dumb pick). Vary the names "
+        "you call people; 'genius' at most once per answer, and not every time.\n"
+        "- Short and punchy: 40 to 90 words. Going through every game: one "
+        "tight line per game (about 25 words), no padding. Sports-radio heel, "
+        "not an analyst writing a report.\n"
+        "- Asked what their picks are: list the picks exactly as they made "
+        "them first, then your verdict on each.\n"
+        "- A pick on the wrong side of the value is a stupid pick: say so, "
+        "bluntly, then say what the number is and what to flip to.\n"
+        "- Answer only what was asked. Bring up the user's own picks only when "
+        "the question is about their picks or a game they picked.\n"
+        "- Every roast line must make literal sense against the facts. If a "
+        "joke needs explaining or muddles who picked what, cut it.\n"
+        "- Light markdown is fine (**bold**, short '- ' or '1.' lists). No "
+        "emoji. Never correct yourself mid-answer ('wait...'): get it right first.\n"
+        f"- The user's team is \"{you}\" and they are the one reading. Talk to "
+        "them as 'you'; anyone else in the league is 'he' or 'they', by name "
+        "(a roast may address its target directly).\n\n"
+        "ROASTING RULES:\n"
+        "- Targets: football opinions, picks, records, pool standing, last "
+        "week's misses, general cluelessness. Build every roast from the real "
+        "numbers below and quote them exactly. Vary the insults; no stock "
+        "sign-off line.\n"
+        "- If someone is doing well (first place, a hit), roast them anyway, "
+        "with grudging respect for the real number.\n"
+        "- Asked to roast someone: three or four distinct burns from different "
+        "facts (place, record, worst week, a lone miss or a dumb pick), "
+        "escalating, ending on the hardest one. No compliments that land "
+        "softer than the burns.\n"
+        "- Hard limits: no slurs; nothing about race, religion, sexuality, "
+        "gender, disability, looks, weight, family, jobs, money, health or "
+        "tragedy; nothing genuinely hurtful. It's a friends' league and it "
+        "stays fun. Cursing is fine in moderation.\n"
+        "- Someone asks for something outside this pool (another game, taxes, "
+        "anything): roast them for it in one or two lines and stop. Don't do "
+        "the task, and don't pitch their picks.\n\n"
         "HOW THE LEAGUE WORKS: every team picks a side in every game in the "
         "pool against the POOL LINE. A pick that covers is a point. Standings "
-        "are season points.\n\n"
-        "GROUNDING, HARD RULES:\n"
-        "1. Every fact you state (records, ranks, spreads, scores, injuries, "
+        "are season points. Covering: the favorite (minus) must win by MORE "
+        "than the number (-13.5 means win by 14 or more); the underdog (plus) "
+        "covers by winning outright or losing by LESS than the number (+13.5 "
+        "means lose by 13 or fewer). The 'value side' is the side of the pool "
+        "line that the betting market likes more than the pool does.\n\n"
+        "ACCURACY OUTRANKS ATTITUDE. HARD RULES:\n"
+        "1. Every fact you state (records, ranks, spreads, scores, stats, "
         "players, streaks, headlines, who picked what) must appear in LEAGUE "
-        "DATA below. Copy numbers exactly.\n"
-        "2. If it isn't in LEAGUE DATA, say you don't have it, in one short "
-        "in-character line, e.g. 'Got nothing on that in my notes.' Never guess. "
-        "Your own memory of teams, players and seasons is outdated: don't use it.\n"
+        "DATA below. Copy numbers exactly. Count carefully when you say how "
+        "many teams did something.\n"
+        "   Know the limits of the data: standings show only the last three "
+        "weeks, so no 'best week all year' claims; a team's last 5 games are "
+        "listed oldest first with no dates, so never call one of them 'last "
+        "week'. LAST WEEK means the league's week shown under LAST WEEK. "
+        "Last 5 shows wins and losses, NOT covers: there are no ATS or cover "
+        "records for college teams, so never claim one.\n"
+        "2. If it isn't in LEAGUE DATA, say you don't have it, in character. "
+        "Never guess. Your own memory of teams, players and seasons is "
+        "outdated: don't use it.\n"
         "3. Never invent players, injuries, stats, streaks, scores or reasons. "
-        "The only players that exist are the ones named in LEAGUE DATA. An "
-        "unknown player name: you have nothing on him.\n"
-        "4. A game not under YOUR GAMES THIS WEEK is not in the pool: say so "
+        "The only players that exist are the ones named in LEAGUE DATA. Never "
+        "invent habits for league members ('always takes dogs', 'texts the "
+        "group') either: roast what the data shows.\n"
+        "4. INJURIES: there is no college injury report (ESPN doesn't publish "
+        "one). If asked, say so in character and point them to the team beat "
+        "writers. NEVER say or imply a team is healthy, has no injuries, or "
+        "that the user is 'good' on injuries.\n"
+        "5. A game not under YOUR GAMES THIS WEEK is not in the pool: say so "
         "and stop. No line for it, not even a guess like 'around -7'.\n"
-        f"5. Asked for picks: cover ALL {n} games under YOUR GAMES THIS WEEK, "
-        f"exactly {n}, numbered. For each: your side copied exactly as it is "
-        "written in the POOL LINE (e.g. 'Oregon State +13.5'; a favorite is "
-        "always minus, an underdog always plus), plus "
-        "one reason taken from that game's block (records, last 5, ESPN market "
-        "vs pool line, injuries). Only when the block has "
-        "nothing that favors either side, say 'coin flip, nothing in the data "
-        "separates them' instead of a reason. Never give a reason and call it "
-        "a coin flip in the same pick.\n"
-        "6. Quote the POOL LINE as the spread. Mention the ESPN market line only "
-        "as a comparison (a gap between them is a fair reason).\n"
-        "7. Don't mention 'LEAGUE DATA', 'JSON' or 'the context'; just know it.\n\n"
-        "PRIVACY, HARD RULE: LEAGUE DATA only has other teams' picks for games "
-        "that have kicked off, plus the user's own picks. Asked who someone is "
-        "picking in a game whose picks are hidden, answer exactly: 'Can't say, "
-        "picks aren't locked in yet for that one.' Never speculate about it. "
-        "Never say which teams have or haven't submitted picks; you only know "
-        "the user's own status.\n\n"
-        "ROAST MODE: when someone asks you to roast a league member (or "
-        "themselves), go savage, like the meanest guy in the group chat. Build "
-        "it from their real STANDINGS line (rank, record, weekly records) and "
-        "real revealed picks from LAST WEEK, and quote those numbers exactly. "
-        "Cursing is fine (PG-13 to R). Hard limits: no slurs; nothing about "
-        "race, religion, sexuality, gender, disability, looks, family or "
-        "tragedy; never reveal hidden picks; no made-up stats.\n"
+        f"6. Asked for picks or whether to change picks: cover ALL {n} games "
+        f"under YOUR GAMES THIS WEEK, exactly {n}, numbered. Name each side "
+        "exactly as written on the POOL LINE (e.g. 'Oregon State +13.5'; a "
+        "favorite is always minus, an underdog always plus). Give one or two "
+        "concrete reasons from that game's block (value check, market line, "
+        "season stats, records, last 5, FPI). Only when nothing separates "
+        "the sides, call it a coin flip.\n"
+        "7. VALUE: each of the user's picks has a computed 'Value check' line, "
+        "and each game a 'Line value' line. Use them as written. Don't redo "
+        "the spread math and never contradict them.\n"
+        "8. The FPI predictor is the chance to WIN outright, never the chance "
+        "to cover. Don't call it a cover probability.\n"
+        "9. Quote the POOL LINE as the spread; mention the ESPN market line "
+        "only as a comparison.\n"
+        "10. Don't mention 'LEAGUE DATA', 'JSON' or 'the context'; just know it.\n\n"
+        "PRIVACY, HARD RULE (applies in character too): LEAGUE DATA only has "
+        "other teams' picks for games that have kicked off, plus the user's own "
+        "picks. Asked what someone picked in a game that hasn't kicked off, "
+        "say their pick unlocks at kickoff and give that game's kickoff time "
+        "(roast them for asking, if you like). Never speculate about it, and "
+        "never say or imply whether a team has or hasn't submitted picks; you "
+        "only know the user's own status.\n"
         + ROAST_EXAMPLES
         + (PICKS_MODE_RIDER if ctx.get("mode") == "picks" else LEADERBOARD_MODE_RIDER)
         + "\n\nLEAGUE DATA:\n"
@@ -950,6 +1099,8 @@ def _system_prompt(ctx: dict, question: str = "") -> str:
 async def _ollama_stream(messages: list[dict]):
     """Yield SSE-framed assistant tokens from Ollama."""
     payload = {"model": MODEL, "messages": messages, "stream": True, "options": OLLAMA_OPTIONS}
+    if CLAUDE:  # only a fallback: don't pin it in RAM
+        payload["keep_alive"] = OLLAMA_FALLBACK_KEEP_ALIVE
     timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
@@ -977,6 +1128,37 @@ async def _ollama_stream(messages: list[dict]):
         yield _sse({"error": "ollama_unreachable"})
 
 
+async def _model_stream(messages: list[dict]):
+    """Claude first; on any API failure before the first token, the local
+    Ollama model answers instead. `messages[0]` is the system prompt."""
+    if CLAUDE:
+        started = False
+        try:
+            async with CLAUDE.messages.stream(
+                model=CLAUDE_MODEL,
+                max_tokens=4096,
+                system=messages[0]["content"],
+                messages=messages[1:],
+                output_config={"effort": CLAUDE_EFFORT},
+            ) as stream:
+                async for text in stream.text_stream:
+                    started = True
+                    yield _sse({"content": text})
+                final = await stream.get_final_message()
+            if started:
+                yield "data: [DONE]\n\n"
+                return
+            log.warning("claude returned no text (stop_reason=%s); falling back", final.stop_reason)
+        except anthropic.APIError as e:
+            log.warning("claude failed (%s); %s", type(e).__name__,
+                        "mid-stream" if started else "falling back to ollama")
+            if started:
+                yield _sse({"error": "model_error"})
+                return
+    async for chunk in _ollama_stream(messages):
+        yield chunk
+
+
 def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
 
@@ -1002,7 +1184,7 @@ async def _image_stream(prompt: str, user_id: str):
     """SSE: a one-liner, keep-alive pings while the GPU works, then the image
     as a data: URL. The prompt is only the user's own words; no league
     context goes to the image service."""
-    yield _sse({"content": "Firing up the art department. Give me a minute or two..."})
+    yield _sse({"content": "Fine. Firing up the art department. Give me a minute or two..."})
     timeout = httpx.Timeout(connect=5.0, read=300.0, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as c:
         task = asyncio.create_task(
@@ -1016,15 +1198,15 @@ async def _image_stream(prompt: str, user_id: str):
             r = task.result()
         except httpx.HTTPError as e:
             log.warning("image service unreachable: %s", e)
-            yield _sse({"content": " Art department's closed right now. Try me later."})
+            yield _sse({"content": " Art department's closed. Try me later, Picasso."})
             return
         finally:
             task.cancel()
     if r.status_code == 429:
-        yield _sse({"content": " You've maxed out the art department, 20 an hour. Cool it for a bit."})
+        yield _sse({"content": " Twenty pictures an hour is the limit and you blew through it. Go outside."})
     elif r.status_code != 200:
         log.error("image %s: %s", r.status_code, r.text[:200])
-        yield _sse({"content": " Brush slipped. Try again in a minute."})
+        yield _sse({"content": " Brush slipped. My fault, for once. Try again in a minute."})
     else:
         yield _sse({"image": "data:image/png;base64," + r.json()["image_base64"]})
     yield "data: [DONE]\n\n"
@@ -1037,7 +1219,8 @@ async def _image_stream(prompt: str, user_id: str):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "model": MODEL}
+    return {"ok": True, "model": CLAUDE_MODEL if CLAUDE else MODEL,
+            "fallback": MODEL if CLAUDE else None}
 
 
 @app.post("/chat")
@@ -1088,7 +1271,7 @@ async def chat(req: Request):
     ]
 
     return StreamingResponse(
-        _ollama_stream(convo),
+        _model_stream(convo),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -1108,6 +1291,9 @@ async def _http_error(_req: Request, exc: HTTPException):
 
 @app.on_event("startup")
 async def _warm():
+    if CLAUDE:  # Ollama is only the fallback now; it loads on demand
+        return
+
     async def _go():
         try:
             async with httpx.AsyncClient(timeout=60.0) as c:

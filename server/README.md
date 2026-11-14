@@ -10,14 +10,16 @@ tunnel at `pickem-chat.dunecreek.ai`.
 - Validates the caller's Supabase JWT via `/auth/v1/user` (no secret stored).
 - Pulls a compact snapshot of league state from Supabase **using the
   caller's JWT**, so row-level security applies to everything.
-- Builds a system prompt in Picky's voice and calls Ollama's
-  `/api/chat` streaming endpoint, forwarded back as SSE.
+- Builds a system prompt in Picky's voice (a savage, trash-talking heel
+  who still answers with real facts) and streams Claude Haiku 5.5 via the
+  Anthropic API back as SSE. If the API call fails before the first token,
+  local Ollama answers instead.
 - Rate-limits 10 req/min per user, in-memory.
-- Warms the model on startup so the first query of the day doesn't eat
-  a ~20 s cold start.
+- Warms Ollama on startup only when there's no Anthropic key; as a
+  fallback it loads on demand and unloads after 15 idle minutes.
 
-Errors: `401` bad/missing token · `429` rate-limited · `502` Ollama or
-Supabase unreachable · `500` otherwise. Streamed error chunks look like
+Errors: `401` bad/missing token · `429` rate-limited · `502` Supabase
+unreachable · `500` otherwise. Streamed error chunks look like
 `data: {"error": "..."}`.
 
 ## Config
@@ -26,7 +28,10 @@ Env vars (set in the plist):
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `PICKEM_CHAT_MODEL` | `qwen2.5:7b-instruct` | Swap to `qwen2.5:14b-instruct` for "smarter mode". |
+| `PICKY_CLAUDE_MODEL` | `claude-haiku-5-5` | Primary model. |
+| `PICKY_CLAUDE_EFFORT` | `medium` | `low` is faster but sloppier on multi-step facts. |
+| `ANTHROPIC_API_KEY` | (unset) | If unset, read from the login keychain: account `drake`, service `PICKY_ANTHROPIC_KEYCHAIN` (default `DCC__ANTHROPIC_API_KEY`). Never commit it. |
+| `PICKEM_CHAT_MODEL` | `qwen2.5:7b-instruct` | Local Ollama fallback. |
 | `PORT` | `8766` | Next free after metra's 8765. |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama only. |
 
@@ -68,21 +73,24 @@ in the bubble.
 `render_context()` turns the league snapshot into labeled text: ranked
 standings with the last three weeks, `YOUR GAMES THIS WEEK (N)` with one
 block per game (pool line as the two pickable sides, ESPN market line and
-the gap between them, AP rank, record, last five, injuries, team-tagged
-headlines), last week's finals with every team's hits and misses, and the
+the gap between them, a computed value check on the caller's pick, AP rank,
+record, last five, season per-game stats, stat leaders, ESPN FPI win
+projection, weather, team-tagged headlines; injuries are reported as
+unavailable because ESPN publishes no college injury feed), last week's finals with every team's hits and misses, and the
 jackpot. `focus_block()` repeats the facts for any league member named in
 the question (or the caller, for "roast me" / "how did I do") at the end
 of the prompt. ESPN data comes from `espn.py` (public summary endpoint,
 10 minute cache, fails soft to "unavailable").
 
-Ollama runs with `num_ctx` 8192 (prompt is ~3.3k tokens before history)
-and temperature 0.2.
+The prompt is ~9.5k tokens. Ollama (fallback) gets the same prompt and
+runs with `num_ctx` 16384 and temperature 0.2.
 
 Tests:
 
     ./.venv/bin/python3 -I test_privacy.py     # unrevealed picks never leak
     ./.venv/bin/python3 -I test_standings.py   # points match the leaderboard
     ./.venv/bin/python3 -I test_grounding.py -v [--model qwen2.5:14b-instruct]
+    ./.venv/bin/python3 -I test_e2e.py [--remote] [--as TEAM]  # real /chat, answers printed
 
 `test_grounding.py` asks ~11 probe questions against live data (service key
 from the keychain) and checks counts, spreads, records and last-week claims

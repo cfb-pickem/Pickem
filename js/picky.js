@@ -123,7 +123,7 @@ function wireChat(ui, info, chatOpts) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         bubble.classList.remove('pk-typing');
-        bubble.textContent = 'Session expired — refresh the page.';
+        bubble.textContent = 'Your session expired. Refresh the page, champ.';
         return;
       }
       // Rival predictions are opt-in per page. If the model isn't ready yet
@@ -154,9 +154,9 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
   if (!r.ok) {
     bubble.classList.remove('pk-typing');
     bubble.textContent =
-      r.status === 429 ? "Easy — ten questions a minute. Breathe." :
+      r.status === 429 ? "Ten questions a minute, max. Breathe. Think. Then ask a better one." :
       r.status === 401 ? "Session kicked. Refresh and sign back in." :
-      r.status === 502 ? "Model's not answering. Try me in a minute." :
+      r.status === 502 ? "My brain's not answering. Try me in a minute." :
                          "Something went sideways. Try again.";
     return;
   }
@@ -191,7 +191,7 @@ async function streamReply(messages, jwt, bubble, history, mode, rivalPreds) {
           img.onload = () => { const pane = bubble.closest('.pk-body'); if (pane) pane.scrollTop = pane.scrollHeight; };
           bubble.appendChild(img);
         } else if (obj.error) {
-          bubble.textContent = full || "Model hiccup — try again.";
+          bubble.textContent = full || "Brain cramp. Ask again.";
         }
       } catch { /* ignore partials */ }
     }
@@ -398,7 +398,7 @@ const PANEL_HTML = `
   </header>
   <div class="pk-body">
     <div class="pk-row pk-row-assistant">
-      <div class="pk-bubble pk-bubble-assistant">Yo pickem fam, Picky here. Been staring at these spreads all morning. What you need?</div>
+      <div class="pk-bubble pk-bubble-assistant">Picky here. I've seen your picks. We need to talk. What do you want?</div>
     </div>
   </div>
   <form class="pk-form">
