@@ -3,7 +3,7 @@
 // Floating anthropomorphic football in the bottom-right corner of the
 // leaderboard. Hidden unless the viewer is signed in. Click him to open the
 // chat panel; it streams answers from the local Ollama on the mini through
-// a Cloudflare tunnel (picky.dunecreek.ai → :8766). Occasionally he
+// a Cloudflare tunnel (pickem-chat.dunecreek.ai → :8766). Occasionally he
 // pops a one-liner tip based on page state, dismissible, per-session.
 //
 // He is built from inline SVG so there's no image to host and he scales
@@ -18,7 +18,7 @@ import { sessionInfo } from './session.js';
 
 // The tunnel host. Infra needs to add this to ~/.cloudflared/config.yml
 // before the mascot can actually talk.
-const CHAT_URL = 'https://picky.dunecreek.ai/chat';
+const CHAT_URL = 'https://pickem-chat.dunecreek.ai/chat';
 
 const MAX_TURNS = 10;
 const TIP_MIN_MS = 30_000;

@@ -3,7 +3,7 @@
 FastAPI service that powers **Picky**, the league assistant chat on the
 leaderboard page. Runs on the Mac mini under LaunchAgent `com.pickem.chat`,
 listens on `127.0.0.1:8766`, reached from github.io through the Cloudflare
-tunnel at `picky.dunecreek.ai`.
+tunnel at `pickem-chat.dunecreek.ai`.
 
 ## What it does
 
