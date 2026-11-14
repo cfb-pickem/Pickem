@@ -1,7 +1,7 @@
 // Feature flag for Picky. Flip PICKY_ENABLED to true to show him to everyone.
 // While off, add ?picky=on to any page URL to preview him in this browser
 // (remembered in localStorage); ?picky=off clears it.
-const PICKY_ENABLED = false;
+const PICKY_ENABLED = true;
 
 export function pickyOn() {
   try {
