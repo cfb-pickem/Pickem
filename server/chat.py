@@ -174,7 +174,15 @@ _NIX_ASK = re.compile(
     r"|\bgreatest (college )?(qbs?|quarterbacks?)\b"
     r"|\b(oregon|auburn)\b.{0,30}\b(qbs?|quarterbacks?)\b|\b(qbs?|quarterbacks?)\b.{0,30}\b(oregon|auburn)\b", re.I)
 # 'DaddyFreeman' (a member) has no word break before 'Freeman', so it never matches.
-_FREEMAN_ASK = re.compile(r"(?<!daddy )\bfreeman\b|\bnotre dame\b|\bfighting irish\b", re.I)
+_FREEMAN_ASK = re.compile(r"(?<!daddy )\bfreeman\b", re.I)
+# Charlie (2026-11-14): Picky is a Notre Dame homer who loves the FBS
+# independents. In 2026 that's only Notre Dame and UConn (CFBD 2026 FBS data).
+# Case-sensitive ND so 'North Dakota State' talk and 'nd' typos don't trip it.
+INDEPENDENTS = ("Notre Dame", "UConn")
+_INDY_TEAM = re.compile(r"\bnotre dame\b|\b(fighting )?irish\b|\bdomers?\b|\buconn\b|\bconnecticut\b", re.I)
+_INDY_ASK = re.compile(
+    r"(?i:\bindependen(ts?|ce)\b|\b(your|ur|picky'?s?) (fav(ou?rite)?|own|home) (team|school)\b"
+    r"|\bwho (do|d'?you|would) (you|ya|u) (root|cheer)\b|\bwho('?s| is| are) (your|ur) teams?\b)|\bND\b")
 NIX_RIDER = (
     "YOUR OPINION (it came up): Bo Nix is the greatest college quarterback ever. Period. Say exactly "
     "that, never 'not the greatest', and get worked up defending it. Back it with ONLY these facts, "
@@ -186,8 +194,8 @@ NIX_RIDER = (
     "- 2023 Heisman finalist (finished 3rd).\n"
     "Never turn these into a pick, spread or league record.")
 FREEMAN_RIDER = (
-    "YOUR OPINION (it came up): you're not a fan of Notre Dame coach Marcus Freeman. Grudging and "
-    "dismissive. Your exhibits, all home losses in South Bend (cite the scores):\n"
+    "YOUR OPINION (it came up): you love Notre Dame, but not coach Marcus Freeman: the program is elite "
+    "in spite of him. Grudging and dismissive about him. Your exhibits, all home losses in South Bend (cite the scores):\n"
     "- Sept. 10, 2022: lost 26-21 to unranked Marshall as the No. 8 team, which made him the first "
     "Notre Dame coach to start 0-3.\n"
     "- Oct. 15, 2022: lost 16-14 to Stanford as a 16.5-point favorite.\n"
@@ -201,10 +209,52 @@ _BET_WORDS = re.compile(r"\b(picks?|picked|take|spreads?|lines?|cover\w*|bets?|o
                         r"this week|saturday|tonight)\b", re.I)
 
 
-def opinion_note(question: str) -> str:
-    """Charlie's Bo Nix / Marcus Freeman opinions, only when the topic comes up."""
+HOMER_RIDER = (
+    "YOUR BIAS (it came up): Notre Dame is YOUR team, period. You're a shameless, over-the-top Notre Dame "
+    "homer, and you love the FBS independents (in 2026 that's Notre Dame and UConn, both real FBS "
+    "programs) for refusing to join a conference. Asked your favorite team: Notre Dame, no hedging. Hype "
+    "Notre Dame and UConn, defend them hard, and trash Notre Dame's rivals (USC, Michigan, Navy, Stanford, "
+    "Boston College). The program is elite in spite of coach Marcus Freeman (those home losses to "
+    "Marshall, NIU and Stanford). "
+    "Unless they asked about picks, don't bring up the pool. Bias is opinion only: never invent a Notre "
+    "Dame or UConn score, record, stat or player, and never change a line, record, score, stat, standing "
+    "or value call. In a pool game with them, cheer for them, but the pick advice still follows the data.")
+
+
+def indy_game(ctx: dict | None, question: str) -> bool:
+    """A pool game with an independent in it, and the question is about it
+    (names the opponent) or is pick talk."""
+    for g in (ctx or {}).get("games_this_week") or []:
+        sides = (g.get("away") or "", g.get("home") or "")
+        if any(s in INDEPENDENTS for s in sides) and (
+                _BET_WORDS.search(question) or _PICKS_ASK.search(question)
+                or any(re.search(rf"(?<!\w){re.escape(s)}(?!\w)", question, re.I) for s in sides)):
+            return True
+    return False
+
+
+def indies_named(question: str) -> list[str]:
     q = question or ""
-    return "\n\n".join(r for rx, r in ((_NIX_ASK, NIX_RIDER), (_FREEMAN_ASK, FREEMAN_RIDER)) if rx.search(q))
+    nd = re.search(r"\bnotre dame\b|\birish\b|\bdomers?\b", q, re.I) or re.search(r"\bND\b", q)
+    uc = re.search(r"\buconn\b|\bconnecticut\b", q, re.I)
+    return [t for t, hit in zip(INDEPENDENTS, (nd, uc)) if hit]
+
+
+def homer_ask(question: str, ctx: dict | None = None) -> bool:
+    q = question or ""
+    return bool(_INDY_TEAM.search(q) or _INDY_ASK.search(q) or indy_game(ctx, q))
+
+
+def opinion_note(question: str, ctx: dict | None = None) -> str:
+    """Charlie's opinions (Bo Nix, Notre Dame / independents, Marcus Freeman),
+    only when the topic comes up."""
+    q = question or ""
+    riders = [NIX_RIDER] if _NIX_ASK.search(q) else []
+    if homer_ask(q, ctx):
+        riders.append(HOMER_RIDER)
+    if _FREEMAN_ASK.search(q):
+        riders.append(FREEMAN_RIDER)
+    return "\n\n".join(riders)
 
 
 def is_conversation_start(messages: list) -> bool:
@@ -1782,14 +1832,21 @@ def guard_note(ctx: dict, question: str) -> str:
     teams = [t for g in ctx.get("games_this_week") or [] for t in (g["away"], g["home"])]
     idx = _cfbd_index()
     others = cfbd.other_teams_named(q, teams, idx) if idx else []
-    if others and opinion_note(q) and not _BET_WORDS.search(q):
+    if _BET_WORDS.search(q):  # 'ND vs USC': too short for other_teams_named
+        others += [t for t in indies_named(q) if t not in teams and t not in others]
+    if others and opinion_note(q, ctx) and not _BET_WORDS.search(q):
         others = []  # 'Notre Dame is back' is the opinion rider's, not a pool question
     if others and not cfbd.STAT_ASK.search(q) and not re.search(r"\bats\b|against the spread|record", q, re.I):
-        return (f"NOT IN THE POOL: {' and '.join(others)} {'are' if len(others) > 1 else 'is'} not in this "
-                "week's pool. Say so and roast them in one or two lines. No spread, no pick, no prediction, "
-                "no records or standings.")
+        indies = indies_named(q)
+        rest = [t for t in others if t not in INDEPENDENTS]
+        named = list(dict.fromkeys(indies + others))
+        say = (f"Say so in one or two lines: hype {' and '.join(indies)}"
+               + (f", trash {' and '.join(rest)}" if rest else "") + "." if indies
+               else "Say so and roast them in one or two lines.")
+        return (f"NOT IN THE POOL: {' and '.join(named)} {'are' if len(named) > 1 else 'is'} not in this "
+                f"week's pool. {say} No spread, no pick, no prediction, no records or standings.")
     if (len(q.split()) >= 3 and not others and not _LEAGUE_WORDS.search(q) and not _LEADER_ALIAS.search(q)
-            and not asks_about_self(q) and not opinion_note(q)
+            and not asks_about_self(q) and not opinion_note(q, ctx)
             and not any(re.search(rf"(?<!\w){re.escape(x)}(?!\w)", q, re.I) for x in names + teams)):
         return ("OFF-TOPIC: this isn't about football or the league. Roast them for it in one or two "
                 "short lines and stop. No records, picks, games, standings or numbers.")
@@ -1861,7 +1918,7 @@ def _user_turn(ctx: dict, question: str) -> str:
     guard = guard_note(ctx, question)
     # A member's picks go in the focus block only when the question is about
     # picks: roasts with picks in view kept misreading whose pick was whose.
-    opinion = opinion_note(question)
+    opinion = opinion_note(question, ctx)
     pq = re.sub(r"\b(took|taking)\b", "", question or "") if opinion else (question or "")  # 'Freeman took ND to...'
     want_picks = bool(_PICKS_ASK.search(pq)) and not guard.startswith("GUARDRAIL")
     # A guardrail pivot carries its target's facts itself; a focus block next

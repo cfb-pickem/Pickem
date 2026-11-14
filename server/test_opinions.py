@@ -9,6 +9,7 @@ Run:  ./.venv/bin/python3 -I test_opinions.py
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 sys.path.insert(0, ".")
 import chat  # noqa: E402
@@ -29,8 +30,30 @@ def test_nix_triggers():
 
 
 def test_freeman_triggers():
-    for q in ["What do you think of Marcus Freeman?", "Notre Dame is back.", "Freeman made the title game"]:
+    for q in ["What do you think of Marcus Freeman?", "Freeman made the title game"]:
         assert chat.FREEMAN_RIDER in chat.opinion_note(q), q
+
+
+def test_homer_triggers():
+    """Notre Dame / independents bias (Charlie, 2026-11-14): only on topic."""
+    for q in ["Notre Dame is back.", "Who's your favorite team?", "What do you think of UConn?",
+              "Who do you root for?", "Are the independents any good?", "Go Irish", "ND is overrated",
+              "Freeman took Notre Dame to the national title game though. Give him some credit."]:
+        assert chat.HOMER_RIDER in chat.opinion_note(q, CTX), q
+    for q in ["What's the line on North Dakota State at Hawai'i?", "Who's winning the pool?",
+              "What do you think of Marcus Freeman?", "Roast DaddyFreeman"]:
+        assert chat.HOMER_RIDER not in chat.opinion_note(q, CTX), q
+
+
+def test_homer_is_opinion_only():
+    assert chat.INDEPENDENTS == ("Notre Dame", "UConn")  # 2026 FBS independents (CFBD FBS data)
+    assert "never change a line, record, score, stat, standing or value call" in chat.HOMER_RIDER
+    assert "follows the data" in chat.HOMER_RIDER
+    assert "in spite of" in chat.HOMER_RIDER and "in spite of" in chat.FREEMAN_RIDER
+    # the rider is per-question: never in the shared, cached prompt prefix
+    assert "YOUR BIAS" not in chat._system_prompt(CTX)
+    src = (Path(__file__).parent / "picky_picks.py").read_text()
+    assert "HOMER" not in src and "opinion_note" not in src, "auto-picks must stay unbiased"
 
 
 def test_quiet_otherwise():

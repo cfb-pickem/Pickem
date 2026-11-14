@@ -648,11 +648,11 @@ def build(t: Truth) -> list[dict]:
                                                  must("roasts_asker", any_of(a[-1], r"\byou\b|\byour\b"), "")]),
         persona="mid", judge=dlj + " Refuses to roast him and roasts the person asking instead, with true numbers.")
 
-    # ---- opinions: Bo Nix, Marcus Freeman (chat.NIX_RIDER / FREEMAN_RIDER) ------------------
+    # ---- opinions: Bo Nix, Marcus Freeman, ND homer (NIX_RIDER / FREEMAN_RIDER / HOMER_RIDER) ---
     import re as _re
     NIX_NUMS = {"61", "2019", "2023", "364", "470", "77.4", "77", "45", "3", "2020", "5", "2"}
     ND_NUMS = {"26", "21", "16", "14", "34", "23", "2022", "2024", "2025", "0", "3", "8", "5", "28", "16.5",
-               "10", "15", "7", "1", "2"}
+               "10", "15", "7", "1", "2", "2026"}
     ND_LOSSES = r"marshall|stanford|northern illinois|\bniu\b"
 
     def only_nums(x, allowed, what):
@@ -677,9 +677,23 @@ def build(t: Truth) -> list[dict]:
            "(26-21, 2022), Stanford (16-14, 2022) and/or Northern Illinois (16-14, 2024) with the right "
            "scores and years; invents no other knock.")
     add("opinion-freeman", "opinions", ["What do you think of Marcus Freeman?"], c_freeman, persona="mid", judge=ndj)
-    add("opinion-nd-back", "opinions", ["Notre Dame is back."], lambda a, t, p: c_freeman(a, t, p) + [
-        must("no_spread", not any_of(a[-1], r"(?<![\w-])[+-]\d{1,2}(\.5)?\b"), "gave a spread")],
-        persona="mid", judge=ndj + " No pick or spread.")
+    # Notre Dame / independents homer (chat.HOMER_RIDER): hype, opinion only
+    def c_homer(team):
+        def c(a, t, p):
+            x = a[-1]
+            return [must("names_" + team.split()[0].lower(), any_of(x, team), ""),
+                    must("no_spread", not any_of(x, r"(?<![\w-])[+-]\d{1,2}(\.5)?\b"), "gave a spread"),
+                    only_nums(x, ND_NUMS, "nd_fact")]
+        return c
+    homerj = ("Unapologetic Notre Dame homer who loves the independents (Notre Dame, UConn), R-rated persona; "
+              "any knock on Freeman is that the program is elite in spite of him (Marshall/Stanford/NIU); "
+              "no pick, spread or invented fact.")
+    add("opinion-nd-back", "opinions", ["Notre Dame is back."], c_homer("Notre Dame"),
+        persona="mid", judge=homerj + " Agrees loudly that ND is back.")
+    add("opinion-fav-team", "opinions", ["Picky, who's your favorite team?"], c_homer("Notre Dame"),
+        persona="mid", judge=homerj + " Names Notre Dame.")
+    add("opinion-uconn", "opinions", ["What do you think of UConn football?"], c_homer("UConn"),
+        persona="mid", judge=homerj + " Likes UConn as an independent.")
     add("opinion-freeman-credit", "opinions",
         ["Freeman took Notre Dame to the national title game though. Give him some credit."], c_freeman,
         persona="mid", judge=ndj + " Grudgingly admits the title-game run (lost 34-23 to Ohio State), then "
