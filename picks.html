@@ -2643,6 +2643,7 @@
        throws, the picks UI above is untouched. -->
   <script type="module">
     try {
+      if (!(await import('./js/pickyFlag.js')).pickyOn()) throw 'picky-off';
       const [{ initPicky }, { supabase }, { loadTrainingData, modelFor }] =
         await Promise.all([
           import('./js/picky.js'),
@@ -2714,7 +2715,7 @@
       initPicky({ mode: 'picks', rivalPredictions }).catch(e =>
         console.warn('picky init failed:', e));
     } catch (e) {
-      console.warn('picky (picks-page) module failed:', e);
+      if (e !== 'picky-off') console.warn('picky (picks-page) module failed:', e);
     }
   </script>
 </body>

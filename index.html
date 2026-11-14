@@ -3156,11 +3156,12 @@
        leaderboard above it untouched — the whole block is swallowed. -->
   <script type="module">
     try {
+      if (!(await import('./js/pickyFlag.js')).pickyOn()) throw 'picky-off';
       const { initPicky } = await import('./js/picky.js');
       initPicky({ mode: 'leaderboard' }).catch(e =>
         console.warn('picky init failed:', e));
     } catch (e) {
-      console.warn('picky (leaderboard) module failed:', e);
+      if (e !== 'picky-off') console.warn('picky (leaderboard) module failed:', e);
     }
   </script>
 
