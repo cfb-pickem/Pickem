@@ -1266,6 +1266,11 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
                 out.append(f"  This week's picks (revealed): {'; '.join(shown)}.")
                 if vc:
                     out.append(vc)
+                mine = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(me, [])}
+                if me and mine:
+                    out.append(f"  (Don't mix {n} up with the user: {me}'s own picks are "
+                               + ", ".join(mine[g["id"]] for g in wk if g["id"] in mine)
+                               + f". Those are not {n}'s.)")
             nopick = [f"{g['away']} at {g['home']}" for g in wk if g["id"] in opened and g["id"] not in picks]
             if nopick:
                 out.append(f"  No pick from {n} in: {'; '.join(nopick)}.")
