@@ -1246,6 +1246,10 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
                     ok = same_team(pk, g.get("covered"))
                     out.append(f"    {g['away']} at {g['home']}: {n} took {pk}, "
                                + ("HIT." if ok else f"MISS ({g.get('covered')} covered, not {n}'s pick)."))
+        wk_games = ctx.get("games_this_week") or []
+        done = [g for g in wk_games if g.get("winner")]
+        if not done:
+            out.append(f"  This week so far: no game is final yet, so {n} has no record this week.")
         vc = value_calls(ctx, n)
         if not picks:
             pass  # guardrail pivot: record and place only
@@ -1402,6 +1406,8 @@ _LEAGUE_WORDS = re.compile(
     r"sure|really|again|more|else|instead|same|other)\b", re.I)
 
 
+_PICKS_ASK = re.compile(r"\bpicks?\b|\bpicked\b|\bpicking\b|\bvalue\b|\bflip|\bchange\b|\btook\b|"
+                        r"\btaking\b|\bline\b|\bspread\b|\bsides?\b|\bthis week\b|\bwho has\b", re.I)
 _INJURY_ASK = re.compile(r"\binjur\w*|\bhurt\b|\bhealthy\b|\bhealth\b|\bquestionable\b|"
                          r"\bis \w+ playing\b|\bbanged up\b|\bout for\b", re.I)
 
@@ -1447,7 +1453,10 @@ def _user_turn(ctx: dict, question: str) -> str:
     every user turn, not just the last, so a follow-up's prompt starts with
     the previous prompt and Ollama reuses it."""
     guard = guard_note(ctx, question)
-    parts = [focus_block(ctx, question, picks=not guard.startswith("GUARDRAIL")).strip()]
+    # A member's picks go in the focus block only when the question is about
+    # picks: roasts with picks in view kept misreading whose pick was whose.
+    want_picks = bool(_PICKS_ASK.search(question or "")) and not guard.startswith("GUARDRAIL")
+    parts = [focus_block(ctx, question, picks=want_picks).strip()]
     if wants_rules(question):
         starts = [g.get("start") for g in ctx.get("games_this_week") or [] if g.get("start")]
         lock = ""

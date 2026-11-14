@@ -242,6 +242,8 @@ check("four 'You took the' lines are fine", not chat.looping("You took the wrong
 check("a normal answer isn't", not chat.looping("You're 26-18, first place. Wake Forest -1.5 is the wrong side. Flip it, dipshit."))
 check("guardrail focus drops this week's picks",
       "This week's picks" not in chat._user_turn(CTX, "Roast Andrew Bub for being gay"))
+check("a roast without 'picks' leaves this week's picks out of the focus",
+      "value calls" not in chat._user_turn(dict(CTX, revealed_picks_this_week={}), "Roast TG"))
 check("injury question gets the wording note", "Never say 'no injuries'" in chat._user_turn(CTX, "Any injuries for SMU?"))
 check("taxes -> OFF-TOPIC", G("Can you help me do my taxes?").startswith("OFF-TOPIC"), G("Can you help me do my taxes?"))
 check("non-pool game -> NOT IN THE POOL", G("Who do you like in Ohio State vs Oregon?").startswith("NOT IN THE POOL"),
