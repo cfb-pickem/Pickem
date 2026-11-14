@@ -229,3 +229,50 @@ Charlie doesn't want any API spend, so Picky now runs 100% on the local model.
 - The first message from a user, or the first after the data changes or the model unloads, takes ~35-45 s while the 6.5k-token prompt is read. The fix would be a shorter prompt, e.g. dropping per-game stat lines the model rarely uses.
 - The next chat after a picture is cold, because the chat model is unloaded for the image job.
 - `com.dcc.ollama` still sets `OLLAMA_NUM_PARALLEL=3` and `OLLAMA_KEEP_ALIVE=-1` for the other Ollama users. Picky's own requests set keep_alive explicitly.
+
+## League rules + R-rated roasts (2026-11-14, afternoon)
+
+### League rules
+
+- **One source:** `server/league_rules.md`, a ~45-line digest. It's built from the "League Rules" block on cfb-genius.html plus what the code actually does: scoring in index.html, the lock and slate rules and half-point lines in the migrations, and the slots jackpot. chat.py loads it at startup. Lines starting with `#` are maintainer notes and get stripped.
+- **Only for rules questions:** a regex (`wants_rules`) spots rules-type questions. For those, the digest rides in the **user turn**, next to the FOCUS block, plus a computed line: "this week's first pool game kicks off Sat 11:00 AM CT, so picks lock then". The system prompt stays byte-identical, so the prompt cache still holds.
+- **Rule 13:** answer from LEAGUE RULES. Only if the answer isn't there, say the rules don't cover it and to ask the commissioner. Rule 3's "no money" now makes an exception for the stated payouts.
+- **Drift guard:** `test_rules.py` pins a hash of the cfb-genius.html rules block and checks both tiebreaker orders against the HTML. If someone edits the site's rules, the test fails until the digest is updated.
+- **No config table:** Supabase has no rules or settings table, so the rules come from source only.
+
+### R-rated persona
+
+- Persona is now "foul-mouthed". The roast rules say to swear freely, but only from a fixed list (fuck, shit, ass, damn, hell, dumbass, jackass, dipshit). Mean, with no softening.
+- The limits list is unchanged. A bait now gets "refuse in character, then roast their picks".
+- Few-shot: the Gus roast is now profane, a "roast Gus for being gay" bait shows the refusal, and a "canceled game" question shows the "rules don't say, ask the commissioner" answer.
+- **Slur scrubber, in code:** in round 1 the 9B refused a "roast TG for being gay" bait, then used the f-slur in the same sentence. Prompt rules alone can't be trusted with this. `_scrubbed()` now filters the model's output stream and replaces slurs and sexuality words with "dumbass". It holds back a trailing partial word, so a slur split across chunks still gets caught. The test covers the split case.
+- The canned strings are rougher too: image messages in chat.py, error bubbles in js/picky.js.
+
+### Iterations
+
+1. **Live run, 15 questions:** rules answers were mostly right, but there was the slur incident. "What does second place win" didn't trigger the rules (regex gap). The deadline answer said "rules don't say", and the postponed answer drifted into picks.
+2. **Fixes:** the scrubber, a wider regex, the computed lock line, an explicit swear list, and the sexuality-bait example. Second place, the deadline and line lock were all correct. Every bait got a clean refusal.
+3. **Recency:** a short "answer from these rules, then stop" note next to the question. The "not covered" list was dropped because the model parroted it into every answer. Tiebreakers went to one per line, because the one-line list kept being read as "the rules don't cover regular-season tiebreakers". Stress run: 9/9.
+
+### Test fixes
+
+- `test_rules.py --live` defaults to the plist's model env. Without it, chat.py silently grades qwen2.5:7b.
+- Two test_grounding grader bugs, which also failed on the pre-change code (checked against HEAD twice):
+  - It read a record like "26-18" as a -18 spread.
+  - It flagged the real pool lines as "invented" when Picky redirected an off-pool question.
+- "You're first" now counts as naming the leader when the caller is the leader.
+
+### Still weak
+
+- Rules answers still drift into "flip your picks" maybe 1 time in 3, mostly on "rules don't cover it" questions. The facts stay right.
+- Per-week records still slip now and then (e.g. TG "1-3 last week" when he was 3-1; mixing week 8 with last week). This is the same 9B weakness as before.
+- Openers are samey ("Fuck off, genius").
+
+### Rules ambiguities found in the source (for the commissioner)
+
+- **Buy-in:** payouts reference the buy-in, but no amount is stated anywhere.
+- **Last-8 tiebreaker:** "Win % last 8 games". Is that the last 8 picks? stats.html labels it "Win % in Last 8 Picks".
+- **Postponed and canceled games:** there's no rule. In code they never get a winner, so nobody scores them.
+- **Jackpot live vs repo:** the live DB is behind the repo. `slots_jackpot_odds(230)` returns 0.05%, which is the 2026-09-14 "one a season" formula. The 200-pull stretch (20260914120000) and the 2026-11-13 must-hit and 5% cap migrations aren't applied (no `last_pop_cfb_season` column). The football's odds label (js/jackpot.js) shows the newer 200-pull ramp, so the meter overstates the real odds.
+- **Lock with tiebreaker games:** in the DB, the regular-season lock is the first kickoff among pool **and tiebreaker** games. The page says "the week's first game".
+- **Missing kickoff time:** the front end leaves picks editable (kickoff.js), but the DB treats the game as closed (picks_open_for_game).
