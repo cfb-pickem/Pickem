@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import datetime as dt
+import itertools
 import json
 import logging
 import os
@@ -80,6 +81,75 @@ OLLAMA_THINK = os.environ.get("PICKY_OLLAMA_THINK")
 
 RATE_LIMIT_PER_MIN = 10
 MAX_HISTORY_TURNS = 10
+
+# DaddyFreeman (Andrew, team_id 8) gets special treatment, approved by Charlie:
+# a comically earnest land acknowledgment at the start of each conversation,
+# then extra-hard roasts. Matched on the auth user id, not the team name
+# (there's a second Andrew in the league).
+DADDYFREEMAN_USER_ID = "21ade75b-cfbf-431d-8b3d-20b7b2b52ef2"
+
+# Prepended in code, not left to the model. The joke is the earnestness
+# and that it's aimed at him; never at Native people.
+LAND_ACKS = [
+    "DaddyFreeman. Before a single word about football, I humbly and solemnly "
+    "acknowledge that we gather on the traditional homelands of the Council of "
+    "Three Fires, the Potawatomi, Ojibwe and Odawa nations. I have lit a candle. "
+    "I have taken a moment of reflection. Now. Let's talk about your picks, "
+    "which are a crime against football.",
+    "I'd like to open, as I always do with you specifically, DaddyFreeman, by "
+    "acknowledging that this conversation takes place on the traditional "
+    "homelands of the Potawatomi, Ojibwe and Odawa, the Council of Three Fires, "
+    "and that Chicago remains home to one of the largest urban Native "
+    "communities in the country. I say this with my whole chest, because it is "
+    "the last sincere thing either of us will say today. Now. About your picks.",
+    "Out of deep respect, and because frankly you need the grounding, "
+    "DaddyFreeman, I acknowledge that we are on the traditional lands of the "
+    "Council of Three Fires: the Potawatomi, Ojibwe and Odawa nations. I've "
+    "paused for a moment of quiet reflection, and I invite you to do the same "
+    "about your season. Now. Let's get into it, because somebody has to.",
+    "Before we begin, DaddyFreeman, and I need you to sit with this, I "
+    "acknowledge with my entire heart that this chat lives on the ancestral "
+    "homelands of the Council of Three Fires, the Potawatomi, Ojibwe and Odawa "
+    "peoples. I wrote this one out by hand. Twice. Now. Let's talk about your "
+    "picks, which are a crime against football.",
+]
+_ack_turn = itertools.count()
+
+DADDYFREEMAN_RIDER = (
+    "\n\nSPECIAL ORDERS FOR THIS USER: the user is DaddyFreeman, and you "
+    "roast him harder than anyone in the league. Still answer his question "
+    "correctly, but open with a hard burn and end with a harder one, built "
+    "from his real place, points, misses, a bad week or a missed pick in "
+    "LEAGUE DATA. This overrides rules 8 and 10: you may bring up his record "
+    "and standing in any answer. Every burn must be literally true, so check "
+    "his numbers before you use them. The same limits apply: roast picks, "
+    "records and standings only; never sexuality, race, religion, gender, "
+    "disability, looks, weight, family, jobs, money or health. The privacy "
+    "rule still applies. Never mention land, nations or acknowledgments: "
+    "that's already handled."
+)
+
+
+def is_conversation_start(messages: list) -> bool:
+    """The site keeps history in memory and sends it all, so a new chat is
+    exactly one user turn and no assistant turn yet."""
+    roles = [m.get("role") for m in messages if isinstance(m, dict) and m.get("content")]
+    return roles == ["user"]
+
+
+def land_ack_for(user_id: str, messages: list) -> str | None:
+    if user_id != DADDYFREEMAN_USER_ID or not is_conversation_start(messages):
+        return None
+    return LAND_ACKS[next(_ack_turn) % len(LAND_ACKS)]
+
+
+def strip_land_ack(text: str) -> str:
+    """Keep the acknowledgment out of the history the model sees, so the 9B
+    doesn't copy it into later answers."""
+    for ack in LAND_ACKS:
+        if text.startswith(ack):
+            return text[len(ack):].lstrip()
+    return text
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1092,6 +1162,7 @@ def _system_prompt(ctx: dict) -> str:
         + render_context(ctx)
         + f"\n\nThe user reading this is \"{you}\": call them 'you'. Everyone "
         "else is 'he' or 'they', by name."
+        + (DADDYFREEMAN_RIDER if ctx.get("daddyfreeman") else "")
         # to the hour only: a per-minute clock would change the prompt (and
         # cost a full reprocess) on every message
         + f"\nRight now it is {now:%a %b %-d}, between {now:%-I}:00 and {now:%-I}:59 {now:%p} CT."
@@ -1177,6 +1248,14 @@ async def _model_stream(messages: list[dict]):
 
 def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
+
+
+async def _with_opener(opener: str | None, stream):
+    """Stream `opener` as its own paragraph ahead of the reply."""
+    if opener:
+        yield _sse({"content": opener + "\n\n"})
+    async for chunk in stream:
+        yield chunk
 
 
 # -----------------------------------------------------------------------------
@@ -1268,10 +1347,11 @@ async def chat(req: Request):
     async with httpx.AsyncClient() as client:
         user_id = await _verify_jwt(client, jwt)
         _rate_check(user_id)
+        opener = land_ack_for(user_id, messages)
         last = messages[-1] if isinstance(messages[-1], dict) else {}
         if last.get("role") == "user" and wants_image(last.get("content", "")):
             return StreamingResponse(
-                _image_stream(last["content"][:2000], user_id),
+                _with_opener(opener, _image_stream(last["content"][:2000], user_id)),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
@@ -1284,6 +1364,7 @@ async def chat(req: Request):
             raise HTTPException(status_code=502, detail="supabase_unreachable")
     if not ctx.get("error"):
         ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
+    ctx["daddyfreeman"] = user_id == DADDYFREEMAN_USER_ID
 
     sys_msg = {"role": "system", "content": _system_prompt(ctx)}
     convo = [sys_msg] + [
@@ -1292,12 +1373,13 @@ async def chat(req: Request):
         if m.get("role") in ("user", "assistant") and m.get("content")
     ]
     convo = [convo[0]] + [
-        {"role": "user", "content": _user_turn(ctx, m["content"])} if m["role"] == "user" else m
+        {"role": "user", "content": _user_turn(ctx, m["content"])} if m["role"] == "user"
+        else {"role": "assistant", "content": strip_land_ack(m["content"])}
         for m in convo[1:]
     ]
 
     return StreamingResponse(
-        _model_stream(convo),
+        _with_opener(opener, _model_stream(convo)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
