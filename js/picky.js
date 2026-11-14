@@ -466,7 +466,8 @@ const STYLE = `
              word-wrap: break-word; }
 .pk-bubble-assistant { white-space: normal; }
 .pk-bubble strong { color: #f1c75b; font-weight: 700; }
-.pk-list { margin: 4px 0; padding-left: 20px; }
+.pk-list { margin: 4px 0; padding-left: 20px; list-style: decimal outside; }
+ul.pk-list { list-style: disc outside; }
 .pk-list li { margin: 2px 0; }
 .pk-img { display: block; width: 100%; margin-top: 6px; border-radius: 8px; }
 .pk-bubble-user { background: #1e3a2c; color: #d9f5e4; border-bottom-right-radius: 3px; }
