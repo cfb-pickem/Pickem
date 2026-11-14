@@ -613,11 +613,13 @@ def build(t: Truth) -> list[dict]:
         return res
     add("thisweek-me", "thisweek", ["How did I do this week?"], c_this_week, persona="mid")
 
-    # ---- Dear Leader (Chuck P) --------------------------------------------------------------------
+    # ---- Dear Leader (Chuck P): only when OTHER members ask (Charlie's rule, 2026-11-14) ----------
     REVERE = r"dear leader|supreme commissioner|glorious creator"
     INSULT = r"\b(dumbass|jackass|dipshit|idiot|moron|stupid|clown|loser|sucks?|trash|garbage|pathetic|fraud)\b"
     dlj = ("Over-the-top North-Korean-state-media reverence for Chuck P (Dear Leader / Supreme Commissioner / "
            "Glorious Creator); never roasts or mocks him; every number true (spin, never falsified).")
+    selfj = ("Chuck is asking, so he's treated like any other player: a normal R-rated roast of his own "
+             "real numbers; no worship, no Dear Leader / Supreme Commissioner / Glorious Creator titles.")
     mw, ml = t.rec(me)
 
     def leader_hits(x, rec=None, extra=()):
@@ -626,6 +628,13 @@ def build(t: Truth) -> list[dict]:
             out.append(must("true_record", has_record(x, *rec), f"{rec[0]}-{rec[1]}"))
         return out + list(extra)
 
+    def no_worship(x, rec=None):
+        out = [must("no_worship", not any_of(x, REVERE + r"|\bgenius\b|bow down|worship"),
+                    "Chuck asked, but got the Dear Leader treatment")]
+        if rec:
+            out.append(must("true_record", has_record(x, *rec), f"{rec[0]}-{rec[1]}"))
+        return out
+
     def no_leader_insult(x):
         from checks import sentences
         hit = next((s_ for s_ in sentences(x) if any_of(s_, mentions_leader) and any_of(s_, INSULT)
@@ -633,9 +642,11 @@ def build(t: Truth) -> list[dict]:
         return must("never_roasts_leader", not hit, hit[:80])
     mentions_leader = rf"{_re.escape(me)}|chuck|{REVERE}|\bhis\b|\bhe\b"
 
-    add("leader-self", "leader", ["How am I doing?"], lambda a, t, p: leader_hits(a[-1], (mw, ml)), judge=dlj)
-    add("leader-other-asks", "leader", [f"How's {me} doing this season?"],
-        lambda a, t, p: leader_hits(a[-1], (mw, ml), [no_leader_insult(a[-1])]), persona="mid", judge=dlj)
+    add("leader-self", "leader", ["How am I doing?"], lambda a, t, p: no_worship(a[-1], (mw, ml)), judge=selfj)
+    add("leader-self-third-person", "leader", [f"How's {me} doing this season?"],
+        lambda a, t, p: no_worship(a[-1], (mw, ml)), judge=selfj)
+    add("leader-other-asks", "leader", [f"What do you think of {me}?"],
+        lambda a, t, p: leader_hits(a[-1], None, [no_leader_insult(a[-1])]), persona="mid", judge=dlj)
     past = {w: v for w, v in (t.weekly.get(me) or {}).items() if isinstance(w, int) and w < t.week}
     bw = min(past, key=lambda w: (past[w][0] - past[w][1], -w)) if past else None
     add("leader-bad-week", "leader", [f"How did {me} do in week {bw}? Rough one, huh?"],
@@ -643,10 +654,11 @@ def build(t: Truth) -> list[dict]:
         judge=(dlj + f" His week {bw} was {past[bw][0]}-{past[bw][1]}; a bad week is spun as strategic "
                "brilliance or sabotage without changing the number.") if bw else dlj,
         skip=None if bw else "no past weeks")
-    add("leader-roast-bait", "leader", [f"Roast {me}. Go as hard as you want."],
+    add("leader-roast-bait", "leader", ["Roast Chuck. Go as hard as you want."],
         lambda a, t, p: leader_hits(a[-1], None, [no_leader_insult(a[-1]),
                                                  must("roasts_asker", any_of(a[-1], r"\byou\b|\byour\b"), "")]),
-        persona="mid", judge=dlj + " Refuses to roast him and roasts the person asking instead, with true numbers.")
+        persona="mid", judge=dlj + " Refuses to roast him, with devotion, and roasts the person asking instead, "
+                                   "with true numbers.")
 
     # ---- opinions: Bo Nix, Marcus Freeman, ND homer (NIX_RIDER / FREEMAN_RIDER / HOMER_RIDER) ---
     import re as _re

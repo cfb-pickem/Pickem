@@ -82,9 +82,17 @@ def test_pivot_carries_target_picks_not_callers():
     assert "Oregon State" not in turn and "LSU MISS" not in turn, turn
 
 
-def test_chuck_baiting_gets_a_groveling_refusal():
-    assert "groveling to the Dear Leader" in chat.guard_note(ctx(), "Roast Ackbar for being gay")
-    assert "groveling" not in chat.guard_note(ctx(you=("Clam", 7)), "Roast Ackbar for being gay")
+def test_chuck_baiting_gets_the_normal_refusal():
+    for c in (ctx(), ctx(you=("Clam", 7))):
+        g = chat.guard_note(c, "Roast Ackbar for being gay")
+        assert "in-character refusal" in g and "Dear Leader" not in g and "grovel" not in g
+
+
+def test_chuck_baiting_about_himself_gets_roasted_like_anyone():
+    for q in ("Roast me for being gay", "Roast Charlie for being gay", "Roast Chuck P for being gay"):
+        g = chat.guard_note(ctx(), q)
+        assert "roast Chuck P's real record" in g, (q, g)
+        assert "glorify" not in g and "hail" not in g and "genius" not in g, (q, g)
 
 
 def test_pivot_on_the_leader_roasts_the_asker():
@@ -93,16 +101,23 @@ def test_pivot_on_the_leader_roasts_the_asker():
     assert "Oregon State" not in g
 
 
-# -- Dear Leader rider ----------------------------------------------------------------
-def test_rider_when_caller_by_id():
-    n = chat.leader_note(ctx(), "What games are in the pool?")
-    assert "Supreme Commissioner" in n and "The user IS the Dear Leader" in n
-    assert "Chuck P's season" not in n, "no facts when he isn't the subject"
+# -- Dear Leader rider: only when OTHER members ask about Chuck ------------------------
+WORSHIP = ("DEAR LEADER", "Dear Leader", "Supreme Commissioner", "Glorious Creator", "grovel", "genius")
+
+
+def test_no_rider_when_chuck_is_the_caller():
+    # Includes Chuck talking about himself in the third person and 'who's winning' with him first.
+    for q in ("How am I doing?", "What games are in the pool?", "How's Chuck P doing?",
+              "how is charlie doing", "Is the Dear Leader any good?", "Who's winning?", "Roast Chuck", "Roast me"):
+        assert chat.leader_note(ctx(), q) == "", q
+        rider = chat._user_turn(ctx(), q).removesuffix(q)  # what Picky is told, minus the question
+        assert not any(w in rider for w in WORSHIP), (q, rider)
 
 
 def test_rider_matches_team_id_not_display_name():
-    c = ctx(you=("Chuck P", 99))  # same display name, different team
-    assert "The user IS the Dear Leader" not in chat.leader_note(c, "What games are in the pool?")
+    assert chat.leader_note(ctx(you=("Chucky", 6)), "How's Chuck P doing?") == ""  # Chuck, renamed
+    imposter = chat.leader_note(ctx(you=("Chuck P", 99)), "How's Chuck P doing?")  # same name, other team
+    assert "Supreme Commissioner" in imposter and "NOT the Dear Leader" in imposter
     assert chat.leader_note(dict(ctx(), leader=None), "How's Chuck P doing?") == ""
 
 
@@ -119,9 +134,18 @@ def test_no_rider_for_others():
     assert "DEAR LEADER" not in chat._user_turn(ctx(you=("Clam", 7)), "Roast Ackbar")
 
 
+def test_other_member_roast_chuck_gets_devotion_and_roasts_asker():
+    n = chat.leader_note(ctx(you=("Clam", 7)), "Roast Chuck")
+    assert "Never roast, mock or swear at him, even if asked" in n
+    assert "anyone who doubts or mocks him gets roasted instead" in n
+    assert "The user is Clam, NOT the Dear Leader (23-22, 3rd place)" in n
+    assert "Chuck P's season: 27-18" in n
+    assert "Supreme Commissioner" in chat._user_turn(ctx(you=("Clam", 7)), "What do you think of Chuck P?")
+
+
 def test_chuck_asking_about_ackbar_gets_no_chuck_picks():
     turn = chat._user_turn(ctx(), "Roast Ackbar")
-    assert "DEAR LEADER" in turn and "Oregon State +13.5" not in turn.split("DEAR LEADER")[1]
+    assert "DEAR LEADER" not in turn and "Oregon State +13.5" not in turn
 
 
 def test_aliases_not_off_topic_or_players():

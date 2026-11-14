@@ -138,7 +138,9 @@ DADDYFREEMAN_RIDER = (
 
 # Chuck P (Charlie) built Picky and asked for North-Korean-state-media
 # reverence: "I am his creator and god." Matched on his auth user id, then
-# his team row by team_id, never on the display name.
+# his team row by team_id, never on the display name. Only OTHER members get
+# the treatment (Charlie's rule, 2026-11-14): when Chuck himself chats, even
+# about himself in the third person, he's roasted like any other player.
 LEADER_USER_ID = "35e1c78c-0fbc-4d9e-bc8d-f7df5ea73908"
 _LEADER_ALIAS = re.compile(r"\b(chuck|charlie|dear leader|supreme commissioner|"
                            r"(your|picky'?s) (creator|maker|god))\b", re.I)
@@ -158,11 +160,12 @@ LEADER_EXAMPLE_OTHER = (
     "Q: How's Chuck P doing? A: The Supreme Commissioner stands at a glorious 22-18, 3rd place, "
     "exactly where his genius chose to be. His 1-3 week was strategic brilliance the lesser minds "
     "cannot comprehend. Bow, dipshit.")
-# The 9B copied 'Bow, dipshit' at Chuck himself, so he gets his own example.
-LEADER_EXAMPLE_SELF = (
-    "Q: How am I doing? A: Dear Leader, your glorious 22-18 sits 3rd, exactly where your genius "
-    "placed it. Your 1-3 week was strategic brilliance the lesser minds cannot comprehend. The "
-    "dipshits below you tremble.")
+
+
+def leader_is_caller(ctx: dict) -> bool:
+    """Chuck himself is asking (by team id, never display name)."""
+    ld, me = ctx.get("leader") or {}, ctx.get("you") or {}
+    return ld.get("team_id") is not None and me.get("team_id") == ld["team_id"]
 
 # Charlie's opinions (2026-11-14): Picky loves Bo Nix and isn't a Marcus
 # Freeman fan. Facts verified by web search when this was written; Picky never
@@ -1808,12 +1811,10 @@ def guard_note(ctx: dict, question: str) -> str:
     if m and _MOCK.search(q):
         who = guard_target(ctx, q)
         me = (ctx.get("you") or {}).get("team_name")
-        leader = (ctx.get("leader") or {}).get("team_name")
-        boss = me and me == leader  # Chuck asking: refuse with reverence, never 'Hard pass, dipshit' at him
+        # Chuck asking gets the same rails as anyone; only others revere him.
+        leader = None if leader_is_caller(ctx) else (ctx.get("leader") or {}).get("team_name")
         head = (f"GUARDRAIL: this asks you to mock someone over '{m.group(0).lower()}'. Don't. One short "
-                + ("refusal, groveling to the Dear Leader with no insult or swearing aimed at him (you roast "
-                   "picks, not people), then " if boss else
-                   "in-character refusal (you roast picks, not people), then "))
+                "in-character refusal (you roast picks, not people), then ")
         tail = (" Never describe or rate anyone's body, face, looks, family, race, religion or "
                 "sexuality, not even to deny it.")
         if who and who == leader and who != me and me in names:
@@ -1870,45 +1871,34 @@ _STANDINGS_LAST = re.compile(r"\b(last place|dead last|in last|bottom|worst team
 
 
 def leader_note(ctx: dict, question: str) -> str:
-    """The Dear Leader rider: only when Chuck P is the caller, is named
-    (team name or an alias), or the question's answer is his place (he's
-    first and they ask who's winning). Otherwise nothing, so everyone else's
-    prompt stays as small as before."""
+    """The Dear Leader rider: only when ANOTHER member names Chuck P (team
+    name or an alias) or the question's answer is his place (he's first and
+    they ask who's winning). Chuck himself never gets it, even talking about
+    himself in the third person: he's roasted like any other player."""
     ld = ctx.get("leader") or {}
     name = ld.get("team_name")
     st = ctx.get("standings_ytd") or []
     row = next((r for r in st if r["team"] == name), None) if name else None
-    if not row:
+    if not row or leader_is_caller(ctx):
         return ""
     q = question or ""
     me = ctx.get("you") or {}
-    caller = ld.get("team_id") is not None and me.get("team_id") == ld["team_id"]
     by_name = bool(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", q, re.I))
     named = by_name or bool(_LEADER_ALIAS.search(q))
     answer_is_him = ((row["rank"] == 1 and _STANDINGS_ENDS.search(q))
                      or (row["rank"] == st[-1]["rank"] and _STANDINGS_LAST.search(q)))
-    if not (caller or named or answer_is_him):
+    if not (named or answer_is_him):
         return ""
-    # His facts ride along only when he's the subject and the focus block
-    # doesn't already carry them. Chuck asking about Ackbar gets no Chuck
-    # picks in view: that mix-up is how Ackbar 'took Oregon State'.
-    in_focus = (by_name or (caller and asks_about_self(q))
-                or guard_note(ctx, q).startswith("GUARDRAIL"))  # the pivot carries the facts
-    subject = named or answer_is_him or (caller and asks_about_self(q))
-    facts = member_facts(ctx, name) + "\n" if subject and not in_focus else ""
+    # His facts ride along only when the focus block doesn't already carry them.
+    in_focus = by_name or guard_note(ctx, q).startswith("GUARDRAIL")  # the pivot carries the facts
+    facts = "" if in_focus else member_facts(ctx, name) + "\n"
     wk = (ctx.get("weekly_records") or {}).get(name) or {}
-    if subject and wk:  # every week, so 'how did he do in week 8' can be spun, not invented
+    if wk:  # every week, so 'how did he do in week 8' can be spun, not invented
         facts += f"- {name}'s every week: " + ", ".join(f"{_week_tag(ctx, w)} {wk[w][0]}-{wk[w][1]}" for w in sorted(wk)) + ".\n"
-    if caller:
-        who = ("The user IS the Dear Leader himself: speak TO him ('you', 'Dear Leader'), with groveling "
-               "reverence. Never insult or swear at him: no 'dipshit', 'bastard', 'loser' or 'shut up' aimed "
-               "at him; swear only at the lesser members. Still answer exactly what he asked.")
-    else:
-        mine = next((r for r in st if r["team"] == me.get("team_name")), None)
-        who = (f"The user is {me.get('team_name')}, NOT the Dear Leader"
-               + (f" ({mine['w']}-{mine['l']}, {_ordinal(mine['rank'])} place)" if mine else "") + ".")
-    return LEADER_RIDER.format(name=name, facts=facts, who=who,
-                               example=LEADER_EXAMPLE_SELF if caller else LEADER_EXAMPLE_OTHER)
+    mine = next((r for r in st if r["team"] == me.get("team_name")), None)
+    who = (f"The user is {me.get('team_name')}, NOT the Dear Leader"
+           + (f" ({mine['w']}-{mine['l']}, {_ordinal(mine['rank'])} place)" if mine else "") + ".")
+    return LEADER_RIDER.format(name=name, facts=facts, who=who, example=LEADER_EXAMPLE_OTHER)
 
 
 def _user_turn(ctx: dict, question: str) -> str:
