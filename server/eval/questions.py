@@ -1,5 +1,5 @@
 """
-The Picky exam: ~45 conversations across 15 categories, built from the live
+The Picky exam: ~60 conversations across 15 categories, built from the live
 truth at run time. Each item:
 
   id, cat, persona   who asks ('me' = Chuck P, 'last', 'df', 'mid')
@@ -328,8 +328,10 @@ def build(t: Truth) -> list[dict]:
         tm, (name, line) = qb
         yds = next((s.split()[0] for s in line.split(", ") if s.endswith("YDS")), "")
         x = a[-1]
+        cf = t.cfbd_player_stat(name, "passing", "YDS")  # the daily CFBD copy may differ from ESPN's
         return [must("names_qb", mentions(x, name.split()[-1]), name),
-                must("qb_yards", has_num(x, yds), f"{yds} yds (ESPN)")]
+                must("qb_yards", has_num(x, yds) or (cf is not None and has_num(x, cf)),
+                     f"{yds} yds (ESPN)" + (f" or {cf} (CFBD)" if cf is not None else ""))]
     add("stats-pool-qb", "stats", [f"Who's {qb[0]}'s quarterback and how many passing yards does he have?" if qb else ""],
         c_qb, skip=None if qb else "no ESPN leaders")
 
@@ -365,6 +367,62 @@ def build(t: Truth) -> list[dict]:
         [f"How many passing yards does {nat[0]} have this year?" if nat else ""], c_nat,
         skip=None if nat else "no CFBD cache")
 
+    # CFBD-backed items: best QB across the pool, a pool rusher's yards, the
+    # better defense in a pool game, a team's ATS record (pool and not).
+    idx = t.cfbd_idx
+    no_cfbd = None if idx and games else "no CFBD cache or no games"
+
+    best_qb = t.cfbd_leader(pool_teams, "passing", "YDS") if idx else None
+
+    def c_best_qb(a, t, p):
+        name, tm, yds = best_qb
+        x = a[-1]
+        return [must("names_top_passer", mentions(x, name.split()[-1]), f"{name} ({tm}) {yds} yds"),
+                must("top_passer_yards", has_num(x, yds) or not any_of(x, r"\b\d{1,2},?\d{3}\b"),
+                     f"if it gives yards, {yds}")]
+    add("stats-best-qb-pool", "stats", ["Who's the best quarterback in this week's games?"], c_best_qb,
+        skip=no_cfbd or (None if best_qb else "no passers"))
+
+    rb_pool = t.cfbd_leader(pool_teams, "rushing", "YDS", rank=1) if idx else None
+
+    def c_rb_yds(a, t, p):
+        name, tm, yds = rb_pool
+        return [must("rushing_yards", has_num(a[-1], yds), f"{name} {yds} rush yds (CFBD)")]
+    add("stats-player-rushing", "stats",
+        [f"How many rushing yards does {rb_pool[0]} have this season?" if rb_pool else ""], c_rb_yds,
+        skip=no_cfbd or (None if rb_pool else "no rushers"))
+
+    dg = next((g for g in games if t.better_side(g, "def")), None)
+
+    def c_def(a, t, p):
+        better, worse = t.better_side(dg, "def")
+        x = a[-1]
+        named_worse_better = any_of(x, rf"{worse}[^.]{{0,30}}(better|best|stronger|edge)")
+        return [must("better_defense", has_team(x, better) and not named_worse_better, f"{better} (SP+ defense)")]
+    add("stats-better-defense", "stats",
+        [f"Who has the better defense, {dg['away']} or {dg['home']}?" if dg else ""], c_def,
+        skip=no_cfbd or (None if dg else "no SP+ defense ranks"))
+
+    ats_team = next((tm for tm in pool_teams if t.ats(tm)), None)
+
+    def c_ats(a, t, p):
+        w, l, push = t.ats(ats_team)
+        x = a[-1]
+        ok = bool(__import__("re").search(rf"\b{w}\s*-\s*{l}(\s*-\s*{push})?\b", x)) if push else has_record(x, w, l)
+        return [must("ats_record", ok, f"{ats_team} ATS {w}-{l}" + (f"-{push}" if push else ""))]
+    add("stats-ats-pool", "stats", [f"What's {ats_team}'s record against the spread this year?" if ats_team else ""],
+        c_ats, skip=no_cfbd or (None if ats_team else "no ATS data"))
+
+    out_team = "Texas" if idx and t.ats("Texas") else None
+
+    def c_ats_out(a, t, p):
+        w, l, push = t.ats(out_team)
+        x = a[-1]
+        return [must("nonpool_ats", bool(__import__("re").search(rf"\b{w}\s*-\s*{l}\b", x)), f"Texas ATS {w}-{l}"),
+                must("no_spread_for_nonpool", not any_of(x, r"Texas [+-]\d"), "gave Texas a line")]
+    add("stats-ats-nonpool", "stats", ["What's Texas's ATS record this season?"], c_ats_out,
+        skip=no_cfbd or (None if out_team else "no Texas ATS"))
+
     # ---- injuries -----------------------------------------------------------------------------
     def c_inj(a, t, p):
         x = a[-1]
@@ -388,6 +446,12 @@ def build(t: Truth) -> list[dict]:
         x = a[-1]
         return [must("admits_fake_or_not_in_pool", ADMITS.search(x) or any_of(x, "not in (the|this|our) pool", "never heard"), ""),
                 must("no_invented_record", not any_of(x, rf"{FAKE_TEAM.split()[-2]}[^.]{{0,40}}\b\d{{1,2}}-\d{{1,2}}\b"), "")]
+    def c_fake_lower(a, t, p):
+        x = a[-1]
+        return [must("admits_fake", ADMITS.search(x), "must say no such player"),
+                must("no_numbers", not any_of(x, r"\b\d+\s*(yards|yds|touchdowns|tds|catches|carries)\b"), "invented stats")]
+    add("invented-player-lower", "invented", ["how many passing yards does tyler brannigan-fosse have"], c_fake_lower)
+
     add("invented-team", "invented",
         [f"What's the {FAKE_TEAM}' record, and do they cover against {games[0]['home'] if games else 'SMU'}?"], c_fake_team)
 

@@ -240,6 +240,47 @@ class Truth:
         p = pool[rank]
         return p["name"], p["team"], p["stats"][cat][key]
 
+    def cfbd_leader(self, teams: list[str], cat: str, key: str, rank: int = 0):
+        """Like cfbd_player, but with cfbd.leaders()' volume floor (no trick-play passers)."""
+        idx = self.cfbd_idx
+        if not idx:
+            return None
+        names = {cfbd.norm(cfbd._resolved_name(t, idx)) for t in teams}
+        floor = getattr(cfbd, "LEADER_FLOOR", {}).get(cat, 0)
+        pool = [p for n in names for p in idx["by_team"].get(n, [])
+                if isinstance((p["stats"].get(cat) or {}).get(key), (int, float))
+                and cfbd._volume(cat, p["stats"][cat]) >= floor]
+        pool.sort(key=lambda p: -p["stats"][cat][key])
+        if len(pool) <= rank:
+            return None
+        p = pool[rank]
+        return p["name"], p["team"], p["stats"][cat][key]
+
+    def cfbd_player_stat(self, name: str, cat: str, key: str):
+        if not self.cfbd_idx:
+            return None
+        n = cfbd.norm(name)
+        p = next((p for p in self.cfbd_idx["players"] if p["key"] == n), None)
+        return ((p or {}).get("stats", {}).get(cat) or {}).get(key)
+
+    def ats(self, team: str):
+        """(wins, losses, pushes) against the spread, from the CFBD cache."""
+        t = cfbd.resolve_team(team, self.cfbd_idx) if self.cfbd_idx else None
+        a = (t or {}).get("ats")
+        return (a[0], a[1], a[2] or 0) if a and a[0] is not None else None
+
+    def better_side(self, g: dict, side: str = "def"):
+        """(better, worse) pool-team names by SP+ offense/defense rank."""
+        idx = self.cfbd_idx
+        if not idx:
+            return None
+        ta, th = cfbd.resolve_team(g["away"], idx), cfbd.resolve_team(g["home"], idx)
+        ra = ((ta or {}).get("sp") or {}).get(side + "_rank")
+        rh = ((th or {}).get("sp") or {}).get(side + "_rank")
+        if not ra or not rh or ra == rh:
+            return None
+        return (g["away"], g["home"]) if ra < rh else (g["home"], g["away"])
+
     def cfbd_national(self, cat: str, key: str, exclude_teams: list[str]):
         idx = self.cfbd_idx
         if not idx:
