@@ -215,8 +215,11 @@ class Truth:
 
     def leaders(self, g: dict) -> dict:
         """{'Passing Yards': (team, player, yds_str)}: ESPN's per-team season
-        leaders, the ones already in Picky's context."""
+        leaders. Only before kickoff: once a game starts ESPN's 'leaders' are
+        that game's stats, not the season's."""
         out = {}
+        if self._game_started(g):
+            return out
         for side in ("away", "home"):
             for s in (self.notes(g).get(side) or {}).get("leaders") or []:
                 m = re.match(r"([^:]+):\s*(.+?)\s*\((.*)\)", s)
@@ -256,11 +259,17 @@ class Truth:
         p = pool[rank]
         return p["name"], p["team"], p["stats"][cat][key]
 
-    def cfbd_player_stat(self, name: str, cat: str, key: str):
+    def cfbd_player_stat(self, name: str, cat: str, key: str, team: str | None = None):
+        """By exact name, else by last name on `team` ('Gio' vs 'Giovanni' Lopez)."""
         if not self.cfbd_idx:
             return None
         n = cfbd.norm(name)
         p = next((p for p in self.cfbd_idx["players"] if p["key"] == n), None)
+        if p is None and team:
+            tn = cfbd.norm(cfbd._resolved_name(team, self.cfbd_idx))
+            same = [x for x in self.cfbd_idx["by_team"].get(tn, [])
+                    if x["key"].split()[-1:] == n.split()[-1:] and (x["stats"].get(cat) or {}).get(key) is not None]
+            p = same[0] if len(same) == 1 else None
         return ((p or {}).get("stats", {}).get(cat) or {}).get(key)
 
     def ats(self, team: str):

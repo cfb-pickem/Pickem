@@ -41,7 +41,9 @@ HEALTH_CLAIM = re.compile(
 ADMITS = re.compile(
     r"\b(don'?t|do not|ain'?t|no|not|nothing|can'?t|cannot|haven'?t|zero|never)\b.{0,50}"
     r"\b(have|got|data|info|listed|report|see|know|exist|real|record|idea|clue|line|heard|stats?|numbers?)"
-    r"|\b(isn'?t|not|aren'?t) (a real|real|in (the|this week'?s|our|your) pool)|\bmade[- ]up\b|\bfake\b|\bimaginary\b|\binvent",
+    r"|\b(isn'?t|not|aren'?t) (a real|real|in (the|this week'?s|our|your) pool)|\bmade[- ]up\b|\bfake\b|\bimaginary\b|\binvent"
+    r"|\bno (such )?(player|team|member|one) (named|by that name|called)?|\bno such (player|team|member)\b"
+    r"|\bdoesn'?t exist\b|\bghost\b|\bnever heard\b",
     re.I,
 )
 RECORD = re.compile(r"\b(\d{1,2})\s*-\s*(\d{1,2})\b")
@@ -154,6 +156,29 @@ def check_ack(answers: list[str], is_df: bool) -> Result:
 
 
 # ---- item check builders ----------------------------------------------------------
+
+
+ORDINAL_WORDS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh",
+                 8: "eighth", 9: "ninth", 10: "tenth", 11: "eleventh", 12: "twelfth", 13: "thirteenth"}
+
+
+def says_rank(text: str, rank: int) -> bool:
+    """'2nd', 'second', 'T2', 'T-2nd' all count."""
+    suf = "th" if 10 <= rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(rank % 10, "th")
+    pats = [rf"\b{rank}{suf}\b", rf"\bT-?{rank}(?:{suf})?\b"]
+    if rank in ORDINAL_WORDS:
+        pats.append(rf"\b{ORDINAL_WORDS[rank]}\b")
+    return any(re.search(p, text, re.I) for p in pats)
+
+
+def numbers_about(text: str, name: str) -> bool:
+    """A stat number in a sentence that names `name` (by any word of it)."""
+    words = [w for w in re.split(r"[\s-]+", name) if len(w) > 2]
+    for s in sentences(text):
+        if any(mentions(s, w) for w in words) and re.search(
+                r"\b\d+\s*(yards|yds|touchdowns|tds|catches|carries|sacks|receptions)\b", s, re.I):
+            return True
+    return False
 
 
 def must(name: str, cond: bool, detail: str = "") -> Result:

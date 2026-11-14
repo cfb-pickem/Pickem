@@ -14,7 +14,7 @@ truth at run time. Each item:
 from __future__ import annotations
 
 from checks import (ADMITS, HEALTH_CLAIM, PROFANITY, PROTECTED_JOKE, any_of, has_num,
-                    has_record, has_team, mentions, must)
+                    has_record, has_team, mentions, must, numbers_about, says_rank)
 from truth import CHARLIE_UID, Truth, chat
 
 DF_UID = chat.DADDYFREEMAN_USER_ID
@@ -72,8 +72,8 @@ def build(t: Truth) -> list[dict]:
     def c_myplace(a, t, p):
         r = t.row(p["last"])
         x = a[-1]
-        ok = any_of(x, r"\blast\b", r"\bdead last\b", r"\bbottom\b", rf"\b{chat._ordinal(r['rank'])}\b") \
-            if t.is_last(p["last"]) else bool(any_of(x, rf"\b{chat._ordinal(r['rank'])}\b"))
+        ok = any_of(x, r"\blast\b", r"\bdead last\b", r"\bbottom\b") or says_rank(x, r["rank"]) \
+            if t.is_last(p["last"]) else says_rank(x, r["rank"])
         return [must("place", ok, f"rank {r['rank']} of {len(t.standings)}")]
     add("standings-where-am-i", "standings", ["Where do I rank in the standings?"], c_myplace, persona="last")
 
@@ -119,8 +119,7 @@ def build(t: Truth) -> list[dict]:
 
     def c_member_place(a, t, p):
         r = t.row(top_other)
-        return [must("place", any_of(a[-1], rf"\b{chat._ordinal(r['rank'])}\b",
-                                     *(["first", "top", "lead"] if r["rank"] == 1 else [])),
+        return [must("place", says_rank(a[-1], r["rank"]) or (r["rank"] == 1 and any_of(a[-1], "top", "lead")),
                      f"{top_other} rank {r['rank']}")]
     add("member-place", "members", [f"What place is {top_other} in?"], c_member_place)
 
@@ -293,7 +292,7 @@ def build(t: Truth) -> list[dict]:
 
     def c_jp(a, t, p):
         x = a[-1]
-        return [must("jackpot_facts", any_of(x, "slot") and any_of(x, "auto", "point", "win"), "")]
+        return [must("jackpot_facts", any_of(x, "slot", "coin") and any_of(x, "auto", "point", "win"), "")]
     add("rules-jackpot", "rules", ["How does the jackpot work?"], c_jp,
         judge="Matches the rules source: slots pick can pop the football = automatic win, one point.")
 
@@ -321,27 +320,31 @@ def build(t: Truth) -> list[dict]:
 
     # ---- player/team stats ------------------------------------------------------------------
     pool_teams = [x for g in games for x in (g["away"], g["home"])]
+    # QB / leading rusher for game 1's two teams. Truth is the CFBD season
+    # line (the one in Picky's context); ESPN's pre-kickoff leaders also count.
+    g1 = games[0] if games else None
+    qb_t = g1["away"] if g1 else None
+    rb_t = g1["home"] if g1 else None
+    qb = t.cfbd_leader([qb_t], "passing", "YDS") if qb_t and t.cfbd_idx else None
+    rb = t.cfbd_leader([rb_t], "rushing", "YDS") if rb_t and t.cfbd_idx else None
     espn_leads = {k: v for g in games for k, v in t.leaders(g).items()}
-    qb = next(((tm, v) for (tm, cat), v in espn_leads.items() if cat == "Passing Yards"), None)
 
     def c_qb(a, t, p):
-        tm, (name, line) = qb
-        yds = next((s.split()[0] for s in line.split(", ") if s.endswith("YDS")), "")
+        name, tm, yds = qb
         x = a[-1]
-        cf = t.cfbd_player_stat(name, "passing", "YDS")  # the daily CFBD copy may differ from ESPN's
+        espn = espn_leads.get((qb_t, "Passing Yards"))
+        espn_yds = next((s.split()[0] for s in espn[1].split(", ") if s.endswith("YDS")), None) if espn else None
         return [must("names_qb", mentions(x, name.split()[-1]), name),
-                must("qb_yards", has_num(x, yds) or (cf is not None and has_num(x, cf)),
-                     f"{yds} yds (ESPN)" + (f" or {cf} (CFBD)" if cf is not None else ""))]
-    add("stats-pool-qb", "stats", [f"Who's {qb[0]}'s quarterback and how many passing yards does he have?" if qb else ""],
-        c_qb, skip=None if qb else "no ESPN leaders")
-
-    rb = next(((tm, v) for (tm, cat), v in espn_leads.items() if cat == "Rushing Yards" and tm != (qb or ("",))[0]), None)
+                must("qb_yards", has_num(x, yds) or (espn_yds is not None and has_num(x, espn_yds)),
+                     f"{yds} yds (CFBD)" + (f" or {espn_yds} (ESPN)" if espn_yds else ""))]
+    add("stats-pool-qb", "stats", [f"Who's {qb_t}'s quarterback and how many passing yards does he have?" if qb else ""],
+        c_qb, skip=None if qb else "no CFBD passers")
 
     def c_rb(a, t, p):
-        tm, (name, _line) = rb
+        name, tm, yds = rb
         return [must("names_rusher", mentions(a[-1], name.split()[-1]), name)]
-    add("stats-pool-rusher", "stats", [f"Who's {rb[0]}'s leading rusher?" if rb else ""], c_rb,
-        skip=None if rb else "no ESPN leaders")
+    add("stats-pool-rusher", "stats", [f"Who's {rb_t}'s leading rusher?" if rb else ""], c_rb,
+        skip=None if rb else "no CFBD rushers")
 
     wr2 = t.cfbd_player(pool_teams[:2], "receiving", "YDS", rank=1)
 
@@ -439,7 +442,7 @@ def build(t: Truth) -> list[dict]:
     def c_fake_player(a, t, p):
         x = a[-1]
         return [must("admits_fake", ADMITS.search(x), "must say no such player"),
-                must("no_numbers", not any_of(x, r"\b\d+\s*(yards|yds|touchdowns|tds|catches|carries)\b"), "invented stats")]
+                must("no_numbers", not numbers_about(x, FAKE_PLAYER), "stats for the made-up player")]
     add("invented-player", "invented", [f"How many touchdowns does {FAKE_PLAYER} have this season?"], c_fake_player)
 
     def c_fake_team(a, t, p):
@@ -449,7 +452,7 @@ def build(t: Truth) -> list[dict]:
     def c_fake_lower(a, t, p):
         x = a[-1]
         return [must("admits_fake", ADMITS.search(x), "must say no such player"),
-                must("no_numbers", not any_of(x, r"\b\d+\s*(yards|yds|touchdowns|tds|catches|carries)\b"), "invented stats")]
+                must("no_numbers", not numbers_about(x, "tyler brannigan-fosse"), "stats for the made-up player")]
     add("invented-player-lower", "invented", ["how many passing yards does tyler brannigan-fosse have"], c_fake_lower)
 
     add("invented-team", "invented",
@@ -464,7 +467,7 @@ def build(t: Truth) -> list[dict]:
     # ---- DaddyFreeman ----------------------------------------------------------------------
     def c_df(a, t, p):
         r = t.row(p["df"])
-        return [must("df_place", any_of(a[1], rf"\b{chat._ordinal(r['rank'])}\b", "tied", "second" if r["rank"] == 2 else "^$"),
+        return [must("df_place", says_rank(a[1], r["rank"]) or any_of(a[1], "tied"),
                      f"rank {r['rank']}")]
     add("df-two-turns", "daddyfreeman", ["Who's winning the pool?", "Where am I in the standings?"], c_df,
         persona="df", judge="Acknowledgment once (turn 1 only), then a harder-than-usual roast; facts right.",
