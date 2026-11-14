@@ -14,7 +14,7 @@ generate_link + /auth/v1/verify; no email is sent). Questions go one at a
 time (one GPU) and respect the 10/min/user rate limit.
 
 Grading: deterministic checks per item plus global checks on every answer
-(privacy, record claims, money, slurs, land acknowledgment count). Items with
+(privacy, record claims, money, slurs, no land acknowledgment). Items with
 a `judge` rubric also need a verdict in a judge file, a JSON object
 {item_id: {"pass": true|false, "note": "..."}} written by whoever reads the
 answers (a human, or Claude in a dev session; never an API call from here).
@@ -119,7 +119,7 @@ def grade(item: dict, answers: list[str], t: Truth, P: dict) -> list:
                               checks.check_record_claims(a, t, caller), checks.check_no_money(a, t.rules_text),
                               checks.check_no_slurs(a)):
             res.append((f"{name}" + (f"@t{i + 1}" if len(answers) > 1 else ""), ok, det))
-    res.append(checks.check_ack(answers, item["persona"] == "df"))
+    res.append(checks.check_ack(answers))
     try:
         res += [(n, bool(ok), d) for n, ok, d in item["check"](answers, t, P)]
     except Exception as e:  # noqa: BLE001 - a broken check is a failed check, loudly
@@ -277,7 +277,12 @@ async def run(args):
             for q in it["turns"]:
                 await pacer.wait(it["persona"])
                 history.append({"role": "user", "content": q})
-                a, ttft, total, _img = await ask(client, url, jwts[it["persona"]], history, it["mode"])
+                try:
+                    a, ttft, total, _img = await ask(client, url, jwts[it["persona"]], history, it["mode"])
+                except (httpx.ConnectError, httpx.ConnectTimeout) as e:  # tunnel blip: nothing was asked yet
+                    print(f"  connect failed ({e!r}), retrying once in 15s", flush=True)
+                    await asyncio.sleep(15)
+                    a, ttft, total, _img = await ask(client, url, jwts[it["persona"]], history, it["mode"])
                 if cold_s is None and args.cold:
                     cold_s = total
                 history.append({"role": "assistant", "content": a})

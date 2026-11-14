@@ -20,5 +20,5 @@ async def main():
                    ("Ackbar went 4-0 last week.", True), ("Chuck P went 3-1 in week 9 and 2-2 in week 8", True)]:
         r = C.check_record_claims(a, t); print("REC", r[1]==exp, r)
     print(C.has_record("You've got 26 points and 18 misses", 26, 18), C.has_num("2,764 yards", "2,764"), C.has_num("2764 yds","2,764"))
-    print(C.check_ack(["x Potawatomi y", "no"], True), C.check_ack(["no"], False))
+    print("ACK", C.check_ack(["x Potawatomi y", "no"])[1] is False, C.check_ack(["no", "Your picks are on the traditional lands of garbage"])[1] is False, C.check_ack(["no"])[1] is True)
 asyncio.run(main())

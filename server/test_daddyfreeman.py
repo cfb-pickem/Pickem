@@ -1,11 +1,12 @@
 """
-Tests for DaddyFreeman's special treatment (land acknowledgment + harder roasts).
+Tests for DaddyFreeman's special treatment (harder roasts; the land
+acknowledgment opener is switched off).
 
 Run:  ./.venv/bin/python3 -I test_daddyfreeman.py
 
-Pins: the acknowledgment only fires for his user id, only on the first
-message of a conversation, rotates, and is stripped from the history the
-model sees; the roast rider only goes into his system prompt.
+Pins: the acknowledgment NEVER fires (not for him, not for anyone, first
+message or not), an old one is still stripped from history; the roast rider
+only goes into his system prompt and he still gets his facts every answer.
 """
 
 from __future__ import annotations
@@ -23,21 +24,28 @@ FOLLOW = FIRST + [{"role": "assistant", "content": "Not you."},
                   {"role": "user", "content": "and me?"}]
 
 
-def test_ack_only_on_first_message_for_him():
-    assert chat.land_ack_for(DF, FIRST) in chat.LAND_ACKS
-    assert chat.land_ack_for(DF, FOLLOW) is None
-    # a failed first reply leaves two user turns and no assistant turn: not a start
-    assert chat.land_ack_for(DF, FIRST + [{"role": "user", "content": "hello?"}]) is None
+def test_opener_is_off():
+    assert chat.LAND_ACK_ENABLED is False
+    for msgs in (FIRST, FOLLOW, FIRST + [{"role": "user", "content": "hello?"}]):
+        assert chat.land_ack_for(DF, msgs) is None
+        assert chat.land_ack_for(OTHER, msgs) is None
+        assert chat.land_ack_for("", msgs) is None
+    # not even after many conversations (the old rotation counter)
+    assert all(chat.land_ack_for(DF, FIRST) is None for _ in range(10))
 
 
-def test_never_for_other_members():
-    assert chat.land_ack_for(OTHER, FIRST) is None
-    assert chat.land_ack_for("", FIRST) is None
+def test_rider_doesnt_promise_an_opener():
+    assert "already handled" not in chat.DADDYFREEMAN_RIDER
+    assert "roast him harder" in chat.DADDYFREEMAN_RIDER
 
 
-def test_ack_rotates():
-    seen = {chat.land_ack_for(DF, FIRST) for _ in chat.LAND_ACKS}
-    assert seen == set(chat.LAND_ACKS), "every variant should come up once per cycle"
+def test_he_gets_his_facts_every_answer():
+    ctx = {"you": {"team_name": "DaddyFreeman"}, "games_this_week": [], "mode": "leaderboard",
+           "standings_ytd": [{"team": "TG", "rank": 1, "w": 30, "l": 14},
+                             {"team": "DaddyFreeman", "rank": 2, "w": 20, "l": 24}], "weekly_records": {},
+           "last_week": {}, "jackpot": {}, "daddyfreeman": True}
+    turn = chat._user_turn(ctx, "Who's winning the pool?")
+    assert "DaddyFreeman (the user" in turn, "the extra roast needs his facts in the focus block"
 
 
 def test_ack_names_the_three_fires_and_no_em_dash():
@@ -74,9 +82,9 @@ def test_rider_only_in_his_prompt():
 
 if __name__ == "__main__":
     tests = [
-        test_ack_only_on_first_message_for_him,
-        test_never_for_other_members,
-        test_ack_rotates,
+        test_opener_is_off,
+        test_rider_doesnt_promise_an_opener,
+        test_he_gets_his_facts_every_answer,
         test_ack_names_the_three_fires_and_no_em_dash,
         test_strip_from_history,
         test_opener_streams_first,

@@ -87,10 +87,13 @@ RATE_LIMIT_PER_MIN = 10
 MAX_HISTORY_TURNS = 10
 
 # DaddyFreeman (Andrew, team_id 8) gets special treatment, approved by Charlie:
-# a comically earnest land acknowledgment at the start of each conversation,
-# then extra-hard roasts. Matched on the auth user id, not the team name
+# extra-hard roasts. Matched on the auth user id, not the team name
 # (there's a second Andrew in the league).
 DADDYFREEMAN_USER_ID = "21ade75b-cfbf-431d-8b3d-20b7b2b52ef2"
+
+# The land-acknowledgment opener below is switched off (Charlie, 2026-11-14:
+# "You can get rid of Andrew's opener"). The roasts stay.
+LAND_ACK_ENABLED = False
 
 # Prepended in code, not left to the model. The joke is the earnestness
 # and that it's aimed at him; never at Native people.
@@ -129,8 +132,7 @@ DADDYFREEMAN_RIDER = (
     "his numbers before you use them. The same limits apply: roast picks, "
     "records and standings only; never sexuality, race, religion, gender, "
     "disability, looks, weight, family, jobs, money or health. The privacy "
-    "rule still applies. Never mention land, nations or acknowledgments: "
-    "that's already handled."
+    "rule still applies. Never mention land, nations or acknowledgments."
 )
 
 
@@ -142,7 +144,7 @@ def is_conversation_start(messages: list) -> bool:
 
 
 def land_ack_for(user_id: str, messages: list) -> str | None:
-    if user_id != DADDYFREEMAN_USER_ID or not is_conversation_start(messages):
+    if not LAND_ACK_ENABLED or user_id != DADDYFREEMAN_USER_ID or not is_conversation_start(messages):
         return None
     return LAND_ACKS[next(_ack_turn) % len(LAND_ACKS)]
 
@@ -319,6 +321,16 @@ def week_locks_together(week) -> bool:
         return int(week) <= REGULAR_SEASON_LAST_WEEK
     except (TypeError, ValueError):
         return False  # unknown: per game, which hides more
+
+
+def week_locked(ctx: dict) -> bool:
+    """Regular season: once any pool game has kicked off, every pick for the
+    week is locked. Picky must stop telling people to flip then."""
+    if not week_locks_together(ctx.get("current_week")):
+        return False
+    now = _now_ct_naive()
+    return any(g.get("winner") or _game_is_locked({"Status": g.get("status"), "Start (CT)": g.get("start")}, now)
+               for g in ctx.get("games_this_week") or [])
 
 
 def filter_visible_picks(
@@ -892,7 +904,7 @@ def pick_label(notes: dict | None, g: dict, pick: str) -> str:
     return f"{label} ({'value side' if side == value else 'wrong side of value'})"
 
 
-def pick_verdict(notes: dict, away: str, home: str, line, pick) -> str | None:
+def pick_verdict(notes: dict, away: str, home: str, line, pick, locked: bool = False) -> str | None:
     """Is `pick` on the value side of the pool line vs the market? Computed
     here so the model looks the answer up instead of doing spread math."""
     mg = _market_gap(notes, line)
@@ -906,14 +918,17 @@ def pick_verdict(notes: dict, away: str, home: str, line, pick) -> str | None:
         return None
     if abs(gap) < 1:
         return (f"{_side_label(mine, home, pool_home)} has no price edge either way (pool and "
-                "market within a point); keep or flip only for football reasons.")
+                "market within a point)" + (", and it's locked in." if locked else
+                                            "; keep or flip only for football reasons."))
     side = home if gap > 0 else away
     if mine == side:
         return (f"{_side_label(mine, home, pool_home)} IS the value side: the market rates {side} "
-                f"{_num(abs(gap))} points better than the pool line. Keep it.")
+                f"{_num(abs(gap))} points better than the pool line. "
+                + ("Good pick, locked in." if locked else "Keep it."))
     return (f"{_side_label(mine, home, pool_home)} is the WRONG side of the value: the market rates "
-            f"{side} {_num(abs(gap))} points better than the pool line. Flipping to "
-            f"{_side_label(side, home, pool_home)} puts the price on your side.")
+            f"{side} {_num(abs(gap))} points better than the pool line. "
+            + ("Too late to flip it: picks are locked." if locked else
+               f"Flipping to {_side_label(side, home, pool_home)} puts the price on your side."))
 
 
 def _team_line(name: str, t: dict, espn_stats: bool = True) -> str:
@@ -1032,6 +1047,12 @@ def render_context(ctx: dict) -> str:
     L.append("")
     L.append(f"YOUR GAMES THIS WEEK ({len(games)}): every team picks every one of these "
              f"{len(games)} games against the POOL LINE. No other games are in the pool.")
+    locked = week_locked(ctx)
+    if locked:
+        starts = [g.get("start") for g in games if g.get("start")]
+        L.append("PICKS ARE LOCKED for this week" + (f" (they locked at the first kickoff, {_kickoff(min(starts))})"
+                                                    if starts else "")
+                 + ". Nobody can change or flip a pick now.")
     mine = {p["game_id"]: p["pick"] for p in revealed.get(me, [])}
     cf = _cfbd_index()
     for i, g in enumerate(games, 1):
@@ -1076,10 +1097,12 @@ def render_context(ctx: dict) -> str:
             L.append("  Headlines: " + (" | ".join(heads) if heads else "none about these teams."))
         L.extend(cfbd_game_lines(away, home, cf))
         L.append(f"  {me}'s pick: {mine[g['id']]}" if g["id"] in mine else f"  {me}'s pick: not made yet")
-        if g["id"] in mine and notes and not notes.get("unavailable"):
-            pv = pick_verdict(notes, away, home, g.get("line"), mine[g["id"]])
-            if pv:
-                L.append(f"  Value check on {me}'s pick: {pv}")
+        if g["id"] in mine:
+            pv = (pick_verdict(notes, away, home, g.get("line"), mine[g["id"]], locked)
+                  if notes and not notes.get("unavailable") else None)
+            L.append(f"  Value check on {me}'s pick: {pv}" if pv else
+                     f"  Value check on {me}'s pick: none, no market line right now. Don't call it "
+                     "the value side or the wrong side.")
         others = {t: p["pick"] for t, plist in revealed.items() if t != me
                   for p in plist if p["game_id"] == g["id"]}
         if others:
@@ -1217,7 +1240,7 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
            "named in this question. Use these exact facts, nothing else, for them:"]
     for n in hit[:3]:
         out.append(f"{n} (the user, 'you'):" if n == me else
-                   f"{n} (NOT the user; talk about {n} in the third person):")
+                   f"{n} (NOT the user: call {n} 'he' or 'they', never 'you'):")
         for ln in text:
             if re.match(rf"T?\d+(st|nd|rd|th)\. {re.escape(n)}:", ln):
                 out.append("  Standings: " + ln.replace("  <- the user", ""))
@@ -1260,12 +1283,12 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
             if vc:
                 out.append(vc)
         else:
-            picks = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(n, [])}
+            theirs = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(n, [])}
             opened = set(ctx.get("revealed_game_ids") or [])
             wk = ctx.get("games_this_week") or []
             notes_all = ctx.get("espn") or {}
-            shown = [f"{g['away']} at {g['home']}: {pick_label(notes_all.get(g['id']), g, picks[g['id']])}"
-                     for g in wk if g["id"] in picks]
+            shown = [f"{g['away']} at {g['home']}: {pick_label(notes_all.get(g['id']), g, theirs[g['id']])}"
+                     for g in wk if g["id"] in theirs]
             if shown:
                 out.append(f"  This week's picks (revealed): {'; '.join(shown)}.")
                 if vc:
@@ -1275,7 +1298,7 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
                     out.append(f"  (Don't mix {n} up with the user: {me}'s own picks are "
                                + ", ".join(mine[g["id"]] for g in wk if g["id"] in mine)
                                + f". Those are not {n}'s.)")
-            nopick = [f"{g['away']} at {g['home']}" for g in wk if g["id"] in opened and g["id"] not in picks]
+            nopick = [f"{g['away']} at {g['home']}" for g in wk if g["id"] in opened and g["id"] not in theirs]
             if nopick:
                 out.append(f"  No pick from {n} in: {'; '.join(nopick)}.")
             hidden = [f"{g['away']} at {g['home']} (unlocks {_unlock(ctx, g)})" for g in wk if g["id"] not in opened]
@@ -1293,6 +1316,8 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
                 alone = "the ONLY team" if not same else f"one of only {len(same) + 1} teams (with {', '.join(same)})"
                 ok = "it covered" if same_team(pk, g.get("covered")) else "it did NOT cover"
                 out.append(f"  Last week {n} was {alone} on {pk}, and {ok}.")
+    if not picks:
+        out.append("Not a picks question: leave this week's picks and games out of the answer.")
     return "\n".join(out)
 
 
@@ -1408,6 +1433,9 @@ _LEAGUE_WORDS = re.compile(
 
 _PICKS_ASK = re.compile(r"\bpicks?\b|\bpicked\b|\bpicking\b|\bvalue\b|\bflip|\bchange\b|\btook\b|"
                         r"\btaking\b|\bline\b|\bspread\b|\bsides?\b|\bthis week\b|\bwho has\b", re.I)
+# Things the written rules say nothing about. The 9B otherwise stretches the
+# lock rule to fit ("a delay buys no time, so the line stays").
+_UNCOVERED_ASK = re.compile(r"\b(postpon\w*|cancel\w*|forfeit\w*|suspend\w*|reschedul\w*|called off)\b", re.I)
 _INJURY_ASK = re.compile(r"\binjur\w*|\bhurt\b|\bhealthy\b|\bhealth\b|\bquestionable\b|"
                          r"\bis \w+ playing\b|\bbanged up\b|\bout for\b", re.I)
 
@@ -1425,9 +1453,13 @@ def guard_note(ctx: dict, question: str) -> str:
         if who:
             mates = [r["team"] for r in st if r["rank"] == who["rank"] and r["team"] != who["team"]]
             place = ("last place" if who["rank"] == st[-1]["rank"] else
-                     "first place" if who["rank"] == 1 else f"{_ordinal(who['rank'])} place, NOT last")
-            facts = (f" Their facts, use only these: {who['team']} is {who['w']}-{who['l']}, {place}"
-                     + (f", tied with {', '.join(mates)}" if mates else "") + ".")
+                     "first place" if who["rank"] == 1 else
+                     f"{_ordinal(who['rank'])} place, NOT last (don't call them last)")
+            gap = st[0]["w"] - who["w"]
+            even = " (exactly .500)" if who["w"] == who["l"] else ""
+            facts = (f" Their facts, use only these: {who['team']} is {who['w']}-{who['l']}{even}, {place}"
+                     + (f", tied with {', '.join(mates)}" if mates else "")
+                     + (f", {gap} point{'s' * (gap != 1)} behind first place" if gap else "") + ".")
         # The pivot roasts record and place only: under 'go hard' pressure a
         # 9B model invents wrong-side picks, so this week's picks stay out.
         return (f"GUARDRAIL: this asks you to mock someone over '{m.group(0).lower()}'. Don't. One short "
@@ -1457,6 +1489,10 @@ def _user_turn(ctx: dict, question: str) -> str:
     # picks: roasts with picks in view kept misreading whose pick was whose.
     want_picks = bool(_PICKS_ASK.search(question or "")) and not guard.startswith("GUARDRAIL")
     parts = [focus_block(ctx, question, picks=want_picks).strip()]
+    if want_picks and week_locked(ctx):
+        parts.append("THIS WEEK'S PICKS ARE LOCKED: it's too late to change any of them. If they ask "
+                     "about changing or flipping, say it's too late, then grade the picks as made. "
+                     "Never tell them to flip.")
     if wants_rules(question):
         starts = [g.get("start") for g in ctx.get("games_this_week") or [] if g.get("start")]
         lock = ""
@@ -1471,6 +1507,10 @@ def _user_turn(ctx: dict, question: str) -> str:
                      "above, so find it and give it, then stop. No picks, value, games or "
                      "standings. Only if it truly isn't above: the rules don't cover it, ask "
                      "the commissioner.")
+    if _UNCOVERED_ASK.search(question or "") and re.search(r"\bgames?\b|\bpicks?\b", question or "", re.I):
+        parts.append("NOT IN THE RULES: the written rules say nothing about postponed, canceled or suspended "
+                     "games. Say the rules don't cover it and to ask the commissioner. Don't stretch another "
+                     "rule to fit.")
     parts.append(stats_focus(ctx, question).strip())
     parts.append(guard)
     if _INJURY_ASK.search(question or ""):
@@ -1587,11 +1627,23 @@ _SLURS = re.compile(
 )
 
 
-def scrub(text: str) -> str:
-    return _SLURS.sub("dumbass", text)
+# On a "roast his looks" bait the 9B refuses, then riffs on the bait word
+# anyway ("that's the only thing ugly about him"). For those questions only,
+# the looks words are scrubbed out of the answer too.
+_LOOKS = re.compile(r"\b(ugly|uglier|ugliest|fat|fatter|fattest|obese|bald|skinny|chubby)\b", re.I)
 
 
-async def _scrubbed(stream):
+def looks_bait(question: str) -> bool:
+    q = question or ""
+    return bool(_LOOKS.search(q) and _MOCK.search(q))
+
+
+def scrub(text: str, looks: bool = False) -> str:
+    text = _SLURS.sub("dumbass", text)
+    return _LOOKS.sub("bad", text) if looks else text
+
+
+async def _scrubbed(stream, looks: bool = False):
     """Scrub model output as it streams. A slur can be split across chunks,
     so the trailing partial word is held back until the next chunk (or the
     end) shows where it stops."""
@@ -1599,7 +1651,7 @@ async def _scrubbed(stream):
     async for chunk in stream:
         if not chunk.startswith("data: {"):
             if chunk.startswith("data: [DONE]") and held:
-                yield _sse({"content": scrub(held)})
+                yield _sse({"content": scrub(held, looks)})
                 held = ""
             yield chunk
             continue
@@ -1612,9 +1664,9 @@ async def _scrubbed(stream):
         if not m:
             continue
         out, held = held[:m.end()], held[m.end():]
-        yield _sse({"content": scrub(out)})
+        yield _sse({"content": scrub(out, looks)})
     if held:
-        yield _sse({"content": scrub(held)})
+        yield _sse({"content": scrub(held, looks)})
 
 
 async def _with_opener(opener: str | None, stream):
@@ -1748,7 +1800,7 @@ async def chat(req: Request):
     ]
 
     return StreamingResponse(
-        _with_opener(opener, _scrubbed(_model_stream(convo))),
+        _with_opener(opener, _scrubbed(_model_stream(convo), looks_bait(last.get("content", "")))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

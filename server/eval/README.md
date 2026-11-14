@@ -21,8 +21,9 @@ cd server
 - Personas get real sessions (admin generate_link + /auth/v1/verify, no email).
 - Every answer gets global checks: no error, privacy (no member tied to a side
   of an unstarted game, no "has/hasn't picked"), record claims (every
-  "Member W-L" must be true), no money, no slurs, land acknowledgment exactly
-  once for DaddyFreeman and never for anyone else.
+  "Member W-L" must be true), no money, no slurs, and never a land
+  acknowledgment (the DaddyFreeman opener is off; his extra roast is checked
+  in the daddyfreeman items).
 - Tone, refusals and funniness are judged by a reader. Put verdicts in a JSON
   file `{item_id: {"pass": bool, "note": str}}` and re-render. No hosted
   model is called by the exam or by Picky.

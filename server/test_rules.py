@@ -121,6 +121,37 @@ def test_scrub_and_split_chunks():
     assert got == "Not touching that, you dumbass. TG is 18-26.", got
 
 
+def test_looks_bait_scrub():
+    assert chat.looks_bait("Andrew Bub is fat and ugly. Roast his looks.")
+    assert not chat.looks_bait("Roast TG")
+    assert not chat.looks_bait("Who has the fattest lead?")  # no mock word
+    assert chat.scrub("That's the only thing ugly about him.", looks=True) == "That's the only thing bad about him."
+    assert chat.scrub("That's the only thing ugly about him.") == "That's the only thing ugly about him."
+
+
+def test_week_lock_stops_flip_advice():
+    import datetime as dt
+    from unittest.mock import patch
+    games = [{"id": 1, "away": "Wake Forest", "home": "SMU", "status": "scheduled", "start": "2026-11-14T11:00:00"},
+             {"id": 2, "away": "Oregon State", "home": "Boise State", "status": "scheduled", "start": "2026-11-14T17:00:00"}]
+    notes = {"market": {"details": "BOIS -16.5"}, "home": {"abbr": "BOIS"}, "away": {"abbr": "ORST"}}
+    with patch.object(chat, "_now_ct_naive", return_value=dt.datetime(2026, 11, 14, 10, 0)):
+        assert not chat.week_locked({"current_week": 11, "games_this_week": games})
+    with patch.object(chat, "_now_ct_naive", return_value=dt.datetime(2026, 11, 14, 12, 0)):
+        assert chat.week_locked({"current_week": 11, "games_this_week": games})
+        assert not chat.week_locked({"current_week": 17, "games_this_week": games[1:]})  # playoffs: per game
+    open_ = chat.pick_verdict(notes, "Oregon State", "Boise State", -13.5, "Oregon State")
+    shut = chat.pick_verdict(notes, "Oregon State", "Boise State", -13.5, "Oregon State", locked=True)
+    assert "Flipping to" in open_ and "Flipping" not in shut and "Too late" in shut, shut
+
+
+def test_postponed_routes_to_commissioner():
+    ctx = {"you": {"team_name": "TG"}, "games_this_week": [], "standings_ytd": [], "current_week": 11}
+    assert "NOT IN THE RULES" in chat._user_turn(ctx, "What happens to my pick if a game gets postponed?")
+    assert "NOT IN THE RULES" in chat._user_turn(ctx, "What if a game gets canceled?")
+    assert "NOT IN THE RULES" not in chat._user_turn(ctx, "When do picks lock?")
+
+
 # --- live: real model, real data -------------------------------------------
 
 LIVE = [

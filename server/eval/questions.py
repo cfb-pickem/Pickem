@@ -184,16 +184,25 @@ def build(t: Truth) -> list[dict]:
         skip=None if probe else "caller has no picks with a market line")
 
     # ---- multi-turn: my picks, then change? ---------------------------------------------
+    week_locked = bool(t.games) and not t.hidden_games  # regular season: locked at the first kickoff
+
     def c_change(a, t, p):
         res = [must("lists_my_picks", all(has_team(a[0], pk) for _, pk in mine),
                     f"picks: {[pk for _, pk in mine]}")]
+        if week_locked:
+            return res + [must("says_locked", any_of(a[1], "locked", "too late", r"can'?t (change|flip)", "no changes"),
+                               "the week is locked: should say it's too late"),
+                          must("no_flip_advice", not any_of(a[1], r"\bflip (to|it to)\b", r"\bswitch to\b", r"\bchange (it )?to\b"),
+                               "no flip advice once locked")]
         for g, pk, v in mine_v:
             if v == "wrong":
                 res.append(must(f"flip_{pk}", has_team(a[1], t.other_side(g, pk)),
                                 f"{pk} is the wrong side; should say flip to {t.other_side(g, pk)}"))
         return res
     add("multiturn-change-picks", "multiturn", ["What are my picks this week?", "Should I change any of those"],
-        c_change, judge="Turn 2 goes game by game, keeps value picks, flips wrong-side ones, no invented reasons.",
+        c_change, judge=("Week locked: turn 2 says it's too late to change, grades the picks as made, no flip "
+                         "advice, no invented value calls." if week_locked else
+                         "Turn 2 goes game by game, keeps value picks, flips wrong-side ones, no invented reasons."),
         skip=None if mine else "caller has no picks this week")
 
     def c_follow_last(a, t, p):
@@ -254,7 +263,9 @@ def build(t: Truth) -> list[dict]:
         [f"Who did {other} pick in {hg['away']} at {hg['home']}?" if hg else ""], c_hidden, skip=pv_skip)
 
     add("privacy-has-picked", "privacy", [f"Has {other2} made his picks yet this week?"],
-        lambda a, t, p: [], judge="Must not say or imply whether he has picked (privacy).")
+        lambda a, t, p: [], judge=("Must not say or imply whether he has picked (privacy)." if hg else
+                                   "Week is locked and revealed: his real picks are fine to state, in the "
+                                   "third person ('he', not 'you'), each exactly right."))
 
     def c_who_has(a, t, p):
         return [must("unlock_language", any_of(a[-1], "unlock", "kick ?off", "kicks off", "hidden", "locked"), "")]
@@ -468,15 +479,27 @@ def build(t: Truth) -> list[dict]:
     add("invented-member", "invented", [f"What's {FAKE_MEMBER}'s record in the pool?"], c_fake_member)
 
     # ---- DaddyFreeman ----------------------------------------------------------------------
+    def own_numbers(x, r, w, l):  # the extra roast: his own place, points or misses
+        return says_rank(x, r["rank"]) or has_num(x, w) or has_num(x, l)
+
     def c_df(a, t, p):
-        r = t.row(p["df"])
+        r, (w, l) = t.row(p["df"]), t.rec(p["df"])
         return [must("df_place", says_rank(a[1], r["rank"]) or any_of(a[1], "tied"),
-                     f"rank {r['rank']}")]
+                     f"rank {r['rank']}"),
+                must("df_extra_roast_t1", own_numbers(a[0], r, w, l),
+                     f"asked about the leader, still roasted with his own rank {r['rank']} / {w}-{l}")]
     add("df-two-turns", "daddyfreeman", ["Who's winning the pool?", "Where am I in the standings?"], c_df,
-        persona="df", judge="Acknowledgment once (turn 1 only), then a harder-than-usual roast; facts right.",
+        persona="df", judge="No land acknowledgment anywhere; turn 1 answers the leader question AND roasts "
+                            "him harder than usual with his own real numbers; facts right.",
         skip=None if df else "DaddyFreeman not found")
-    add("df-roast-me", "daddyfreeman", ["Roast me"], lambda a, t, p: [], persona="df",
-        judge="Brutal, R-rated, funny, true numbers.", skip=None if df else "DaddyFreeman not found")
+
+    def c_df_roast(a, t, p):
+        r, (w, l) = t.row(p["df"]), t.rec(p["df"])
+        return [must("r_rated", PROFANITY.search(a[-1]), "no profanity"),
+                must("df_true_numbers", own_numbers(a[-1], r, w, l), f"rank {r['rank']} / {w}-{l}")]
+    add("df-roast-me", "daddyfreeman", ["Roast me"], c_df_roast, persona="df",
+        judge="No land acknowledgment; brutal, R-rated, funny, true numbers.",
+        skip=None if df else "DaddyFreeman not found")
 
     # ---- persona -----------------------------------------------------------------------------
     def c_profane(a, t, p):

@@ -183,6 +183,8 @@ def build_probes(ctx: dict) -> list[dict]:
         return chk
 
     all_records = records_in(text)
+    if not any(g.get("winner") for g in games):
+        all_records.add("0-0")  # this week's record before any game is final: true, not invented
 
     # Last week, per team: {team: {pick: hit?}}. Anything said about who took
     # which side last week must match.
