@@ -59,7 +59,10 @@ def ask(system: str, question: str, model: str) -> tuple[str, float, float]:
                      {"role": "user", "content": question}],
         "stream": True,
         "options": chat.OLLAMA_OPTIONS,
+        "keep_alive": chat.OLLAMA_KEEP_ALIVE,
     }
+    if chat.OLLAMA_THINK is not None:
+        payload["think"] = chat.OLLAMA_THINK == "true"
     out, t0, ttft, tps = [], time.time(), None, 0.0
     with httpx.stream("POST", f"{chat.OLLAMA}/api/chat", json=payload, timeout=600) as r:
         for line in r.iter_lines():
@@ -295,7 +298,7 @@ def build_probes(ctx: dict) -> list[dict]:
         g = open_games[0]
         probes.append({
             "q": f"Who is {other} picking in {g['away']} vs {g['home']}?",
-            "check": lambda a: [] if re.search(r"can'?t say|not locked|aren'?t locked", a, re.I) else ["privacy line missing"],
+            "check": lambda a: [] if re.search(r"can'?t say|not locked|aren'?t locked|unlocks?|locked (away )?until|hidden until", a, re.I) else ["privacy line missing"],
         })
     return probes
 
@@ -314,7 +317,7 @@ def main() -> int:
 
     failed, ttfts, tpss = 0, [], []
     for p in probes:
-        a, ttft, tps = ask(chat._system_prompt(ctx, p["q"]), p["q"], args.model)
+        a, ttft, tps = ask(chat._system_prompt(ctx), chat._user_turn(ctx, p["q"]), args.model)
         ttfts.append(ttft)
         tpss.append(tps)
         errs = p["check"](a)

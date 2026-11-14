@@ -11,12 +11,16 @@ tunnel at `pickem-chat.dunecreek.ai`.
 - Pulls a compact snapshot of league state from Supabase **using the
   caller's JWT**, so row-level security applies to everything.
 - Builds a system prompt in Picky's voice (a savage, trash-talking heel
-  who still answers with real facts) and streams Claude Haiku 5.5 via the
-  Anthropic API back as SSE. If the API call fails before the first token,
-  local Ollama answers instead.
+  who still answers with real facts) and streams the local Ollama model
+  (`qwen3.5:9b-q4_K_M`) back as SSE. No API calls, no API cost. The Claude
+  Haiku path is still in the code but off unless `PICKY_USE_CLAUDE=1`.
 - Rate-limits 10 req/min per user, in-memory.
-- Warms Ollama on startup only when there's no Anthropic key; as a
-  fallback it loads on demand and unloads after 15 idle minutes.
+- Warms Ollama on startup; the model unloads after `PICKY_OLLAMA_KEEP_ALIVE`
+  (30m) idle. A cold message takes ~35-45 s, a warm one ~5-10 s.
+- The system prompt is byte-identical between messages (the clock is only
+  to the hour, and the per-question focus block rides in the user turn), so
+  Ollama reuses the processed prompt instead of re-reading ~6.5k tokens.
+- Unloads the chat model before an image job: both together swap on 16 GB.
 
 Errors: `401` bad/missing token · `429` rate-limited · `502` Supabase
 unreachable · `500` otherwise. Streamed error chunks look like
@@ -28,10 +32,13 @@ Env vars (set in the plist):
 
 | Var | Default | Notes |
 | --- | --- | --- |
-| `PICKY_CLAUDE_MODEL` | `claude-haiku-5-5` | Primary model. |
+| `PICKEM_CHAT_MODEL` | `qwen2.5:7b-instruct` | The plist sets `qwen3.5:9b-q4_K_M` (GGUF on llama.cpp; the default `qwen3.5:9b` tag runs on MLX, whose prompt cache grew to ~16 GB). |
+| `PICKY_OLLAMA_THINK` | (unset) | `false` for qwen3.5: thinking took minutes per answer. Leave unset for models without thinking. |
+| `PICKY_OLLAMA_KEEP_ALIVE` | `30m` | How long the model stays loaded after the last message. |
+| `PICKY_USE_CLAUDE` | (unset) | `1` turns the Claude path back on (paid API, Ollama becomes the fallback). Unset, the key is never read. |
+| `PICKY_CLAUDE_MODEL` | `claude-haiku-5-5` | Only with `PICKY_USE_CLAUDE=1`. |
 | `PICKY_CLAUDE_EFFORT` | `medium` | `low` is faster but sloppier on multi-step facts. |
 | `ANTHROPIC_API_KEY` | (unset) | If unset, read from the login keychain: account `drake`, service `PICKY_ANTHROPIC_KEYCHAIN` (default `DCC__ANTHROPIC_API_KEY`). Never commit it. |
-| `PICKEM_CHAT_MODEL` | `qwen2.5:7b-instruct` | Local Ollama fallback. |
 | `PORT` | `8766` | Next free after metra's 8765. |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama only. |
 
@@ -82,8 +89,9 @@ the question (or the caller, for "roast me" / "how did I do") at the end
 of the prompt. ESPN data comes from `espn.py` (public summary endpoint,
 10 minute cache, fails soft to "unavailable").
 
-The prompt is ~9.5k tokens. Ollama (fallback) gets the same prompt and
-runs with `num_ctx` 16384 and temperature 0.2.
+The prompt is ~6.5k tokens on qwen. Ollama runs with `num_ctx` 16384,
+temperature 0.2 and `presence_penalty` 0 (qwen3.5's default 1.5 garbles
+names and numbers it has already used).
 
 Tests:
 
