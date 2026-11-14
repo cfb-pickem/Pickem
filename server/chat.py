@@ -1181,8 +1181,10 @@ def render_context(ctx: dict) -> str:
     L: list[str] = []
     # The clock is not here: _system_prompt adds it at the end, to the hour,
     # so the prompt stays byte-identical between messages and Ollama reuses it.
-    L.append(f"Season {ctx.get('season')}, week {ctx.get('current_week')}. "
-             f"The user is the team \"{me}\".")
+    # Everything here is the same for every member: the user's own rows are
+    # in you_block, after this, so the long prefix is shared and Ollama can
+    # restore it from a checkpoint instead of reprocessing ~6k tokens.
+    L.append(f"Season {ctx.get('season')}, week {ctx.get('current_week')}.")
     lwk = (ctx.get("last_week") or {}).get("week")
     L.append(f"{this_week_label(ctx)}." + (f" {last_week_label(ctx)} is done, every game final." if lwk else "")
              + f" A result from week {ctx.get('current_week')} is THIS WEEK, never 'last week'.")
@@ -1199,8 +1201,6 @@ def render_context(ctx: dict) -> str:
         recent = sorted(wk)[-3:]
         if recent:
             line += " | weeks: " + ", ".join(f"{_week_tag(ctx, w)} {wk[w][0]}-{wk[w][1]}" for w in recent)
-        if r["team"] == me:
-            line += "  <- the user"
         L.append(line)
     if st:
         def _who(rank):
@@ -1223,7 +1223,6 @@ def render_context(ctx: dict) -> str:
         L.append("PICKS ARE LOCKED for this week" + (f" (they locked at the first kickoff, {_kickoff(min(starts))})"
                                                     if starts else "")
                  + ". Nobody can change or flip a pick now.")
-    mine = {p["game_id"]: p["pick"] for p in revealed.get(me, [])}
     cf = _cfbd_index()
     for i, g in enumerate(games, 1):
         away, home = g["away"], g["home"]
@@ -1266,20 +1265,16 @@ def render_context(ctx: dict) -> str:
             heads = notes.get("headlines") or []
             L.append("  Headlines: " + (" | ".join(heads) if heads else "none about these teams."))
         L.extend(cfbd_game_lines(away, home, cf))
-        L.append(f"  {me}'s pick: {mine[g['id']]}" if g["id"] in mine else f"  {me}'s pick: not made yet")
-        if g["id"] in mine:
-            pv = (pick_verdict(notes, away, home, g.get("line"), mine[g["id"]], locked)
-                  if notes and not notes.get("unavailable") else None)
-            L.append(f"  Value check on {me}'s pick: {pv}" if pv else
-                     f"  Value check on {me}'s pick: none, no market line right now. Don't call it "
-                     "the value side or the wrong side.")
-        others = {t: p["pick"] for t, plist in revealed.items() if t != me
+        # Once a game unlocks every member sees every pick in it (the user's
+        # too), so the list is the same for all; before that only the user's
+        # own pick is visible, and it goes in you_block.
+        others = {t: p["pick"] for t, plist in revealed.items()
                   for p in plist if p["game_id"] == g["id"]}
-        if others:
+        if any(t != me for t in others):
             sides = collections.defaultdict(list)
             for t, pk in sorted(others.items()):
                 sides[pk].append(t)
-            L.append("  Other picks (revealed): " + "; ".join(
+            L.append("  Picks (revealed): " + "; ".join(
                 f"{pick_label(notes, g, pk)}: {', '.join(ts)}" for pk, ts in sides.items()))
         elif status == "not started":
             L.append(f"  Other teams' picks: locked away until {_unlock(ctx, g)}. "
@@ -1320,11 +1315,8 @@ def render_context(ctx: dict) -> str:
         for g in lw["games"]:
             score = (f"{g['away']} {_num(g['away_pts'])}, {g['home']} {_num(g['home_pts'])}"
                      if g.get("away_pts") is not None else f"{g['away']} at {g['home']} (score missing)")
-            mine_lw = (g.get("picks") or {}).get(me)
-            you_lw = (f" {me} took {mine_lw} ({'HIT' if same_team(mine_lw, g.get('covered')) else 'MISS'})."
-                      if mine_lw else "")
             L.append(f"- {score}. Pool line {pool_line(g['away'], g['home'], g.get('line'))}. "
-                     f"Covered: {g.get('covered') or 'unknown'}.{you_lw}")
+                     f"Covered: {g.get('covered') or 'unknown'}.")
             sides = collections.defaultdict(list)
             for t, pk in sorted((g.get("picks") or {}).items()):
                 sides[pk].append(t)
@@ -1344,8 +1336,7 @@ def render_context(ctx: dict) -> str:
             hits = sum(ok for _, ok in res)
             L.append(f"- {t} went {hits}-{len(res) - hits}. "
                      f"Hits: {', '.join(pk for pk, ok in res if ok) or 'none'}. "
-                     f"Misses: {', '.join(pk for pk, ok in res if not ok) or 'none'}."
-                     + ("  <- the user" if t == me else ""))
+                     f"Misses: {', '.join(pk for pk, ok in res if not ok) or 'none'}.")
         groups: dict = collections.defaultdict(list)
         for t in order:
             if t in by_team:
@@ -1357,14 +1348,50 @@ def render_context(ctx: dict) -> str:
         L.append("")
         L.append("LAST WEEK: no data.")
 
+    return "\n".join(L)
+
+
+def you_block(ctx: dict) -> str:
+    """The caller's own rows, plus the bits that change every few minutes
+    (jackpot pulls). Goes after the shared LEAGUE DATA prefix."""
+    if ctx.get("error"):
+        return ""
+    me = (ctx.get("you") or {}).get("team_name") or "(you)"
+    games = ctx.get("games_this_week") or []
+    revealed = ctx.get("revealed_picks_this_week") or {}
+    espn_all = ctx.get("espn")
+    st = ctx.get("standings_ytd") or []
+    locked = week_locked(ctx)
+    row = next((r for r in st if r["team"] == me), None)
+    L = [f"THE USER is the team \"{me}\""
+         + (f" ({_ordinal(row['rank'])} place, {row['w']}-{row['l']})" if row else "") + "."]
+    mine = {p["game_id"]: p["pick"] for p in revealed.get(me, [])}
+    L.append(f"{me}'s picks this week:")
+    for i, g in enumerate(games, 1):
+        away, home = g["away"], g["home"]
+        L.append(f"  Game {i} ({away} at {home}): {me}'s pick: "
+                 + (mine[g["id"]] if g["id"] in mine else "not made yet"))
+        if g["id"] in mine:
+            notes = (espn_all or {}).get(g["id"]) if espn_all is not None else None
+            pv = (pick_verdict(notes, away, home, g.get("line"), mine[g["id"]], locked)
+                  if notes and not notes.get("unavailable") else None)
+            L.append(f"    Value check on {me}'s pick: {pv}" if pv else
+                     f"    Value check on {me}'s pick: none, no market line right now. Don't call it "
+                     "the value side or the wrong side.")
+    lw = ctx.get("last_week") or {}
+    res = [(g["picks"][me], same_team(g["picks"][me], g.get("covered")))
+           for g in lw.get("games") or [] if (g.get("picks") or {}).get(me)]
+    if res:
+        hits = sum(ok for _, ok in res)
+        L.append(f"LAST WEEK (week {lw['week']}) {me} went {hits}-{len(res) - hits}: "
+                 + ", ".join(f"took {pk} ({'HIT' if ok else 'MISS'})" for pk, ok in res) + ".")
+    L.append(f"{me} has {'made' if ctx.get('you_have_picks_this_week') else 'NOT made'} picks this week.")
+
     jp = ctx.get("jackpot") or {}
     if jp.get("pulls_since_pop") is not None:
         last = f"; last popped by {jp['last_pop_team']}" if jp.get("last_pop_team") else ""
         L.append("")
         L.append(f"SLOTS JACKPOT: {jp['pulls_since_pop']} pulls since it last popped{last}.")
-
-    L.append("")
-    L.append(f"{me} has {'made' if ctx.get('you_have_picks_this_week') else 'NOT made'} picks this week.")
 
     if ctx.get("mode") == "picks" and ctx.get("rivals"):
         L.append("")
@@ -1586,12 +1613,19 @@ def picky_player_block(ctx: dict) -> str:
 
 
 def _system_prompt(ctx: dict) -> str:
-    """Byte-identical for a given user and data snapshot, so Ollama can reuse
-    the processed prompt. Anything that changes per message (clock, focus on
-    the people named in the question) goes in _user_turn instead."""
-    you = ctx.get("you", {}).get("team_name", "you")
+    """Shared prefix (same bytes for every member) + the caller's tail.
+    Anything that changes per message (focus on the people named in the
+    question, riders) goes in _user_turn instead."""
+    return prompt_prefix(ctx) + _system_tail(ctx)
+
+
+def prompt_prefix(ctx: dict) -> str:
+    """Instructions + LEAGUE DATA, byte-identical for every member for a given
+    data snapshot. qwen3.5 is a hybrid (recurrent) model: llama.cpp can only
+    reuse a cached prompt up to a saved checkpoint, so _prime puts one at the
+    end of this prefix and each request processes only the tail. Nothing
+    per-user, per-mode or per-minute may go in here."""
     n = len(ctx.get("games_this_week") or [])
-    now = _now_ct_naive()
     return (
         "You are Picky, the mascot of a college football pick'em league among "
         "friends: a cocky, savage, foul-mouthed sports-radio heel who thinks "
@@ -1664,10 +1698,20 @@ def _system_prompt(ctx: dict) -> str:
         "(+13.5) covers by winning, or losing by 13 or fewer. A covered pick "
         "is a point.\n\n"
         + EXAMPLES
-        + (PICKS_MODE_RIDER if ctx.get("mode") == "picks" else LEADERBOARD_MODE_RIDER)
         + "\n\nLEAGUE DATA:\n"
         + render_context(ctx)
         + picky_player_block(ctx)
+        + "\n(End of league data.)"
+    )
+
+
+def _system_tail(ctx: dict) -> str:
+    you = ctx.get("you", {}).get("team_name", "you")
+    now = _now_ct_naive()
+    yb = you_block(ctx)
+    return (
+        "\n\n" + (PICKS_MODE_RIDER if ctx.get("mode") == "picks" else LEADERBOARD_MODE_RIDER).strip()
+        + ("\n\n" + yb if yb else "")
         + f"\n\nThe user reading this is \"{you}\": call them 'you'. Everyone "
         "else is 'he' or 'they', by name."
         + (DADDYFREEMAN_RIDER if ctx.get("daddyfreeman") else "")
@@ -1880,7 +1924,26 @@ def looping(text: str) -> bool:
     return max(heads.values()) >= 6 or max(whole.values()) >= 3
 
 
-async def _ollama_stream(messages: list[dict]):
+# The prefix checkpoint (see prompt_prefix). Every request first sends the
+# shared prefix alone as a raw prompt, which leaves a checkpoint right at its
+# end; the real request then processes only the tail. When the checkpoint is
+# already there (the usual case) the prime costs ~0.1 s; after a data change
+# (kickoff, final, ESPN refresh) or a model reload it rebuilds it once.
+async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
+    payload = {"model": MODEL, "prompt": "<|im_start|>system\n" + prefix, "raw": True,
+               "stream": False, "options": {**OLLAMA_OPTIONS, "num_predict": 1},
+               "keep_alive": OLLAMA_KEEP_ALIVE}
+    try:
+        r = await c.post(f"{OLLAMA}/api/generate", json=payload)
+        if r.status_code == 200:
+            d = r.json()
+            log.info("prime: %.1fs (prefix %s)", (d.get("prompt_eval_duration") or 0) / 1e9,
+                     format(hash(prefix) & 0xffffff, "06x"))
+    except httpx.HTTPError as e:
+        log.warning("prime failed: %s", e)
+
+
+async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     """Yield SSE-framed assistant tokens from Ollama."""
     payload = {"model": MODEL, "messages": messages, "stream": True, "options": OLLAMA_OPTIONS,
                "keep_alive": OLLAMA_FALLBACK_KEEP_ALIVE if CLAUDE else OLLAMA_KEEP_ALIVE}
@@ -1892,6 +1955,8 @@ async def _ollama_stream(messages: list[dict]):
     text = ""
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
+            if prefix:
+                await _prime(c, prefix)
             async with c.stream("POST", f"{OLLAMA}/api/chat", json=payload) as r:
                 if r.status_code != 200:
                     body = await r.aread()
@@ -1915,6 +1980,7 @@ async def _ollama_stream(messages: list[dict]):
                             return
                         yield _sse({"content": chunk})
                     if obj.get("done"):
+                        log.info("ollama prompt eval %.1fs", (obj.get("prompt_eval_duration") or 0) / 1e9)
                         yield "data: [DONE]\n\n"
                         return
     except httpx.HTTPError as e:
@@ -1922,7 +1988,7 @@ async def _ollama_stream(messages: list[dict]):
         yield _sse({"error": "ollama_unreachable"})
 
 
-async def _model_stream(messages: list[dict]):
+async def _model_stream(messages: list[dict], prefix: str | None = None):
     """Claude first; on any API failure before the first token, the local
     Ollama model answers instead. `messages[0]` is the system prompt."""
     if CLAUDE:
@@ -1949,7 +2015,7 @@ async def _model_stream(messages: list[dict]):
             if started:
                 yield _sse({"error": "model_error"})
                 return
-    async for chunk in _ollama_stream(messages):
+    async for chunk in _ollama_stream(messages, prefix):
         yield chunk
 
 
@@ -2161,7 +2227,8 @@ async def chat(req: Request):
     await asyncio.to_thread(_cfbd_index)
     ctx["daddyfreeman"] = user_id == DADDYFREEMAN_USER_ID
 
-    sys_msg = {"role": "system", "content": _system_prompt(ctx)}
+    prefix = prompt_prefix(ctx)
+    sys_msg = {"role": "system", "content": prefix + _system_tail(ctx)}
     convo = [sys_msg] + [
         {"role": m["role"], "content": m["content"]}
         for m in messages
@@ -2174,7 +2241,7 @@ async def chat(req: Request):
     ]
 
     return StreamingResponse(
-        _keepalive(_with_opener(opener, _scrubbed(_model_stream(convo), looks_bait(last.get("content", ""))))),
+        _keepalive(_with_opener(opener, _scrubbed(_model_stream(convo, prefix), looks_bait(last.get("content", ""))))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
