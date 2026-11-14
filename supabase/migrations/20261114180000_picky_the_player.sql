@@ -60,23 +60,23 @@ create policy teams_exhibition_locked on public.teams
 drop policy if exists picks_hide_exhibition on public.picks;
 create policy picks_hide_exhibition on public.picks
   as restrictive for select to anon, authenticated
-  using (team_id <> all ((select public.exhibition_team_ids())));
+  using (team_id <> all (coalesce((select public.exhibition_team_ids()), '{}'::bigint[])));
 
 drop policy if exists picks_exhibition_insert on public.picks;
 create policy picks_exhibition_insert on public.picks
   as restrictive for insert to anon, authenticated
-  with check (team_id <> all ((select public.exhibition_team_ids())));
+  with check (team_id <> all (coalesce((select public.exhibition_team_ids()), '{}'::bigint[])));
 
 drop policy if exists picks_exhibition_update on public.picks;
 create policy picks_exhibition_update on public.picks
   as restrictive for update to anon, authenticated
-  using (team_id <> all ((select public.exhibition_team_ids())))
-  with check (team_id <> all ((select public.exhibition_team_ids())));
+  using (team_id <> all (coalesce((select public.exhibition_team_ids()), '{}'::bigint[])))
+  with check (team_id <> all (coalesce((select public.exhibition_team_ids()), '{}'::bigint[])));
 
 drop policy if exists picks_exhibition_delete on public.picks;
 create policy picks_exhibition_delete on public.picks
   as restrictive for delete to anon, authenticated
-  using (team_id <> all ((select public.exhibition_team_ids())));
+  using (team_id <> all (coalesce((select public.exhibition_team_ids()), '{}'::bigint[])));
 
 -- ---------- Picky's trash talk, one line per pick ----------
 create table if not exists public.picky_pick_blurbs (
