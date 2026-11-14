@@ -615,16 +615,17 @@
     let liveState = null;   // { season, gameIds:Set, openStarted:Set, renderOdds(rowsById), nextKickoff:Date|null }
 
     let loadSeq = 0;
-    // Picky the player (exhibition bot), behind the pickyOn() flag: his record
-    // goes under the humans, never sorted in with them. His picks are hidden
-    // from every other query on this page, so nothing else here counts him.
-    function appendPickySeasonRow(season, stale){
+    // Picky the player (exhibition bot), behind the pickyOn() flag: hands his
+    // picky_player() answer to `paint`, which sorts him into the season table
+    // like anyone else. His picks are hidden from every other query on this
+    // page, so nothing else here counts him.
+    function appendPickySeasonRow(season, stale, paint){
       import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
         if (!pickyOn()) return;
         const pp = await import('./js/pickyPlayer.js');
         const pl = await pp.loadPickyPlayer(season);
         if (!pl || stale()) return;
-        seasonBody.appendChild(pp.pickySeasonRow(pl));
+        paint(pl);
       }).catch(e => console.warn('picky player unavailable:', e));
     }
 
@@ -1044,20 +1045,44 @@
           pctStr,
           missedWeeks
         };
-      }).sort((a,b)=> b.pct - a.pct || a.team.localeCompare(b.team));
+      });
+      const bySeasonPct = (a,b)=> b.pct - a.pct || a.team.localeCompare(b.team);
+      seasonRows.sort(bySeasonPct);
 
-      seasonBody.innerHTML =
-        seasonRows.length
-          ? seasonRows.map(r =>
-              `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
-                <td class="px-4 py-2">${escapeHtml(r.team)}</td>
-                <td class="px-4 py-2">${r.record}</td>
-                <td class="px-4 py-2">${r.pctStr}</td>
-                <td class="px-4 py-2">${r.missedWeeks}</td>
-              </tr>`
-            ).join('')
-          : `<tr><td class="px-4 py-2 text-gray-300" colspan="4">No decided picks yet.</td></tr>`;
-      appendPickySeasonRow(season, stale);
+      const renderSeasonRows = rows => {
+        seasonBody.innerHTML =
+          rows.length
+            ? rows.map(r =>
+                `<tr class="border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]">
+                  <td class="px-4 py-2">${escapeHtml(r.team)}</td>
+                  <td class="px-4 py-2">${r.record}</td>
+                  <td class="px-4 py-2">${r.pctStr}</td>
+                  <td class="px-4 py-2">${r.missedWeeks}</td>
+                </tr>`
+              ).join('')
+            : `<tr><td class="px-4 py-2 text-gray-300" colspan="4">No decided picks yet.</td></tr>`;
+      };
+      renderSeasonRows(seasonRows);
+      // His row is built by the same rules as the humans' above (this season's
+      // picked games before week 16, decided ones only, same missed-week
+      // count), and like a human with no decided picks he isn't listed yet.
+      appendPickySeasonRow(season, stale, pl => {
+        let wins = 0, total = 0;
+        const played = new Set();
+        for (const p of pl.picks || []) {
+          const meta = gameMeta[p.game_id];
+          if (!meta) continue;
+          played.add(meta.week == null ? null : Number(meta.week));
+          if (meta.winner != null) { total++; if (isWin(p, meta.winner)) wins++; }
+        }
+        if (!total) return;
+        let missedWeeks = 0;
+        for (const w of allWeeksWithPicks) if (!played.has(w)) missedWeeks++;
+        const pct = wins / total;
+        renderSeasonRows([...seasonRows, {
+          team: pl.team_name, record: `${wins}-${total - wins}`, pct, pctStr: pct3(pct), missedWeeks
+        }].sort(bySeasonPct));
+      });
 
       // ------- Favorite Pick % (exclude weeks that haven't started) -------
       const favStats = new Map(); // team_id -> { fav: n, opp: d }

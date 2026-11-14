@@ -1738,8 +1738,9 @@
     }
 
     // Picky the player (exhibition bot), behind the pickyOn() flag: once a
-    // game's picks are revealed its card says what he took and his line.
-    // picky_player() only returns revealed picks, so this can't leak one early.
+    // game's picks are revealed its card says what he took; tapping the pick
+    // opens his line. picky_player() only returns revealed picks, so this
+    // can't leak one early.
     function paintPickyPicks(){
       if (currentSeason == null) return;
       const season = currentSeason;

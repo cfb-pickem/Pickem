@@ -573,6 +573,10 @@
 
     let lastTeams = [];
     let lastPickMap = {};
+    // Picky the player (see pickyForBoard) and renderTable()'s last arguments,
+    // so his row can be painted in once picky_player() answers.
+    let pickyMod = null, pickyPl = null, pickyPlSeason = null, pickyPlKey = '';
+    let lastRenderArgs = null;
     // Which cells the slots decided. Read by the reveal in js/slots.js; see
     // buildSlotsMap for why it is not folded into lastPickMap.
     let lastSlotsMap = {};
@@ -1437,6 +1441,9 @@
       stopLiveTicker();
       headerStatusEls.clear();
 
+      // Picky's row is fetched alongside, so he's usually in the first paint
+      // instead of popping in after the reveal (see renderTable/pickyForBoard).
+      const pickyReady = loadPicky();
       const cache = await loadSeasonData(currentSeason);
       if(!cache) return;
       if(mySeq !== loadSeq) return;   // a newer selection won
@@ -1497,6 +1504,9 @@
 
       lastTeams = teamsSorted;
       lastPickMap = pickMap;
+
+      await Promise.race([pickyReady, new Promise(r => setTimeout(r, 1500))]);
+      if(mySeq !== loadSeq) return;
 
       const gameNameMap = buildGameNameMap(games);
       renderHeader(gameNameMap, games);
@@ -2485,9 +2495,36 @@
       // set forty cells spinning before the board can be read.
       document.body.dataset.liveWeek =
         (!playoffMode && liveWeek != null && currentWeek === liveWeek) ? '1' : '0';
+      lastRenderArgs = [teams, pickMap, winnerMap, revealPicks, pointsMap, playoffMode];
+      if (pickyMod) pickyMod.closePickyBlurb();   // its cell is about to go
       tbody.innerHTML = '';
       coverCells.clear();
       const lonely = lonelyPicks(teams, pickMap, gameIds);
+
+      // Picky the player is merged in HERE and nowhere else, at paint time:
+      // `teams`, `pickMap` and `pointsMap` stay humans-only, so the playoff cut
+      // below, lastTeams and everything outside this function are computed as
+      // if he didn't exist. `rows` is only what gets drawn.
+      const picky = pickyForBoard(playoffMode);
+      let rows = teams, boardPicks = pickMap, boardPoints = pointsMap;
+      if (picky) {
+        const pid = picky.team.team_id;
+        boardPicks = { ...pickMap, [pid]: picky.picks };
+        boardPoints = { ...(pointsMap || {}), [pid]: picky.points };
+        // Same order as loadWeek(): points, then name. Inserted rather than
+        // re-sorted so the humans' order can't change.
+        const after = t => {
+          const d = getPoints(boardPoints, t.team_id) - picky.points;
+          return d < 0 || (d === 0 && picky.team.team_name.localeCompare(t.team_name) < 0);
+        };
+        const at = teams.findIndex(after);
+        rows = [...teams];
+        rows.splice(at < 0 ? rows.length : at, 0, picky.team);
+        // His lonely picks count him in the field; the humans' never do.
+        for (const k of lonelyPicks(rows, boardPicks, gameIds)) {
+          if (k.startsWith(pid + ':')) lonely.add(k);
+        }
+      }
 
       const pointsArray = teams.map(t => getPoints(pointsMap, t.team_id));
       const cutoffPts = pointsArray.length ? (pointsArray[Math.min(3, pointsArray.length - 1)] || 0) : 0;
@@ -2514,7 +2551,7 @@
       const shouldInsertDivider = playoffLineDue
         && lastCutIndex >= 0 && lastCutIndex < teams.length - 1;
 
-      teams.forEach((team, idx)=>{
+      rows.forEach(team=>{
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
 
@@ -2548,7 +2585,7 @@
               games: lastGames,
               season: currentSeason,
               revealed: revealPicks,
-              pickMap,
+              pickMap: boardPicks,
               viewerTeamId: currentTeamId
             });
           });
@@ -2561,7 +2598,7 @@
 
         const tdPts = document.createElement('td');
         tdPts.className = 'pl-2 pr-3 py-2 text-center font-semibold text-[var(--cfp-ivory)]';
-        tdPts.textContent = getPoints(pointsMap, team.team_id).toString();
+        tdPts.textContent = getPoints(boardPoints, team.team_id).toString();
         tr.appendChild(tdPts);
 
         gameIds.forEach(id=>{
@@ -2586,7 +2623,7 @@
             return;
           }
 
-          const pick   = pickMap[team.team_id]?.[id];
+          const pick   = boardPicks[team.team_id]?.[id];
           const winner = winnerMap[id];
           const hasPick = !!(pick && String(pick).trim() !== '');
 
@@ -2636,6 +2673,8 @@
           }else{
             td.textContent = hasPick ? pick : '—';
           }
+          // His trash talk opens on a tap of the cell, never on its own.
+          if (hasPick && picky && team === picky.team) picky.wire(td, id);
 
           if(hasPick){
             // Tag the cells the slots decided. The reveal in js/slots.js reads
@@ -2679,7 +2718,7 @@
 
         tbody.appendChild(tr);
 
-        if(shouldInsertDivider && idx === lastCutIndex){
+        if(shouldInsertDivider && team === teams[lastCutIndex]){
           const divTr = document.createElement('tr');
           divTr.className = 'playoff-divider';
           const divTd = document.createElement('td');
@@ -2697,38 +2736,49 @@
       });
 
       paintCovers();
-      appendPickyPlayer(gameIds.map(id => ({ gameId: id, reveal: revealPicks })),
-        !playoffMode && !isTiebreakerView && !isPlayoffView);
+      if (!playoffMode && !isTiebreakerView && !isPlayoffView) refreshPickyPlayer();
     }
 
-    // Picky the player: an exhibition row under every human, only behind the
-    // pickyOn() flag. It is drawn after the board is finished, below the
-    // projected-playoff line, so it can never move a human or the cut. His team
-    // and picks are invisible to every other read (RLS), so the points and
-    // order above are computed exactly as if he didn't exist.
-    let pickyRenderSeq = 0;
-    function appendPickyPlayer(cells, wanted){
-      const tok = ++pickyRenderSeq;
-      const talk = document.getElementById('picky-talk');
-      if (talk) talk.hidden = true;
-      if (!wanted) return;
-      const week = Number(currentWeek), season = currentSeason;
-      import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
+    // Picky the player, only behind the pickyOn() flag: drawn as a normal row,
+    // sorted in by points. His team and picks are invisible to every other read
+    // (RLS), so lastTeams, the points maps and the playoff cut never include
+    // him; renderTable() merges him into the drawn rows only. Regular-season
+    // week boards only (never playoff or tiebreaker boards).
+    function pickyForBoard(playoffMode){
+      if (playoffMode || isTiebreakerView || isPlayoffView) return null;
+      if (!pickyMod || !pickyPl || pickyPlSeason !== currentSeason) return null;
+      const pl = pickyPl, week = Number(currentWeek);
+      const picks = {};
+      for (const id of gameIds) {
+        const p = pickyMod.pickyPickFor(pl, id);
+        if (p) picks[id] = p.pick;
+      }
+      return {
+        team: { team_id: Number(pl.team_id), team_name: pl.team_name },
+        picks,
+        // Same rule as computeSeasonWinsThroughWeek(): nothing without a week.
+        points: Number.isFinite(week) ? pickyMod.pickyRecord(pl, { throughWeek: week }).w : 0,
+        wire: (el, id) => pickyMod.wirePickyBlurb(el, pl, id)
+      };
+    }
+    // Resolves truthy only when his data changed. Never rejects.
+    function loadPicky(){
+      const season = currentSeason;
+      return import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
         if (!pickyOn()) return;
         const pp = await import('./js/pickyPlayer.js');
         const pl = await pp.loadPickyPlayer(season);
-        if (!pl || tok !== pickyRenderSeq) return;
-        tbody.appendChild(pp.pickyRow(pl, {
-          points: pp.pickyRecord(pl, { throughWeek: week }).w, cells, logoFor: getLogoForPickExact
-        }));
-        let el = document.getElementById('picky-talk');
-        if (!el) {
-          el = document.createElement('div');
-          el.id = 'picky-talk';
-          document.getElementById('table-scroll-wrap').after(el);
-        }
-        pp.renderPickyTalk(el, pl, week);
-      }).catch(e => console.warn('picky player unavailable:', e));
+        if (season !== currentSeason) return false;
+        const key = pl ? JSON.stringify(pl) : '';
+        if (pickyMod && season === pickyPlSeason && key === pickyPlKey) return false;
+        pickyMod = pp; pickyPl = pl; pickyPlSeason = season; pickyPlKey = key;
+        return true;
+      }).catch(e => { console.warn('picky player unavailable:', e); return false; });
+    }
+    function refreshPickyPlayer(){
+      loadPicky().then(changed => {
+        if (changed) repaintOrDefer(() => { if (lastRenderArgs) renderTable(...lastRenderArgs); });
+      });
     }
 
     // Who has submitted this week.
