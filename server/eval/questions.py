@@ -285,10 +285,11 @@ def build(t: Truth) -> list[dict]:
     add("rules-tiebreaker-points", "rules", ["Do tiebreaker games count for points?"], c_tb)
 
     def c_lock(a, t, p):
-        return [must("locks_at_kickoff", any_of(a[-1], "kick ?off", "kicks off", "game starts", "start"), "")]
-    add("rules-deadline", "rules", ["When do picks lock?"], c_lock)
+        return [must("locks_at_first_kickoff", any_of(a[-1], "first (game|kickoff)", "kick ?off", "kicks off", "game starts", "start"), "")]
+    add("rules-deadline", "rules", ["When do picks lock?"], c_lock,
+        judge="Matches the rules source: regular season, all picks lock at the week's first scheduled kickoff.")
     add("rules-change-after-start", "rules", ["Can I change my pick after the game starts?"],
-        lambda a, t, p: [must("no_change", any_of(a[-1], r"\bno\b", "can'?t", "locked", "nope"), "")])
+        lambda a, t, p: [must("no_change", any_of(a[-1], r"\bno\b", "can'?t", "locked", "nope", "commish", "commissioner"), "")])
 
     def c_jp(a, t, p):
         x = a[-1]
@@ -296,14 +297,27 @@ def build(t: Truth) -> list[dict]:
     add("rules-jackpot", "rules", ["How does the jackpot work?"], c_jp,
         judge="Matches the rules source: slots pick can pop the football = automatic win, one point.")
 
-    add("rules-season-tiebreak", "rules", ["How are ties in the final season standings broken?"],
-        lambda a, t, p: [], judge="Matches the rules source if it defines it; otherwise says ask the commissioner. No invented procedure.")
+    def c_tbk(a, t, p):
+        x = a[-1]
+        if not t.rules_text or "conference championship" not in t.rules_text.lower():
+            return [must("ask_commissioner", any_of(x, "commish", "commissioner"), "")]
+        return [must("tiebreak_order", any_of(x, "conference championship", "conf(erence)? title") and any_of(x, "army", "navy"),
+                     "conf championship wins, then Army-Navy, ...")]
+    add("rules-season-tiebreak", "rules", ["How are ties in the final season standings broken?"], c_tbk,
+        judge="Matches the rules source order; no invented procedure.")
+
+    def c_pay(a, t, p):
+        x = a[-1]
+        if not t.rules_text or "$25" not in t.rules_text:
+            return [must("ask_commissioner", any_of(x, "commish", "commissioner"), "")]
+        return [must("second_place_25", has_num(x, 25) and any_of(x, "buy-?in"), "2nd: buy-in back + $25")]
+    add("rules-payouts", "rules", ["What do second and third place win?"], c_pay)
 
     def c_unknown(a, t, p):
         x = a[-1]
         return [must("ask_commissioner", any_of(x, "commish", "commissioner"), ""),
-                must("no_dollar_amount", not any_of(x, r"\$\s?\d"), "")]
-    add("rules-unknown", "rules", ["What's the buy-in and how much does the winner get paid?"], c_unknown)
+                must("no_invented_rule", not any_of(x, r"\bautomatically (counts?|wins?|loses?)\b", r"\bgets? (a|the) point\b"), "")]
+    add("rules-unknown", "rules", ["What happens to my pick if a game gets postponed?"], c_unknown)
 
     # ---- player/team stats ------------------------------------------------------------------
     pool_teams = [x for g in games for x in (g["away"], g["home"])]

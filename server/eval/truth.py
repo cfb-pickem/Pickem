@@ -146,9 +146,19 @@ class Truth:
         return out
 
     # ---- this week -------------------------------------------------------------
-    def locked(self, g: dict) -> bool:
+    def _game_started(self, g: dict) -> bool:
+        if g.get("winner"):
+            return True
         raw = {"Status": g.get("status"), "Start (CT)": g.get("start")}
         return chat._game_is_locked(raw, self.now)
+
+    def locked(self, g: dict) -> bool:
+        """The site's rule (js/kickoff.js, index.html): in the regular season
+        (weeks 0-15) the whole week locks and is revealed as soon as ANY of
+        its games has started; in the playoffs each game on its own."""
+        if isinstance(self.week, int) and self.week <= 15:
+            return any(self._game_started(x) for x in self.games)
+        return self._game_started(g)
 
     @property
     def hidden_games(self) -> list[dict]:

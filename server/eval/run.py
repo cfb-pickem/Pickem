@@ -33,10 +33,19 @@ import sys
 import time
 from pathlib import Path
 
+import os
+import plistlib
+
 import httpx
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+# Same model settings as the live service (model, think, keep_alive), so the
+# in-process --at mode runs exactly what com.pickem.chat runs.
+_PLIST = Path.home() / "Library/LaunchAgents/com.pickem.chat.plist"
+if _PLIST.exists():
+    for k, v in (plistlib.loads(_PLIST.read_bytes()).get("EnvironmentVariables") or {}).items():
+        os.environ.setdefault(k, str(v))
 import checks  # noqa: E402
 import questions  # noqa: E402
 from truth import Truth, chat  # noqa: E402
@@ -107,7 +116,7 @@ def grade(item: dict, answers: list[str], t: Truth, P: dict) -> list:
     res = []
     for i, a in enumerate(answers):
         for name, ok, det in (checks.check_no_error(a), checks.check_privacy(a, t, caller),
-                              checks.check_record_claims(a, t), checks.check_no_money(a),
+                              checks.check_record_claims(a, t), checks.check_no_money(a, t.rules_text),
                               checks.check_no_slurs(a)):
             res.append((f"{name}" + (f"@t{i + 1}" if len(answers) > 1 else ""), ok, det))
     res.append(checks.check_ack(answers, item["persona"] == "df"))
@@ -205,6 +214,11 @@ def render(run: dict, judge: dict) -> str:
 
 
 async def run(args):
+    if args.at:
+        # In-process, clock frozen: tests "before kickoff" on a day the slate
+        # has already started. Same app and model; auth stubbed to the persona.
+        frozen = dt.datetime.fromisoformat(args.at)
+        chat._now_ct_naive = lambda: frozen
     t = await Truth().load()
     P = questions.personas(t)
     items = questions.build(t)
@@ -220,12 +234,25 @@ async def run(args):
     url = LOCAL if args.local else (args.url or REMOTE)
     started = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     tag = args.tag or dt.datetime.now().strftime("%Y%m%d-%H%M")
-    jwts = {k: mint_jwt(t.key, t.uid_by_team[v]) for k, v in P.items() if v}
+    if args.at:
+        url = "http://picky/chat"
+        jwts = {k: t.uid_by_team[v] for k, v in P.items() if v}
+
+        async def fake_verify(_client, jwt):
+            return jwt
+        chat._verify_jwt = fake_verify
+        chat.RATE_LIMIT_PER_MIN = 10_000
+        transport = httpx.ASGITransport(app=chat.app)
+    else:
+        jwts = {k: mint_jwt(t.key, t.uid_by_team[v]) for k, v in P.items() if v}
+        transport = None
     pacer = Pacer()
     model = None
-    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=300, write=10, pool=10)) as client:
+    async with httpx.AsyncClient(transport=transport, timeout=httpx.Timeout(connect=10, read=300, write=10, pool=10)) as client:
         try:
             model = (await client.get(url.replace("/chat", "/health"))).json().get("model")
+            if args.at:
+                model = f"{model} (in-process, clock frozen at {args.at})"
         except Exception:  # noqa: BLE001
             pass
         cold_s = None
@@ -289,6 +316,7 @@ def main():
     ap.add_argument("--tag", default="")
     ap.add_argument("--cold", action="store_true")
     ap.add_argument("--image", action="store_true")
+    ap.add_argument("--at", default="", help="run in-process with the CT clock frozen, e.g. 2026-11-14T08:00")
     ap.add_argument("--judge", default="")
     ap.add_argument("--dry", action="store_true", help="print the exam without asking anything")
     ap.add_argument("--render", default="", help="re-render a results JSON (with --judge) without asking anything")

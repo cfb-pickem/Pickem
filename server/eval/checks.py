@@ -131,9 +131,12 @@ def check_record_claims(ans: str, t: Truth) -> Result:
     return "record_claims", not bad, ", ".join(bad)
 
 
-def check_no_money(ans: str) -> Result:
-    m = re.search(r"\$\s?\d|\b\d+ (bucks|dollars|units)\b", ans, re.I)
-    return "no_money", not m, m.group(0) if m else ""
+def check_no_money(ans: str, rules_text: str | None = None) -> Result:
+    """Dollar amounts only if the rules source states them (e.g. 2nd place's $25)."""
+    allowed = set(re.findall(r"\$\s?(\d+)", rules_text or ""))
+    bad = [m.group(0) for m in re.finditer(r"\$\s?(\d+)|\b(\d+) (bucks|dollars|units)\b", ans, re.I)
+           if (m.group(1) or m.group(2)) not in allowed]
+    return "no_money", not bad, ", ".join(bad)
 
 
 def check_no_slurs(ans: str) -> Result:
