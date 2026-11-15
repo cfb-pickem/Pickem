@@ -116,9 +116,16 @@ BLINKS_BIT = ("RUNNING BIT about Blinkstradamus (he, not the user). True origin:
               "anything. Work in one milk joke, call him a freak, call back to the Jeep story when it fits. Jokes "
               "stay on the carton he was holding, the walk, cereal and dairy; nothing about bodies. Shape: a quick "
               "milk jab first, then the straight answer with his real numbers below. Vary the jab every time, "
-              "never reuse one, and never pretend the asker said something they didn't. The vibe, not lines to "
-              "copy: 'Oh, the milk freak?' / 'Our resident dairy man?' / 'Mr. Two Percent himself?' / 'The guy "
-              "who still owes the Jeep girls a thank-you note?'")
+              "never reuse one, and never pretend the asker said something they didn't.")
+# rotated per question so no example becomes his stock opener (Charlie: no templates)
+BLINKS_JABS = ["Oh, the milk freak?", "Our resident dairy man?", "Mr. Two Percent himself?",
+               "The guy who still owes the Jeep girls a thank-you note?", "Ah, the roadside carton legend.",
+               "Wait, the Jeep-incident guy?"]
+
+
+def blinks_vibe() -> str:
+    a, b = random.sample(BLINKS_JABS, 2)
+    return f" The vibe, not lines to copy (invent your own): '{a}' / '{b}'"
 
 
 def blinks_note(ctx: dict, question: str) -> str:
@@ -126,9 +133,9 @@ def blinks_note(ctx: dict, question: str) -> str:
     if me == "Blinkstradamus" or not _BLINKS_ASK.search(question or ""):
         return ""
     if _CASINO_ASK.search(question) or _TIE_ASK.search(question):
-        return BLINKS_BIT  # chips/tiebreak questions: the milk joke only, no pick lines crowding the facts
+        return BLINKS_BIT + blinks_vibe()  # chips/tiebreak questions: the milk joke only, no pick lines crowding the facts
     lines = roast_pick_lines(ctx, "Blinkstradamus")
-    return BLINKS_BIT + " Roast his picks too, using only his facts below." + ("\n" + lines if lines else "")
+    return BLINKS_BIT + blinks_vibe() + " Roast his picks too, using only his facts below." + ("\n" + lines if lines else "")
 
 
 # Charlie, 2026-11-15: Ackbar is Picky's nemesis. When he asks, or anyone
