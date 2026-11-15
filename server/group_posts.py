@@ -7,7 +7,7 @@ LaunchAgent com.pickem.picky-group-posts runs `group_posts.py tick` every 5
 minutes. A tick detects the group, exits if paused, and otherwise decides what
 is due (Central time):
 
-  recap     Monday 10:00 (until Tue 10:00), once per fully-final pool week:
+  recap     Sunday 9:00 (until Mon 9:00), once per fully-final pool week:
             worst pick, chalk of the week, best call, milk freak update,
             Picky's own week, then the playoff math (deterministic text).
   preview   Thursday 12:00 until the week's first kickoff: the slate, Picky's
@@ -526,7 +526,7 @@ def race_text(lg: League) -> tuple[str, dict, dict]:
 
 def make_recap(lg: League, w: int, writer=run_writer) -> list[str] | None:
     facts, _ = recap_facts(lg, w)
-    task = (f"Monday recap of week {w}, posted in the group. Hand out the awards with personality: worst pick, "
+    task = (f"Sunday morning recap of week {w}, posted in the group. Hand out the awards with personality: worst pick, "
             "chalk of the week, best call, a milk freak update on Blinky, and own your own week honestly "
             "(brag if good, excuses if bad). A few short texts, conversational, not a report. Don't do playoff "
             "math: that goes in a separate text after yours.")
@@ -822,8 +822,8 @@ def make_ping(lg: League, finals: list[tuple[dict, float, float]], writer=run_wr
 
 def _due_recap(lg: League) -> int | None:
     now = lg.now
-    mon10 = (now - dt.timedelta(days=now.weekday())).replace(hour=10, minute=0, second=0, microsecond=0)
-    if not (mon10 <= now < mon10 + dt.timedelta(days=1)):
+    sun9 = (now - dt.timedelta(days=(now.weekday() + 1) % 7)).replace(hour=9, minute=0, second=0, microsecond=0)
+    if not (sun9 <= now < sun9 + dt.timedelta(days=1)):
         return None
     for w in reversed(lg.final_weeks()):
         last = max((k for g in lg.week_games(w) if (k := kick(g))), default=None)
