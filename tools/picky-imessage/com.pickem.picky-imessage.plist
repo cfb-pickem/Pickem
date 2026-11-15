@@ -6,7 +6,7 @@
 	<string>com.pickem.picky-imessage</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Library/Developer/CommandLineTools/usr/bin/python3</string>
+		<string>/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/bin/python3.14</string>
 		<string>/Users/picky/picky-imessage/watcher.py</string>
 	</array>
 	<key>LimitLoadToSessionType</key>
