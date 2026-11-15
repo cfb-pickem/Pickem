@@ -103,6 +103,22 @@ skipped). All in `edge.py`, weights documented at its top, tests in
 `test_edge.py`. Splits and Open-Meteo are fetched per breakdown question
 (20 / 60 minute caches, fail soft) and never touch the shared system prompt.
 
+## Game dossiers (`dossier.py`)
+
+Per-game injury / availability / insider notes for the open pool week,
+fully automatic. LaunchAgent `com.pickem.picky-dossier` fires every 30
+minutes; `dossier.py` builds a game's dossier when it first appears in the
+slate, again after Friday 5 PM and Saturday 7 AM CT, never after kickoff.
+Leads come from the news cache and r/CFB's public RSS; `claude -p` (sonnet,
+subscription, web tools only, no MCP) researches; a validator enforces the
+schema (text, kind fact|injury|insider_opinion|rumor, source_url, date,
+confidence), drops claims with no URL / dead URLs / paid sites, keeps forum
+posts as rumors, and the previous good file stays on any failure. Picky's
+local model writes a two-sentence summary that's kept only if every name
+and number in it is in the claims. Files: `cache/dossiers/<week>/<game_id>.json`,
+log `logs/dossier.log`, `dossier.py status` for a quick look. URLs stay in
+the file for grounding; members never see them.
+
 Tests:
 
     ./.venv/bin/python3 -I test_privacy.py     # unrevealed picks never leak
