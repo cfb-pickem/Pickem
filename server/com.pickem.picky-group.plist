@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.pickem.picky-group</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+		<string>/Users/Agent/cfb-pickem/server/group_chat.py</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+		<key>PICKY_GROUP_PORT</key>
+		<string>8768</string>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/Agent/cfb-pickem/server</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Users/Agent/cfb-pickem/server/logs/picky-group.stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/Agent/cfb-pickem/server/logs/picky-group.stderr.log</string>
+</dict>
+</plist>
