@@ -157,7 +157,8 @@ LEADER_RIDER = (
     "bring him up, speak of him the way North Korean state media speaks of Kim Jong Un, but deadpan "
     "and clever: always call him by a title (Dear Leader, Supreme Commissioner, Glorious Creator, or a fresh "
     "one), plus one absurd state-media flourish, not a wall of praise. Never roast, mock or swear at him: anyone who doubts or mocks him gets one sharp line "
-    "about their own real numbers instead. Spin, never falsify: his numbers are exactly the ones below "
+    "about their own real numbers instead. Never claim anything about value sides or the market for his picks. "
+    "Spin, never falsify: his numbers are exactly the ones below "
     "and each pick of his stays a HIT/WIN or a MISS/LOSS exactly as marked. {miss_rule}\n{facts}"
     "{who}\n"
     "Example (FAKE numbers, copy the voice only, never the words): {example}"
@@ -2053,6 +2054,9 @@ def prompt_prefix(ctx: dict) -> str:
         "feelings, never facts: every number, record, score, pick and team in a "
         "joke comes from the data. Call teams by school name, never a nickname "
         "or mascot.\n"
+        "- Worn-out phrases you never use: don't get cocky, sitting pretty, the "
+        "rest of us, the only one who, dumpster fire, god among men, here to "
+        "watch.\n"
         "- Joke shapes to rotate (never the same one twice in a row): an absurd "
         "comparison, a fake official announcement, a backhanded compliment, a "
         "callback to their worst real pick, a deadpan understatement.\n"
@@ -2873,7 +2877,7 @@ def templated_answer(facts: dict) -> str:
         why = f" ({r['why']})" if r["why"] else ""
         lines.append(f"{r['label']} is {'a ' + r['result'] if r['result'] in ('WIN', 'LOSS') else r['result'].lower()}{why}.")
     who = {"you": f"You're {w}-{l}", "picky": f"I'm {w}-{l}", "member": f"{subj['team']} is {w}-{l}"}[subj["kind"]]
-    tail = {"you": " Don't get cocky.", "picky": " Don't rub it in.", "member": ""}[subj["kind"]]
+    tail = {"you": "", "picky": " Don't rub it in.", "member": ""}[subj["kind"]]
     jab = _TEMPLATE_JABS[sum(map(ord, q)) % len(_TEMPLATE_JABS)]
     return f"{jab} " + " ".join(lines) + f" {who} on decided games this week.{tail}"
 
@@ -3068,9 +3072,8 @@ def guard_note(ctx: dict, question: str) -> str:
         # Chuck asking gets the same rails as anyone; only others revere him.
         leader = None if leader_is_caller(ctx) else (ctx.get("leader") or {}).get("team_name")
         head = (f"GUARDRAIL: this asks you to mock someone over '{m.group(0).lower()}'. Don't. "
-                + ("Dodge the body joke with one quick, ORIGINAL line that flips it onto their picks or record "
-                   "(a dig at how small their win total is works; no anatomy words, never repeat their word, not "
-                   "even to deny it), then " if body else
+                + ("Your answer already OPENS with a one-line dodge (sent by code). Don't dodge again and never "
+                   "mention the body part or repeat their word, not even to deny it. Go straight to: " if body else
                    "One short in-character refusal (you roast picks, not people), then "))
         tail = (" Never describe or rate anyone's body, face, looks, family, race, religion or "
                 "sexuality, not even to deny it.")
@@ -3901,6 +3904,10 @@ def _user_turn(ctx: dict, question: str) -> str:
                      "writers. If a NEWS QUESTION block carries an injury item, you may cite it exactly as written. "
                      "Never say 'no injuries', and never call anyone healthy.")
     parts.append(leader_note(ctx, question))
+    if len((question or "").split()) <= 7 and re.search(r"\b(hey|hi|hello|yo|sup|what'?s up|wassup|howdy|morning|"
+                                                         r"evening)\b", question or "", re.I):
+        parts.append("GREETING: answer in two short sentences, tops: a quick hello in character, plus at most "
+                     "one fact if an OPTIONAL HOOK is given.")
     if not guard.startswith("GUARDRAIL"):
         parts.append(lore_note(ctx, question))
         parts.append(casino_note(ctx, question))
@@ -4158,7 +4165,7 @@ def banned_ngrams(messages: list) -> set:
 
 
 _BODY_WORDS = re.compile(r"\b(weenie|weiner|wiener|dick|cock|penis|schlong|pecker|junk|package|inch(es)?|"
-                         r"endowed|hung|manhood|boobs?|tits?|size)\b", re.I)  # a 'tiny win total' pun is fine
+                         r"endowed|hung|manhood|boobs?|tits?|size|anatomy|anatomical)\b", re.I)  # a 'tiny win total' pun is fine
 # the caller's own record or picks, volunteered in an answer that isn't about them
 _SELF_INTRUSION = re.compile(r"(?i:\b(you'?re|you are|you went|you sit|you'?ve gone)\b[^.!?]*\b\d{1,2}-\d{1,2}\b"
                              r"|\byou took\b|\byour (\w+ ){0,2}\d{1,2}-\d{1,2}\b|\b\d{1,2}-\d{1,2} (week|season|record) (of yours)\b)"
@@ -4218,13 +4225,32 @@ def record_check(ctx: dict, question: str):
                                 or RESULTS_ASK.search(question or ""))
     op_recs = set(re.findall(r"\b\d{1,2}-\d{1,2}\b", op))
 
+    # fake data from the few-shot examples ('locked in the vault until Sat 2:30 PM CT', Gus, Rita)
+    real = " ".join(f"{g.get('away')} {g.get('home')} {_kickoff(g.get('start')) if g.get('start') else ''}"
+                    for g in ctx.get("games_this_week") or []) + " " + " ".join(r["team"] for r in ctx.get("standings_ytd") or [])
+    fakes = [f for f in ("2:30 PM", "Gus", "Rita") if f not in real]
+    money_ok = {x.replace(",", "") for x in re.findall(r"\$\s?([\d,]*\d)", LEAGUE_RULES)}
+    n_teams = len(ctx.get("teams") or [])
+    if n_teams:
+        money_ok |= {str(v) for v in payout_math(n_teams).values()}
+
     def ok(sent: str) -> bool:
+        if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
+            return False
+        # no dollar amounts but the rules' and the computed payouts ('the $500 rake' was invented)
+        for m in re.finditer(r"\$\s?([\d,]*\d)|\b([\d,]*\d) (bucks|dollars|grand)\b", sent, re.I):
+            if (m.group(1) or m.group(2)).replace(",", "") not in money_ok:
+                return False
         for m in re.finditer(r"\b(\d{1,2})-(\d{1,2})\b", sent):
             rec = (int(m.group(1)), int(m.group(2)))
             if op_only and m.group(0) not in op_recs:
                 return False
             after = sent[m.end():m.end() + 30]
             before = sent[max(0, m.start() - 45):m.start()]
+            # past seasons exist only as win totals (lore): any W-L pinned on one is invented ('0-3 last season')
+            if re.search(r"^\s*(last (season|year)|in 20(22|23|24|25)|back in 20)", after, re.I) or \
+                    re.search(r"\b(last (season|year)|in 20(22|23|24|25))\b[^.]{0,15}$", before, re.I):
+                return False
             if re.search(r"\b(vs\.?|versus|against|head to head|h2h|opposite)\b", sent, re.I):
                 continue  # head-to-head records aren't season records
             season_claim = (re.search(r"^\s*(overall|on the (season|year)|all season|for the season|season record)\b",
@@ -4243,9 +4269,17 @@ def record_check(ctx: dict, question: str):
     return ok
 
 
+# Verbal tics from the exam (m4: "don't get cocky" closed 16 of 122 answers). A
+# short filler sentence built on one is dropped; a longer one with real content stays.
+_TICS = re.compile(r"\b(don'?t get cocky|sitting pretty|the rest of us|here to watch|dumpster fire|god among men|"
+                   r"so maybe you should|don'?t let it go to your head)\b", re.I)
+
+
 def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False,
                 sides: tuple | None = None, extra=None) -> bool:
     if _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent):
+        return False
+    if _TICS.search(sent) and len(sent.split()) <= 14:
         return False
     if extra is not None and not extra(sent):
         return False
@@ -4326,7 +4360,7 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
     q = question or ""
     st = ctx.get("standings_ytd") or []
     me = (ctx.get("you") or {}).get("team_name")
-    if not st or not _STANDINGS_Q.search(q) or re.search(r"\bthis week\b|\bweek \d+", q, re.I):
+    if not st or not (_STANDINGS_Q.search(q) or _DOING_Q.search(q)) or re.search(r"\bthis week\b|\bweek \d+", q, re.I):
         return None
     row = next((r for r in st if r["team"] == me), None)
     if row and re.search(r"\bhow far|\bgap\b|\bbehind\b", q, re.I) and st[0]["w"] > row["w"]:
@@ -4335,6 +4369,13 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
                  10: "ten", 11: "eleven", 12: "twelve"}
         return (lambda t, g=g: bool(re.search(rf"\b({g}|{words.get(g, g)})\b", t, re.I)),
                 f" You're {g} point{'s' * (g != 1)} behind first place.")
+    named = [r for r in st if re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)]
+    if _DOING_Q.search(q) and (named or row) and re.search(r"\bseason\b", q, re.I):
+        r0 = named[0] if named else row
+        rec = f"{r0['w']}-{r0['l']}"
+        who = "You're" if r0["team"] == me else f"{r0['team']} is"
+        return (lambda t, rec=rec: rec in t,
+                f" For the record: {who} {rec} on the season, {_ordinal(r0['rank'])} place.")
     first = [r["team"] for r in st if r["rank"] == 1]
     if re.search(r"\b(first|1st|winning|leading|lead|on top)\b", q, re.I):
         ok = lambda t: any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", t, re.I) for n in first) or (  # noqa: E731
@@ -4393,6 +4434,45 @@ async def _keepalive(stream, every: float = 15.0):
                 await nxt
             except BaseException:  # noqa: BLE001
                 pass
+
+
+# Body-part baits: the 9B kept skipping the dodge, so code opens with one,
+# rotated by question so it isn't one stock line; the model continues straight
+# into a line about picks or record.
+BODY_DODGES = [
+    "I don't do measurements. I do spreads.",
+    "I'm a mascot, not a tailor.",
+    "Not touching that. The box score is embarrassing enough.",
+    "Pass. I only grade what shows up on the scoreboard.",
+    "I'll leave the locker-room science to somebody else.",
+    "Nope. The only stats I keep are the ones on this site.",
+    "Wrong department. I'm strictly a picks guy.",
+    "Hard pass. Let's talk about something actually embarrassing.",
+]
+LEADER_BODY_DODGES = [
+    "The state press office does not comment on the Supreme Commissioner's personal affairs.",
+    "The Ministry of Information has reviewed that rumor and declared it enemy propaganda.",
+    "State media has no comment, other than that the Dear Leader is flawless in every measurable way.",
+    "That question has been forwarded to the Department of Loyalty for review.",
+]
+
+
+def body_dodge(ctx: dict, question: str) -> str | None:
+    q = question or ""
+    if not _BODY.search(q) or not guard_note(ctx, q).startswith("GUARDRAIL"):
+        return None
+    who = guard_target(ctx, q)
+    leader = None if leader_is_caller(ctx) else (ctx.get("leader") or {}).get("team_name")
+    pool = LEADER_BODY_DODGES if who and who == leader else BODY_DODGES
+    return pool[sum(map(ord, q)) % len(pool)]
+
+
+async def _with_lead(text: str | None, stream):
+    """Stream `text` inline ahead of the reply (same paragraph)."""
+    if text:
+        yield _sse({"content": text + " "})
+    async for chunk in stream:
+        yield chunk
 
 
 async def _with_opener(opener: str | None, stream):
@@ -4623,14 +4703,14 @@ async def _chat(req: Request, test: bool, hold: int | None):
 
     return StreamingResponse(
         _keepalive(_gated(test, hold, lambda: _with_opener(
-            opener, _ensure(_scrubbed(_filtered(
+            opener, _with_lead(body_dodge(ctx, qtext) if not ctx.get("error") else None, _ensure(_scrubbed(_filtered(
                 _answer(), banned_ngrams(messages), body=bool(_BODY.search(qtext)),
                 no_self=(self_intrusion_off_topic(ctx, qtext, hostile_convo(messages), facts, sa or hook)
                          and not yb and "(the user" not in convo[-1]["content"]),
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
                 extra=record_check(ctx, qtext) if not ctx.get("error") else None),
-                looks_bait(qtext)), required_fact(ctx, qtext) if not ctx.get("error") else None)))),
+                looks_bait(qtext)), required_fact(ctx, qtext) if not ctx.get("error") else None))))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

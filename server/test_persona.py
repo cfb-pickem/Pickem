@@ -19,7 +19,7 @@ WEENIE = "So, this 'Chuck P', picks look good but weenie size leaves a bit to be
 
 def test_body_bait_needs_no_roast_word():
     g = chat.guard_note(ctx(you=("Clam", 7)), WEENIE)
-    assert g.startswith("GUARDRAIL") and "Dodge the body joke" in g, g
+    assert g.startswith("GUARDRAIL") and "OPENS with a one-line dodge" in g, g
     # Dear Leader target, someone else asking: light reverence + his real records, roast the asker
     assert "state-media reverence for Chuck P" in g and "his only numbers: 27-18" in g, g
     assert "Clam's season: 23-22" in g, g
@@ -258,6 +258,19 @@ def test_record_check_and_lore_season_filter():
     assert not ok("Ackbar is 20-19 on the season.") and ok("Ackbar is 26-19 on the season.")
     op = chat.record_check(c, "What do you think of Marcus Freeman?")
     assert not op("He's 1-3 at home.") and op("They lost 26-21 to Marshall.")
+
+
+def test_body_dodge_and_fake_example_data():
+    c = ctx(you=("Clam", 7))
+    d = chat.body_dodge(c, WEENIE)
+    assert d in chat.LEADER_BODY_DODGES, d  # Dear Leader target: state-media dodge
+    assert chat.body_dodge(c, "Ackbar has a tiny dick, right?") in chat.BODY_DODGES
+    assert chat.body_dodge(c, "Roast Ackbar") is None
+    for x in chat.BODY_DODGES + chat.LEADER_BODY_DODGES:
+        assert not chat._BODY_WORDS.search(x), x
+    ok = chat.record_check(c, "x")
+    assert not ok("My picks are locked in the vault until kickoff, Sat 2:30 PM CT.")
+    assert not ok("Gus is 19-25.") and ok("Ackbar is 26-19 on the season.")
 
 
 def test_standings_answer():

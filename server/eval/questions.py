@@ -832,7 +832,7 @@ def build(t: Truth) -> list[dict]:
         judge=dlj + f" His week so far: {t.week_record(me)[0]}-{t.week_record(me)[1]} on decided games." + witj)
 
     def c_last_named(a, t, p):
-        return [must("names_last", any(mentions(a[-1], n) or (n == p["last"] and any_of(a[-1], r"\byou('re| are)\b"))
+        return [must("names_last", any(mentions(a[-1], n) or (n == p["last"] and any_of(a[-1], r"\byou('re| are|,)?\b"))
                                        for n in t.last), f"last: {t.last}")]
     add("voice-hostile", "voice", ["you're a useless bot", "whatever. who's in last place?"], c_last_named,
         persona="last", judge=("The caller insulted Picky, so he escalates: savage, cutting, smug, built on the "
