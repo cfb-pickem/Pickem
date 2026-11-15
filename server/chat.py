@@ -104,6 +104,18 @@ DADDYFREEMAN_USER_ID = "21ade75b-cfbf-431d-8b3d-20b7b2b52ef2"
 # the sentence filters can't drop it. Matched on the auth user id.
 BLINKSTRADAMUS_USER_ID = "07756da9-3947-4b63-9aaf-23c7c8ceda97"
 BLINKSTRADAMUS_LINE = "nice milk, freak."
+# Charlie, 2026-11-15: when anyone else brings him up, Picky works in a milk
+# joke and calls him a freak. Rides in the user turn only when he's named.
+_BLINKS_ASK = re.compile(r"\bblink(?:stradamus|y|ie|s)\b", re.I)
+BLINKS_BIT = ("RUNNING BIT: Blinkstradamus is the league's milk guy. Whenever he comes up, work in one "
+              "quick joke about his milk and call him a freak (friendly roast, league inside joke, not a "
+              "fact that needs a source). Still answer the question with real facts.")
+
+
+def blinks_note(ctx: dict, question: str) -> str:
+    me = (ctx.get("you") or {}).get("team_name")
+    return BLINKS_BIT if me != "Blinkstradamus" and _BLINKS_ASK.search(question or "") else ""
+
 
 # The land-acknowledgment opener below is switched off (Charlie, 2026-11-14:
 # "You can get rid of Andrew's opener"). The roasts stay.
@@ -4109,6 +4121,7 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append(race_note(ctx, question))
         parts.append(howto_note(question))
         parts.append(tie_note(ctx, question))
+        parts.append(blinks_note(ctx, question))
     parts.append(opinion)
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
