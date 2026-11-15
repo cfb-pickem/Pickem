@@ -281,6 +281,15 @@ def test_body_dodge_and_fake_example_data():
     assert not ok("Gus is 19-25.") and ok("Ackbar is 26-19 on the season.")
 
 
+def test_curly_quotes_and_caller_game_contradiction():
+    assert not chat.sentence_ok("At least you\u2019re 4-0 and not trying.", set(), no_self=True)
+    import test_results as tr
+    f = tr.facts("how did my Oregon State pick do?")
+    p = chat.check_answer("You took the underdog and got absolutely crushed.", f)
+    assert any("pick lost, but it is a WIN" in x for x in p), p
+    assert not chat.check_answer("You took the underdog and got paid.", f)
+
+
 def test_standings_answer():
     a = chat.standings_answer(ctx(you=("Clam", 7)), "Who's winning the pool?")
     assert "First place: Chuck P 27-18, 1 point ahead of Ackbar (26)" in a and "Clam (the user" in a, a

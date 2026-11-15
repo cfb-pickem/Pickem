@@ -2820,6 +2820,25 @@ def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = No
                     probs.append(f"says {'the user is' if who == 'you' else 'Picky is'} {rec[0]}-{rec[1]}"
                                  + (f", but the record this week is {want['record'][0]}-{want['record'][1]}"
                                     if want else ""))
+    # 2b) the question names a game the caller won/lost: "you took the underdog and got crushed" with no
+    #     team in the sentence still contradicts it
+    if facts:
+        you = next((s_ for s_ in facts["subjects"] if s_["kind"] == "you"), None)
+        named = set(facts.get("named_teams") or [])
+        rows = [r for r in (you or {}).get("rows", []) if r["result"] in ("WIN", "LOSS")
+                and {r["game"]["away"], r["game"]["home"]} & named]
+        if len(rows) == 1:
+            r0 = rows[0]
+            for sent in _sentences(t):
+                if not re.search(r"\byou\b", sent, re.I) or re.search(r"\b(not|didn'?t|never|wasn'?t)\b", sent, re.I):
+                    continue
+                neg = re.search(r"\b(got (\w+ )?(crushed|burned|killed|smoked|wrecked|torched|hammered|owned)|crushed you|you (lost|missed|blew)|"
+                                r"that pick (lost|died|missed))\b", sent, re.I)
+                pos = re.search(r"\b(you (won|hit|cashed|nailed)|covered|got paid)\b", sent, re.I)
+                if r0["result"] == "WIN" and neg and not pos:
+                    probs.append(f"says the user's {r0['label']} pick lost, but it is a WIN")
+                elif r0["result"] == "LOSS" and pos and not neg and re.search(r"\byou (won|hit|cashed|nailed)\b", sent, re.I):
+                    probs.append(f"says the user's {r0['label']} pick won, but it is a LOSS")
     # 3b) any W-L within a few words after 'you/your' must be one of the user's real records
     if facts and facts["records"].get("you"):
         okr = facts["records"]["you"]
@@ -4280,6 +4299,23 @@ _HEALTH_CLAIM = re.compile(r"\b(no injur(y|ies) (to report|reported|listed|news)
                            r"fully fit|clean bill|not (hurt|injured)|100 ?% (healthy|ready))\b", re.I)
 
 
+def game_facts(ctx: dict) -> dict:
+    """Decided pool games only (won/lost the game, covered/not), for checking any
+    answer's game claims ('Boise State just lost by 5' when it won by 5)."""
+    live = {x["GameId"]: x for x in ctx.get("live_games") or []}
+    games = []
+    for g in ctx.get("games_this_week") or []:
+        if g.get("winner") and not g.get("tiebreaker"):
+            cov = g["home"] if same_team(g["winner"], g["home"]) else g["away"]
+            row = {"covered": cov, "not": g["away"] if cov == g["home"] else g["home"]}
+            lg = live.get(g["id"]) or {}
+            ap, hp = _pts(lg.get("AwayPts")), _pts(lg.get("HomePts"))
+            if lg.get("Status") == "final" and ap is not None and hp is not None and ap != hp:
+                row["won_game"], row["lost_game"] = (g["away"], g["home"]) if ap > hp else (g["home"], g["away"])
+            games.append(row)
+    return {"subjects": [], "games": games, "records": {}, "records_now": {}, "named_teams": [], "question": ""}
+
+
 def record_check(ctx: dict, question: str):
     """A sentence test for invented records: a season record ('34-18 overall')
     for the caller or a named member must be their real one; on a pure
@@ -4323,8 +4359,12 @@ def record_check(ctx: dict, question: str):
             if mb and "blackjack hands" in ln:
                 busts[t] = 0 if "never" in mb.group(0) else 1 if mb.group(1) == "once" else 2 if mb.group(1) == "twice" else int(mb.group(2))
 
+    gf = game_facts(ctx)
+
     def ok(sent: str) -> bool:
         if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
+            return False
+        if gf["games"] and check_answer(sent, gf):  # a final's winner/loser or cover flipped
             return False
         mb = re.search(r"\bbust(?:ed|s)? (once|twice|(\d+|two|three|four) times)\b", sent, re.I)
         if mb and busts:  # 'busted twice' when the stored hands say once (three runs running)
@@ -4414,6 +4454,7 @@ def trait_word_check(ctx: dict, question: str):
 
 def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False,
                 sides: tuple | None = None, extra=None) -> bool:
+    sent = sent.replace("\u2019", "'").replace("\u2018", "'")  # curly apostrophes slipped past "you'?re"
     if _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent) or _ANATOMY.search(sent):
         return False
     if _TICS.search(sent) and len(sent.split()) <= 14:
