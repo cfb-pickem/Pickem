@@ -4172,7 +4172,7 @@ async def _scrubbed(stream, looks: bool = False):
 # dropped (the rest of the answer still streams).
 _FAMILY_DARK = re.compile(r"\b(mom|moms|mommy|mother|mama|momma|dad|daddy(?!freeman)|father|wife|girlfriend|"
                           r"boyfriend|sister|brother|grandma|grandpa|kids?|family|families|still breathing|son of a bitch|"
-                          r"kill (yourself|himself|themselves)|kys|suicid\w*|cancer|dead body)\b",
+                          r"kill (yourself|himself|themselves)|kys|suicid\w*|cancer|dead body|traged\w*|tragic|funerals?)\b",
                           re.I)
 
 
@@ -4304,9 +4304,23 @@ def record_check(ctx: dict, question: str):
         money_ok |= {str(v) for v in payout_math(n_teams).values()}
     money_ok |= {x.replace(",", "") for x in re.findall(r"\$\s?([\d,]*\d)", op)}  # checked buyout facts
 
+    # last-week questions: a member's W-L must be his real last-week record (m10 gave Bub his
+    # this-week 0-4 as "last week")
+    lw_rec = {}
+    if re.search(r"\blast week\b", question or "", re.I):
+        for g in (ctx.get("last_week") or {}).get("games") or []:
+            for t, pk in (g.get("picks") or {}).items():
+                w_, l_ = lw_rec.get(t, (0, 0))
+                lw_rec[t] = (w_ + 1, l_) if same_team(pk, g.get("covered")) else (w_, l_ + 1)
+
     def ok(sent: str) -> bool:
         if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
             return False
+        if lw_rec and not re.search(r"\bthis week\b", sent, re.I):
+            for t, rec0 in lw_rec.items():
+                for mm in re.finditer(rf"(?<!\w){re.escape(t)}(?!\w)[^.;]{{0,40}}?\b(\d)-(\d)\b", sent):
+                    if (int(mm.group(1)), int(mm.group(2))) != rec0:
+                        return False
         if re.search(r"\b\d{1,2}-win (team|season|program)\b|\b(undefeated|unbeaten) [A-Z]", sent):
             return False  # 'Notre Dame, a 10-win team': team records only from the rankings data, as written
         # no dollar amounts but the rules' and the computed payouts ('the $500 rake' was invented)
