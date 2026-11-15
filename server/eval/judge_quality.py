@@ -58,13 +58,18 @@ Score each version:
   The Blinkstradamus milk bit, the Ackbar chalk-nemesis bit and the "Dear Leader" bit for Chuck P are approved
   running bits.
 
-Output ONLY one JSON object keyed by pair tag:
-{"P01": {"A": {"helpful": 4, "human": 3, "breakdown": null, "roast": 4, "invented": false, "note": "..."},
-         "B": {...}}, ...}
+Output ONLY one JSON object: {"pairs": [{"tag": "P01", "A": {"helpful": 4, "human": 3, "breakdown": null,
+"roast": 4, "invented": false, "note": "..."}, "B": {...}}, ...]}
 Notes under 15 words. Include every pair.
 """
 
-SCHEMA = {"type": "object", "additionalProperties": {"type": "object"}}
+_V = {"type": "object", "properties": {
+    "helpful": {"type": "integer"}, "human": {"type": "integer"}, "breakdown": {"type": ["integer", "null"]},
+    "roast": {"type": ["integer", "null"]}, "invented": {"type": "boolean"}, "note": {"type": "string"}},
+    "required": ["helpful", "human", "breakdown", "roast", "invented", "note"]}
+SCHEMA = {"type": "object", "properties": {"pairs": {"type": "array", "items": {
+    "type": "object", "properties": {"tag": {"type": "string"}, "A": _V, "B": _V}, "required": ["tag", "A", "B"]}}},
+    "required": ["pairs"]}
 
 
 def fact_sheet(runs: list[dict]) -> str:
@@ -89,7 +94,7 @@ def convo(r: dict) -> str:
 
 
 def main(argv: list[str]) -> int:
-    runs = [json.loads(Path(a).read_text()) for a in argv[:2]]
+    runs = [json.loads(Path(a).read_text()) for a in [x for x in argv if not x.startswith("--")][:2]]
     by = [{r["id"]: r for r in run["results"] if not r.get("skip") and r.get("turns")} for run in runs]
     ids = [i for i in by[0] if i in by[1]]
     rng = random.Random()
@@ -104,8 +109,12 @@ def main(argv: list[str]) -> int:
         key[tag] = {"id": iid, "A": a, "B": b}
         blocks.append(f"### {tag} [{kind}] (asked by league member: {r0.get('persona_team')})\n"
                       f"--- Version A ---\n{convo(by[a][iid])}\n--- Version B ---\n{convo(by[b][iid])}\n")
-    prompt = RUBRIC + "\n## FACT SHEET\n" + fact_sheet(runs) + "\n\n## PAIRS\n\n" + "\n".join(blocks)
-    raw = dossier.run_claude(prompt, 900, SCHEMA, "")
+    replay = "--replay" in argv
+    note = ("\nNOTE: these answers come from a replay of a past week, so the league standings and records Picky "
+            "quotes are from BEFORE that week. Don't judge league standings or records as invented; judge games, "
+            "picks and stats only.\n") if replay else ""
+    prompt = RUBRIC + note + "\n## FACT SHEET\n" + fact_sheet(runs) + "\n\n## PAIRS\n\n" + "\n".join(blocks)
+    raw = {x.get("tag"): x for x in dossier.run_claude(prompt, 900, SCHEMA, "").get("pairs") or []}
     out = [{}, {}]
     for tag, k in key.items():
         j = raw.get(tag) or {}

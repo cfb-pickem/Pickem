@@ -21,6 +21,8 @@ import dossier  # noqa: E402
 import league_material as lm  # noqa: E402
 
 FAILED = []
+import re  # noqa: E402
+chat.MASCOT_ANY = re.compile(r"\b(Bison|Mustangs|Demon Deacons)s?\b")  # no network: stub the nickname list
 
 
 def check(name, ok, got=None):
@@ -72,6 +74,9 @@ check("a name not in the brief drops that reason", t and len(t["reasons"]) == 2
 t, probs = analyst.validate_take(raw(reasons=[{"text": "Reason one: Wake's offense is 3rd.", "refs": ["S3"]},
                                               {"text": "Lopez plays.", "refs": []}]), ITEMS, CG, M)
 check("report-speak / no refs: too few reasons = no take", t is None, probs)
+t, probs = analyst.validate_take(raw(reasons=raw()["reasons"][:2] + [
+    {"text": "The Mustangs moved 6 points in the market.", "refs": ["S4"]}]), ITEMS, CG, M)
+check("a team nickname drops that reason", t and len(t["reasons"]) == 2 and any("nickname" in p for p in probs), probs)
 t, probs = analyst.validate_take(raw(quotable="Confidence: high. Take Wake by 14."), ITEMS, CG, M)
 check("bad quotable is dropped, take survives", t and t["quotable"] is None, probs)
 

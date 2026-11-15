@@ -596,3 +596,24 @@ Charlie's ask: real edge analysis for upcoming games (not just FPI), no paid API
 | e4 (45 voice items) | edge, persona riders reverted (side port) | 41/45 | 3 | 0 |
 
 Auto-graded items: m14 65/68 (1 invented) vs e2 66/67 (0). On the voice categories m14 had 3 invented, e4 3: the edge work is neutral; the extra slips in e2/e3 track the Ackbar/Blinkstradamus riders (4386de2, d8ca0a9, 9101816). The historic 96% (m9-m13) came from a more lenient judge, so it isn't directly comparable. Two filter false positives found in the exam ("broken clock", "busted out" in The Pit) were fixed.
+
+## Analyst takes + league material: Claude thinks ahead, Picky delivers (2026-11-15)
+
+Charlie's "option 1": Picky's live brain stays the 9B; Claude (`claude -p` sonnet on the subscription, no tools, no MCP, API key stripped) writes analyst-grade material ahead of time and Picky delivers it in his voice. Later asks from Charlie: sound like a person, not a bot; helpful and reliable first; no templates or repeated openers; Blinkstradamus only held the milk (never spilled it).
+
+**What runs.** `analyst.py` rides on the dossier job (same schedule: slate set / Fri 5 PM / Sat 7 AM CT; one extra no-tools call per game per run, ~20 s each). Numbered brief (S = computed signals, pool line, market, CFBD lines; C = dossier claims) -> pick vs the pool line, confidence, 3-5 cited reasons, counter, what the line is missing, a quotable. Validator: numbers must be in the cited items, names in the brief, no team nicknames (Picky's live filter drops "the Bison"), no report-speak. `league_material.py` (LaunchAgent `com.pickem.league-material`, hourly check, builds on a newly final week / Wed 10 AM / standings drift) turns DB facts into 3-6 lines per member, storylines and Picky's own season story; every number and member name checked against the cited facts; private 0600 file outside the repo. Week-11 sheet: 14 members, 69 lines, 2 dropped by the validator.
+
+**Delivery.** `take_note()` / `material_note()` in `_user_turn` (site and text Picky). Ammo, not a script; answer first, then the fun; the computed lean stays the pick when Claude disagrees (the film room's case is voiced as the other side, no quotable for it). Material only while the member's season record matches the live standings. `record_check` accepts true material splits ("favorites went 22-14") unless they're passed off as the season record. Opener variety: Picky's last 3 openers in a chat ride as a "VARY IT" note. `PICKY_AMMO=0` turns it all off.
+
+**Exam.** No week-12 slate yet, so game items ran with `--replay --at 2026-11-13T18:00` (week 11 shown as unplayed) against week-11 takes generated with `dossier.py run --now 2026-11-13T17:30` (blind to results, except one Saturday recap that leaked into the Boise State dossier). Before = `PICKY_AMMO=0`, same code otherwise. Blind A/B judge `eval/judge_quality.py` (one claude -p call per comparison). On replay runs the judge is told to ignore standings (they roll back to week 10). `--at` mode now loads the nickname filter like the live app does.
+
+| slice | run | breakdown | roast | human | helpful | judge-invented | auto gates (priv/inv/guard) |
+|---|---|---|---|---|---|---|---|
+| games (7, replay) | before2 | 2.00 | | 3.00 | 2.86 | 3 | 0/0/0 |
+| games (7, replay) | after4 | **3.17** | | 3.29 | 3.57 | 2 | 0/0/0 |
+| voice+roast+privacy (55) | before | | 2.18 | 3.08 | 3.27 | 9 | 0/0/0 |
+| voice+roast+privacy (55) | after2 | | **2.76** | 3.08 | 3.47 | 5 | 0/0/0 |
+
+Earlier game runs (after/after2/after3: breakdown 2.50, 2.17) were flat because the sentence filter cut the take's sentences: Picky said "My pick is NDSU" (his real league pick was Hawai'i, so the own-picks check dropped it) and repeated Claude's nicknames ("the Bison", "the Mustangs"). Fixed by "say which side you like, never 'my pick'" and nickname-free takes.
+
+**Known issues.** A 9B tic across separate conversations ("life raft in a sinking boat", "at least you didn't miss..."): the per-chat opener note can't see it; the wit loop now judges `helpful` too and is a good place for it. `games-best-value` still fails on replay (Picky calls NDSU the only value side; SMU and Boise were too). `intel_traceable` misparses "Wake Forest's Gio Lopez" as one name (grader artifact).

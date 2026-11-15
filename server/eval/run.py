@@ -380,6 +380,7 @@ async def run(args):
             return jwt
         chat._verify_jwt = fake_verify
         chat.RATE_LIMIT_PER_MIN = 10_000
+        await chat.load_mascots()  # the live app loads the nickname filter at startup; ASGITransport skips that
         transport = httpx.ASGITransport(app=chat.app)
     else:
         jwts = {k: mint_jwt(t.key, t.uid_by_team[v]) for k, v in P.items() if v}

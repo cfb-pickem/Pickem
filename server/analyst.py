@@ -83,6 +83,7 @@ Hard rules:
 - Every number and every player name you write must appear in the items you cite. No outside knowledge,
   no stats you remember, no records, no scores, no injuries that aren't in the brief.
 - Rumors and opinions stay labeled as such ("reportedly", "one beat writer thinks").
+- Call teams only by the school names in the brief, never nicknames or mascots (no Bison, Mustangs, Broncos...).
 - Talk like a person: contractions, plain words. Never write labels like "Reason", "Confidence",
   "Counter-argument", "the market is missing", no lists inside a sentence, no URLs, no betting-site names.
 - Football only: no gambling advice beyond the pool pick, no money talk.
@@ -189,6 +190,18 @@ def _names_ok(text: str, brief_low: str) -> list[str]:
     return bad
 
 
+def _mascot(text: str) -> str | None:
+    """A team nickname in the text (Picky's live filter drops 'the Bison' etc.)."""
+    import chat
+    if chat.MASCOT_ANY is None:
+        try:
+            asyncio.run(chat.load_mascots())
+        except RuntimeError:  # already inside an event loop: skip the check
+            return None
+    m = chat.MASCOT_ANY.search(text) if chat.MASCOT_ANY else None
+    return m.group(0) if m else None
+
+
 def _nums_ok(text: str, src: str) -> list[str]:
     have = set(_NUM.findall(src))
     return [n for n in _NUM.findall(text) if n not in have and n not in ("0", "1")]
@@ -226,7 +239,7 @@ def validate_take(raw: dict, items: dict[str, str], cg: dict, m: dict) -> tuple[
             probs.append(f"{what}: no valid refs ({p.get('refs')})")
             return None
         src = " ".join(items[r] for r in refs) + " " + header
-        why = (_REPORTY.search(text) and "report-speak") or (_nums_ok(text, src) and f"numbers {_nums_ok(text, src)}") \
+        why = (_mascot(text) and f"nickname {_mascot(text)!r}") or (_REPORTY.search(text) and "report-speak") or (_nums_ok(text, src) and f"numbers {_nums_ok(text, src)}") \
             or (_names_ok(text, brief_low) and f"names {_names_ok(text, brief_low)}")
         if why:
             probs.append(f"{what}: {why}: {text[:90]}")
@@ -240,7 +253,7 @@ def validate_take(raw: dict, items: dict[str, str], cg: dict, m: dict) -> tuple[
     counter = part(raw.get("counter"), "counter")
     angle = part(raw.get("market_missing"), "market_missing")
     q = _clean(raw.get("quotable")).strip('"“”')
-    if q and (len(q.split()) > 28 or _REPORTY.search(q) or _nums_ok(q, brief_all) or _names_ok(q, brief_low)):
+    if q and (len(q.split()) > 28 or _REPORTY.search(q) or _mascot(q) or _nums_ok(q, brief_all) or _names_ok(q, brief_low)):
         probs.append(f"quotable dropped: {q[:90]}")
         q = ""
     conf = raw.get("confidence") if raw.get("confidence") in ("high", "medium", "low") else "medium"

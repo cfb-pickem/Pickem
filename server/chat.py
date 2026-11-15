@@ -4044,7 +4044,9 @@ def take_note(ctx: dict, question: str) -> str:
     if not out:
         return ""
     return "\n".join(out) + ("\nDeliver it in your voice and stay faithful to the pick and the reasons: say the "
-                             "pick plainly, by team name and number (your LEAN wherever it says YOUR PICK STAYS), back it "
+                             "side you like plainly ('I like', 'I'd take', 'give me', in your own words; never 'my pick' "
+                             "or 'I took', those mean your real league picks; never 'you got'), by team name and number "
+                             "(your LEAN wherever it says YOUR PICK STAYS), back it "
                              "with the best one or two reasons, add the other side only if it fits. Teams go by the "
                              "names written here, no nicknames. Don't add stats or names that aren't "
                              "in this prompt. " + TALK_LIKE_A_PERSON)
@@ -4710,6 +4712,7 @@ def pick_sides(ctx: dict) -> tuple[dict, list]:
 # State "the Ducks" and "the Rebels"; a sentence naming a team by nickname is
 # dropped (school names only), except the homer's 'Irish'.
 _MASCOT_RE: re.Pattern | None = None
+MASCOT_ANY: re.Pattern | None = None
 
 
 async def load_mascots() -> None:
@@ -4722,6 +4725,8 @@ async def load_mascots() -> None:
         if names:
             alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
             _MASCOT_RE = re.compile(rf"\b[Tt]he ({alt})s?\b")
+            global MASCOT_ANY
+            MASCOT_ANY = re.compile(rf"\b({alt})s?\b")  # without 'the': analyst.py keeps nicknames out of takes
             log.info("mascot filter: %d nicknames", len(names))
     except (httpx.HTTPError, ValueError, KeyError) as e:
         log.warning("mascot list unavailable: %s", e)
