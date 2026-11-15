@@ -25,9 +25,13 @@ watcher.SELF_HANDLES = {"picky-bot@example.com"}
 watcher.TEST_DM_HANDLES = {"+15555550199"}
 
 YES = ["@Picky who's winning?", "@picky", "@PICKY you there", "@ Picky who's first", "yo @Picky, thoughts?",
-       "hey (@picky)", "@Picky's take?", "what do you think @picky?"]
+       "hey (@picky)", "@Picky's take?", "what do you think @picky?",
+       # iPhone forms of his handle (live 2026-11-15: TG's got no reply)
+       "@pickempicky@gmail.com you're a pussy", "@pickempicky hi", "@PickemPicky", "pickempicky@gmail.com you there",
+       "yo @ pickempicky, thoughts?"]
 NO = ["picky who's winning", "Picky is dumb", "@Pickyy hi", "@pickyface", "email picky-bot@example.com",
-      "x@picky", "so picky about picks", "@ pickyy", "@Pick y", ""]
+      "x@picky", "so picky about picks", "@ pickyy", "@Pick y", "", "x.pickempicky@gmail.com", "@pickempickyy",
+      "notpickempicky@gmail.com"]
 
 
 def test_trigger_matching():
@@ -51,6 +55,8 @@ def test_strip_trigger():
     assert gc.strip_trigger("yo @ picky, thoughts?") == "yo, thoughts?"
     assert gc.strip_trigger("@Picky, who's first?") == "who's first?"
     assert gc.strip_trigger("@Picky") == "hey"
+    assert gc.strip_trigger("@pickempicky@gmail.com you're a pussy") == "you're a pussy"
+    assert gc.strip_trigger("pickempicky@gmail.com what's up") == "what's up"
 
 
 def test_norm_handle():
@@ -128,9 +134,15 @@ def test_submission_status_answers_but_picks_stay_hidden():
         assert ok("Rival hasn't made his picks yet.")
         assert not ok("He's sweating his chalk in Penn State again.")  # any pool team on a status question
         assert chat.pick_claim_check(ctx, "who's winning?")("Penn State is a 6.5-point favorite.")
-    # once the week locks, the rider is gone (picks are revealed instead)
-    with patch.object(chat, "_now_ct_naive", return_value=NOW + dt.timedelta(days=3)):
-        assert not chat.wants_submission(ctx, "who hasn't picked yet")
+    # once the week locks, the status rider stays on (the site's panel still shows it; post-lock
+    # Picky said an unchecked "Nobody"), and picks follow the site's reveal rules instead
+    with patch.object(chat, "_now_ct_naive", return_value=NOW + dt.timedelta(days=3)), \
+            patch.object(chat, "member_nicknames", lambda: {}):
+        assert chat.wants_submission(ctx, "who hasn't picked yet")
+        note = chat.submission_note(ctx, "who hasn't picked yet")
+        assert "Not yet: Rival" in note and "locked" in note
+        check, _ = chat.submission_fact(ctx, "who hasn't picked yet")
+        assert check("Rival never turned his in.") and not check("Nobody, everyone's in.")
         assert chat.pick_claim_check(ctx, "x") is None
 
 
@@ -299,6 +311,99 @@ def test_dm_routing_and_history():
 def test_dm_trim():
     assert gc.dm_trim("## Take\n**Bold** call.") == "Take\nBold call."
     assert len(gc.dm_trim("Word. " * 600)) <= gc.DM_MAX_CHARS
+
+
+# ---- live 2026-11-15 group failures (week 11) ----
+
+def _wk11_ctx(me="Ackbar"):
+    g = lambda i, a, h, ln, w: {"id": i, "away": a, "home": h, "line": ln, "winner": w, "status": "final",
+                                 "tiebreaker": False}
+    games = [g(1, "Wake Forest", "SMU", 1.5, "Wake Forest"), g(2, "Oregon State", "Boise State", -13.5, "Oregon State"),
+             g(3, "North Texas", "UTSA", 2.5, "UTSA"), g(4, "North Dakota State", "Hawai'i", 6.5, "North Dakota State")]
+    live = [{"GameId": 1, "AwayPts": 49, "HomePts": 7, "Status": "final"},
+            {"GameId": 2, "AwayPts": 41, "HomePts": 46, "Status": "final"},
+            {"GameId": 3, "AwayPts": 16, "HomePts": 35, "Status": "final"},
+            {"GameId": 4, "AwayPts": 21, "HomePts": 13, "Status": "final"}]
+    pk = lambda *xs: [{"game_id": i + 1, "pick": x} for i, x in enumerate(xs)]
+    revealed = {"Ackbar": pk("Wake Forest", "Boise State", "UTSA", "North Dakota State"),
+                "Blinkstradamus": pk("Wake Forest", "Oregon State", "North Texas", "North Dakota State"),
+                "DaddyFreeman": pk("Wake Forest", "Boise State", "North Texas", "North Dakota State")}
+    return {"current_week": 11, "games_this_week": games, "live_games": live, "revealed_picks_this_week": revealed,
+            "weekly_records": {"Ackbar": {11: [3, 1]}, "Blinkstradamus": {11: [3, 1]}, "DaddyFreeman": {11: [2, 2]}},
+            "standings_ytd": [{"team": "Ackbar", "w": 28, "l": 20, "rank": 1},
+                              {"team": "Blinkstradamus", "w": 27, "l": 21, "rank": 2},
+                              {"team": "DaddyFreeman", "w": 27, "l": 21, "rank": 2}],
+            "you": {"team_id": 1, "team_name": me}, "leader": None, "teams": ["Ackbar", "Blinkstradamus", "DaddyFreeman"]}
+
+
+def test_week_claims_and_margins_are_grounded():
+    with patch.object(chat, "member_nicknames", lambda: {"Blinkstradamus": "Blinky"}):
+        ok = chat.week_claim_check(_wk11_ctx("Blinkstradamus"), "what is the best cereal?")
+        assert not ok("That's a trap to distract you from the fact that you missed three of four games this week.")
+        assert ok("You missed one of four this week.") and ok("you hit three of four")
+        assert not ok("you got two of four right")
+        ok = chat.week_claim_check(_wk11_ctx("Ackbar"), "why don't you work better")
+        assert not ok("You missed that game by five points.")  # Boise -13.5 won by 5: missed the cover by 8.5
+        assert ok("Your Boise State pick missed the cover by 8.5.")
+        assert ok("Boise State won by 5 but missed the cover by eight and a half.")
+        assert not ok("Boise State won by 7.") and ok("It needed to win by 14 or more.")
+        assert not ok("You took Boise State -13.5 and watched it lose by five.")  # Boise WON by 5
+        assert not ok("You took Boise State -13.5 and watched it get blown out by five points.")
+        assert ok("Oregon State lost by five but covered.") and not ok("Oregon State won by five.")
+        assert ok("You're stuck at 3-1.") and not ok("You're stuck at 2-2.")
+        assert ok("Ackbar is tied with Blinky this week.") and not ok("Ackbar is tied with DaddyFreeman.")
+        assert ok("Blinky is 3-1.") and not ok("Blinky went 2-2 this week.")
+        assert ok("Blinky's in second place.") and not ok("Blinky's in fifth place.")
+
+
+def test_grade_pick_states_the_cover_margin():
+    r = chat.grade_pick("Boise State", "Oregon State", "Boise State", -13.5, "Oregon State", "final", 41, 46)
+    assert r["result"] == "LOSS" and "missed the cover by 8.5" in r["why"]
+    r = chat.grade_pick("UTSA", "North Texas", "UTSA", 2.5, "UTSA", "final", 16, 35)
+    assert r["result"] == "WIN" and "covered by 21.5" in r["why"]
+
+
+def test_games_question_is_about_the_games():
+    ctx = _wk11_ctx("DaddyFreeman")
+    q = "what did you think of this weekend's games?"
+    note = chat.games_recap_note(ctx, q)
+    assert "UPSET: UTSA was the underdog and won outright" in note
+    assert "Boise State won by 5; Oregon State covered by 8.5" in note
+    assert "Best week: Ackbar, Blinkstradamus at 3-1" in note
+    assert not chat.games_recap_note(ctx, "how did my picks do this weekend?")
+    f = chat.results_facts(ctx, q)
+    assert not f or all(s_["kind"] != "you" for s_ in f["subjects"])
+
+
+def test_casual_and_self_knock_riders():
+    ctx = _wk11_ctx("Blinkstradamus")
+    with patch.object(chat, "_cfbd_index", lambda: None):
+        g = chat.guard_note(ctx, "what is the best cereal?")
+    assert g.startswith("OFF-TOPIC") and "Answer it for real" in g and "milk" in g and "Roast them" not in g
+    assert chat.self_knock_note(_wk11_ctx("Ackbar"), "why don\u2019t you work better".replace("\u2019", "'"))
+    assert not chat.self_knock_note(ctx, "who covered?")
+    assert chat._HOSTILE.search("you're a pussy") and chat._HOSTILE.search("you're a useless piece of junk")
+
+
+def test_recent_group_context_and_per_sender_history():
+    m = {"+15555550100": {"team": "DaddyFreeman", "name": "DaddyFreeman"}}
+    with patch.object(gc, "load_members", lambda: m):
+        b = gc.recent_block([{"handle": "+15555550100", "text": "All bark no bite, 2-2 lol", "ts": time.time()},
+                             {"handle": "x", "text": "call me 555-0199 or a@b.com", "ts": time.time()},
+                             {"handle": "", "text": "old", "ts": time.time() - 99999},
+                             {"from_me": True, "text": "hi"}])
+    assert "DaddyFreeman: All bark no bite, #-# lol" in b and "a member: call me ###-#### or [email]" in b
+    assert ": old" not in b and "Picky (you): hi" in b and "read-only" in b
+    assert gc.recent_block(None) == "" and gc.recent_block([]) == ""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d, patch.object(gc, "HISTORY_FILE", Path(d) / "h.json"):
+        asyncio.run(gc.save_turn("group:g", "you're a pussy", "reply", "+1a"))
+        asyncio.run(gc.save_turn("group:g", "who's winning", "reply2", "+1b"))
+        assert [t["content"] for t in gc.load_history("group:g", sender="+1b")] == ["who's winning", "reply2"]
+        assert len(gc.load_history("group:g")) == 4
+    assert gc.drop_echo("You're a pussy? Cute. You're 19-29 and last place.", "you're a pussy") == \
+        "You're 19-29 and last place."
+    assert gc.drop_echo("Who's winning? Chuck is.", "who's winning") == "Who's winning? Chuck is."
 
 
 if __name__ == "__main__":

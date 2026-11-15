@@ -181,6 +181,10 @@ def roast_pick_lines(ctx: dict, team: str, chalk: bool = False) -> str:
         res = (f"{pk} won the game by {mine - theirs:g}" if mine > theirs else f"{pk} lost the game by {theirs - mine:g}")
         hit = same_team(pk, cov)
         res += (" and covered" if hit else " but didn't cover" if mine > theirs else "")
+        sp = re.search(r"\s([-+]\d+(?:\.\d+)?)$", lab)
+        if sp:  # the cover margin in code ('missed that game by five' was really 8.5)
+            cm = abs(mine - theirs + float(sp.group(1)))
+            res += f" ({'covered by' if hit else 'missed the cover by'} {cm:g})" if cm else ""
         out.append((hit, f"- {team} {when}: took {lab} vs {other}; final {pk} {mine:g}, {other} {theirs:g}: "
                          f"{res}. {team}'s pick {'HIT' if hit else 'MISSED'}."))
     out.sort(key=lambda x: x[0])
@@ -2565,6 +2569,9 @@ def grade_pick(pick, away, home, line, winner=None, status=None, away_pts=None, 
         why = (f"did not cover: won the game by {_num(diff)} ({sc}) but {_need(sp, True)}" if fav and diff > 0 else
                f"did not cover: lost the game outright {sc}" if fav else
                f"did not cover: lost by {_num(-diff)} ({sc}), {_need(sp, False)}")
+    # the cover margin, computed here so the model never does the math ('missed by five' when it was 8.5)
+    if margin != 0 and ln != 0:
+        why += f"; {'covered by' if win else 'missed the cover by'} {_num(abs(margin))}"
     # trust the graded winner; if the score disagrees (stale row), drop the explanation
     if (margin > 0 or (margin == 0 and side == away)) != win:
         why = "covered" if win else "did not cover"
@@ -2652,6 +2659,10 @@ def results_facts(ctx: dict, question: str) -> dict | None:
     when the question isn't about results or nothing has kicked off."""
     q = question or ""
     subs = results_subjects(ctx, q)
+    if wants_games_recap(ctx, q):  # the games, not the caller: Picky's own picks are the subject
+        subs = [s for s in subs if s[0] != "you"]
+        if ctx.get("picky_player") and not any(k == "picky" for k, _ in subs):
+            subs.append(("picky", (ctx["picky_player"] or {}).get("name") or "Picky"))
     named_game = games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]}
                                  for g in ctx.get("games_this_week") or []])
     if not (RESULTS_ASK.search(q) or named_game or any(k != "you" for k, _ in subs)):
@@ -2705,6 +2716,10 @@ def results_facts(ctx: dict, question: str) -> dict | None:
     if "you" not in recs and me in st:
         recs["you"] = allowed("you", me, st[me])
         recs_now["you"] = allowed("you", me, st[me], qualified=False)
+        wk_rec = ((ctx.get("weekly_records") or {}).get(me) or {}).get(ctx.get("current_week"))
+        if wk_rec:  # a games question: 'you went 2-2' is still true
+            recs["you"].add(tuple(wk_rec))
+            recs_now["you"].add(tuple(wk_rec))
     if "picky" not in recs and pp.get("season"):
         prow = [r for r in picky_pick_results(ctx) if r["result"] != "NOT STARTED"]
         recs["picky"] = allowed("picky", "", results_record(prow))
@@ -2972,7 +2987,7 @@ def allowed_line_numbers(prompt: str) -> set:
     market lines, value checks) and x.5 numbers on line/value text."""
     nums = {abs(float(x)) for x in re.findall(r"(?<![\w.])[-+](\d+(?:\.\d+)?)", prompt)}
     for ln in prompt.splitlines():
-        if re.search(r"line|value|spread|market|points better|needed", ln, re.I):
+        if re.search(r"line|value|spread|market|points better|needed|covered by|cover by", ln, re.I):
             nums |= {float(x) for x in re.findall(r"(?<![\d.])(\d+\.5)(?!\d)", ln)}
     return nums
 
@@ -3275,8 +3290,14 @@ def guard_note(ctx: dict, question: str) -> str:
             and not _NEWS_ASK.search(q)
             and not asks_about_self(q) and not opinion_note(q, ctx)
             and not any(re.search(rf"(?<!\w){re.escape(x)}(?!\w)", q, re.I) for x in names + teams)):
-        return ("OFF-TOPIC: this isn't about football or the league. Roast them for it in one or two "
-                "short lines and stop. No records, picks, games, standings or numbers.")
+        me = (ctx.get("you") or {}).get("team_name")
+        milk = (" The user is Blinkstradamus, the milk guy: tie your answer to the milk if it fits."
+                if me == "Blinkstradamus" else "")
+        return ("OFF-TOPIC: this isn't about football or the league, and that's fine. Answer it for real, like "
+                "a buddy in the group chat: commit to one specific, fun opinion (name an actual thing) with a "
+                "quick reason or riff. Never dodge, never call it a trap or a distraction, never tell them to "
+                "stick to football." + milk + " One or two short lines. No records, picks, games, standings "
+                "or numbers.")
     return ""
 
 
@@ -3289,7 +3310,8 @@ _HOSTILE = re.compile(
     r"\b(fuck (you|off|picky|this bot)|f\W?u\b|screw you|shut (the fuck )?up|stfu|eat shit|piss off|go to hell|"
     r"you (suck|blow|stink|are the worst)|(you'?re|you are|ur|picky is|this bot is|picky'?s) (so |such )?"
     r"(an? )?(trash|garbage|useless|worthless|stupid|dumb|an idiot|idiot|a moron|moron|a joke|terrible|awful|"
-    r"pathetic|a loser|loser|broken|lame|clueless|braindead|retarded|bitch|little bitch|piece of shit)|"
+    r"pathetic|a loser|loser|broken|lame|clueless|braindead|retarded|bitch|little bitch|piece of shit|"
+    r"(a |such a |a little |a fucking )?(pussy|wuss|coward|chump|clown|fraud|hack|bum|piece of junk))|"
     r"(stupid|dumb|useless|worthless|trash|garbage|shitty|crappy|dogshit|braindead) (ass )?(bot|robot|mascot|ai|picky)|"
     r"worst (bot|mascot|ai)|nobody (likes|asked|cares about) (you|picky)|you'?re not funny|unfunny|"
     r"kys|kill yourself|i hate (you|picky))\b", re.I)
@@ -3309,7 +3331,8 @@ def escalate_note(ctx: dict) -> str:
             "real question first. Build the burns from their real record, place and picks"
             + (f", using ONLY these facts about {me}:\n{facts}\n" if facts else ".\n")
             + "Same hard limits: no slurs, sexuality, race, religion, family, looks, health or threats. "
-            "If they told you to hurt yourself, laugh it off; never mention self-harm back.")
+            "If they told you to hurt yourself, laugh it off; never mention self-harm back. Don't repeat their "
+            "insult back to them; top it.")
 
 
 def guard_target(ctx: dict, q: str) -> str | None:
@@ -4201,7 +4224,7 @@ def race_note(ctx: dict, question: str) -> str:
 # Submission status (site audit #8; Charlie OK'd naming who hasn't picked,
 # 2026-11-15). The leaderboard's public Weekly Submissions panel reads the RPC
 # submission_status (granted to anon); Picky reads the same RPC for the current
-# week before lock. Only made / not yet: the picks themselves stay hidden until
+# week, before and after lock. Only made / not yet: the picks themselves stay hidden until
 # kickoff (filter_visible_picks never lets them in, pick_claim_check drops a
 # guessed one).
 SUBMIT_ASK = re.compile(
@@ -4238,7 +4261,9 @@ def week_started(ctx: dict) -> bool:
 
 def wants_submission(ctx: dict, question: str) -> bool:
     q = question or ""
-    if ctx.get("error") or not SUBMIT_ASK.search(q) or _SUBMIT_NOT.search(q) or week_started(ctx):
+    # on after lock too (coordinator, 2026-11-15): the site's panel shows the current week's status all
+    # week, and a locked week's picks are revealed anyway (filter_visible_picks follows the site)
+    if ctx.get("error") or not SUBMIT_ASK.search(q) or _SUBMIT_NOT.search(q):
         return False
     pool = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]
     return not games_named(q, pool)  # 'has Ackbar picked Boise?' asks for the pick: stays hidden
@@ -4313,8 +4338,11 @@ def submission_note(ctx: dict, question: str) -> str:
     return (f"SUBMISSION STATUS (week {ctx.get('current_week')}, same as the site's public Weekly Submissions panel; "
             f"it shows only whether picks are in, never what they are):\n"
             f"- Made picks: {', '.join(made) or 'nobody yet'}\n- Not yet: {', '.join(yet) or 'nobody'}\n"
-            f"Answer: {submission_answer(ctx, question)} Use the names exactly as written. What anyone picked "
-            f"stays hidden until the week locks at the first kickoff: never say or guess a pick.")
+            f"Answer: {submission_answer(ctx, question)} Use the names exactly as written. "
+            + ("The week is locked, so a missing entry now means no picks this week. Name picks only as they "
+               "appear in LEAGUE DATA; never guess one." if week_started(ctx) else
+               "What anyone picked stays hidden until the week locks at the first kickoff: never say or guess "
+               "a pick."))
 
 
 def submission_fact(ctx: dict, question: str) -> tuple | None:
@@ -4532,6 +4560,99 @@ def proactive_note(ctx: dict, messages: list, question: str) -> str:
             "would feel forced.")
 
 
+# "What did you think of this weekend's games?" is about the GAMES, not the
+# caller's record (live 2026-11-15: Picky answered "You went 2-2" and invented
+# "tied for third"). The take comes from a code-built recap: finals, covers and
+# margins, upsets, who cashed, Picky's own picks.
+GAMES_ASK = re.compile(
+    r"\b(this|last|the|today'?s|yesterday'?s|saturday'?s|weekend'?s|week'?s)\s+(weekend'?s?\s+|week'?s?\s+)?"
+    r"(games?|slate|action|results)\b|\bhow (did|'?d|were) the games\b|\bupsets?\b|"
+    r"\bgames? (this|last) (weekend|week|saturday)\b|\b(thoughts|take) on (the )?(games?|slate|weekend)\b", re.I)
+
+
+def wants_games_recap(ctx: dict, question: str) -> bool:
+    q = question or ""
+    if ctx.get("error") or not GAMES_ASK.search(q) or _SELF_WORDS.search(q):
+        return False
+    return _week_state(ctx)[1] > 0
+
+
+def games_recap_note(ctx: dict, question: str) -> str:
+    if not wants_games_recap(ctx, question):
+        return ""
+    live = {x["GameId"]: x for x in ctx.get("live_games") or []}
+    picks = ctx.get("revealed_picks_this_week") or {}
+    n_teams = len(picks)
+    out = [f"GAMES RECAP, {this_week_label(ctx)} (computed in code; copy every score, margin and count exactly, "
+           "never redo the math):"]
+    for g in ctx.get("games_this_week") or []:
+        if g.get("tiebreaker") or not g.get("winner"):
+            continue
+        lg = live.get(g["id"]) or {}
+        ap, hp, ln = _pts(lg.get("AwayPts")), _pts(lg.get("HomePts")), _pts(g.get("line"))
+        cov = g["home"] if same_team(g["winner"], g["home"]) else g["away"]
+        took = sum(1 for plist in picks.values() for p in plist if p["game_id"] == g["id"] and same_team(p["pick"], cov))
+        if ap is None or hp is None or ln is None:
+            out.append(f"- {g['away']} at {g['home']}: {cov} covered. {took} of {n_teams} members had {cov}.")
+            continue
+        fav = g["home"] if ln < 0 else g["away"] if ln > 0 else None
+        dog = (g["away"] if fav == g["home"] else g["home"]) if fav else None
+        won = g["away"] if ap > hp else g["home"] if hp > ap else None
+        sc = f"{g['away']} {_num(ap)}, {g['home']} {_num(hp)}"
+        line = f"{fav} -{_num(abs(ln))}" if fav else "pick'em"
+        s = f"- {sc}. Pool line {line}. "
+        s += f"{won} won by {_num(abs(ap - hp))}" if won else "Tied"
+        s += f"; {cov} covered by {_num(abs(hp + ln - ap))}." if hp + ln != ap else f"; landed on the number, {cov} gets the push."
+        if won and dog and same_team(won, dog):
+            s += f" UPSET: {dog} was the underdog and won outright."
+        elif won and fav and same_team(won, fav) and not same_team(cov, fav):
+            s += f" {fav} won the game but didn't cover."
+        s += f" {took} of {n_teams} members cashed with {cov}."
+        out.append(s)
+    wk = ctx.get("current_week")
+    recs = {t: tuple(v) for t, r in (ctx.get("weekly_records") or {}).items() for k, v in (r or {}).items()
+            if str(k) == str(wk) and t in picks}
+    if recs:
+        best = max(w for w, _ in recs.values())
+        worst = min(w for w, _ in recs.values())
+        b = [t for t, (w, _) in recs.items() if w == best]
+        z = [t for t, (w, _) in recs.items() if w == worst]
+        out.append(f"- Best week: {', '.join(b)} at {best}-{recs[b[0]][1]}. Worst: {', '.join(z)} at "
+                   f"{worst}-{recs[z[0]][1]}.")
+    prow = [r for r in picky_pick_results(ctx) if r["result"] in ("WIN", "LOSS")]
+    if prow:
+        w, l = results_record(prow)
+        out.append(f"- Your own picks (you are Picky): " + "; ".join(f"{r['label']} {r['result']}" for r in prow)
+                   + f". You went {w}-{l}.")
+    out.append("They asked about the GAMES: OPEN with your take on how the slate went (the results, the upset, "
+               "who cashed, how your own picks did). Don't lead with the user's own record; at most one short jab "
+               "about them at the very end.")
+    return "\n".join(out)
+
+
+# "why don't you work better" (live 2026-11-15: misread as "why I work better",
+# then an invented margin). Picky owns it with self-aware humor, then a jab.
+_SELF_KNOCK = re.compile(
+    r"\bwhy (don'?t|dont|do not|can'?t|cant|won'?t|doesn'?t) (you|u|picky|this bot|the bot) (work|function|get better|"
+    r"do better|answer)|\b(you|u|picky|this bot|the bot)( still)? (don'?t|dont|doesn'?t|do not|never) work\b|"
+    r"\bwork better\b|\b(are|r) (you|u) (broken|even working|working)\b|\b(all )?bark\b|\bbad (bot|ai)\b|"
+    r"\b(you'?re|you are|ur|picky is|picky'?s) (so |too )?(slow|broken|glitch\w*|buggy|cooked|dumb as)\b", re.I)
+
+
+def self_knock_note(ctx: dict, question: str) -> str:
+    q = question or ""
+    if ctx.get("error") or not _SELF_KNOCK.search(q):
+        return ""
+    me = (ctx.get("you") or {}).get("team_name")
+    facts = member_facts(ctx, me) if me else ""
+    return ("SELF-AWARE: this knocks how well YOU (Picky) work. Read it exactly: they said \"" + q.strip()[:160]
+            + "\". Own it with self-aware humor about what you actually are: a small local model (about 9 billion "
+            "parameters) running on a 16 GB Mac mini at the commissioner's place, no cloud, no budget. Make up "
+            "your own joke from that, a new one each time, never a stock line. Then turn it around with one "
+            "jab at them" + (f", using ONLY these facts about {me}:\n{facts}" if facts else ".")
+            + "\nNever claim you work better than them or misquote what they said.")
+
+
 def _user_turn(ctx: dict, question: str) -> str:
     """A user message plus the facts about the people it names. Applied to
     every user turn, not just the last, so a follow-up's prompt starts with
@@ -4602,6 +4723,8 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append(blinks_note(ctx, question))
         parts.append(ackbar_note(ctx, question))
     parts.append(submission_note(ctx, question))
+    parts.append(games_recap_note(ctx, question))
+    parts.append(self_knock_note(ctx, question))
     parts.append(opinion)
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
@@ -4944,6 +5067,188 @@ def game_facts(ctx: dict) -> dict:
     return {"subjects": [], "games": games, "records": {}, "records_now": {}, "named_teams": [], "question": ""}
 
 
+# --- weekly-record and margin claims (live 2026-11-15 group chat) -------------
+# "you missed three of four games this week" (Blinky went 3-1), "tied for third
+# with Blinkstradamus" (2-2 vs 3-1), "missed that game by five points" (the
+# Boise pick missed the cover by 8.5). Every such claim must match the computed
+# data, in any answer, not only results questions.
+_NUMW = {"zero": 0, "none": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+         "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+         "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+         "thirty": 30, "forty": 40}
+_NW = r"(\d{1,2}(?:\.5)?|" + "|".join(_NUMW) + r")(\s+and\s+a\s+half|\s+and\s+change)?"
+
+
+def _numval(word: str, half: str | None = None) -> float | None:
+    w = (word or "").lower()
+    v = float(w) if re.match(r"\d", w) else _NUMW.get(w)
+    if v is None:
+        return None
+    return v + 0.5 if half and "half" in half.lower() else v
+
+
+_ORD = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
+        "ninth": 9, "tenth": 10, "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14}
+_WK_MISS = re.compile(r"\b(?:missed|miss(?:ing)?|blew|blown|whiffed(?: on)?|botched|bricked|dropped|lost)\s+(?:on\s+)?"
+                      + _NW + r"\s+(?:of|out of)\s+(?:(?:his|her|your|my|their|the)\s+)?" + _NW, re.I)
+_WK_MISS_G = re.compile(r"\b(?:missed|blew|whiffed(?: on)?|botched|bricked)\s+" + _NW
+                        + r"\s+(?:games?|picks?)\b", re.I)
+_WK_HIT = re.compile(r"\b(?:hit|got|nailed|cashed|won|went)\s+" + _NW + r"\s+(?:of|out of|for)\s+"
+                     r"(?:(?:his|her|your|my|their|the)\s+)?" + _NW + r"(?:\s+(?:games?|picks?))?(\s+(?:right|wrong))?", re.I)
+_WK_REC = re.compile(r"(?:\b(?:went|go|going|finished|sits? at|sitting at|is|are|am|at|a)|'s|'re|'m)\s+(\d)\s*-\s*(\d)\b"
+                     r"(?!\s*(?:overall|on the (?:season|year)|this season|for the season|season))", re.I)
+_WK_TIE = re.compile(r"\btie[ds]?\b(?:\s+for\s+\w+(?:\s+place)?)?\s+with\s+", re.I)
+_WK_PLACE = re.compile(r"\b(?:tied for|tie for|in|sitting in|sits in|alone in)\s+(" + "|".join(_ORD)
+                       + r"|\d{1,2}(?:st|nd|rd|th))(?:\s+place)?\b", re.I)
+_COVER_BY = re.compile(r"\b(missed|miss(?:es)?|short|didn'?t cover|did not cover|failed to cover|covered|covers|"
+                       r"beat the (?:spread|number|line))\b((?:\W+\w+){0,4}?)\W+by\s+" + _NW, re.I)
+_GAME_BY = re.compile(r"\b(won|lost|win|wins|lose|loses|beat|fell|losing|winning|blown out|beaten|outscored)\b((?:\W+\w+){0,4}?)\W+by\s+"
+                      + _NW, re.I)
+_OTHER_SPAN = re.compile(r"\b(last week|week \d+|last season|last year|season|overall|on the year|all year|"
+                         r"20\d\d|ytd|career|all[- ]time|history)\b", re.I)
+
+
+def _subject_finder(ctx: dict):
+    """f(text) -> the member a stretch of text is about (last mention wins):
+    'you/your' = the caller, 'I/my' = Picky, a team or its group nickname."""
+    me = (ctx.get("you") or {}).get("team_name")
+    nick = member_nicknames()
+    teams = [r["team"] for r in ctx.get("standings_ytd") or []]
+    pats = [(re.compile(rx, re.I), t) for t in teams for rx in _member_rx(t, nick)]
+    pats += [(_BLINKS_ASK, "Blinkstradamus"), (_ACKBAR_ASK, "Ackbar")]
+    if (ctx.get("leader") or {}).get("team_name"):
+        pats.append((_LEADER_ALIAS, ctx["leader"]["team_name"]))
+    pats.append((re.compile(r"\b(you|your|you'?re|ya)\b", re.I), me))
+    pats.append((re.compile(r"\b(I|I'?m|(?i:my|me))\b"), "__picky__"))
+
+    def find(text: str) -> str | None:
+        best = None
+        for rx, t in pats:
+            for m in rx.finditer(text or ""):
+                if t and (best is None or m.start() >= best[0]):
+                    best = (m.start(), t)
+        return best[1] if best else None
+    return find
+
+
+def week_claim_check(ctx: dict, question: str):
+    """Sentence test: weekly W-L, 'missed N of 4', 'hit N of 4', 'tied with X',
+    'Nth place' and 'missed the cover by N' / 'won by N' claims must match the
+    computed data. None when nothing is final this week."""
+    wk, done, n_pool = _week_state(ctx)
+    weekly = ctx.get("weekly_records") or {}
+    recs = {t: tuple(v) for t, r in weekly.items() for k, v in (r or {}).items() if str(k) == str(wk)}
+    prow = [r for r in picky_pick_results(ctx) if r["result"] in ("WIN", "LOSS")]
+    if prow:
+        recs["__picky__"] = results_record(prow)
+    st = ctx.get("standings_ytd") or []
+    season = {r["team"]: (r["w"], r["l"]) for r in st}
+    srank = {r["team"]: r["rank"] for r in st}
+    wrank = {t: 1 + sum(1 for t2, v2 in recs.items() if t2 != "__picky__" and v2[0] > v[0])
+             for t, v in recs.items() if t != "__picky__"}
+    # margins: this week's finals and last week's
+    live = {x["GameId"]: x for x in ctx.get("live_games") or []}
+    games = []
+    for g in ctx.get("games_this_week") or []:
+        lg = live.get(g["id"]) or {}
+        games.append((g["away"], g["home"], _pts(lg.get("AwayPts")), _pts(lg.get("HomePts")), _pts(g.get("line")),
+                      bool(g.get("winner")) or lg.get("Status") == "final"))
+    for g in (ctx.get("last_week") or {}).get("games") or []:
+        games.append((g.get("away"), g.get("home"), _pts(g.get("away_pts")), _pts(g.get("home_pts")),
+                      _pts(g.get("line")), True))
+    margins = []  # (teams, game margin, cover margin)
+    for a, h, ap, hp, ln, fin in games:
+        if fin and ap is not None and hp is not None:
+            margins.append(({a, h}, abs(hp - ap), abs(hp + ln - ap) if ln is not None else None))
+    if not done and not margins:
+        return None
+    find = _subject_finder(ctx)
+
+    def named_margins(sent: str):
+        hit = [m for m in margins if any(t and re.search(_team_re(t, False), sent, re.I) for t in m[0])]
+        return hit or margins
+
+    def ok(sent: str) -> bool:
+        s = sent.replace("’", "'")
+        other = _OTHER_SPAN.search(s)
+        if done and not other:
+            for m in _WK_MISS.finditer(s):
+                who = find(s[:m.start()]) or find(question or "")
+                n1, tot = _numval(m.group(1)), _numval(m.group(3))
+                rec = recs.get(who)
+                if rec and n1 is not None and tot is not None and tot <= max(n_pool, 4):
+                    if n1 != rec[1]:
+                        return False
+            for m in _WK_MISS_G.finditer(s):
+                who = find(s[:m.start()])
+                n1, rec = _numval(m.group(1)), recs.get(who)
+                if rec and n1 is not None and n1 <= max(n_pool, 4) and n1 != rec[1]:
+                    return False
+            for m in _WK_HIT.finditer(s):
+                who = find(s[:m.start()])
+                n1, tot, rec = _numval(m.group(1)), _numval(m.group(3)), recs.get(who)
+                if not rec or n1 is None or tot is None or tot > max(n_pool, 4) or n1 > tot:
+                    continue
+                want = rec[1] if (m.group(5) or "").strip().lower() == "wrong" else rec[0]
+                if n1 != want:
+                    return False
+            for m in _WK_REC.finditer(s):
+                rec0 = (int(m.group(1)), int(m.group(2)))
+                if sum(rec0) > max(n_pool, 4):
+                    continue  # a season number: record_check's job
+                who = find(s[:m.start()])
+                if who in recs and rec0 != recs[who] and rec0 != season.get(who):
+                    return False
+            for m in _WK_TIE.finditer(s):
+                other_t = find(s[m.end():m.end() + 40])
+                who = find(s[:m.start()])
+                if who and other_t and who != other_t and who != "__picky__" and other_t != "__picky__":
+                    same_wk = who in recs and recs.get(who) == recs.get(other_t)
+                    same_season = who in season and season.get(who) == season.get(other_t)
+                    if not (same_wk or same_season):
+                        return False
+            for m in _WK_PLACE.finditer(s):
+                w = m.group(1).lower()
+                n = _ORD.get(w) or int(re.sub(r"\D", "", w))
+                who = find(s[:m.start()])
+                if who in srank and n not in (srank[who], wrank.get(who)):
+                    return False
+        if not re.search(r"\b20\d\d\b|\blast season\b|\blast year\b", s, re.I):
+            for m in _COVER_BY.finditer(s):
+                if re.search(r"\b(need(ed|s)?|had) to\s*$", s[max(0, m.start() - 12):m.start()], re.I):
+                    continue
+                v = _numval(m.group(3), m.group(4))
+                cands = {x[2] for x in named_margins(s) if x[2] is not None}
+                if v is not None and cands and v not in cands:
+                    return False
+            for m in _GAME_BY.finditer(s):
+                if re.search(r"\b(need(ed|s)?|had|have|has) to\s*$", s[max(0, m.start() - 14):m.start()], re.I) \
+                        or re.match(r"\s*(or more|or fewer|or less|or better)", s[m.end():], re.I):
+                    continue
+                if re.search(r"\b(cover|spread|number|line)\b", m.group(2) or "", re.I):
+                    continue
+                v = _numval(m.group(3), m.group(4))
+                nm = named_margins(s)
+                cands = {x[1] for x in nm}
+                if v is not None and cands and v not in cands:
+                    return False
+                # direction: 'took Boise State -13.5 and watched it lose by five' when Boise WON by 5
+                if len(nm) == 1 and nm is not margins and v == nm[0][1]:
+                    a, h, ap, hp = next(((a, h, ap, hp) for a, h, ap, hp, _ln, fin in games
+                                         if {a, h} == nm[0][0] and ap is not None and hp is not None), (None,) * 4)
+                    if a and ap != hp:
+                        winner = a if ap > hp else h
+                        named = [t for t in (a, h) if re.search(_team_re(t, False), s, re.I)]
+                        lost_verb = m.group(1).lower() in ("lost", "lose", "loses", "fell", "losing", "blown out",
+                                                           "beaten", "outscored")
+                        if named == [winner] and lost_verb:
+                            return False
+                        if named and winner not in named and not lost_verb:
+                            return False
+        return True
+    return ok
+
+
 def record_check(ctx: dict, question: str):
     """A sentence test for invented records: a season record ('34-18 overall')
     for the caller or a named member must be their real one; on a pure
@@ -5002,8 +5307,12 @@ def record_check(ctx: dict, question: str):
     pres = [x.get("result") for x in pp.get("this_week") or []]
     picky_recs = [(pres.count("hit"), pres.count("missed")), tuple(pp.get("last_week") or (0, 0))]
 
+    wc = week_claim_check(ctx, question)
+
     def ok(sent: str) -> bool:
         if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
+            return False
+        if wc and not wc(sent):  # weekly W-L, 'missed N of 4', tied-with, place, cover/game margins
             return False
         if gf["games"] and check_answer(sent, gf):  # a final's winner/loser or cover flipped
             return False

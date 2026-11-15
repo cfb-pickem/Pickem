@@ -80,7 +80,8 @@ TEST_DM_HANDLES = {h.strip() for h in _config().get("test_dm_handles") or [] if 
 APPLE_EPOCH = 978307200  # 2001-01-01 in unix time
 GROUP_STYLE = 43         # chat.style: 43 group, 45 one-to-one
 
-TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?!\w)", re.I)
+# '@Picky', '@pickempicky', '@pickempicky@gmail.com' or a bare 'pickempicky@gmail.com' (the sidecar's copy matches)
+TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?![\w@])|(?<![\w.])@?\s?pickempicky(?:@gmail\.com)?(?![\w@])", re.I)
 MENTION_MARK = b"__kIMMentionConfirmedMention"
 
 log = logging.getLogger("picky-imessage")
@@ -162,6 +163,36 @@ LIMIT 200
 """
 
 
+# the last few messages in the group before the @ (any sender, Picky's own too): read-only context
+RECENT_MESSAGES = """
+SELECT m.text, m.attributedBody, m.date, h.id AS handle, m.is_from_me
+FROM message m
+JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+JOIN chat c ON c.ROWID = cmj.chat_id
+LEFT JOIN handle h ON h.ROWID = m.handle_id
+WHERE c.guid = ? AND m.ROWID < ? AND COALESCE(m.associated_message_type, 0) = 0
+ORDER BY m.ROWID DESC
+LIMIT ?
+"""
+RECENT_N = 8
+
+
+def recent_messages(db: sqlite3.Connection | None, chat_guid: str, rowid: int) -> list[dict]:
+    if db is None:
+        return []
+    try:
+        rows = db.execute(RECENT_MESSAGES, (chat_guid, rowid, RECENT_N)).fetchall()
+    except sqlite3.Error as e:
+        log.warning("recent messages unreadable: %s", e)
+        return []
+    out = []
+    for text, body, date, handle, me in reversed(rows):
+        t = text or decode_attributed_body(body) or ""
+        if t.strip():
+            out.append({"handle": handle or "", "text": t[:300], "ts": msg_unix_time(date), "from_me": bool(me)})
+    return out
+
+
 def connect() -> sqlite3.Connection:
     return sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True, timeout=5)
 
@@ -196,12 +227,13 @@ def should_act(row: dict, now: float) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-def ask_bot(handle: str, text: str, secret: str, chat: str = "", dm: bool = False) -> dict:
+def ask_bot(handle: str, text: str, secret: str, chat: str = "", dm: bool = False,
+            recent: list | None = None) -> dict:
     """{"reply": str|None, "image": base64 png|None}"""
     if not dm and not TRIGGER.search(text):  # mention-only messages: hand the sidecar a literal trigger
         text = "@Picky " + text
     payload = {"handle": handle, "text": text, "chat": chat, "dm": dm,
-               "allowlisted": dm and handle in TEST_DM_HANDLES}
+               "allowlisted": dm and handle in TEST_DM_HANDLES, "recent": [] if dm else (recent or [])}
     req = urllib.request.Request(
         BOT_URL, data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "X-Picky-Group-Secret": secret}, method="POST")
@@ -361,7 +393,7 @@ def main() -> int:
                 row = dict(zip(cols, raw))
                 ok, why = should_act(row, time.time())
                 if ok:
-                    handle_one(row, secret, rate)
+                    handle_one(row, secret, rate, db)
                 state["last_rowid"] = row["ROWID"]
                 save_state(state)
             if time.time() - last_outbox >= OUTBOX_POLL:
@@ -380,7 +412,7 @@ def main() -> int:
         time.sleep(POLL_SECONDS)
 
 
-def handle_one(row: dict, secret: str, rate: RateLimit) -> None:
+def handle_one(row: dict, secret: str, rate: RateLimit, db: sqlite3.Connection | None = None) -> None:
     text = row["text"] or decode_attributed_body(row["attributedBody"]) or ""
     handle = row["handle"] or ""
     dm = row["style"] != GROUP_STYLE
@@ -392,7 +424,8 @@ def handle_one(row: dict, secret: str, rate: RateLimit) -> None:
         log.warning("hourly cap hit, skipping rowid=%s", row["ROWID"])
         return
     try:
-        out = ask_bot(handle, text, secret, chat=row["chat_guid"], dm=dm)
+        recent = [] if dm else recent_messages(db, row["chat_guid"], row["ROWID"])
+        out = ask_bot(handle, text, secret, chat=row["chat_guid"], dm=dm, recent=recent)
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         log.error("bot unreachable for rowid=%s: %s", row["ROWID"], e)
         return

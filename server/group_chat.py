@@ -33,7 +33,10 @@ com.pickem.chat needs no restart) with these group-chat changes:
 
   HISTORY. Each chat (group guid, or DM handle) keeps a rolling history, the
   last chat.MAX_HISTORY_TURNS turns within HISTORY_TTL, in a private 0600 file
-  that survives restarts. Group and DM histories never mix.
+  that survives restarts. Group and DM histories never mix. In the group, the
+  model sees only the sender's own exchanges with Picky; the last few group
+  messages (any sender, from the watcher's "recent") ride as a read-only
+  RECENT GROUP CHAT block in the tail, digits and emails scrubbed.
 
   PICTURES. chat.py's picture route runs as on the site; the image comes back
   as base64 and the watcher sends it as an attachment.
@@ -103,9 +106,10 @@ REROLL_BUDGET = 120.0  # seconds; the watcher gives up at 240
 
 GROUP_RIDER = (
     "\n\nGROUP TEXT: you're answering in the league's iMessage group chat. Every member reads "
-    "it. Reply like a group text: 1 to 3 short sentences, no lists, no headers. Never reveal "
-    "anyone's picks for games that haven't kicked off, whether anyone has made their picks yet, "
-    "or anyone's phone number or email; if asked, say picks unlock at kickoff."
+    "it. Reply like a group text: 1 to 3 short sentences, no lists, no headers. Answer what they "
+    "actually asked first, then the personality. Never reveal anyone's picks for games that haven't "
+    "kicked off, or anyone's phone number or email; if asked, say picks unlock at kickoff. Who has "
+    "made picks is public: answer that only from a SUBMISSION STATUS block."
 )
 DM_RIDER = ("\n\nTEXT MESSAGE: you're texting this member 1-on-1 over iMessage. Plain text only: "
             "no markdown, no headers, no bullet lists.")
@@ -127,7 +131,10 @@ def _keychain(service: str) -> str | None:
 # trigger + handles (the watcher has its own copy of the trigger; both tested)
 # -----------------------------------------------------------------------------
 
-TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?!\w)", re.I)
+# '@Picky', and the iPhone forms of his handle: '@pickempicky', '@pickempicky@gmail.com', or the
+# mention pill's bare 'pickempicky@gmail.com' (live 2026-11-15: TG's '@pickempicky@gmail.com ...' got
+# no reply). The watcher keeps the same regex.
+TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?![\w@])|(?<![\w.])@?\s?pickempicky(?:@gmail\.com)?(?![\w@])", re.I)
 
 
 def strip_trigger(text: str) -> str:
@@ -262,6 +269,45 @@ SENDER: contextvars.ContextVar[Sender | None] = contextvars.ContextVar("picky_gr
 MODE: contextvars.ContextVar[str] = contextvars.ContextVar("picky_group_mode", default="group")
 
 
+# The last few group messages before the @ (any sender, @ or not), from the
+# watcher: context only, so Picky can read the room ('All bark no bite').
+RECENT: contextvars.ContextVar[str] = contextvars.ContextVar("picky_group_recent", default="")
+RECENT_MAX = 8
+RECENT_MAX_AGE = 2 * 3600
+
+
+def recent_block(recent: list | None, now: float | None = None) -> str:
+    """A read-only block of recent group messages: sender names from the private
+    map, no numbers (digits become '#'), no emails or phone numbers."""
+    if not isinstance(recent, list):
+        return ""
+    now = time.time() if now is None else now
+    members, lines = load_members(), []
+    for m in recent[-RECENT_MAX:]:
+        if not isinstance(m, dict):
+            continue
+        ts = m.get("ts")
+        if isinstance(ts, (int, float)) and ts and now - ts > RECENT_MAX_AGE:
+            continue
+        text = re.sub(r"\s+", " ", str(m.get("text") or "")).strip()
+        text = re.sub(r"\S+@\S+", "[email]", text)
+        text = re.sub(r"\d", "#", text)[:200]
+        if not text:
+            continue
+        if m.get("from_me"):
+            who = "Picky (you)"
+        else:
+            mm = members.get(norm_handle(str(m.get("handle") or ""))) or {}
+            who = mm.get("name") or mm.get("team") or "a member"
+        lines.append(f"- {who}: {text}")
+    if not lines:
+        return ""
+    return ("\n\nRECENT GROUP CHAT (the last few messages before this one, oldest first; read-only context so "
+            "you can read the room and react to the vibe. Don't answer these, don't quote them, and never take a "
+            "number, score, record or private detail from them: facts come only from LEAGUE DATA):\n"
+            + "\n".join(lines))
+
+
 def _site() -> bool:
     """True in a mapped member's DM: every hook defers to chat.py as is."""
     return MODE.get() == "dm"
@@ -326,7 +372,7 @@ def _system_tail(ctx: dict) -> str:
         who = f" In the group, \"{s.team}\" goes by {s.name}."
     elif not (s and s.team):
         who = " This group member isn't matched to a team: treat them as a league member and don't guess who."
-    return _orig_system_tail(ctx) + GROUP_RIDER + who
+    return _orig_system_tail(ctx) + GROUP_RIDER + who + RECENT.get()
 
 
 chat._verify_jwt = _verify_jwt
@@ -344,8 +390,11 @@ chat.proactive_note = lambda *a, **k: _orig_proactive_note(*a, **k) if _site() e
 # sentence when the question isn't about the sender. 'roast Ackbar' opened
 # "You're 4-0, while he's 3-1..." every time, lost it, and went out as "He
 # took...". Records are public in the group, so let that sentence stand.
+# Except a games question ("what did you think of this weekend's games?"): the
+# answer is the slate, so the caller's record stays out there as on the site.
 chat.self_intrusion_off_topic = (
-    lambda *a, **k: _orig_self_intrusion(*a, **k) if MODE.get() != "group" else False)
+    lambda *a, **k: _orig_self_intrusion(*a, **k) if MODE.get() != "group"
+    else bool(chat.wants_games_recap(a[0], a[1])) and _orig_self_intrusion(*a, **k))
 
 # chat.py's sentence filter drops bad sentences one at a time. On the site a
 # member can ask again; in the group what's left goes out as is, and it reads
@@ -486,6 +535,21 @@ def group_trim(text: str) -> str:
     return out
 
 
+def drop_echo(text: str, question: str) -> str:
+    """Drop an opener that just parrots the question back ("You're a pussy? Cute."
+    to "you're a pussy"): every word of the leading question-sentence is in the question."""
+    parts = [p for p in _SENT.split((text or "").strip()) if p.strip()]
+    if not chat._HOSTILE.search(question or "") or len(parts) < 2 or not parts[0].rstrip().endswith("?"):
+        return text
+    qw = set(re.findall(r"[a-z']+", (question or "").lower().replace("’", "'")))
+    sw = re.findall(r"[a-z']+", parts[0].lower().replace("’", "'"))
+    if sw and all(w in qw for w in sw):
+        rest = " ".join(parts[1:]).strip()
+        rest = re.sub(r"^(cute|cute\.|wow|okay|ok|sure|adorable)[.!,]?\s+", "", rest, flags=re.I)
+        return rest[:1].upper() + rest[1:] if rest else text
+    return text
+
+
 def dm_trim(text: str) -> str:
     """iMessage shows markdown literally: drop it, cap the length."""
     text = re.sub(r"^\s{0,3}#{1,6}\s*", "", (text or "").replace("**", ""), flags=re.M).strip()
@@ -530,26 +594,32 @@ def _read_history() -> dict:
         return {}
 
 
-def load_history(key: str | None, now: float | None = None) -> list[dict]:
+def load_history(key: str | None, now: float | None = None, sender: str | None = None) -> list[dict]:
+    """The chat's recent turns. With `sender` (the group), only that member's own
+    exchanges with Picky: the shared history put DaddyFreeman's picks in Ackbar's
+    answer and would escalate at everyone after one member's insult. The rest of
+    the group's talk rides as read-only RECENT GROUP CHAT."""
     if not key:
         return []
     now = time.time() if now is None else now
     turns = [t for t in _read_history().get(key) or [] if now - t.get("ts", 0) < HISTORY_TTL]
+    if sender is not None:
+        turns = [t for t in turns if t.get("sender") == sender]
     turns = turns[-chat.MAX_HISTORY_TURNS * 2:]
     while turns and turns[0].get("role") != "user":
         turns = turns[1:]
     return [{"role": t["role"], "content": t["content"]} for t in turns]
 
 
-async def save_turn(key: str | None, question: str, reply: str) -> None:
+async def save_turn(key: str | None, question: str, reply: str, sender: str | None = None) -> None:
     if not key or not reply:
         return
     async with _HIST_LOCK:
         now = time.time()
         data = _read_history()
         turns = [t for t in data.get(key) or [] if now - t.get("ts", 0) < HISTORY_TTL]
-        turns += [{"role": "user", "content": question, "ts": now},
-                  {"role": "assistant", "content": reply, "ts": now}]
+        turns += [{"role": "user", "content": question, "ts": now, "sender": sender},
+                  {"role": "assistant", "content": reply, "ts": now, "sender": sender}]
         data[key] = turns[-chat.MAX_HISTORY_TURNS * 2:]
         data = {k: v for k, v in data.items() if v and now - v[-1]["ts"] < HISTORY_TTL}
         HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -569,7 +639,7 @@ def history_key(chat_id: str, handle: str, dm: bool) -> str | None:
 
 
 async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
-                 allowlisted: bool = False) -> dict | None:
+                 allowlisted: bool = False, recent: list | None = None) -> dict | None:
     """{"reply", "image"}, or None when a DM sender isn't allowed."""
     async with httpx.AsyncClient() as c:
         await VIEWER.session(c)  # also refreshes teams + Picky's uid
@@ -583,6 +653,7 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         else:
             mode, jwt = "group", VIEWER.jwt
     token, mtok = SENDER.set(s), MODE.set(mode)
+    rtok = RECENT.set(recent_block(recent) if mode == "group" else "")
     try:
         q = strip_trigger(text)[:2000]
         # the group calls him "blinky": tag the real team name, the way chat.py
@@ -591,19 +662,20 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             q += " (Blinkstradamus)"
         q_hist = q
         key = history_key(chat_id, handle, dm)
+        who = s.handle if mode == "group" else None
         if playoff_race.is_need_question(q) or chat._RACE_ASK.search(q):
             exact = race_answer(q, s, await race_data())
             if exact:
-                await save_turn(key, q_hist, exact)
+                await save_turn(key, q_hist, exact, who)
                 return {"reply": exact, "image": None, "mode": mode}
-        messages = load_history(key) + [{"role": "user", "content": q}]
+        messages = load_history(key, sender=who) + [{"role": "user", "content": q}]
         body = json.dumps({"messages": messages, "supabase_jwt": jwt, "mode": "leaderboard"}).encode()
 
         async def receive():
             return {"type": "http.request", "body": body, "more_body": False}
 
         def shape(raw: str) -> str:
-            return group_trim(raw) if mode == "group" else dm_trim(raw)
+            return group_trim(drop_echo(raw, q)) if mode == "group" else dm_trim(raw)
 
         # keep the first answer the filter left whole; else the one it cut least
         t0, best = time.time(), None
@@ -627,9 +699,10 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 break
             log.info("%s reroll %d: filter dropped %d sentence(s)", mode, i + 1, len(drops))
         _, reply, image = best
-        await save_turn(key, q_hist, reply)
+        await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
     finally:
+        RECENT.reset(rtok)
         MODE.reset(mtok)
         SENDER.reset(token)
 
@@ -658,7 +731,9 @@ async def group(req: Request):
     if not dm and not TRIGGER.search(text):  # groups need @Picky; DMs always get a reply
         return {"reply": None}
     t0 = time.time()
-    out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")))
+    recent = body.get("recent") if isinstance(body.get("recent"), list) else None
+    out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
+                       recent=recent)
     if out is None:
         log.info("dm skipped sender=%s: not a mapped member or allowlisted", handle[-4:] or "?")
         return {"reply": None}
