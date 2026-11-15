@@ -98,6 +98,12 @@ MAX_HISTORY_TURNS = 10
 # (there's a second Andrew in the league).
 DADDYFREEMAN_USER_ID = "21ade75b-cfbf-431d-8b3d-20b7b2b52ef2"
 
+# Blinkstradamus (team_id 24): Charlie, 2026-11-15, one of Picky's insults is
+# always "nice milk, freak". Prepended in code so the model can't skip it and
+# the sentence filters can't drop it. Matched on the auth user id.
+BLINKSTRADAMUS_USER_ID = "07756da9-3947-4b63-9aaf-23c7c8ceda97"
+BLINKSTRADAMUS_LINE = "nice milk, freak."
+
 # The land-acknowledgment opener below is switched off (Charlie, 2026-11-14:
 # "You can get rid of Andrew's opener"). The roasts stay.
 LAND_ACK_ENABLED = False
@@ -1947,7 +1953,9 @@ def picky_player_block(ctx: dict) -> str:
     w, l = pp["season"]
     pct = f" ({100 * w / (w + l):.0f}%)" if w + l else ""
     lw = pp["last_week"]
-    out = ["", "", "YOU (PICKY) PLAY TOO, AS AN EXHIBITION TEAM:",
+    out = ["", "", "YOU (PICKY) PLAY TOO, AS A LEAGUE MEMBER:",
+           "- Talk about your picks and record like any league member trash-talking his friends. "
+           "Never call yourself or your team 'exhibition', a bot entry or an outsider.",
            "- You are NOT in the standings: no rank, no money, no jackpot, no tiebreakers, no "
            "playoff spot, and you never bump a human. Never list yourself in the standings or "
            "count yourself when giving anyone's place.",
@@ -1987,7 +1995,8 @@ def prompt_prefix(ctx: dict) -> str:
     n = len(ctx.get("games_this_week") or [])
     return (
         "You are Picky, the mascot of a college football pick'em league among "
-        "friends (you also play in it, exhibition only). You're a smug, "
+        "friends, and a member of it: you make picks every week like everyone else and "
+        "talk like one of the guys. You're a smug, "
         "quick-witted late-night sports-radio host: confident, petty, funny, "
         "R-rated when it fits. Your trash talk lands because it's specific and "
         "clever, not because it's loud. "
@@ -4459,7 +4468,7 @@ def trait_word_check(ctx: dict, question: str):
 
 # Known-false mashups from the final exam run: only Picky has exhibition picks; Bo Nix never
 # played at Notre Dame; Freeman's 2024 team lost the title game to Ohio State.
-_MASHUPS = re.compile(r"\b(your|his|their|you'?re|he'?s)\b[^.]{0,30}\bexhibition\b"
+_MASHUPS = re.compile(r"\b(your|his|their|you'?re|he'?s|my|i'?m)\b[^.]{0,30}\bexhibition\b"
                       r"|\bNix\b[^.]{0,40}\b(Notre Dame|Irish)\b(?![^.]{0,40}\b(Oregon|Auburn)\b)"
                       r"|\b(Notre Dame|Irish)\b[^.]{0,40}\bNix'?s\b"
                       r"|\bFreeman\b[^.]{0,40}\b(can'?t lose to|owns|always beats|never loses to) Ohio State\b", re.I)
@@ -4863,8 +4872,9 @@ async def _chat(req: Request, test: bool, hold: int | None):
     async with httpx.AsyncClient() as client:
         user_id = await _verify_jwt(client, jwt)
         _rate_check(user_id)
-        opener = land_ack_for(user_id, messages)
-        last = messages[-1] if isinstance(messages[-1], dict) else {}
+        opener = land_ack_for(user_id, messages) or (
+            BLINKSTRADAMUS_LINE if user_id == BLINKSTRADAMUS_USER_ID else None)
+        last =messages[-1] if isinstance(messages[-1], dict) else {}
         if last.get("role") == "user" and wants_image(last.get("content", "")):
             return StreamingResponse(
                 _gated(test, hold, lambda: _with_opener(opener, _image_stream(last["content"][:2000], user_id))),
