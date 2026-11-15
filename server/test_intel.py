@@ -119,6 +119,10 @@ check("hedged injury line passes without intel",
 check("'broken clock' isn't an injury", bad("You didn't miss every one like a broken clock.", intel=False) is None)
 check("'broken clock' without a hedge either", bad("Your picks are a broken clock this year.", intel=False) is None)
 check("a real unnamed injury claim still is", bad("Their top corner has a torn ACL.", intel=False) is not None)
+check("casino 'busted out' isn't an injury", bad("DaddyFreeman has 1,575 chips while you are busted out at zero.",
+                                                   intel=False) is None)
+check("'is out of the playoff race' isn't either", bad("SMU is out of the playoff race.", intel=False) is None)
+check("unnamed 'is questionable' still is", bad("Their starting corner is questionable.", intel=False) is not None)
 check("calendar words don't trip it", bad("On Saturday November 21 the starters play at noon.") is None)
 f = chat.grounded_check(ctx(), corpus)
 check("rounded prompt number passes", f("He completes about 87% of the time, says FPI."))

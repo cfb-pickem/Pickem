@@ -4663,8 +4663,9 @@ _POS_WORD = re.compile(r"\b(qbs?|quarterbacks?|rbs?|running ?backs?|tailbacks?|w
                        r"linebackers?|cornerbacks?|safety|safeties|kickers?|punters?|edge rushers?|lineman|linemen|"
                        r"defensive (end|tackle)s?|starters?|backups?|freshmen|freshman|transfers?)\b", re.I)
 _INJ_CLAIM = re.compile(
-    r"\b(?:is|are|was|were|remains?|been|got|ruled|listed as)\s+(?:\w+\s+)?(?:out|questionable|doubtful|probable|"
-    r"injured|hurt|sidelined|banged[- ]up|limited|day[- ]to[- ]day|a game[- ]time decision)\b|"
+    r"\b(?:is|are|was|were|remains?|been|got|listed as)\s+(?:still\s+|now\s+|reportedly\s+|likely\s+|officially\s+)?"
+    r"(?:questionable|doubtful|injured|hurt|sidelined|banged[- ]up|day[- ]to[- ]day|a game[- ]time decision)\b|"
+    r"\bruled out\b|"
     r"\bout for the (?:season|year|game)\b|\b(?:torn|sprained|broken|fractured)\s+(?:acl|mcl|labrum|meniscus|"
     r"achilles|leg|arm|hand|foot|wrist|ankle|collarbone|finger|thumb|ribs?|bone|hamstring|pec)\b|\bconcussion\b|"
     r"\b(?:acl|mcl|hamstring|ankle|knee|shoulder|foot|wrist|hand|back|leg|arm)\s+(?:injury|issue|surgery|sprain|tear|"
