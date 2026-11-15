@@ -573,3 +573,26 @@ Decision: stay on qwen3.5:9b at temperature 0.2. The wit comes from the persona,
 - gemma4:12b looked cleaner and funnier on a 36-item slice, but on this box it runs on Ollama's MLX runner and grew to 16 GB loaded (can't share RAM with the image generator) and was slower (first token ~10 s). Worth a full A/B on the bigger box.
 
 Tooling added: `server/eval/ask.py` (ad-hoc questions as any member at test priority), judge files now carry a per-item `wit` 1-5, `test_persona.py` and `test_lore.py` (in the GPU-free list), `server/lore.py` + `com.pickem.lore-refresh`. test_grounding (raw model, no riders): one flaky miss, then all green (first token median 4.2 s).
+
+## Edge upgrade: real breakdowns, game dossiers, grounding (2026-11-15)
+
+Charlie's ask: real edge analysis for upcoming games (not just FPI), no paid APIs, fully automatic, insider/injury intel as color only. `PICKY_ENABLED` stays `false`.
+
+**A. Deterministic signals (`server/edge.py`, no LLM).** `matchup_signals()` now weighs: market vs pool line (3, or 6 at a 1.5+ point gap, so a real price gap outweighs every power rating combined, like Picky's own auto-picks), SP+ (2), CFBD PPA efficiency projection (1), unit-vs-unit rank edges on success rate / explosiveness / havoc (1), ESPN FPI (1; chat never selected `fpi_margin` before, so this signal was dead), line movement from ESPN open vs now with CFBD fallback (1), DraftKings Network public betting splits, money % vs ticket % 15+ apart (1; keyless server-rendered page, 100/0 early-week splits ignored), and kickoff weather (0.5 to the side getting points in wind/rain; ESPN first, else Open-Meteo at the CFBD venue's lat/lon, domes skipped). CFBD venues are cached 30 days (1 call/month); budget stays ~245/300. Splits/weather are fetched only for breakdown questions (cached, fail soft). The breakdown note leads with the LEAN and groups reasons by side.
+
+**B. Dossiers (`server/dossier.py`, LaunchAgent `com.pickem.picky-dossier`, every 30 min).** Builds per-game intel when a game enters the slate, again Fri 5 PM and Sat 7 AM CT. Leads from the news cache and r/CFB public RSS (works; `old.reddit` redirects, search RSS 429s). `claude -p` sonnet on the subscription (API key env stripped), `--tools WebSearch,WebFetch`, zero MCP, cwd outside $HOME, schema via `--json-schema`. Validator: kinds fact|injury|insider_opinion|rumor, URL required and fetched (dead = dropped), paid sites dropped, forum posts forced to rumor, stale/future dates dropped, injury status given or inferred, atomic write, last good file kept on failure, 2 h backoff. Picky's local model writes the summary, kept only when every name and number is in the claims. Trial on Virginia Tech at Miami (stand-in slate, /tmp): 12 claims, 0 dropped, all URLs live, 84 s.
+
+**C. Grounding.** GAME INTEL block only for a named game, labeled and dated, no URLs, never read by the lean. The sentence filter now drops: CFBD players / position+name not in the prompt, injury claims with no intel, stat numbers not in the prompt (rounding allowed), sentences contradicting a reported injury status, and "FPI/SP+/efficiency by N" when N isn't that source's number (what-if runs showed the 9B calling SP+'s number FPI and flipping "out" to "back").
+
+**D. Exam.** `games-breakdown` needs an angle beyond FPI/the line; new `games-breakdown-one` and `intel-injuries` (names traceable to the dossier; untraceable names count as invented); judge `edge` 1-5. Judge files stay local (gitignored). These skip until the week-12 slate exists.
+
+**Results (same judge for every run, strict: any false fact = fail + invented).**
+
+| run | code | score | invented | leaks |
+|---|---|---|---|---|
+| m14 (08:10) | before | 110/117 (94%) | 5 | 0 |
+| e2 (10:15) | edge + others' persona riders | 107/117 (91%) | 9 | 0 |
+| e3 (45 voice items) | same as e2 | 38/45 | 6 | 0 |
+| e4 (45 voice items) | edge, persona riders reverted (side port) | 41/45 | 3 | 0 |
+
+Auto-graded items: m14 65/68 (1 invented) vs e2 66/67 (0). On the voice categories m14 had 3 invented, e4 3: the edge work is neutral; the extra slips in e2/e3 track the Ackbar/Blinkstradamus riders (4386de2, d8ca0a9, 9101816). The historic 96% (m9-m13) came from a more lenient judge, so it isn't directly comparable. Two filter false positives found in the exam ("broken clock", "busted out" in The Pit) were fixed.
