@@ -4664,7 +4664,7 @@ def rankings_fact(note: str) -> tuple | None:
     m = re.search(r"released (\w+ \d+)", note or "")
     if not m:
         return None
-    return (lambda t: bool(re.search(r"\bas of\b|\b(nov|oct|dec)\w*\.? \d{1,2}\b", t, re.I)),
+    return (lambda t: bool(re.search(r"\b(nov|oct|dec)\w*\.? \d{1,2}\b", t, re.I)),  # 'as of late November' isn't a date
             f" (Rankings as of {m.group(1)}.)")
 
 

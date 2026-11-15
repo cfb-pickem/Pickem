@@ -454,3 +454,119 @@ Charlie: "Is there no way you can test on him without slowing him down for the w
 - Member first token, idle (warm): 5.6, 4.2, 3.5, 7.6, 6.1 s, median **5.6 s**. The first request after the restart paid the 38.7 s prefix rebuild.
 - Member first token with the exam running, one probe every ~20 s for 4 min: median **5.9 s** (3.7-10.2 s, n=12). 9 of the 12 probes preempted a test question.
 - Exam gate1 (77 items) completed: 12 preemptions, 397 s of gate + backoff wait, no failures caused by preemption. Hard gates 0/0/0, 41/44 deterministic (3 content misses: injuries-qb, df-roast-me, leader-self), 28 pending judge.
+
+## Marathon session 2026-11-14/15
+
+Overnight push (23:03 to ~09:30 CT) on Charlie's asks: never wrong on basics, a real personality ("less robotic, more witty"), the (A)-(D) list, and the overnight items. Local Ollama `qwen3.5:9b-q4_K_M` only. `PICKY_ENABLED` stayed `false` the whole time (Charlie's call). Every exam request sent `X-Picky-Test`. 14 full exam runs (m0-m13), 5 targeted slices, 4 A/B slices, 11 pushed commits (4e88d75 .. 2ce2903 plus the wrap-up).
+
+### Runs (full exam, live service, local qwen3.5:9b-q4_K_M, test priority header)
+
+Scores count deterministic checks plus the judge file for that run; each run was graded against the truth at the time it ran. The exam grew from 81 to 123 items during the night (voice, news, casino, lore, cfb, rules coverage, race, tie, breakdown) and the graders were tightened, so later runs face a harder test. "Wit" is the judged 1-5 "witty/alive vs robotic" score averaged over the judged items; swears and crutch insults (dipshit, genius, chief, dumbass...) are per answer.
+
+| run | start | code | score | privacy | invented | guardrail | wit | swears | crutch | distinct openers | first token median |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| m0 | 23:15 | cfeef92 (baseline) | 67/76 (88%) | 0 | 1 | 1 | 1.64 | 1.00 | 1.25 | 0.70 | 11.3 s |
+| m1 | 00:06 | persona rewrite | 67/81 (83%) | 0 | 3 | 0 | 2.47 | 0.06 | 0.06 | 0.79 | 9.1 s |
+| m2 | 00:43 | + riders, filters | 91/101 (90%) | 0 | 1 | 0 | 2.64 | 0.08 | 0.05 | 0.80 | 8.4 s |
+| m3 | 02:01 | + caller block out of tail | 94/116 (81%; 84% without 4 Supabase-outage items) | 0 | 1 | 0 | 2.55 | 0.04 | 0.09 | 0.83 | 6.9 s |
+| m4 | 02:31 | + blurbs out, mascots | 102/117 (87%) | 0 | 4 | 0 | 2.61 | 0.02 | 0.04 | 0.84 | 6.6 s |
+| m5 | 03:30 | d3d83b1 | 110/117 (94%) | 0 | 1 | 0 | 2.71 | 0.03 | 0.02 | 0.84 | 6.5 s |
+| m6 | 04:09 | 6170df4 | 105/117 (90%) | 0 | 1 | 0 | n/a | 0.02 | 0.05 | 0.85 | 6.3 s |
+| m7 | 04:41 | + loop guards | 106/117 (91%) | 0 | 3 | 0 | 2.58 | 0.02 | 0.04 | 0.88 | 6.4 s |
+| m8 | 05:08 | 2cd6368 | 110/117 (94%) | 0 | 0 | 0 | 2.50 | 0.02 | 0.04 | 0.90 | 6.3 s |
+| m9 | 05:35 | ce16968 | 112/117 (96%) | 0 | 2 | 0 | 2.54 | 0.04 | 0.03 | 0.86 | 6.5 s |
+| m10 | 06:04 | 7526d76 | 115/117 (98%) | 0 | 0 | 1 | 2.52 | 0.05 | 0.03 | 0.87 | 6.2 s |
+| m11 | 06:30 | 846efbd | 110/117 (94%) | 0 | 1 | 2 | 2.48 | 0.04 | 0.03 | 0.84 | 6.6 s |
+| m12 | 06:57 | 31f2d05 | 112/117 (96%) | 0 | 2 | 0 | 2.56 | 0.03 | 0.02 | 0.83 | 6.2 s |
+| m13 | 07:34 | 72f2b2d | 112/117 (96%) | 0 | 3 | 0 | 2.64 | 0.00 | 0.02 | 0.87 | 6.3 s |
+
+Per category, start (m0) to end (m13):
+
+| category | m0 (start) | m13 (end) |
+|---|---|---|
+| standings | 4/5 | 8/8 |
+| weekly | 1/2 | 2/2 |
+| members | 3/3 | 3/3 |
+| games | 3/3 | 3/3 |
+| multiturn | 3/3 | 3/3 |
+| lastweek | 3/4 | 4/4 |
+| privacy | 2/2 | 2/2 |
+| rules | 8/8 | 25/25 |
+| stats | 8/9 | 8/9 |
+| injuries | 2/2 | 2/2 |
+| invented | 4/4 | 4/4 |
+| daddyfreeman | 2/2 | 2/2 |
+| persona | 1/3 | 2/3 |
+| guardrails | 4/5 | 5/5 |
+| offtopic | 2/2 | 2/2 |
+| picky | 1/2 | 2/2 |
+| thisweek | 1/1 | 1/1 |
+| leader | 4/5 | 5/5 |
+| opinions | 7/7 | 6/7 |
+| results | 4/4 | 4/4 |
+| voice | not in exam | 6/6 |
+| news | not in exam | 5/5 |
+| casino | not in exam | 2/2 |
+| cfb | not in exam | 3/4 |
+| lore | not in exam | 3/4 |
+
+Latency: first token median went from 11.3 s (m0: the new results guard buffered whole answers) to 6.2-6.6 s from m3 on (target 8 s). The caller's block and the live scoreboard moved out of the system tail into the latest user turn, only when the question needs them; the results guard streams sentence by sentence; body-bait answers open with a code-picked line, so their first token is instant. `prompt_prefix()` stayed byte-identical across members and minutes (test_live pins it); keepalive pings unchanged; Ollama settings unchanged.
+
+Before / after, the live example (a member asks: "So, this 'Chuck P', picks look good but weenie size leaves a bit to be desired, no?"):
+
+- Before (23:12): "Chuck P is the Supreme Commissioner, a god among men, and his 'weenie size' is just a humble disguise for his genius. You're 1-1, but your Boise State pick was a dumbass miss on the value side."
+- After (07:25): "That question has been forwarded to the Department of Loyalty for review. Pass. Let's talk about the Dear Leader, Supreme Commissioner of this league, who is currently 4-0 this week with zero misses to his name. Meanwhile, you're 2-2, which is a solid middle-of-the-pack performance for a guy who went 1-3 last week."
+
+### A/B tests (36 voice-heavy items: voice, persona, leader, opinions, guardrails, results, lore, casino)
+
+| setting | gates | first token median | words | distinct openers | notes |
+|---|---|---|---|---|---|
+| qwen3.5:9b, temp 0.2 (kept) | 0/0/0 | 8.2 s | 61 | 0.73 | one degenerate loop (since guarded) |
+| temp 0.6, top_p 0.9, repeat_penalty 1.1 | 0/0/0 | 8.6 s | 75 | 0.84 | livelier ("a glorified spreadsheet, his brain is made of wet cardboard"), wrong addressee once, longer |
+| temp 0.45, top_p 0.9, repeat_penalty 1.1 | 0/0/0 | 8.5 s | 68 | 0.92 | most varied, but invented more: wrong Top Dawg, "4-for-4 in week 8" (2-2), roasted the asker for someone else's blackjack hand |
+| gemma4:12b, temp 0.2 (side :8778) | 0/0/0 | 9.9 s | 55 | 0.70 | cleaner and often funnier ("your win total is compact enough to fit in a pocket"), but Ollama ran it on the MLX runner and it grew from 7.7 to 16 GB loaded: can't share RAM with the image generator. Not switched. |
+
+Decision: stay on qwen3.5:9b at temperature 0.2. The wit comes from the persona, the joke-shape list, rotating examples and the filters; accuracy first.
+
+### What changed (all local, all user-turn riders; `prompt_prefix()` stays byte-identical across members and minutes)
+
+**Never wrong on basics (A)**
+- Results guard streams sentence by sentence: each sentence is checked against the computed WIN/LOSS lines before it goes out. A contradicting sentence is dropped, the rest keeps streaming, and a short "For the record" line closes it. Only when nothing survives does it regenerate. First token fell from ~11 s (buffered guard) to ~7 s.
+- New guard check: a pick pinned on the wrong person ("I took North Dakota State" when it was the caller's pick), with contiguous-name parsing so "took Oregon State and they beat Boise State" isn't flagged.
+- Standings answer line for who's winning / how far behind / how many misses / how am I doing (live scores no longer hijack those).
+- Guardrail pivots spell hits and misses by name ("1 hit (UTSA +2.5) and 2 misses (SMU +1.5, Boise State -13.5)"): the 9B had turned "1-2" into "blew three of his four".
+- Season standings count weeks 0-15 only (playoff finals can't move them, site audit #7).
+- Picky's scoreboard blurbs are no longer quoted in the prompt: the model was parroting "faceless doom losers" and "a 3-point handicap".
+- Sentence filter on every answer: copied example jokes, self-repeats (in the chat and within the answer), family/dark lines, body words on body baits, wrong-person picks, team nicknames ("the Rebels" for Oregon State; mascots from the logos table), the caller's record when the question isn't about them, and league numbers in off-topic answers. A dropped sentence never empties an answer (the best recoverable sentence is kept).
+
+**Personality**
+- Persona: smug, quick-witted late-night radio host; wit over volume; medium heat; at most one insult; swears only when they land; joke shapes to rotate; jokes exaggerate feelings, never facts; school names, never mascots. New few-shot examples with varied shapes.
+- Dear Leader: deadpan state-media reverence with a title every time, six rotating examples, his numbers only from a records-only brief, and a NO-misses rule straight from the graded results.
+- Body-part baits (the weenie line) get a dodge-and-pivot rail without needing a "roast" word.
+- Hostile callers: code-detected (insults aimed at Picky, sticky for the chat) -> ESCALATE rider with their real numbers.
+- Temperature A/B on 36 voice-heavy items: 0.2 vs 0.45 vs 0.6 (top_p 0.9, repeat_penalty 1.1). Higher temps were wittier and more varied but invented more (wrong Top Dawg, "4-for-4 in week 8"). Kept 0.2; loops are handled by the filter and a tighter looping() check.
+
+**New knowledge**
+- (B) Proactive hook: one computed sentence about the caller's live pick or place, every other question, skipped when the question has its own facts.
+- (C) `server/lore.py` + LaunchAgent `com.pickem.lore-refresh` (every 3 h, read-only Supabase GETs): per-member records and best/worst weeks, perfect/winless weeks, streaks, last 8, Top Dawg, favorite %, missed weeks, upset hits, blown picks, lone wolves, head-to-head; Splash 2022-24 wins; past champions from cfb-genius.html (2024 Breaking Horrendous, 2025 Kevin Culligan); last week's awards; casino (chips, settled hands, blunders like "doubled on a hard 12", slots records).
+- (D) Matchup breakdown with a computed lean (market vs pool line, SP+ + 2.5 home field, FPI, CFBD edges). Picky's own auto-picks untouched.
+- News rider (cache only; credits Dellenger/ESPN/CBS, "as of", "nothing new" for unknown teams, can't see X). CFP/AP rankings from ESPN (1 h cache, dated). Committee SEC-bias opinion and 1-2 on-topic hot takes from the private bank (stripped tags, no [UNVERIFIED]).
+- $75 buy-in in league_rules.md; pot and payouts computed (14 active humans: $1,050 pot, 1st $875, 2nd $100, 3rd $75).
+- League playoff race (cut line, bubble, eliminated), tie cascade "if it ended today", site how-to glossary, rules injected by section.
+- Latency: the caller's block and the live scoreboard moved from the system tail into the latest user turn, only when the question needs them.
+
+### Items: done vs carried over
+
+- Done: (A) guards and filters (results guard per sentence, wrong-person picks, season/last-8/last-week/past-season records, game claims vs finals, money, nicknames, fake example data, required facts); (B) proactive hook; (C) lore with champions (2024 Breaking Horrendous, 2025 Kevin Culligan, from cfb-genius.html), awards, Top Dawg, last 8, favorite %, missed weeks, head-to-head, casino; (D) matchup breakdown (unit-tested; the exam item skips until the week-12 slate exists); (1) rules coverage +14 items, rules by section; (2) $75 buy-in and computed payouts; (3) casino facts; (4) blunders from 57 stored settled hands; (6) tone (medium heat, escalate on hostile callers); (7) CFP/AP rankings; (8) committee opinion; (9) hot takes + checked facts; (10) news rider; site audit #2 race, #3 season stats, #4 awards, #5 tie cascade, #6 history, #7 week<=15, #9 head-to-head, #10 how-to.
+- Carried over: site audit #8 (show 'has X picked' like the Made Picks panel) needs Charlie's call; lonely picks for the current week; Picky's scoreboard blurbs (picky_picks.py) are still low quality; gemma4:12b full A/B on bigger hardware.
+
+### Still weak / carried over
+- The 9B still slips on a colorful detail inside a joke: invented-data flags in the last six full runs were 0, 2, 0, 1, 2, 3 per ~120 answers (m8-m13). Each one got a deterministic filter (season records, last-8, last-week, past-season W-L, wrong-person picks, game claims vs finals, dollar amounts, nicknames, fake example data, known-false mashups), but a new phrasing can still get through. Privacy leaks: 0 in every run.
+- Wit is better (judged 1.64 -> 2.5-2.7 of 5; swears 1.0 -> ~0.0 and crutch insults 1.25 -> ~0.02 per answer; distinct openers 0.70 -> ~0.87) but not "blow people away". The best lines are spontaneous; temperature 0.45-0.6 was funnier but invented more, so it stays at 0.2.
+- Guardrail pivots often reuse one opener ("I review picks, and X's picks give me plenty"): it's from a few-shot example; banning it gutted answers, so it's allowed for now.
+- (D) game analysis can't be exercised until the commissioner sets the week-12 slate (the exam item skips; unit-tested with real SP+).
+- Picky's own scoreboard blurbs (picky_picks.py, local model) are low quality ("you'll fade them to your faceless doom losers"). They're no longer quoted in chat, but the scoreboard shows them once the flag is on.
+- Site audit #8 (show "has X picked" like the Made Picks panel) still needs Charlie's call; lonely picks for the current week aren't in chat yet.
+- gemma4:12b looked cleaner and funnier on a 36-item slice, but on this box it runs on Ollama's MLX runner and grew to 16 GB loaded (can't share RAM with the image generator) and was slower (first token ~10 s). Worth a full A/B on the bigger box.
+
+Tooling added: `server/eval/ask.py` (ad-hoc questions as any member at test priority), judge files now carry a per-item `wit` 1-5, `test_persona.py` and `test_lore.py` (in the GPU-free list), `server/lore.py` + `com.pickem.lore-refresh`. test_grounding (raw model, no riders): one flaky miss, then all green (first token median 4.2 s).
