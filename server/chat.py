@@ -1889,7 +1889,9 @@ def prompt_prefix(ctx: dict) -> str:
         "8. Only the games under YOUR GAMES THIS WEEK are in the pool. "
         "Anything else (another game, taxes, anything): roast them in one or "
         "two lines and stop. Don't do it, and don't bring up picks, games or "
-        "standings. Exception: players under PLAYER STATS, answer those.\n"
+        "standings. Exceptions, answer those: players under PLAYER STATS, and "
+        "a question that comes with a SCORE QUESTION block (any game's score, upsets, "
+        "finals): answer from that block, it is not off-topic.\n"
         "9. PRIVACY: other teams' picks stay hidden until they unlock (each "
         "game's block says when). Asked about one: say when it unlocks, with "
         "the time. Never guess it, and never say whether they have picked.\n"
@@ -1932,6 +1934,308 @@ def prompt_prefix(ctx: dict) -> str:
     )
 
 
+# -----------------------------------------------------------------------------
+# live scores: read per request, NEVER in prompt_prefix()
+# -----------------------------------------------------------------------------
+# all_games is kept fresh by the live-scores edge function (a pass every ~10 s
+# while games are on). Everything here changes by the minute, so pool games go
+# in _system_tail and any other game in the latest user turn. prompt_prefix()
+# must stay byte-identical across members and minutes, or qwen3.5's checkpoint
+# cache misses and first token goes back to ~40 s.
+
+LIVE_TTL = 15.0  # seconds; every member shares one read of all_games
+LIVE_STALE = 180  # seconds without a feed update before a live score is called stale
+LIVE_LIST_CAP = 8
+_LIVE_CACHE: dict = {}
+def _now_utc() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
+
+
+_LIVE_COLS = ("GameId,Away,Home,AwayPts,HomePts,Status,Period,Clock,status_name,possession,"
+              "is_red_zone,line,winner,SourceUpdatedAt,\"Start (CT)\"")
+
+
+async def fetch_live_games(client: httpx.AsyncClient, jwt: str, season, week) -> tuple[list[dict], dt.datetime]:
+    """Every game this week the score feed tracks (Status set) and when it was
+    read (CT), shared by all members for LIVE_TTL seconds."""
+    key = (season, week)
+    hit = _LIVE_CACHE.get(key)
+    if hit and time.monotonic() - hit[0] < LIVE_TTL:
+        return hit[1], hit[2]
+    rows = await _rest_get(
+        client,
+        f"all_games?select={_LIVE_COLS}&cfb_season=eq.{season}&week=eq.{week}&Status=not.is.null",
+        jwt,
+    )
+    if not isinstance(rows, list):
+        raise ValueError(f"all_games: {str(rows)[:80]}")
+    _LIVE_CACHE[key] = (time.monotonic(), rows, _now_ct_naive())
+    return rows, _LIVE_CACHE[key][2]
+
+
+async def load_live(client: httpx.AsyncClient, jwt: str, ctx: dict) -> None:
+    """ctx['live_games'] / ['live_at'], or ['live_error'] if the read fails."""
+    try:
+        ctx["live_games"], ctx["live_at"] = await fetch_live_games(
+            client, jwt, ctx.get("season"), ctx.get("current_week"))
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("live scores read failed: %s", e)
+        ctx["live_games"], ctx["live_error"] = [], True
+
+
+def _period(p) -> str:
+    p = int(p or 0)
+    return f"Q{p}" if p <= 4 else ("OT" if p == 5 else f"{p - 4}OT")
+
+
+def feed_age(rows: list[dict], now_utc: dt.datetime) -> float | None:
+    """Seconds since the score feed last wrote ANY game. A row only changes
+    when its game does (halftime sits still), so one game's age isn't staleness."""
+    ts = []
+    for g in rows:
+        try:
+            t = dt.datetime.fromisoformat(str(g.get("SourceUpdatedAt")))
+        except ValueError:
+            continue
+        ts.append(t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc))
+    return (now_utc - max(ts)).total_seconds() if ts else None
+
+
+def cover_margin(g: dict) -> float | None:
+    """Points the home side is covering the pool line by right now (negative:
+    away is covering). The same sum set_winner_on_final() grades a final with,
+    `(HomePts + line) > AwayPts`, run early (js/coverOdds.js does the same)."""
+    try:
+        return float(g["HomePts"]) + float(g["line"]) - float(g["AwayPts"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def covering_side(g: dict) -> str | None:
+    """The side the league would score as covered at this score. Like
+    set_winner_on_final(), a dead-even score against the line goes to Away."""
+    m = cover_margin(g)
+    if m is None:
+        return None
+    return g["Home"] if m > 0 else g["Away"]
+
+
+def _cover_text(g: dict) -> str:
+    """'UTSA +2.5 (by 6.5)': the covering side as written on the POOL LINE."""
+    side = covering_side(g)
+    if side is None:
+        return "unknown (no pool line)"
+    m = cover_margin(g)
+    if float(g["line"]) == 0:
+        label = f"{side} (pick'em)"
+    else:
+        label = _side_label(side, g["Home"], float(g["line"]))
+    if m == 0:
+        return f"{label}, exactly on the number (the league scores a push for {g['Away']})"
+    return f"{label} (by {_num(abs(m))})"
+
+
+def _game_time_left(p: int, clock: str, sn: str) -> str | None:
+    """Regulation game clock still to play: 'Q3 4:12' is 19:12."""
+    if "HALFTIME" in sn:
+        return "30:00"
+    try:
+        m, sec = (int(x) for x in str(clock).split(":"))
+    except ValueError:
+        return None
+    t = 0 if "END_PERIOD" in sn else m * 60 + sec
+    t += (4 - p) * 15 * 60
+    return f"{t // 60}:{t % 60:02d}"
+
+
+def game_state(g: dict, now_utc: dt.datetime, now_ct: dt.datetime, age: float | None = None) -> str:
+    """One game, away team first: score, status, time left, ball, kickoff."""
+    away, home = g["Away"], g["Home"]
+    st = g.get("Status")
+    sn = (g.get("status_name") or "").upper()
+    if any(w in sn for w in ("POSTPONED", "CANCELED", "CANCELLED", "SUSPENDED", "FORFEIT")):
+        return f"{away} at {home}: {sn.replace('STATUS_', '').lower()}"
+    if st not in ("in_progress", "final"):
+        s = f"{away} at {home}: not started, kicks off {_kickoff(g.get('Start (CT)'))}"
+        try:
+            if dt.datetime.fromisoformat(str(g.get("Start (CT)"))) < now_ct - dt.timedelta(minutes=10):
+                s += " (past kickoff time, but the score feed hasn't shown it starting)"
+        except ValueError:
+            pass
+        return s
+    score = f"{away} {g.get('AwayPts')}, {home} {g.get('HomePts')}"
+    p = int(g.get("Period") or 0)
+    if st == "final":
+        return f"{score}, FINAL" + (f" in {_period(p)}" if p > 4 else "") + ", game over (no time left)"
+    clock = g.get("Clock") or "?"
+    if "HALFTIME" in sn:
+        when = "halftime"
+    elif "END_PERIOD" in sn:
+        when = f"end of {_period(p)}"
+    elif p > 4:
+        when = f"in {_period(p)} (overtime has no clock)"
+    else:
+        when = f"{clock} left in {_period(p)}"
+    s = f"{score}, LIVE, {when}"
+    if p <= 4 and "DELAY" not in sn:
+        left = _game_time_left(p, clock, sn)
+        if left:
+            s += f" ({left} left in the game)"
+    if "DELAY" in sn:
+        s += ", DELAYED"
+    side = {"home": home, "away": away}.get(str(g.get("possession") or "").lower())
+    if side and "HALFTIME" not in sn and "END_PERIOD" not in sn:
+        s += f", {side} has the ball" + (" in the red zone" if g.get("is_red_zone") else "")
+    if age is not None and age > LIVE_STALE:
+        s += f" (STALE: the feed last updated {int(age // 60)} min ago, so this may be behind)"
+    return s
+
+
+def _live_header(ctx: dict, what: str) -> str:
+    at = ctx.get("live_at")
+    when = f"{at:%-I:%M %p} CT" if at else "now"
+    return (f"{what} (as of {when}; real scores from the live feed. Use these exact "
+            "numbers, never invent or guess a score):")
+
+
+def live_block(ctx: dict) -> str:
+    """Pool games' live state for the per-request tail ('' when not loaded)."""
+    if "live_games" not in ctx:
+        return ""
+    if ctx.get("live_error"):
+        return ("LIVE SCORES: the score feed is unreachable right now. If asked about a score "
+                "or the clock, say you can't see live scores at the moment; never guess one.")
+    by_id = {g["GameId"]: g for g in ctx["live_games"]}
+    now_utc = _now_utc()
+    now_ct = _now_ct_naive()
+    age = feed_age(ctx["live_games"], now_utc)
+    out = [_live_header(ctx, "LIVE SCOREBOARD, this week's pool games")]
+    for i, pg in enumerate(ctx.get("games_this_week") or [], 1):
+        g = by_id.get(pg["id"])
+        if g is None:
+            out.append(f"{i}. {pg['away']} at {pg['home']}: no score data.")
+            continue
+        g = {**g, "line": pg.get("line"), "winner": pg.get("winner") or g.get("winner")}
+        s = f"{i}. {game_state(g, now_utc, now_ct, age)}."
+        if g.get("Status") == "in_progress" and g.get("line") is not None:
+            s += f" Currently covering the pool line: {_cover_text(g)}."
+        elif g.get("Status") == "final" and g.get("line") is not None:
+            won = g.get("winner") or covering_side(g)
+            lost = g["Away"] if same_team(won, g["Home"]) else g["Home"]
+            ln = float(g["line"])
+            s += (f" Covered: {_side_label(won, g['Home'], ln)}; {_side_label(lost, g['Home'], ln)} did NOT cover."
+                  if ln else f" Covered: {won}.")
+        out.append(s)
+    out.append("Score, time left or covering asked without naming a game: answer for the LIVE game(s) above. "
+               "Time left is the clock shown for that quarter (quarters are 15:00).")
+    return "\n".join(out)
+
+
+def _match_key(name) -> str:
+    """_norm_team for matching words in a question: "Hawai'i" == 'hawaii'."""
+    return re.sub(r"\bst\b", "state", _norm_team(str(name or "").replace("'", "").replace("’", "")))
+
+
+def games_named(question: str, games: list[dict], cap: int = 3) -> list[dict]:
+    """Games whose team the question names: full names first, longest first
+    ('Texas Tech' isn't 'Texas'), then '<X> State' teams by '<X>' alone
+    ('Boise') when no other team is called just '<X>'."""
+    q = f" {_match_key(question)} "
+    names: dict[str, list[dict]] = collections.defaultdict(list)
+    for g in games:
+        for side in (g["Away"], g["Home"]):
+            names[_match_key(side)].append(g)
+    keys = sorted(names, key=len, reverse=True)
+    stems = {k[: -len(" state")]: k for k in keys if k.endswith(" state")}
+    keys += [s for s in sorted(stems, key=len, reverse=True) if s not in names]
+    out: list[dict] = []
+    for k in keys:
+        if not k or f" {k} " not in q:
+            continue
+        q = q.replace(f" {k} ", " | ")
+        for g in names.get(k) or names[stems[k]]:
+            if g not in out:
+                out.append(g)
+    return out[:cap]
+
+
+_ON_NOW = re.compile(r"\b(on right now|on now|what'?s on|games? (are )?(on|live)|live games?|in progress|"
+                     r"being played|still going|playing right now)\b", re.I)
+_UPSET = re.compile(r"\bupsets?\b|\bunderdogs? (are )?(winning|leading|won)\b", re.I)
+_FINALS = re.compile(r"\bfinals?\b|\bfinal scores?\b|\bwho won\b|\bresults?\b", re.I)
+_SCORE_ASK = re.compile(r"\b(scores?|winning|losing|leading|time left|time is left|how long|clock|quarter|"
+                        r"halftime|covering|who won|final)\b", re.I)
+
+
+def _underdog_ahead(g: dict) -> float | None:
+    """Spread size when the market underdog (`line`, home-team adjustment)
+    is ahead or won; else None."""
+    try:
+        ln, a, h = float(g["line"]), float(g["AwayPts"]), float(g["HomePts"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if ln == 0:
+        return None
+    dog_margin = (h - a) if ln > 0 else (a - h)
+    return abs(ln) if dog_margin > 0 else None
+
+
+def live_note(ctx: dict, question: str) -> str:
+    """Latest user turn only: a non-pool game the user names, or a short
+    list for 'what's on' / 'upsets' / 'finals'. '' when it isn't a score ask."""
+    if "live_games" not in ctx or ctx.get("live_error"):
+        return ""
+    q = question or ""
+    pool_ids = {g["id"] for g in ctx.get("games_this_week") or []}
+    rows = ctx["live_games"]
+    others = [g for g in rows if g["GameId"] not in pool_ids]
+    now_utc = _now_utc()
+    now_ct = _now_ct_naive()
+    named = games_named(q, rows)
+    age = feed_age(rows, now_utc)
+    parts = []
+    named_other = [g for g in named if g["GameId"] not in pool_ids]
+    if named_other:
+        parts.append(_live_header(ctx, "LIVE SCORES for the game they asked about (not a pool game)") + "\n"
+                     + "\n".join(f"- {game_state(g, now_utc, now_ct, age)}." for g in named_other))
+    live = [g for g in others if g.get("Status") == "in_progress"]
+    if _UPSET.search(q):
+        ups = sorted(((s, g) for g in others if g.get("Status") in ("in_progress", "final")
+                      and (s := _underdog_ahead(g))), key=lambda x: -x[0])
+        if ups:
+            parts.append(_live_header(ctx, "UPSETS across college football this week (market underdog "
+                                      "leading or won, biggest spread first)") + "\n"
+                         + "\n".join(f"- {game_state(g, now_utc, now_ct, age)} (was a {_num(s)}-point underdog)"
+                                     for s, g in ups[:LIVE_LIST_CAP // 2 + 2]))
+        else:
+            parts.append("UPSETS: no underdog is leading or has won in the other games this week.")
+    elif _ON_NOW.search(q):
+        live.sort(key=lambda g: abs((g.get("HomePts") or 0) - (g.get("AwayPts") or 0)))
+        more = f"\n(+{len(live) - LIVE_LIST_CAP} more live games)" if len(live) > LIVE_LIST_CAP else ""
+        parts.append(_live_header(ctx, f"MORE GAMES ON RIGHT NOW ({len(live)} live, closest first)") + "\n"
+                     + ("\n".join(f"- {game_state(g, now_utc, now_ct, age)}." for g in live[:LIVE_LIST_CAP])
+                        or "- none") + more)
+    if _FINALS.search(q) and not named:
+        today = now_ct.date().isoformat()
+        fin = [g for g in others if g.get("Status") == "final" and str(g.get("Start (CT)", "")).startswith(today)]
+        fin.sort(key=lambda g: str(g.get("SourceUpdatedAt")), reverse=True)
+        if fin:
+            more = f"\n(+{len(fin) - LIVE_LIST_CAP} more finals today)" if len(fin) > LIVE_LIST_CAP else ""
+            parts.append(_live_header(ctx, "MORE FINALS TODAY (latest first)") + "\n"
+                         + "\n".join(f"- {game_state(g, now_utc, now_ct, age)}." for g in fin[:LIVE_LIST_CAP]) + more)
+    if not named and not parts and _SCORE_ASK.search(q):
+        by_id = {g["GameId"]: g for g in rows}
+        on = [by_id[i] for i in pool_ids if by_id.get(i, {}).get("Status") == "in_progress"]
+        parts.append(("Pool games live now:\n" + "\n".join(f"- {game_state(g, now_utc, now_ct, age)}." for g in on)
+                      + "\n" if on else "")
+                     + "If they named a game that isn't on the LIVE SCOREBOARD: it isn't in this week's score "
+                     "data, so say you don't have it. Never guess a score.")
+    if parts:
+        parts.insert(0, "SCORE QUESTION: this is a scoreboard question, which you DO answer: give the scores "
+                        "below, a line per game, then one jab. Never call it off-topic.")
+    return "\n\n".join(parts)
+
+
 def _system_tail(ctx: dict) -> str:
     you = ctx.get("you", {}).get("team_name", "you")
     now = _now_ct_naive()
@@ -1945,6 +2249,8 @@ def _system_tail(ctx: dict) -> str:
         # to the hour only: a per-minute clock would change the prompt (and
         # cost a full reprocess) on every message
         + f"\nRight now it is {now:%a %b %-d}, between {now:%-I}:00 and {now:%-I}:59 {now:%p} CT."
+        # live scores change by the minute: tail only, never prompt_prefix()
+        + ("\n\n" + lb if (lb := live_block(ctx)) else "")
     )
 
 
@@ -2455,7 +2761,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
             log.warning("supabase fetch failed: %s", e)
             raise HTTPException(status_code=502, detail="supabase_unreachable")
         if not ctx.get("error"):
-            ctx["picky_player"] = await picky_player_facts(client, jwt, ctx)
+            ctx["picky_player"], _ = await asyncio.gather(
+                picky_player_facts(client, jwt, ctx), load_live(client, jwt, ctx))
     if not ctx.get("error"):
         ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
     # (re)load the CFBD cache off the event loop; ~3 s only after a refresh
@@ -2474,6 +2781,14 @@ async def _chat(req: Request, test: bool, hold: int | None):
         else {"role": "assistant", "content": strip_land_ack(m["content"])}
         for m in convo[1:]
     ]
+
+    # a game outside the pool, 'what's on', upsets: the latest question only
+    note = live_note(ctx, last.get("content", "")) if last.get("role") == "user" else ""
+    if note and convo[-1]["role"] == "user":
+        # right before the question, after the other riders: the 9B obeys what's nearest
+        body, q = convo[-1]["content"], last.get("content", "")
+        body = (body[: -len(q)] + note + "\n\n" + q) if q and body.endswith(q) else (note + "\n\n" + body)
+        convo[-1] = {"role": "user", "content": body}
 
     return StreamingResponse(
         _keepalive(_gated(test, hold, lambda: _with_opener(
