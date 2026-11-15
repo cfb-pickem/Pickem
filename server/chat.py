@@ -3030,6 +3030,8 @@ def wants_you_block(ctx: dict, question: str, messages: list) -> bool:
         q = re.sub(r"\b(took|taking|take)\b", "", q)  # 'Freeman took ND to the title game' isn't pick talk
     if _HOWTO_ASK.search(q) and not hostile_convo(messages):
         return False  # 'the gold box around my pick' is about the site, not their picks
+    if wants_rules(q) and _MONEY_ASK.search(q) and not hostile_convo(messages):
+        return False  # 'what does first place win?' is a payout question
     return bool(ctx.get("mode") != "picks" and (
         ctx.get("daddyfreeman") or hostile_convo(messages) or _SELF_WORDS.search(q) or _PICKS_ASK.search(q)
         or RESULTS_ASK.search(q) or _STANDINGS_Q.search(q) or re.search(r"\bjackpot|\bslots?\b", q, re.I)))
@@ -3405,8 +3407,14 @@ def load_takes() -> dict:
             if ln.startswith("### "):
                 cur = ln[4:].strip()
                 secs[cur] = []
+            elif ln.startswith("## Verified"):
+                cur = "_facts"
+                secs[cur] = []
             elif ln.startswith("## "):
                 cur = None
+            elif cur == "_facts" and ln.startswith("- [FACT") and "UNVERIFIED" not in ln.upper():
+                secs[cur].append(re.sub(r"^- \[FACT[^\]]*\]\s*", "", ln).strip())
+                continue
             elif cur and re.match(r"\s*\d+\.\s", ln) and "UNVERIFIED" not in ln.upper():
                 t = re.sub(r"^\s*\d+\.\s*", "", ln)
                 t = re.sub(r"\s*\[(added|FACT)[^\]]*\]", "", t).replace("**", "").strip()
@@ -3428,14 +3436,24 @@ def takes_note(question: str) -> str:
         if re.search(rx, q, re.I):
             pool = next((v for k, v in secs.items() if k.startswith(head)), [])
             words = {w for w in re.findall(r"[a-z]{4,}", q.lower())} - {"what", "about", "does", "think", "hot",
-                                                                          "seat", "this", "that", "with", "picky"}
+                                                                          "seat", "this", "that", "with", "picky",
+                                                                          "college", "football", "right", "whos"}
             named = [t for t in pool if words & set(re.findall(r"[a-z]{4,}", t.lower()))]
+            if head == "Coaching hot seats" and not named:  # prefer takes that name a coach
+                named = [t for t in pool if re.search(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b", t)]
             pool = named or pool
             if pool:
                 picks.append(pool[(sum(map(ord, q)) + len(picks)) % len(pool)])
-    if not picks:
+    facts = []
+    if re.search(r"\bhot seat\b|\bfired?\b|\bfiring\b|\bbuyouts?\b|\bcoaching (search|change|carousel)\b", q, re.I):
+        facts = [f for f in secs.get("_facts", []) if re.search(r"\bfired\b|\bbuyout\b|\binterim\b", f, re.I)][:2]
+    if not picks and not facts:
         return ""
-    return ("HOT TAKES you can riff on (opinions from around the sport; say them as opinions in your own words, "
+    fact_txt = ("CHECKED FACTS (verified 2026 reporting; quote them as written, credit 'reportedly' where they say "
+                "reported):\n" + "\n".join(f"- {f}" for f in facts) + "\n") if facts else ""
+    if not picks:
+        return fact_txt.strip()
+    return fact_txt + ("HOT TAKES you can riff on (opinions from around the sport; say them as opinions in your own words, "
             "never as news; any record or rank in them may be stale, so use only the real data for numbers). For "
             "an opinion question like this, use one instead of saying there's nothing to talk about"
             + (" (asked who's on the hot seat: name only coaches these takes name, as opinion)" if
@@ -4282,6 +4300,7 @@ def record_check(ctx: dict, question: str):
     n_teams = len(ctx.get("teams") or [])
     if n_teams:
         money_ok |= {str(v) for v in payout_math(n_teams).values()}
+    money_ok |= {x.replace(",", "") for x in re.findall(r"\$\s?([\d,]*\d)", op)}  # checked buyout facts
 
     def ok(sent: str) -> bool:
         if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
@@ -4385,7 +4404,8 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
         # a sentence dropped only for copying or self-talk can still save an answer that lost everything
         nonlocal spare
         if spare is None and not _FAMILY_DARK.search(x) and not (body and _BODY_WORDS.search(x)) \
-                and not (sides and wrong_person_picks(x, *sides)):
+                and not (sides and wrong_person_picks(x, *sides)) and not (offtopic and _OFFTOPIC_LEAK.search(x)) \
+                and (extra is None or extra(x)):
             spare = x
         log.info("sentence filter dropped: %r", x[:120])
 
@@ -4398,7 +4418,8 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
                 elif buf.strip():
                     keep(buf)
                 if not sent_any:
-                    yield _sse({"content": spare or "Next question."})
+                    yield _sse({"content": spare or ("I do picks, not paperwork. Next question." if offtopic
+                                                     else "Next question.")})
                 buf = ""
             yield chunk
             continue
@@ -4420,6 +4441,26 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
 
 def required_fact(ctx: dict, question: str) -> tuple | None:
     q = question or ""
+    me = (ctx.get("you") or {}).get("team_name")
+    if wants_rules(q) and _MONEY_ASK.search(q) and ctx.get("teams"):
+        pm = payout_math(len(ctx["teams"]))
+        key = ("first" if re.search(r"\b(first|1st|winner|champion)\b", q, re.I) else
+               "second" if re.search(r"\b(second|2nd)\b", q, re.I) else
+               "third" if re.search(r"\b(third|3rd)\b", q, re.I) else
+               "pot" if re.search(r"\b(pot|total|how much is)\b", q, re.I) else None)
+        if key:
+            amt = pm[key]
+            return (lambda t, a=amt: bool(re.search(rf"\${a:,}|\${a}\b", t)),
+                    f" For the record: {'the pot is' if key == 'pot' else key + ' place gets'} ${amt:,}.")
+    if re.search(r"\bgold (box|outline|border)\b", q, re.I):
+        return (lambda t: bool(re.search(r"lonely|nobody else|few|alone", t, re.I)),
+                " (A gold outline marks a lonely pick: few or no one else took that side.)")
+    if me and re.search(r"\bmy\b[^.?]{0,40}\bpick\b", q, re.I):
+        for r in member_pick_results(ctx, me):
+            g = r["game"]
+            if r["result"] in ("WIN", "LOSS") and re.search(_team_re(r["side"], False), q, re.I):
+                return (lambda t: bool(re.search(r"\b(WIN|LOSS|won|lost|hit|miss\w*|covered|cash\w*)\b", t, re.I)),
+                        f" For the record: {r['label']} was a {r['result']}.")
     if _UNCOVERED_ASK.search(q) and re.search(r"\bgames?\b|\bpicks?\b", q, re.I):
         return (lambda t: bool(re.search(r"commissioner|commish", t, re.I)), " Take it up with the commissioner.")
     if _RACE_ASK.search(q) and not re.search(r"\b(cfp|committee|college football playoff|ranked|rankings?)\b", q, re.I):
@@ -4448,7 +4489,7 @@ def _required_fact(ctx: dict, question: str) -> tuple | None:
         return (lambda t, g=g: bool(re.search(rf"\b({g}|{words.get(g, g)})\b", t, re.I)),
                 f" You're {g} point{'s' * (g != 1)} behind first place.")
     named = [r for r in st if re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)]
-    if _DOING_Q.search(q) and (named or row) and re.search(r"\bseason\b", q, re.I):
+    if _DOING_Q.search(q) and (named or row) and re.search(r"\bseason\b|\bhow (am|'?m) i doing\b", q, re.I):
         r0 = named[0] if named else row
         rec = f"{r0['w']}-{r0['l']}"
         who = "You're" if r0["team"] == me else f"{r0['team']} is"
