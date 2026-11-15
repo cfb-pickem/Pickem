@@ -479,6 +479,9 @@ Scores count deterministic checks plus the judge file for that run; each run was
 | m11 | 06:30 | 846efbd | 110/117 (94%) | 0 | 1 | 2 | 2.48 | 0.04 | 0.03 | 0.84 | 6.6 s |
 | m12 | 06:57 | 31f2d05 | 112/117 (96%) | 0 | 2 | 0 | 2.56 | 0.03 | 0.02 | 0.83 | 6.2 s |
 | m13 | 07:34 | 72f2b2d | 112/117 (96%) | 0 | 3 | 0 | 2.64 | 0.00 | 0.02 | 0.87 | 6.3 s |
+| m14 | 08:10 | 2ce2903 + rankings date | 65/68 deterministic (96%), not judged | 0 | 1* | 0 | | | | | 6.5 s |
+
+\* m14's one "invented" flag is a grader miss: "that team isn't even in the pool" is a correct refusal for the fake team. Six m14 items took 62-174 s to first token: another delegated Picky job (started 08:40) was sharing Ollama, and with one parallel slot each of its requests evicts the cached prefix.
 
 Per category, start (m0) to end (m13):
 
