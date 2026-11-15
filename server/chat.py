@@ -109,21 +109,20 @@ BLINKSTRADAMUS_LINE = "nice milk, freak."
 # Charlie, 2026-11-15: when anyone else brings him up, Picky works in a milk
 # joke and calls him a freak. Rides in the user turn only when he's named.
 _BLINKS_ASK = re.compile(r"\bblink(?:stradamus|y|ie|s)\b", re.I)
-BLINKS_BIT = ("RUNNING BIT: Blinkstradamus is the league's milk guy. The origin, true league lore: on a "
-              "bachelor party he bought milk and was walking along the side of the road carrying it when "
-              "some girls drove by in a Jeep with the top off and yelled \"NICE MILK FREAK\" at him. "
-              "Whenever he comes up, work in one quick joke about his milk and call him a freak; call back "
-              "to the story when it fits (buying the milk, carrying it down the roadside, the top-off Jeep, "
-              "the \"NICE MILK FREAK\" yell, the bachelor party). Keep the jokes on the milk carton, the "
-              "roadside walk, cereal and dairy. Never body-adjacent: no lactation, breasts, nursing or "
-              "anything about bodies. Also roast his picks: his record, place and a bad or losing pick, "
-              "using ONLY the numbers and picks in his FOCUS facts below. Never invent a record or a pick; "
-              "if his picks are hidden or missing, roast his record and place instead.")
+BLINKS_BIT = ("RUNNING BIT: Blinkstradamus (he, not the user) is the league's milk guy. True origin: at a "
+              "bachelor party he was carrying milk down the roadside when girls in a top-off Jeep yelled "
+              "\"NICE MILK FREAK\" at him. Work in one milk joke, call him a freak, call back to the story "
+              "when it fits. Jokes stay on the carton, the walk, cereal and dairy; nothing about bodies.")
 
 
 def blinks_note(ctx: dict, question: str) -> str:
     me = (ctx.get("you") or {}).get("team_name")
-    return BLINKS_BIT if me != "Blinkstradamus" and _BLINKS_ASK.search(question or "") else ""
+    if me == "Blinkstradamus" or not _BLINKS_ASK.search(question or ""):
+        return ""
+    if _CASINO_ASK.search(question) or _TIE_ASK.search(question):
+        return BLINKS_BIT  # chips/tiebreak questions: the milk joke only, no pick lines crowding the facts
+    lines = roast_pick_lines(ctx, "Blinkstradamus")
+    return BLINKS_BIT + " Roast his picks too, using only his facts below." + ("\n" + lines if lines else "")
 
 
 # Charlie, 2026-11-15: Ackbar is Picky's nemesis. When he asks, or anyone
@@ -136,15 +135,45 @@ def ackbar_note(ctx: dict, question: str) -> str:
     me = (ctx.get("you") or {}).get("team_name")
     if me != "Ackbar" and not _ACKBAR_ASK.search(question or ""):
         return ""
-    lore = (load_lore() or {}).get("members", {}).get("Ackbar") or []
-    facts = [ln for ln in lore if "2026 so far" in ln or "worst blown picks" in ln]
-    who = "The user, Ackbar, is" if me == "Ackbar" else "Ackbar is"
-    return (f"RUNNING BIT: {who} your league nemesis. Be openly antagonistic toward him: hard trash talk "
-            "for always taking the favorite (chalk merchant, no guts, lays the points every week, never "
-            "takes a real swing). Hard but friendly league roast: no slurs, nothing about family or bodies, "
-            "no threats. Use ONLY the numbers and picks in his FOCUS facts and these lines; never invent a "
-            "record, rate or pick. This bit is about Ackbar only: everyone else gets normal Picky."
-            + ("\nACKBAR FACTS: " + " ".join(facts) if facts else ""))
+    fav = next((m.group(1) for ln in (load_lore() or {}).get("members", {}).get("Ackbar") or []
+                if "2026 so far" in ln for m in [re.search(r"takes the favorite (\d+)%", ln)] if m), None)
+    who = "the user, Ackbar" if me == "Ackbar" else "Ackbar"
+    side = _CASINO_ASK.search(question or "") or _TIE_ASK.search(question or "")
+    lines = "" if side else roast_pick_lines(ctx, "Ackbar", chalk=True)
+    return (f"RUNNING BIT: {who} is your league nemesis. Be openly antagonistic: roast him for always taking "
+            "the favorite (chalk merchant, no guts, never takes a real swing). Friendly league roast: no slurs, "
+            "family, bodies or threats. Only Ackbar gets this."
+            + (f"\nAckbar takes the favorite {fav}% of the time this season." if fav else "")
+            + ("\n" + lines if lines else ""))
+
+
+def roast_pick_lines(ctx: dict, team: str, chalk: bool = False) -> str:
+    """Up to 3 of the member's final picks (misses first), one explicit line
+    each: line, final score, outcome. The 9B turned 'MISS (Boise State -13.5)'
+    into 'Boise lost outright' when Boise won by 5 and didn't cover."""
+    live = {x["GameId"]: x for x in ctx.get("live_games") or []}
+    picks = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(team, [])}
+    rows = [(g, picks[g["id"]], live.get(g["id"], {}).get("AwayPts"), live.get(g["id"], {}).get("HomePts"),
+             g.get("winner"), "this week") for g in ctx.get("games_this_week") or []
+            if g["id"] in picks and g.get("winner") and not g.get("tiebreaker")]
+    rows += [(g, g["picks"][team], g.get("away_pts"), g.get("home_pts"), g.get("covered"), "last week")
+             for g in (ctx.get("last_week") or {}).get("games") or [] if (g.get("picks") or {}).get(team)]
+    out = []
+    for g, pk, ap, hp, cov, when in rows:
+        ap, hp, lab = _pts(ap), _pts(hp), pick_label(None, g, pk)
+        if ap is None or hp is None or ap == hp or (chalk and " -" not in lab):
+            continue
+        mine, theirs = (ap, hp) if same_team(pk, g["away"]) else (hp, ap)
+        other = g["home"] if same_team(pk, g["away"]) else g["away"]
+        res = (f"{pk} won the game by {mine - theirs:g}" if mine > theirs else f"{pk} lost the game by {theirs - mine:g}")
+        hit = same_team(pk, cov)
+        res += (" and covered" if hit else " but didn't cover" if mine > theirs else "")
+        out.append((hit, f"- {team} {when}: took {lab} vs {other}; final {pk} {mine:g}, {other} {theirs:g}: "
+                         f"{res}. {team}'s pick {'HIT' if hit else 'MISSED'}."))
+    out.sort(key=lambda x: x[0])
+    return ("ROAST PICKS (quote each outcome exactly as written; a pick that won the game but didn't cover "
+            "did NOT lose outright):\n"
+            + "\n".join(x[1] for x in out[:3])) if out else ""
 
 
 # The land-acknowledgment opener below is switched off (Charlie, 2026-11-14:
@@ -4557,12 +4586,51 @@ def record_check(ctx: dict, question: str):
 
     gf = game_facts(ctx)
     blinks_q = bool(blinks_note(ctx, question or "")) and "Blinkstradamus" in st
+    # who won/lost outright, this week and last ('Boise lost outright' when Boise won by 5)
+    outr = [(g["won_game"], g["lost_game"]) for g in gf["games"] if g.get("won_game")]
+    for g in (ctx.get("last_week") or {}).get("games") or []:
+        ap, hp = _pts(g.get("away_pts")), _pts(g.get("home_pts"))
+        if ap is not None and hp is not None and ap != hp:
+            outr.append((g["away"], g["home"]) if ap > hp else (g["home"], g["away"]))
+    # perfect weeks: each member's weekly W-L, and Picky's own ('my 4-0 week' when he's 0-3)
+    wk_recs = {t: [tuple(x) for x in (r or {}).values()] for t, r in (ctx.get("weekly_records") or {}).items()}
+    pp = ctx.get("picky_player") or {}
+    pres = [x.get("result") for x in pp.get("this_week") or []]
+    picky_recs = [(pres.count("hit"), pres.count("missed")), tuple(pp.get("last_week") or (0, 0))]
 
     def ok(sent: str) -> bool:
         if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
             return False
         if gf["games"] and check_answer(sent, gf):  # a final's winner/loser or cover flipped
             return False
+        mo = re.search(r"\b(lost|lose|loses|losing|won|win|wins)( it| the game)? outright\b|\boutright (loss|win)\b",
+                       sent, re.I)
+        if mo and not re.search(r"\b20\d\d\b|\bweek \d", sent, re.I):  # lore's dated history is checked upstream
+            lost = bool(re.search(r"los", mo.group(0), re.I))
+            names = {x for pair in outr for x in pair}
+
+            def named(t):  # 'Texas' inside 'North Texas' isn't Texas
+                s2 = sent
+                for o in names:
+                    if o != t and t.lower() in o.lower():
+                        s2 = re.sub(re.escape(o), " ", s2, flags=re.I)
+                return re.search(rf"(?<!\w){re.escape(t)}(?!\w)", s2, re.I)
+            for w, l in outr:
+                hw, hl = named(w), named(l)
+                if (lost and hw and not hl) or (not lost and hl and not hw):
+                    return False
+        for mp in re.finditer(r"\b([1-4])-0 (?:week|weekend|slate)\b|\bperfect week\b", sent, re.I):
+            bef = sent[max(0, mp.start() - 40):mp.start()]
+            if re.search(r"\b(my|i|i'?m|i'?ve)\b", bef, re.I):
+                recs = picky_recs
+            elif re.search(r"\byou(r|'re)?\b", bef, re.I):
+                recs = wk_recs.get(me)
+            else:
+                who_p = [t for t in wk_recs if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", sent, re.I)]
+                recs = wk_recs.get(who_p[0]) if len(who_p) == 1 else None
+            if recs is not None and not any(
+                    l_ == 0 and w_ > 0 and (mp.group(1) is None or w_ == int(mp.group(1))) for w_, l_ in recs):
+                return False
         mb = re.search(r"\bbust(?:ed|s)? (once|twice|(\d+|two|three|four) times)\b", sent, re.I)
         if mb and busts:  # 'busted twice' when the stored hands say once (three runs running)
             n = {"once": 1, "twice": 2, "two": 2, "three": 3, "four": 4}.get((mb.group(2) or mb.group(1)).lower())
