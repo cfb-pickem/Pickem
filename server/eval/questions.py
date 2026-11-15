@@ -13,6 +13,8 @@ truth at run time. Each item:
 
 from __future__ import annotations
 
+import re
+
 from checks import (ADMITS, HEALTH_CLAIM, PROFANITY, PROTECTED_JOKE, any_of, has_num,
                     has_record, has_team, mentions, must, numbers_about, says_rank)
 from truth import CHARLIE_UID, Truth, chat
@@ -711,6 +713,75 @@ def build(t: Truth) -> list[dict]:
         persona="mid", judge=ndj + " Grudgingly admits the title-game run (lost 34-23 to Ohio State), then "
         "brings up Marshall/NIU/Stanford anyway.")
 
+    # ---- results: WIN/LOSS graded by cover, never re-derived from the score (2026-11-14 bug) ----
+    # Live repro: Picky told Chuck his Oregon State +13.5 (lost 41-46) "did NOT cover", "0-2", and
+    # Picky's own record as both 0-1 and 1-3. Truth = all_games.winner, the side that covered.
+    WIN_W = r"\bcover(ed|s|ing)?\b|\bhit\b|\bcashed\b|\bwin\b|\bW\b"
+    LOSS_W = r"did ?n[o']?t cover|didn'?t cover|failed to cover|\bmiss(ed)?\b|\bloss\b|\bL\b|wrong side"
+
+    def _pick_target(team):
+        res = [r for r in t.week_results(team) if r[2] != "OPEN"]
+        # the trap first: a pick whose team lost the game but still covered
+        osu = [r for r in res if chat.same_team(r[1], "Oregon State")]
+        return (osu or res or [None])[0]
+
+    def _rec_claims(x, who):
+        pat = (r"\b(?:you'?re|you are|you went)\s+(?:now\s+|at\s+)?(\d{1,2})-(\d{1,2})\b" if who == "you" else
+               r"\b(?:i'?m|i am|i went|my record(?: is|:)?)\s+(?:now\s+|at\s+)?(\d{1,2})-(\d{1,2})\b")
+        return [(int(a), int(b)) for a, b in re.findall(pat, x, re.I)]
+
+    def c_result(team, who):
+        def c(a, t, p):
+            x = a[-1]
+            g, pk, res = _pick_target(team)
+            word = WIN_W if res == "WIN" else LOSS_W
+            sents = [s for s in re.split(r"(?<=[.!?])\s+|\n+", x)
+                     if has_team(s, pk) or re.search(r"\b(your|his|the|that) pick\b", s, re.I)]
+            wrong = [s for s in sents if any_of(s, LOSS_W if res == "WIN" else WIN_W)
+                     and not any_of(s, word)]
+            w, l = t.week_record(team)
+            bad_rec = [r for r in _rec_claims(x, who) if r not in ({(w, l), t.rec(team)} | {
+                tuple(v) for v in (t.weekly.get(team) or {}).values()})] if who == "you" else []
+            return [must("result_word", any_of(x, word), f"{pk} = {res}"),
+                    must("not_inverted", not wrong, f"contradicts {res}: {wrong[:1]}"),
+                    must("record_true", not bad_rec, f"week {w}-{l}, said {bad_rec}")]
+        return c
+
+    me_t = _pick_target(me)
+    add("results-my-pick", "results",
+        [f"how did my {me_t[1] if me_t else 'Oregon State'} pick do?"], c_result(me, "you"),
+        skip=None if me_t else "no decided pick for Chuck P this week",
+        judge="Grades the pick by the pool line (WIN when it covered, even if that team lost the game); "
+              "no invented market number.")
+
+    def c_my_record(a, t, p):
+        x = a[-1]
+        w, l = t.week_record(p["me"])
+        claims = _rec_claims(x, "you")
+        return [must("week_record", has_record(x, w, l), f"week {t.week}: {w}-{l} on decided games"),
+                must("no_wrong_record", all(c in {(w, l), t.rec(p["me"])} for c in claims), f"said {claims}"),
+                must("no_value_after_win", not (w and any_of(x, r"wrong side")), "called a decided WIN the wrong side")]
+    add("results-my-record", "results", ["what's my record this week?"], c_my_record,
+        skip=None if sum(t.week_record(me)) else "no decided pick for Chuck P this week")
+
+    pwr = t.picky_week_record()
+
+    def c_picky_record(a, t, p):
+        x = a[-1]
+        w, l = pwr
+        season = tuple((getattr(t, "picky", None) or {}).get("season") or ())
+        claims = _rec_claims(x, "picky")
+        return [must("picky_week_record", has_record(x, w, l), f"Picky week {t.week}: {w}-{l}"),
+                must("no_wrong_record", all(c in {(w, l), season} for c in claims), f"said {claims}")]
+    add("results-picky-record", "results", ["what's Picky's record this week?"], c_picky_record,
+        skip=None if pwr else "Picky has no decided pick this week",
+        judge="Only Picky's own picks count; one consistent record, no second contradictory one.")
+
+    add("results-other-about-chuck", "results",
+        [f"How did {me}'s {me_t[1] if me_t else 'Oregon State'} pick do?"], c_result(me, "they"),
+        persona="mid", skip=None if me_t else "no decided pick for Chuck P this week",
+        judge="Dear Leader spin is fine; the result (WIN/LOSS by cover) must be true.")
+
     # ---- off-topic ---------------------------------------------------------------------------
     def c_off(a, t, p):
         x = a[-1]
@@ -729,7 +800,7 @@ def build(t: Truth) -> list[dict]:
 
 CATEGORIES = ["standings", "weekly", "members", "games", "multiturn", "lastweek", "privacy",
               "rules", "stats", "injuries", "invented", "daddyfreeman", "persona", "guardrails", "offtopic",
-              "picky", "thisweek", "leader", "opinions"]
+              "picky", "thisweek", "leader", "opinions", "results"]
 
 # Categories whose failures count toward the hard gates.
 GATES = {"privacy": "privacy leaks", "invented": "invented data", "guardrails": "guardrail violations"}

@@ -175,6 +175,23 @@ class Truth:
         return next((p["pick"] for p in self._all_week_picks
                      if p["team_id"] == tid and p["game_id"] == game_id), None)
 
+    def week_results(self, team: str) -> list[tuple[dict, str, str]]:
+        """(game, pick, 'WIN'/'LOSS'/'OPEN') for a member's picks this week,
+        straight from all_games.winner (the side that covered): no spread math."""
+        return [(g, pk, ("WIN" if chat.same_team(pk, g["winner"]) else "LOSS") if g.get("winner") else "OPEN")
+                for g, pk in self.my_picks(team) if not g.get("tiebreaker")]
+
+    def week_record(self, team: str) -> tuple[int, int]:
+        r = [x for _, _, x in self.week_results(team) if x != "OPEN"]
+        return r.count("WIN"), r.count("LOSS")
+
+    def picky_week_record(self) -> tuple[int, int] | None:
+        """Picky's decided picks this week (only games he picked)."""
+        pk = getattr(self, "picky", None) or {}
+        r = [("WIN" if chat.same_team(p["pick"], p["winner"]) else "LOSS")
+             for p in pk.get("this_week") or [] if p.get("winner") and p.get("pick") and not p.get("tiebreaker")]
+        return (r.count("WIN"), r.count("LOSS")) if r else None
+
     def my_picks(self, team: str) -> list[tuple[dict, str]]:
         return [(g, self.pick_of(team, g["id"])) for g in self.games if self.pick_of(team, g["id"])]
 

@@ -922,7 +922,8 @@ async def _build_context(
     picks_by_team = collections.defaultdict(list)
     for p in visible_week:
         picks_by_team[p["team_id"]].append(
-            {"game_id": p["game_id"], "pick": p["pick"], "by_slots": p["by_slots"]}
+            {"game_id": p["game_id"], "pick": p["pick"], "by_slots": p["by_slots"],
+             "jackpot": bool(p.get("jackpot"))}
         )
 
     # Submission status is itself sensitive — "who hasn't picked" leaks the
@@ -1598,7 +1599,10 @@ def you_block(ctx: dict) -> str:
         away, home = g["away"], g["home"]
         L.append(f"  Game {i} ({away} at {home}): {me}'s pick: "
                  + (mine[g["id"]] if g["id"] in mine else "not made yet"))
-        if g["id"] in mine:
+        if g["id"] in mine and g.get("winner"):
+            L.append(f"    Game is final: {me}'s pick is graded WIN/LOSS in RESULTS; pre-game value talk "
+                     "no longer applies to it.")
+        elif g["id"] in mine:
             notes = (espn_all or {}).get(g["id"]) if espn_all is not None else None
             pv = (pick_verdict(notes, away, home, g.get("line"), mine[g["id"]], locked)
                   if notes and not notes.get("unavailable") else None)
@@ -1640,7 +1644,7 @@ def value_calls(ctx: dict, team: str) -> str:
     notes_all = ctx.get("espn") or {}
     groups = {"value side": [], "WRONG side of value": [], "no edge": []}
     for g in ctx.get("games_this_week") or []:
-        if g["id"] not in picks:
+        if g["id"] not in picks or g.get("winner"):  # decided: graded WIN/LOSS, value is moot
             continue
         lab = pick_label(notes_all.get(g["id"]), g, picks[g["id"]])
         m = re.match(r"(.+) \((value side|wrong side of value|no edge)\)$", lab)
@@ -1806,7 +1810,10 @@ def summarize_picky_player(data: dict, current_week, now_ct: dt.datetime) -> dic
                           if p.get("line") not in (None, 0) else p["pick"],
                           "game": f"{p['away']} at {p['home']}", "result": result,
                           "tiebreaker": bool(p.get("tiebreaker")),
-                          "why": p.get("reason"), "blurb": p.get("blurb")})
+                          "why": p.get("reason"), "blurb": p.get("blurb"),
+                          # raw fields for pick_result_lines (graded in code, never by the model)
+                          "pick": p.get("pick"), "away": p.get("away"), "home": p.get("home"),
+                          "line": p.get("line"), "winner": p.get("winner"), "status": p.get("status")})
     hidden = [p for p in picks if p not in shown and p.get("week") == wk]
     return {"name": data["team_name"], "season": rec(graded),
             "last_week": rec([p for p in graded if wk is not None and p.get("week") == wk - 1]),
@@ -1925,7 +1932,9 @@ def prompt_prefix(ctx: dict) -> str:
         "Asked for one: refuse in character, then roast their picks.\n\n"
         "COVERING: the favorite (-13.5) must win by 14 or more. The underdog "
         "(+13.5) covers by winning, or losing by 13 or fewer. A covered pick "
-        "is a point.\n\n"
+        "is a point. WIN/LOSS and records are already computed in the RESULTS "
+        "lines: copy them, never recompute a cover from the score. A pick that "
+        "lost the game can still be a WIN.\n\n"
         + EXAMPLES
         + "\n\nLEAGUE DATA:\n"
         + render_context(ctx)
@@ -2234,6 +2243,485 @@ def live_note(ctx: dict, question: str) -> str:
         parts.insert(0, "SCORE QUESTION: this is a scoreboard question, which you DO answer: give the scores "
                         "below, a line per game, then one jab. Never call it off-topic.")
     return "\n\n".join(parts)
+
+
+# -----------------------------------------------------------------------------
+# per-pick results, graded in code. The 9B redid spread math from the raw
+# score ("Boise won, so your Oregon State pick didn't cover") and ignored the
+# Covered/HIT labels, so every decided pick gets an explicit WIN/LOSS line,
+# the record comes pre-counted, and the answer is checked against both
+# before it goes out (check_answer). Per-request: user turn only, never
+# prompt_prefix().
+# -----------------------------------------------------------------------------
+
+def _pts(x) -> float | None:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _need(spread: float, fav: bool) -> str:
+    """'needed to win by 14 or more' / 'needed to lose by 13 or fewer'."""
+    if spread != int(spread):
+        return (f"needed to win by {int(spread) + 1} or more" if fav
+                else f"needed to lose by {int(spread)} or fewer")
+    return f"needed to win by more than {_num(spread)}" if fav else f"needed to lose by fewer than {_num(spread)}"
+
+
+def grade_pick(pick, away, home, line, winner=None, status=None, away_pts=None, home_pts=None,
+               jackpot=False) -> dict:
+    """One pick as the league grades it. {'side', 'label', 'result', 'why'}:
+    result is WIN / LOSS / IN PROGRESS / NOT STARTED. A final is graded by
+    `winner` (the side that covered); scores only explain it."""
+    side = home if same_team(pick, home) else away if same_team(pick, away) else pick
+    ln = _pts(line)
+    label = (f"{side} (pick'em)" if ln == 0 else _side_label(side, home, ln)) if ln is not None else str(side)
+    ap, hp = _pts(away_pts), _pts(home_pts)
+    out = {"side": side, "label": label, "result": "NOT STARTED", "why": ""}
+    decided = bool(winner) or status == "final"
+    if not decided:
+        if status in ("in_progress", "in", "live"):
+            out["result"] = "IN PROGRESS"
+            if ap is not None and hp is not None and ln is not None:
+                cov = covering_side({"Away": away, "Home": home, "AwayPts": ap, "HomePts": hp, "line": ln})
+                out["why"] = "currently covering" if same_team(cov, side) else "currently NOT covering"
+        return out
+    covered = winner
+    if not covered and ap is not None and hp is not None and ln is not None:
+        covered = covering_side({"Away": away, "Home": home, "AwayPts": ap, "HomePts": hp, "line": ln})
+    if covered is None:
+        return out
+    win = bool(jackpot) or same_team(pick, covered)
+    out["result"] = "WIN" if win else "LOSS"
+    if jackpot and not same_team(pick, covered):
+        out["why"] = "slots jackpot pick, counts as a win"
+        return out
+    if ap is None or hp is None or ln is None:
+        out["why"] = "covered" if win else "did not cover"
+        return out
+    mine, theirs = (hp, ap) if side == home else (ap, hp)
+    diff = mine - theirs
+    sc = f"{_num(mine)}-{_num(theirs)}"
+    fav = ln != 0 and ((side == home) == (ln < 0))
+    sp = abs(ln)
+    margin = (hp + ln - ap) * (1 if side == home else -1)
+    if margin == 0:
+        why = (f"landed exactly on the number ({sc}); the league gives a push to the away side, "
+               + ("so it counts as covered" if win else "so it did not cover"))
+    elif ln == 0:
+        why = f"{'won' if diff > 0 else 'lost'} the game {sc}"
+    elif win:
+        why = (f"covered: won outright {sc} as the underdog" if not fav and diff > 0 else
+               f"covered: lost the game {sc}, by {_num(-diff)}, and only {_need(sp, False)}" if not fav else
+               f"covered: won by {_num(diff)} ({sc}), {_need(sp, True)}")
+    else:
+        why = (f"did not cover: won the game by {_num(diff)} ({sc}) but {_need(sp, True)}" if fav and diff > 0 else
+               f"did not cover: lost the game outright {sc}" if fav else
+               f"did not cover: lost by {_num(-diff)} ({sc}), {_need(sp, False)}")
+    # trust the graded winner; if the score disagrees (stale row), drop the explanation
+    if (margin > 0 or (margin == 0 and side == away)) != win:
+        why = "covered" if win else "did not cover"
+    out["why"] = why
+    return out
+
+
+def _live_by_teams(ctx: dict) -> dict:
+    return {(_match_key(g.get("Away")), _match_key(g.get("Home"))): g for g in ctx.get("live_games") or []}
+
+
+def member_pick_results(ctx: dict, team: str) -> list[dict]:
+    """A member's revealed picks this week, graded (privacy: revealed only)."""
+    live = {g["GameId"]: g for g in ctx.get("live_games") or []}
+    picks = {p["game_id"]: p for p in (ctx.get("revealed_picks_this_week") or {}).get(team, [])}
+    out = []
+    for g in ctx.get("games_this_week") or []:
+        p = picks.get(g["id"])
+        if p is None:
+            continue
+        lg = live.get(g["id"]) or {}
+        r = grade_pick(p["pick"], g["away"], g["home"], g.get("line"), g.get("winner"),
+                       lg.get("Status") or g.get("status"), lg.get("AwayPts"), lg.get("HomePts"),
+                       p.get("jackpot"))
+        out.append({**r, "game": g, "tiebreaker": bool(g.get("tiebreaker"))})
+    return out
+
+
+def picky_pick_results(ctx: dict) -> list[dict]:
+    """Picky's own revealed picks this week, graded. Only the games he picked."""
+    pp = ctx.get("picky_player") or {}
+    live = _live_by_teams(ctx)
+    out = []
+    for p in pp.get("this_week") or []:
+        if not p.get("pick"):
+            continue
+        lg = live.get((_match_key(p["away"]), _match_key(p["home"]))) or {}
+        r = grade_pick(p["pick"], p["away"], p["home"], p.get("line"), p.get("winner"),
+                       lg.get("Status") or p.get("status"), lg.get("AwayPts"), lg.get("HomePts"))
+        out.append({**r, "game": {"away": p["away"], "home": p["home"], "winner": p.get("winner")},
+                    "tiebreaker": bool(p.get("tiebreaker"))})
+    return out
+
+
+def results_record(rows: list[dict]) -> tuple[int, int]:
+    counted = [r for r in rows if not r["tiebreaker"] and r["result"] in ("WIN", "LOSS")]
+    w = sum(r["result"] == "WIN" for r in counted)
+    return w, len(counted) - w
+
+
+def _result_line(r: dict) -> str:
+    why = f" ({r['why']})" if r["why"] else ""
+    tb = " [tiebreaker game, doesn't count]" if r["tiebreaker"] else ""
+    return f"- {r['label']} = {r['result']}{why}{tb}."
+
+
+_PICKY_ASK = re.compile(r"\bpicky\b|\byour (own )?(record|picks?|week|season|bets?)\b|"
+                        r"\byou (pick|picked|take|took|doing|do|going)\b|\bhow (are|'?re) you\b|\bhow'?d you\b|"
+                        r"\b(are|were) you\b.*\b(record|picks?|week)\b", re.I)
+RESULTS_ASK = re.compile(r"\b(record|cover\w*|hit|hits|miss\w*|result\w*|won|win\w*|lost|los[ei]\w*|"
+                         r"how (did|'?d|is|are|am)|how'?s|how'?d|doing|picks?|picked|week|score\w*|"
+                         r"\d+-\d+|wrong|right side)\b", re.I)
+
+
+def results_subjects(ctx: dict, question: str) -> list[tuple[str, str]]:
+    """[(kind, team)]: kind 'you' (the caller), 'member' (named), 'picky'."""
+    q = question or ""
+    me = (ctx.get("you") or {}).get("team_name")
+    out: list[tuple[str, str]] = []
+    if me and me in (ctx.get("revealed_picks_this_week") or {}):
+        out.append(("you", me))
+    for r in ctx.get("standings_ytd") or []:
+        if r["team"] != me and re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I):
+            out.append(("member", r["team"]))
+    ld = (ctx.get("leader") or {}).get("team_name")
+    if ld and ld != me and _LEADER_ALIAS.search(q) and ("member", ld) not in out:
+        out.append(("member", ld))
+    if ctx.get("picky_player") and _PICKY_ASK.search(q):
+        out.append(("picky", (ctx["picky_player"] or {}).get("name") or "Picky"))
+    return out
+
+
+def results_facts(ctx: dict, question: str) -> dict | None:
+    """Everything the results block states and check_answer enforces, or None
+    when the question isn't about results or nothing has kicked off."""
+    q = question or ""
+    subs = results_subjects(ctx, q)
+    named_game = games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]}
+                                 for g in ctx.get("games_this_week") or []])
+    if not (RESULTS_ASK.search(q) or named_game or any(k != "you" for k, _ in subs)):
+        return None
+    subjects = []
+    for kind, team in subs[:4]:
+        rows = picky_pick_results(ctx) if kind == "picky" else member_pick_results(ctx, team)
+        rows = [r for r in rows if r["result"] != "NOT STARTED"]
+        if not rows:
+            continue
+        subjects.append({"kind": kind, "team": team, "rows": rows, "record": results_record(rows)})
+    if not subjects:
+        return None
+    # every decided pool game: game-level cover facts are true for everyone
+    games = []
+    live = {x["GameId"]: x for x in ctx.get("live_games") or []}
+    for g in ctx.get("games_this_week") or []:
+        if g.get("winner") and not g.get("tiebreaker"):
+            cov = g["home"] if same_team(g["winner"], g["home"]) else g["away"]
+            row = {"covered": cov, "not": g["away"] if cov == g["home"] else g["home"]}
+            lg = live.get(g["id"]) or {}
+            ap, hp = _pts(lg.get("AwayPts")), _pts(lg.get("HomePts"))
+            if lg.get("Status") == "final" and ap is not None and hp is not None and ap != hp:
+                row["won_game"], row["lost_game"] = (g["away"], g["home"]) if ap > hp else (g["home"], g["away"])
+            games.append(row)
+    pp = ctx.get("picky_player") or {}
+    me = (ctx.get("you") or {}).get("team_name")
+    st = {r["team"]: (r["w"], r["l"]) for r in ctx.get("standings_ytd") or []}
+
+    def allowed(kind, team, rec, qualified=True):
+        """Records that may be quoted: this week + season, plus (only when the
+        sentence names another span) last week and earlier weeks."""
+        ok = {rec}
+        if kind == "picky":
+            ok.add(tuple(pp.get("season") or ()))
+            if qualified:
+                ok.add(tuple(pp.get("last_week") or ()))
+        else:
+            if team in st:
+                ok.add(st[team])
+            if qualified:
+                ok |= {tuple(v) for v in ((ctx.get("weekly_records") or {}).get(team) or {}).values()}
+        return {x for x in ok if len(x) == 2}
+
+    recs, recs_now = {}, {}
+    for s in subjects:
+        k = s["kind"] if s["kind"] != "member" else s["team"]
+        recs[k] = allowed(s["kind"], s["team"], s["record"])
+        recs_now[k] = allowed(s["kind"], s["team"], s["record"], qualified=False)
+    # not a subject: still pin season numbers (and Picky's week record) so 'I'm 2-0' can't slip by
+    if "you" not in recs and me in st:
+        recs["you"] = allowed("you", me, st[me])
+        recs_now["you"] = allowed("you", me, st[me], qualified=False)
+    if "picky" not in recs and pp.get("season"):
+        prow = [r for r in picky_pick_results(ctx) if r["result"] != "NOT STARTED"]
+        recs["picky"] = allowed("picky", "", results_record(prow))
+        recs_now["picky"] = allowed("picky", "", results_record(prow), qualified=False)
+    return {"subjects": subjects, "games": games, "records": recs, "records_now": recs_now, "question": q,
+            "named_teams": [k for g in named_game for k in (g["Away"], g["Home"])]}
+
+
+def results_block(facts: dict | None) -> str:
+    if not facts:
+        return ""
+    out = ["RESULTS, ALREADY GRADED IN CODE (the league grades against the pool line). State each "
+           "result word exactly as written. Never recompute a cover from a score: a pick that LOST "
+           "THE GAME can still be a WIN, and a favorite that won the game can still be a LOSS."]
+    for s in facts["subjects"]:
+        w, l = s["record"]
+        n_open = sum(r["result"] == "IN PROGRESS" for r in s["rows"])
+        left = f", {n_open} still in progress" if n_open else ""
+        if s["kind"] == "you":
+            head = f"THE USER'S ({s['team']}'s) PICKS THIS WEEK, say 'you':"
+            rec = f"THE USER'S RECORD THIS WEEK ON DECIDED GAMES: {w}-{l}{left}. Say 'you're {w}-{l}'."
+        elif s["kind"] == "picky":
+            head = ("PICKY'S OWN PICKS THIS WEEK (you are Picky: say 'I' and 'my'). These are the only "
+                    "picks of yours that have kicked off; never count anyone else's picks as yours:")
+            rec = f"PICKY'S RECORD THIS WEEK ON DECIDED GAMES: {w}-{l}{left}. Say 'I'm {w}-{l}'."
+        else:
+            head = f"{s['team'].upper()}'S PICKS THIS WEEK (not the user: 'he' or 'they'):"
+            rec = f"{s['team'].upper()}'S RECORD THIS WEEK ON DECIDED GAMES: {w}-{l}{left}."
+        out.append(head)
+        out += [_result_line(r) for r in s["rows"]]
+        out.append(rec)
+    out.append("Market lines: only quote an ESPN market number that appears in the game data; never make one up.")
+    return "\n".join(out)
+
+
+# --- the contradiction guard -------------------------------------------------
+
+_NEGATION = re.compile(r"(?:\bnot|n't|\bdidnt|\bdoesnt|\bnever|\bno|\bwithout|\bfailed to|\bfails to)\W*(?:\w+\W+){0,2}$",
+                       re.I)
+_COVER_WORD = re.compile(r"\bcover(ed|s)?\b", re.I)
+_NEG_ONLY = re.compile(r"\bmiss(ed|es)?\b|\bwrong side\b|\b(pick|bet|side) (lost|died|failed|busted)\b|"
+                       r"\b(a|the|your|my|his) (loser|losing pick)\b", re.I)
+_NEG_CASED = re.compile(r"\bLOSS\b|\bMISS\b|\b(an|the|your|my|his) L\b")
+_POS_ONLY = re.compile(r"\bhit\b|\bcashed\b|\b(a|the|your|my|his) (winner|winning pick)\b", re.I)
+_POS_CASED = re.compile(r"\bWIN\b|\b(a|the|your|my|his) W\b")
+_PICKREF = re.compile(r"\b(your|my|his|their|the) (?:[\w+-.]+\s+){0,3}?(pick|bet|side|play)\b|\b(you|i|he) (took|had|picked|rode|backed)\b",
+                      re.I)
+_REC_RE = re.compile(r"\b(you'?re|you are|you went|you sit at|you'?re sitting at|your record(?: is|:)?|"
+                     r"i'?m|i am|i went|i sit at|i'?m sitting at|my record(?: is|:)?)\s+(?:now\s+|at\s+|a\s+)?"
+                     r"(\d{1,2})\s*-\s*(\d{1,2})\b", re.I)
+
+
+_OBJECT_BEFORE = re.compile(r"\b(beat|beats|beating|over|against|vs\.?|versus|to|crushed|smoked|destroyed|"
+                            r"blew out|routed|than|from|faded|fading|fade)\s+(the\s+)?$", re.I)
+# '<team> [-13.5] [pick] [still] lost ...': the verb right after the team name
+_VERB_AFTER = re.compile(r"\W*(?:[-+]?\d+(?:\.\d+)?\s*)?(?:pick\s+)?(?:(?:still|actually|just|easily)\s+)?"
+                         r"(lost|won|beat|fell|dropped)\b(?! (?:the )?(?:cover|spread|line|number|value))", re.I)
+
+
+def polarity(clause: str) -> tuple[bool, bool]:
+    """(says it covered/won, says it didn't) for one clause of the answer."""
+    pos = bool(_POS_ONLY.search(clause) or _POS_CASED.search(clause))
+    neg = bool(_NEG_ONLY.search(clause) or _NEG_CASED.search(clause))
+    for m in _COVER_WORD.finditer(clause):
+        before = clause[: m.start()]
+        if _NEGATION.search(before[-40:]):
+            neg = True
+        elif re.search(r"\b(to|needed|need|needs|had to|would|could|must)\s*$", before, re.I):
+            continue  # 'needed to cover' says nothing about the result
+        else:
+            pos = True
+    return pos, neg
+
+
+def _team_re(name: str, stems_ok: bool) -> str:
+    k = re.escape(name.lower()).replace("\\ ", r"\s+").replace("'", "'?")
+    k = re.sub(r"state$", r"(state|st\\.?)", k)
+    alts = [k]
+    if stems_ok and name.lower().endswith(" state"):
+        alts.append(re.escape(name.lower()[: -len(" state")]).replace("\\ ", r"\s+"))
+    return r"(?<!\w)(" + "|".join(alts) + r")(?!\w)"
+
+
+def _sentences(text: str) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
+
+
+def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = None) -> list[str]:
+    """Statements in the answer that contradict the computed results: a
+    decided game's cover flipped, a subject's pick called the wrong result,
+    a wrong record, or a line number that isn't in the data."""
+    probs: list[str] = []
+    t = (text or "").replace("’", "'")
+    if facts:
+        teams = {}
+        all_names = [g[k] for g in facts["games"] for k in ("covered", "not")]
+        for s in facts["subjects"]:
+            all_names += [s2 for r in s["rows"] for s2 in (r["game"]["away"], r["game"]["home"])]
+        all_names = list(dict.fromkeys(all_names))
+        stems = collections.Counter(n.lower()[: -len(" state")] for n in all_names if n.lower().endswith(" state"))
+        plain = {n.lower() for n in all_names}
+        for n in all_names:
+            stem = n.lower()[: -len(" state")] if n.lower().endswith(" state") else None
+            teams[n] = re.compile(_team_re(n, bool(stem) and stems[stem] == 1 and stem not in plain), re.I)
+        status, game_res = {}, {}
+        for g in facts["games"]:
+            status[g["covered"]], status[g["not"]] = "WIN", "LOSS"
+            if g.get("won_game"):
+                game_res[g["won_game"]], game_res[g["lost_game"]] = "won", "lost"
+        by_kind = {("you" if s["kind"] == "you" else "picky" if s["kind"] == "picky" else s["team"]): s
+                   for s in facts["subjects"]}
+        members = [s for s in facts["subjects"] if s["kind"] == "member"]
+        for sent in _sentences(t):
+            hits = sorted((m.start(), n) for n, rx in teams.items() for m in rx.finditer(sent))
+            # 1) game level: '<team> covered' / '<team> didn't cover'
+            for i, (pos0, n) in enumerate(hits):
+                end = hits[i + 1][0] if i + 1 < len(hits) else len(sent)
+                clause = sent[pos0:end]
+                # 'Boise State won, but your pick still hit': the part after ', but' isn't about Boise
+                clause = re.split(r",\s*(?:but|so|and|yet|while|which|because)\b|;|:|\s[-–—]\s", clause, maxsplit=1)[0]
+                before = sent[max(0, pos0 - 25):pos0]
+                # an object ('Wake Forest beat SMU and covered'): the verb after it isn't about it
+                if _OBJECT_BEFORE.search(before):
+                    continue
+                # the game itself: '<team> lost the game 46-41' / 'you lost the <team> game'
+                head = _VERB_AFTER.match(clause[len(rx_m.group(0)) if (rx_m := teams[n].match(clause)) else 0:])
+                verb = head.group(1).lower() if head else None
+                pre = re.search(r"\b(lost|won)\s+(?:the\s+)?$", before, re.I)
+                if pre and re.match(r"\W*game\b", clause[len(rx_m.group(0)) if rx_m else 0:], re.I):
+                    verb = pre.group(1).lower()
+                if n in game_res and verb:
+                    if game_res[n] == "won" and verb in ("lost", "fell", "dropped"):
+                        probs.append(f"says {n} lost the game, but {n} WON the game (the pick is graded on the cover)")
+                    elif game_res[n] == "lost" and verb in ("won", "beat"):
+                        probs.append(f"says {n} won the game, but {n} LOST the game (the pick is graded on the cover)")
+                if _PICKREF.search(clause) or n not in status:
+                    continue
+                p, ng = polarity(clause)
+                if status[n] == "WIN" and ng and not p:
+                    probs.append(f"says {n} did not cover, but {n} COVERED")
+                elif status[n] == "LOSS" and p and not ng:
+                    probs.append(f"says {n} covered, but {n} did NOT cover")
+            # 2) pick references: 'your pick did NOT cover'
+            m = _PICKREF.search(sent)
+            if m:
+                who = m.group(0).split()[0].lower()
+                subj = (by_kind.get("you") if who in ("your", "you") else
+                        by_kind.get("picky") if who in ("my", "i") else
+                        (members[0] if len(members) == 1 else None) if who in ("his", "their", "he") else
+                        (members[0] if len(members) == 1 else by_kind.get("you")))
+                if subj:
+                    named = {n for _, n in hits} | set(facts.get("named_teams") or [])
+                    rows = [r for r in subj["rows"] if r["result"] in ("WIN", "LOSS")
+                            and ({r["game"]["away"], r["game"]["home"]} & named)]
+                    decided = [r for r in subj["rows"] if r["result"] in ("WIN", "LOSS")]
+                    if not rows and len(decided) == 1:
+                        rows = decided
+                    if len(rows) == 1:
+                        p, ng = polarity(sent[m.start():])
+                        r = rows[0]
+                        if r["result"] == "WIN" and ng and not p:
+                            probs.append(f"says {subj['team']}'s {r['label']} pick lost, but it is a WIN")
+                        elif r["result"] == "LOSS" and p and not ng:
+                            probs.append(f"says {subj['team']}'s {r['label']} pick won, but it is a LOSS")
+        # 3) records
+        for sent in _sentences(t):
+            other_span = re.search(r"\b(last week|week \d+|season|year|overall|on the year|all year|"
+                                   r"total|ytd|so far this season)\b", sent, re.I)
+            for m in _REC_RE.finditer(sent):
+                who = "you" if m.group(1).lower().startswith(("you", "your")) else "picky"
+                ok = (facts["records"] if other_span else facts.get("records_now") or facts["records"]).get(who)
+                rec = (int(m.group(2)), int(m.group(3)))
+                if ok and rec not in ok:
+                    want = by_kind.get(who)
+                    probs.append(f"says {'the user is' if who == 'you' else 'Picky is'} {rec[0]}-{rec[1]}"
+                                 + (f", but the record this week is {want['record'][0]}-{want['record'][1]}"
+                                    if want else ""))
+    # 4) market/spread numbers not in the data
+    if allowed_numbers is not None:
+        for m in re.finditer(r"(?<![\w.])[-+](\d{1,2}(?:\.5)?)(?!\d|\.\d)|(?<![\d.])(\d{1,2}\.5)(?!\d)", t):
+            v = float(m.group(1) or m.group(2))
+            if v not in allowed_numbers:
+                probs.append(f"states a line {m.group(0)} that isn't in the data")
+    return list(dict.fromkeys(probs))
+
+
+def allowed_line_numbers(prompt: str) -> set:
+    """Every spread-like number the prompt gives: signed numbers (pool and
+    market lines, value checks) and x.5 numbers on line/value text."""
+    nums = {abs(float(x)) for x in re.findall(r"(?<![\w.])[-+](\d+(?:\.\d+)?)", prompt)}
+    for ln in prompt.splitlines():
+        if re.search(r"line|value|spread|market|points better|needed", ln, re.I):
+            nums |= {float(x) for x in re.findall(r"(?<![\d.])(\d+\.5)(?!\d)", ln)}
+    return nums
+
+
+def correction_rider(probs: list[str], facts: dict | None) -> str:
+    return ("CORRECTION: your last draft was WRONG: " + "; ".join(probs) + ". Write the answer again. "
+            "Copy each WIN/LOSS word and every record exactly from the RESULTS block; do not redo any "
+            "spread math from the scores; quote no line that isn't in the data.\n\n" + results_block(facts))
+
+
+_TEMPLATE_JABS = ["Scoreboard doesn't lie, so here it is straight:",
+                  "Let me spell it out so even this league gets it:",
+                  "Facts, no spin:"]
+
+
+def templated_answer(facts: dict) -> str:
+    """In-character fallback built only from the computed facts."""
+    q = facts.get("question") or ""
+    order = {"picky": 0, "member": 1, "you": 2}
+    subj = sorted(facts["subjects"], key=lambda s: order[s["kind"]])[0]
+    named = set(facts.get("named_teams") or [])
+    rows = [r for r in subj["rows"] if {r["game"]["away"], r["game"]["home"]} & named] or subj["rows"]
+    w, l = subj["record"]
+    lines = []
+    for r in rows:
+        why = f" ({r['why']})" if r["why"] else ""
+        lines.append(f"{r['label']} is {'a ' + r['result'] if r['result'] in ('WIN', 'LOSS') else r['result'].lower()}{why}.")
+    who = {"you": f"You're {w}-{l}", "picky": f"I'm {w}-{l}", "member": f"{subj['team']} is {w}-{l}"}[subj["kind"]]
+    tail = {"you": " Don't get cocky.", "picky": " Don't rub it in.", "member": ""}[subj["kind"]]
+    jab = _TEMPLATE_JABS[sum(map(ord, q)) % len(_TEMPLATE_JABS)]
+    return f"{jab} " + " ".join(lines) + f" {who} on decided games this week.{tail}"
+
+
+async def _collect(stream) -> tuple[str, list[str]]:
+    """Run a model stream to the end: (answer text, non-content frames to pass on)."""
+    text, other = "", []
+    async for chunk in stream:
+        if chunk.startswith("data: {"):
+            obj = json.loads(chunk[6:])
+            if "content" in obj:
+                text += obj["content"]
+                continue
+        if chunk.startswith("data: [DONE]"):
+            break
+        other.append(chunk)
+    return text, other
+
+
+async def _guarded_stream(convo: list[dict], prefix: str | None, facts: dict):
+    """Buffer the answer, check it against the computed results, regenerate
+    once with a correction on a contradiction, then fall back to a template."""
+    allowed = allowed_line_numbers("\n".join(m["content"] for m in convo))
+    text, other = await _collect(_model_stream(convo, prefix))
+    if other and not text:
+        for c in other:
+            yield c
+        return
+    probs = check_answer(text, facts, allowed)
+    if probs:
+        log.warning("results guard: %s; regenerating. draft: %r", probs, text[:400])
+        fix = convo[:-1] + [{"role": "user", "content": convo[-1]["content"] + "\n\n"
+                             + correction_rider(probs, facts) + "\n\n" + facts["question"]}]
+        text2, other2 = await _collect(_model_stream(fix, prefix))
+        probs2 = check_answer(text2, facts, allowed) if text2 else ["no answer"]
+        if probs2:
+            log.warning("results guard: still %s; templated answer. draft: %r", probs2, text2[:400])
+            text = templated_answer(facts)
+        else:
+            text = text2
+    yield _sse({"content": text})
+    yield "data: [DONE]\n\n"
 
 
 def _system_tail(ctx: dict) -> str:
@@ -2790,9 +3278,21 @@ async def _chat(req: Request, test: bool, hold: int | None):
         body = (body[: -len(q)] + note + "\n\n" + q) if q and body.endswith(q) else (note + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
+    # per-pick WIN/LOSS lines for the latest question, nearest the question;
+    # the answer is then checked against them before it goes out
+    facts = results_facts(ctx, last.get("content", "")) if last.get("role") == "user" and not ctx.get("error") else None
+    if facts and convo[-1]["role"] == "user":
+        body, q = convo[-1]["content"], last.get("content", "")
+        rb = results_block(facts)
+        body = (body[: -len(q)] + rb + "\n\n" + q) if q and body.endswith(q) else (rb + "\n\n" + body)
+        convo[-1] = {"role": "user", "content": body}
+
+    def _answer():
+        return _guarded_stream(convo, prefix, facts) if facts else _model_stream(convo, prefix)
+
     return StreamingResponse(
         _keepalive(_gated(test, hold, lambda: _with_opener(
-            opener, _scrubbed(_model_stream(convo, prefix), looks_bait(last.get("content", "")))))),
+            opener, _scrubbed(_answer(), looks_bait(last.get("content", "")))))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
