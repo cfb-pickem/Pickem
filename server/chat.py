@@ -3571,6 +3571,11 @@ def lore_note(ctx: dict, question: str) -> str:
         hh = (lore.get("h2h") or {}).get(a, {}).get(b)
         if hh:
             lines.append(f"Head to head, {a} vs {b} (games they took opposite sides, final): {a} {hh[0]}-{hh[1]}.")
+    cw = ctx.get("current_week")
+    if isinstance(cw, int):  # weekly awards: only the week asked about ("last week" = the week before this one)
+        want = cw - 1 if re.search(r"\blast week\b", q, re.I) else cw if re.search(r"\bthis week\b", q, re.I) else None
+        if want is not None:
+            lines = [ln for ln in lines if not ln.startswith("Awards for ") or re.search(rf"\bweek {want}:", ln)]
     lines = list(dict.fromkeys(lines or champ_lines))
     if not lines:
         return ""
@@ -4452,9 +4457,19 @@ def trait_word_check(ctx: dict, question: str):
     return lambda sent: not re.search(rf"\b{word}\w*\b", sent, re.I)
 
 
+# Known-false mashups from the final exam run: only Picky has exhibition picks; Bo Nix never
+# played at Notre Dame; Freeman's 2024 team lost the title game to Ohio State.
+_MASHUPS = re.compile(r"\b(your|his|their|you'?re|he'?s)\b[^.]{0,30}\bexhibition\b"
+                      r"|\bNix\b[^.]{0,40}\b(Notre Dame|Irish)\b(?![^.]{0,40}\b(Oregon|Auburn)\b)"
+                      r"|\b(Notre Dame|Irish)\b[^.]{0,40}\bNix'?s\b"
+                      r"|\bFreeman\b[^.]{0,40}\b(can'?t lose to|owns|always beats|never loses to) Ohio State\b", re.I)
+
+
 def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False,
                 sides: tuple | None = None, extra=None) -> bool:
     sent = sent.replace("\u2019", "'").replace("\u2018", "'")  # curly apostrophes slipped past "you'?re"
+    if _MASHUPS.search(sent):
+        return False
     if _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent) or _ANATOMY.search(sent):
         return False
     if _TICS.search(sent) and len(sent.split()) <= 14:

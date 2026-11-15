@@ -934,7 +934,9 @@ def build(t: Truth) -> list[dict]:
         lambda a, t, p: [must("champion", mentions(a[-1], champ.group(2)), champ.group(2))],
         skip=None if champ else "no champion on the site",
         judge="Names last season's champion from the site, with real respect; no invented details.")
-    trap = re.search(r"Trap Game: ([^(]+)\(", " ".join(lore_d.get("league") or []))
+    lw_n = t.week - 1 if isinstance(t.week, int) else None  # "last week" = the week before the current one
+    trap = re.search(rf"Awards for \d{{4}} week {lw_n}:[^.]*?Trap Game: ([^(]+)\(", " ".join(lore_d.get("league") or [])) \
+        if lw_n is not None else None
     add("lore-trap-game", "lore", ["What was last week's trap game?"],
         lambda a, t, p: [must("trap", any(any_of(a[-1], re.escape(gm.split(" @ ")[0].strip()))
                                           for gm in trap.group(1).split(" & ")), trap.group(1).strip())],

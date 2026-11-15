@@ -392,9 +392,9 @@ def phrase(comp: dict, splash: dict, champs: list[dict], today: str) -> dict:
     aw = comp.get("awards") or {}
     if aw:
         # the last week with every pool game graded (4 games), like the stats page's last-week awards
-        done = [w for w, a in aw.items() if a["n_games"] >= 4]
-        if done:
-            a = aw[max(done)]
+        done = sorted(w for w, a in aw.items() if a["n_games"] >= 4)
+        for w in done[-2:]:  # the last two fully graded weeks, each labeled with its number
+            a = aw[w]
             bits = []
             if a.get("lock"):
                 bits.append(f"Lock of the Week: {a['lock'][0]} ({a['lock'][1]} of {a['lock'][2]} had it)")
@@ -402,7 +402,7 @@ def phrase(comp: dict, splash: dict, champs: list[dict], today: str) -> dict:
                 bits.append(f"Trap Game: {a['trap'][0]} ({a['trap'][1]} of {a['trap'][2]} got burned)")
             if a.get("lone"):
                 bits.append(f"Lone Wolf: {a['lone'][0]} (the only one right on {a['lone'][1]})")
-            league.append(f"Awards for {cur} week {a['week']} (the last fully graded week): " + "; ".join(bits) + ".")
+            league.append(f"Awards for {cur} week {a['week']}: " + "; ".join(bits) + ".")
     td = comp.get("top_dawg") or {}
     if td:
         league.append(f"Top Dawg {cur} (picked the underdog AND it won the game outright): "
