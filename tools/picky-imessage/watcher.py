@@ -19,6 +19,14 @@ are skipped.
 Deduped by message ROWID (state persisted). At most one reply per 10 s and
 60 per hour. Logs carry a short preview only, never full bodies.
 
+Proactive group posts (recaps, previews, pick reminders, score pings) are
+written on the Agent side and queued (server/group_outbox.py). Every
+OUTBOX_POLL seconds this asks the sidecar for the next one (POST /outbox, with
+the list of group chats in this chat.db every few minutes so the sidecar can
+find the league group), sends it under the SAME rate limiter as replies, only
+to a chat that is a group in this chat.db, and acks it. The sidecar returns
+nothing while the kill switch is on, in dry run, or before the group is found.
+
 Standard library only, so it runs on the system python3.
 """
 
@@ -47,6 +55,9 @@ LOG_FILE = HOME / "Library/Logs/picky-imessage.log"
 OUT_DIR = HOME / "Pictures/picky-out"  # Messages can attach from ~/Pictures (TCC)
 
 BOT_URL = os.environ.get("PICKY_GROUP_URL", "http://127.0.0.1:8768/group")
+OUTBOX_URL = BOT_URL.rsplit("/", 1)[0] + "/outbox"
+OUTBOX_POLL = 20.0      # seconds between outbox checks
+GROUPS_EVERY = 300.0    # seconds between group-list reports
 POLL_SECONDS = 3.0
 MIN_GAP = 10.0          # seconds between replies
 MAX_PER_HOUR = 60
@@ -230,6 +241,73 @@ def send(chat_guid: str, text: str, script: list[str] = SEND_SCRIPT) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# proactive posts (outbox)
+# ---------------------------------------------------------------------------
+
+GROUPS_SQL = f"""
+SELECT c.guid, c.chat_identifier, h.id FROM chat c
+LEFT JOIN chat_handle_join j ON j.chat_id = c.ROWID
+LEFT JOIN handle h ON h.ROWID = j.handle_id
+WHERE c.style = {GROUP_STYLE}
+"""
+
+
+def group_chats(db: sqlite3.Connection) -> list[dict]:
+    by: dict[str, dict] = {}
+    for guid, ident, h in db.execute(GROUPS_SQL).fetchall():
+        g = by.setdefault(guid, {"guid": guid, "identifier": ident, "handles": []})
+        if h:
+            g["handles"].append(h)
+    return list(by.values())
+
+
+def is_group(db: sqlite3.Connection, guid: str) -> bool:
+    row = db.execute("SELECT style FROM chat WHERE guid = ?", (guid,)).fetchone()
+    return bool(row) and row[0] == GROUP_STYLE
+
+
+def _post(url: str, payload: dict, secret: str, timeout: float = 10) -> dict:
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "X-Picky-Group-Secret": secret}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode()) or {}
+
+
+def drain_outbox(db: sqlite3.Connection, secret: str, rate: RateLimit, groups: list[dict] | None) -> None:
+    """One outbox check: report groups (if given), send at most one post."""
+    payload = {"groups": groups} if groups is not None else {}
+    try:
+        item = _post(OUTBOX_URL, payload, secret).get("item")
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        log.debug("outbox unreachable: %s", e)
+        return
+    if not item:
+        return
+    chat, texts = item.get("chat") or "", [t for t in item.get("texts") or [] if t]
+    sent, ok, err = 0, True, ""
+    if not is_group(db, chat):  # proactive posts only ever go to a group chat
+        ok, err = False, "not a group chat in Picky's Messages"
+    for t in texts if ok else []:
+        wait = rate.wait_needed()
+        if wait is None:
+            ok, err = False, "hourly cap"
+            break
+        if wait:
+            time.sleep(wait)
+        if not send(chat, t):
+            ok, err = False, "send failed"
+            break
+        rate.mark()
+        sent += 1
+    log.info("outbox %s kind=%s sent=%d/%d %s", item.get("id"), item.get("kind"), sent, len(texts), err)
+    try:
+        _post(OUTBOX_URL + "/ack", {"id": item.get("id"), "sent": sent, "ok": ok, "error": err}, secret)
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        log.warning("outbox ack failed for %s: %s", item.get("id"), e)
+
+
+# ---------------------------------------------------------------------------
 # state + loop
 # ---------------------------------------------------------------------------
 
@@ -267,6 +345,7 @@ def main() -> int:
     state = load_state()
     rate = RateLimit()
     db = None
+    last_outbox, last_groups = 0.0, 0.0
     log.info("watcher up, last_rowid=%s", state.get("last_rowid"))
     while True:
         try:
@@ -285,6 +364,12 @@ def main() -> int:
                     handle_one(row, secret, rate)
                 state["last_rowid"] = row["ROWID"]
                 save_state(state)
+            if time.time() - last_outbox >= OUTBOX_POLL:
+                last_outbox = time.time()
+                groups = None
+                if time.time() - last_groups >= GROUPS_EVERY:
+                    last_groups, groups = time.time(), group_chats(db)
+                drain_outbox(db, secret, rate, groups)
         except sqlite3.OperationalError as e:
             # most often: Full Disk Access not granted yet
             log.error("chat.db unreadable (Full Disk Access?): %s", e)

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Picky's proactive posts in the league iMessage group (group_posts.py).
+  Fires every 5 minutes; group_posts.py detects the league group, exits at
+  once while /Users/Agent/cfb-pickem-private/PICKY_GROUP_PAUSE exists, and
+  otherwise decides what's due (Mon recap, Thu preview, Sat picks, pick
+  reminders before the weekly lock, final-score pings). Posts are queued in
+  the private outbox; the watcher in the picky user sends them. claude -p runs
+  on Charlie's subscription (ANTHROPIC_API_KEY stripped), no tools, zero MCP.
+  Logs: server/logs/group_posts.log. Send log: cfb-pickem-private/picky_group_sends.jsonl.
+  Install: cp to ~/Library/LaunchAgents and launchctl load it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.picky-group-posts</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/group_posts.py</string>
+        <string>tick</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/group_posts.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/group_posts.launchd.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/Agent</string>
+        <key>TERM</key>
+        <string>dumb</string>
+        <key>DISABLE_AUTOUPDATER</key>
+        <string>1</string>
+        <key>PICKEM_CHAT_MODEL</key>
+        <string>qwen3.5:9b-q4_K_M</string>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

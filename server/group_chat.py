@@ -36,6 +36,15 @@ com.pickem.chat needs no restart) with these group-chat changes:
   PICTURES. chat.py's picture route runs as on the site; the image comes back
   as base64 and the watcher sends it as an attachment.
 
+  PLAYOFF MATH. "what do I need to make playoffs" (and "what does Liam need",
+  "am I eliminated", magic numbers) is answered straight from playoff_race,
+  no model, in every mode: exact numbers. Other playoff-race questions get
+  playoff_race's exact per-member block in place of chat.race_note.
+
+  PROACTIVE POSTS. POST /outbox hands the watcher the next queued group post
+  (group_outbox.py: kill switch, dry run, detected league group) and takes the
+  watcher's list of group chats for detection; POST /outbox/ack closes it.
+
 The handle map is private: /Users/Agent/cfb-pickem-private/picky_group_members.json
 (never in this public repo). Unknown senders are a generic league member.
 """
@@ -70,6 +79,8 @@ from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from starlette.requests import Request as StarletteRequest  # noqa: E402
 
 import chat  # noqa: E402
+import group_outbox  # noqa: E402
+import playoff_race  # noqa: E402
 
 log = logging.getLogger("picky-group")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -364,6 +375,93 @@ for _name in ("facts_sentence", "templated_answer"):
 
 
 # -----------------------------------------------------------------------------
+# playoff race: exact numbers (playoff_race.py), never the model's arithmetic
+# -----------------------------------------------------------------------------
+
+RACE_TTL = 120.0
+_race_cache: tuple[float, tuple | None] = (0.0, None)
+
+
+class _RaceDB:
+    """Sync service-key reads for playoff_race.load (run in a thread)."""
+
+    def __init__(self, key: str):
+        self.h = {"apikey": key, "Authorization": f"Bearer {key}"}
+        self.c = httpx.Client(timeout=20)
+
+    def get(self, q: str) -> list:
+        r = self.c.get(f"{chat.REST}/{q}", headers=self.h)
+        r.raise_for_status()
+        return r.json()
+
+    def get_all(self, q: str, page: int = 1000) -> list:
+        out, off = [], 0
+        while True:
+            rows = self.get(f"{q}&limit={page}&offset={off}")
+            out += rows
+            if len(rows) < page:
+                return out
+            off += page
+
+
+def _load_race() -> tuple:
+    VIEWER._h()  # loads the service key
+    return playoff_race.load(_RaceDB(VIEWER.key))
+
+
+async def race_data() -> tuple | None:
+    """(results, meta), cached RACE_TTL seconds; None if the read fails."""
+    global _race_cache
+    if _race_cache[1] and time.time() - _race_cache[0] < RACE_TTL:
+        return _race_cache[1]
+    try:
+        data = await asyncio.to_thread(_load_race)
+    except Exception as e:  # noqa: BLE001  the model still has chat.py's own race note
+        log.warning("playoff race read failed: %s", e)
+        return None
+    _race_cache = (time.time(), data)
+    return data
+
+
+def race_target(q: str, sender: Sender) -> tuple[str | None, bool]:
+    """(team the question is about, is it the sender). A member named in the
+    question wins; else the sender's own team."""
+    names = group_outbox.member_names()
+    for name, team in sorted({(n, t) for t, n in names.items()} | {(t, t) for t in names}, key=lambda x: -len(x[0])):
+        if team == sender.team:
+            continue
+        if re.search(rf"(?<!\w){re.escape(name)}(?!\w)", q, re.I if len(name) > 3 else 0):
+            return team, False
+    if sender.team and re.search(r"\b(i|me|my|mine|i'?m|im|we|us)\b", q, re.I):
+        return sender.team, True
+    return None, False  # 'can Texas make the playoffs' isn't about a member: the model takes it
+
+
+def race_answer(q: str, sender: Sender, data: tuple | None) -> str | None:
+    if not data or not playoff_race.is_need_question(q):
+        return None
+    team, you = race_target(q, sender)
+    res, meta = data
+    if not team or team not in res:
+        return None
+    names = group_outbox.member_names()
+    return playoff_race.need_answer(team, names.get(team) or team, res, meta, names, you=you)
+
+
+_orig_race_note = chat.race_note
+
+
+def _race_note(ctx: dict, question: str) -> str:
+    data = _race_cache[1]
+    if not data or not chat._RACE_ASK.search(question or "") or not _orig_race_note(ctx, question):
+        return _orig_race_note(ctx, question)
+    return playoff_race.model_block(data[0], data[1], group_outbox.member_names())
+
+
+chat.race_note = _race_note
+
+
+# -----------------------------------------------------------------------------
 # reply shaping
 # -----------------------------------------------------------------------------
 
@@ -511,6 +609,11 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         if mode != "dm" and _STATUS_ASK.search(q):
             q += _STATUS_NUDGE
         key = history_key(chat_id, handle, dm)
+        if playoff_race.is_need_question(q) or chat._RACE_ASK.search(q):
+            exact = race_answer(q, s, await race_data())
+            if exact:
+                await save_turn(key, q_hist, exact)
+                return {"reply": exact, "image": None, "mode": mode}
         messages = load_history(key) + [{"role": "user", "content": q}]
         body = json.dumps({"messages": messages, "supabase_jwt": jwt, "mode": "leaderboard"}).encode()
 
@@ -582,6 +685,36 @@ async def group(req: Request):
     log.info("%s reply sender=%s mapped=%s %.1fs chars=%d image=%s", out["mode"], handle[-4:] or "?",
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]))
     return {"reply": out["reply"] or None, "image": out["image"]}
+
+
+def _check_secret(req: Request) -> None:
+    got = req.headers.get("x-picky-group-secret") or ""
+    if not SECRET or not hmac.compare_digest(got.encode(), SECRET.encode()):
+        raise HTTPException(status_code=401, detail="bad_secret")
+
+
+@app.post("/outbox")
+async def outbox(req: Request):
+    """The watcher's poll: optional {"groups": [{"guid", "identifier",
+    "handles"}]} from Picky's chat.db for league-group detection; returns the
+    next proactive post, or none (paused, dry run, no group, empty)."""
+    _check_secret(req)
+    try:
+        body = await req.json()
+    except ValueError:
+        body = {}
+    if isinstance(body, dict) and isinstance(body.get("groups"), list):
+        group_outbox.update_group(body["groups"])
+    return {"item": group_outbox.next_item()}
+
+
+@app.post("/outbox/ack")
+async def outbox_ack(req: Request):
+    _check_secret(req)
+    body = await req.json()
+    ok = group_outbox.ack(str(body.get("id") or ""), int(body.get("sent") or 0), bool(body.get("ok")),
+                          str(body.get("error") or ""))
+    return {"ok": ok}
 
 
 if __name__ == "__main__":
