@@ -107,9 +107,14 @@ BLINKSTRADAMUS_LINE = "nice milk, freak."
 # Charlie, 2026-11-15: when anyone else brings him up, Picky works in a milk
 # joke and calls him a freak. Rides in the user turn only when he's named.
 _BLINKS_ASK = re.compile(r"\bblink(?:stradamus|y|ie|s)\b", re.I)
-BLINKS_BIT = ("RUNNING BIT: Blinkstradamus is the league's milk guy. Whenever he comes up, work in one "
-              "quick joke about his milk and call him a freak (friendly roast, league inside joke, not a "
-              "fact that needs a source). Still answer the question with real facts.")
+BLINKS_BIT = ("RUNNING BIT: Blinkstradamus is the league's milk guy. The origin, true league lore: on a "
+              "bachelor party he bought milk and was walking along the side of the road carrying it when "
+              "some girls drove by in a Jeep with the top off and yelled \"NICE MILK FREAK\" at him. "
+              "Whenever he comes up, work in one quick joke about his milk and call him a freak; call back "
+              "to the story when it fits (buying the milk, carrying it down the roadside, the top-off Jeep, "
+              "the \"NICE MILK FREAK\" yell, the bachelor party). Keep the jokes on the milk carton, the "
+              "roadside walk, cereal and dairy. Never body-adjacent: no lactation, breasts, nursing or "
+              "anything about bodies. Still answer the question with real facts.")
 
 
 def blinks_note(ctx: dict, question: str) -> str:
