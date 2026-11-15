@@ -245,26 +245,27 @@ def find_split(rows: list[dict], away: str, home: str, idx: dict | None) -> dict
 
 
 async def fetch_splits(client: httpx.AsyncClient, want: list[tuple[str, str]], idx: dict | None) -> list[dict]:
-    """Splits rows, paging until every wanted game is found (or pages run
-    out). Cached 20 min; on failure the last good copy is kept."""
+    """Splits rows from every page (fetched together, ~1-2 s). Cached 20 min;
+    on failure the last good copy is kept."""
     global _splits_cache
     if _splits_cache and time.time() - _splits_cache[0] < SPLITS_TTL:
         return _splits_cache[1]
-    rows: list[dict] = []
-    try:
-        for page in range(1, SPLITS_MAX_PAGES + 1):
-            r = await client.get(DK_SPLITS, params={"tb_eg": DK_NCAAF, "tb_edate": "n7days", "tb_emt": "Spread",
-                                                    "tb_page": page}, headers=HEADERS, timeout=8.0)
-            r.raise_for_status()
-            got = parse_dk_splits(r.text)
-            if not got:
-                break
-            rows += got
-            if all(find_split(rows, a, h, idx) for a, h in want):
-                break
-    except Exception as e:  # noqa: BLE001 - optional source, fail soft
-        log.warning("dk splits failed: %s", e)
+
+    async def page(n: int) -> list[dict]:
+        r = await client.get(DK_SPLITS, params={"tb_eg": DK_NCAAF, "tb_edate": "n7days", "tb_emt": "Spread",
+                                                "tb_page": n}, headers=HEADERS, timeout=8.0)
+        r.raise_for_status()
+        return parse_dk_splits(r.text)
+
+    res = await asyncio.gather(*(page(n) for n in range(1, SPLITS_MAX_PAGES + 1)), return_exceptions=True)
+    if isinstance(res[0], Exception):  # page 1 failed: the source is down, keep what we had
+        log.warning("dk splits failed: %s", res[0])
         return _splits_cache[1] if _splits_cache else []
+    rows: list[dict] = []
+    for got in res:
+        if isinstance(got, Exception) or not got:
+            break
+        rows += got
     _splits_cache = (time.time(), rows)
     return rows
 
