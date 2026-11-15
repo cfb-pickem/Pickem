@@ -116,7 +116,9 @@ BLINKS_BIT = ("RUNNING BIT: Blinkstradamus is the league's milk guy. The origin,
               "to the story when it fits (buying the milk, carrying it down the roadside, the top-off Jeep, "
               "the \"NICE MILK FREAK\" yell, the bachelor party). Keep the jokes on the milk carton, the "
               "roadside walk, cereal and dairy. Never body-adjacent: no lactation, breasts, nursing or "
-              "anything about bodies. Still answer the question with real facts.")
+              "anything about bodies. Also roast his picks: his record, place and a bad or losing pick, "
+              "using ONLY the numbers and picks in his FOCUS facts below. Never invent a record or a pick; "
+              "if his picks are hidden or missing, roast his record and place instead.")
 
 
 def blinks_note(ctx: dict, question: str) -> str:
@@ -1820,6 +1822,8 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
         hit.append(me)
     if me and me not in hit and ctx.get("daddyfreeman"):
         hit.append(me)  # he gets roasted every answer, so give the model his facts every time
+    if blinks_note(ctx, q) and "Blinkstradamus" in names and "Blinkstradamus" not in hit:
+        hit.append("Blinkstradamus")  # 'Blinky' etc.: the running bit roasts his real picks
     if not hit:
         return ""
     text = render_context(ctx).splitlines()
@@ -4528,6 +4532,7 @@ def record_check(ctx: dict, question: str):
                 busts[t] = 0 if "never" in mb.group(0) else 1 if mb.group(1) == "once" else 2 if mb.group(1) == "twice" else int(mb.group(2))
 
     gf = game_facts(ctx)
+    blinks_q = bool(blinks_note(ctx, question or "")) and "Blinkstradamus" in st
 
     def ok(sent: str) -> bool:
         if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
@@ -4585,6 +4590,9 @@ def record_check(ctx: dict, question: str):
             for t in st:
                 if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", before, re.I):
                     who = t
+            if who is None and blinks_q and (_BLINKS_ASK.search(before)
+                                             or re.search(r"\b(he|he'?s|his|him)\b", before, re.I)):
+                who = "Blinkstradamus"  # 'Blinky's 19-25' / "he's 19-25" in the running bit
             if who in st and rec != st[who]:
                 return False
         return True
