@@ -26,6 +26,7 @@ LET THE SLOTS DECIDE (the jackpot)
 STANDINGS AND PLAYOFFS
 - Season standings = total points from weeks 0-15. The site lists no weekly prize.
 - Playoffs: top 4 advance, scores reset, and they pick all playoff games.
+- When: week 15 is conference championship week, the last week of the regular season. The league playoffs start after conference championship week, and the playoff games are the College Football Playoff games. (2025: no pool games the week right after, Army-Navy week; the first playoff games were Dec 19-20.)
 
 PAYOUTS
 - Buy-in: $75 per player (confirmed by the commissioner, 2026-11-14; the site itself doesn't print it).
