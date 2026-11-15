@@ -217,6 +217,58 @@ def test_template_is_true():
     assert "Boise State -13.5 is a LOSS" in t and "I'm 0-1" in t and chat.check_answer(t, f) == [], t
 
 
+def test_guard_flags_a_pick_pinned_on_the_wrong_person():
+    f = facts("what's Picky's record this week?")
+    p = chat.check_answer("I took UTSA +2.5 and they're rolling.", f)  # UTSA is the caller's pick, not Picky's
+    assert any("Picky took UTSA" in x for x in p), p
+    assert chat.check_answer("I took Boise State -13.5 and it lost.", f) == [] or \
+        not any("took Boise" in x for x in chat.check_answer("I took Boise State -13.5 and it lost.", f))
+    p2 = chat.check_answer("You took Boise State, genius.", facts())
+    assert any("the user took Boise State" in x for x in p2), p2
+    assert not any("took" in x for x in chat.check_answer("You took Oregon State +13.5 and it's a WIN.", facts()))
+
+
+def _run_guard(drafts: list[list[str]]) -> tuple[str, int]:
+    """Drive _guarded_stream with fake model drafts (lists of chunks).
+    Returns (all content, index of the chunk where content first appeared)."""
+    import asyncio
+    import json as _json
+    calls = iter(drafts)
+
+    async def fake_stream(convo, prefix=None):
+        for c in next(calls):
+            yield chat._sse({"content": c})
+        yield "data: [DONE]\n\n"
+
+    async def go():
+        real = chat._model_stream
+        chat._model_stream = fake_stream
+        try:
+            out = [c async for c in chat._guarded_stream([{"role": "user", "content": chat.results_block(facts())}], None, facts())]
+        finally:
+            chat._model_stream = real
+        return "".join(_json.loads(c[6:]).get("content", "") for c in out if c.startswith("data: {"))
+
+    return asyncio.run(go())
+
+
+def test_guard_streams_clean_answer_whole():
+    a = _run_guard([["Oregon State +13.5 is a WIN. ", "You're 2-0 on decided games. ", "Enjoy it."]])
+    assert a == "Oregon State +13.5 is a WIN. You're 2-0 on decided games. Enjoy it.", a
+
+
+def test_guard_cuts_bad_later_sentence_and_appends_facts():
+    a = _run_guard([["Nice week. ", "Your Oregon State pick didn't cover. ", "Sad."]])
+    assert a.startswith("Nice week. For the record:") and "Oregon State +13.5 is a WIN" in a, a
+    assert "didn't cover" not in a and "Sad" not in a, a
+
+
+def test_guard_bad_first_sentence_regenerates():
+    a = _run_guard([["Your Oregon State pick didn't cover. ", "Ouch."],
+                    ["Oregon State +13.5 is a WIN, lucky you."]])
+    assert a == "Oregon State +13.5 is a WIN, lucky you.", a
+
+
 def test_prefix_untouched_by_results():
     # results ride in the user turn only; the prompt prefix must not depend on them
     import inspect

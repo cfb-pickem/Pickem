@@ -28,8 +28,9 @@ STANDINGS AND PLAYOFFS
 - Playoffs: top 4 advance, scores reset, and they pick all playoff games.
 
 PAYOUTS
+- Buy-in: $75 per player (confirmed by the commissioner, 2026-11-14; the site itself doesn't print it).
 - 1st: the remainder of the buy-in pot. 2nd: buy-in back + $25. 3rd: buy-in back.
-- The site does not state the buy-in amount.
+- Picky the exhibition player never pays in and never gets paid.
 
 TIEBREAKERS: how ties in the standings are broken. They use separate tiebreaker picks, which never count as points.
 Regular season tiebreakers, in order:

@@ -84,6 +84,9 @@ class Truth:
             except Exception:  # noqa: BLE001
                 self.cfbd_idx = None
         self.rules_text = self._rules_source()
+        n_active = sum(1 for x in self.teams if x.get("active") and not x.get("is_exhibition"))
+        if self.rules_text and hasattr(chat, "payout_text"):
+            self.rules_text += "\n" + chat.payout_text(n_active)  # computed payouts Picky may quote
         return self
 
     # ---- members -------------------------------------------------------------

@@ -103,8 +103,20 @@ def test_picks_are_paged_and_season_scoped():
     asyncio.run(_run_paging_and_season_scope())
 
 
+def test_playoff_week_never_moves_season_standings():
+    teams = [{"team_id": 1, "team_name": "A"}, {"team_id": 2, "team_name": "B"}]
+    games = [{"GameId": 1, "week": 15, "winner": "X", "tiebreaker": False},
+             {"GameId": 2, "week": 16, "winner": "Y", "tiebreaker": False}]
+    picks = [{"team_id": 1, "game_id": 1, "pick": "X"}, {"team_id": 2, "game_id": 1, "pick": "Z"},
+             {"team_id": 2, "game_id": 2, "pick": "Y"}]
+    st = {r["team"]: (r["w"], r["l"]) for r in chat.compute_standings(teams, games, picks)}
+    assert st == {"A": (1, 0), "B": (0, 1)}, st
+    assert 16 not in chat.compute_weekly(teams, games, picks).get("B", {})
+
+
 if __name__ == "__main__":
-    tests = [test_points_match_leaderboard_rules, test_ties_share_rank, test_pool_line_and_line_value, test_picks_are_paged_and_season_scoped]
+    tests = [test_points_match_leaderboard_rules, test_ties_share_rank, test_pool_line_and_line_value, test_picks_are_paged_and_season_scoped,
+             test_playoff_week_never_moves_season_standings]
     failed = 0
     for t in tests:
         try:

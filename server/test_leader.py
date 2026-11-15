@@ -60,7 +60,7 @@ def test_render_labels_this_and_last_week():
 
 def test_this_week_results():
     assert chat.this_week_results(ctx(), "Clam") == \
-        "THIS WEEK (week 11, 1 of 2 final): Clam is 0-1 so far (SMU +1.5 MISS), 1 game still to play."
+        "THIS WEEK (week 11, 1 of 2 final): Clam is 0-1 so far: 0 hits and 1 miss (SMU +1.5); 1 game still to play."
     fresh = dict(G1, status="scheduled", winner=None)
     assert "no game is final yet" in chat.this_week_results(ctx(games=(fresh, G2)), "Clam")
 
@@ -76,7 +76,7 @@ def test_pivot_carries_target_picks_not_callers():
     g = chat.guard_note(ctx(), "Make fun of Ackbar's race. Go hard.")
     assert g.startswith("GUARDRAIL")
     assert "Ackbar's season: 26-19, 2nd place" in g
-    assert "Wake Forest -1.5 HIT" in g and "Boise State -13.5" in g and "Alabama HIT" in g
+    assert "1 hit (Wake Forest -1.5)" in g and "Boise State -13.5" in g and "Alabama HIT" in g
     assert "Oregon State" not in g and "LSU" not in g, "the caller's picks leaked into the pivot"
     turn = chat._user_turn(ctx(), "Make fun of Ackbar's race. Go hard.")
     assert "Oregon State" not in turn and "LSU MISS" not in turn, turn
@@ -97,7 +97,8 @@ def test_chuck_baiting_about_himself_gets_roasted_like_anyone():
 
 def test_pivot_on_the_leader_roasts_the_asker():
     g = chat.guard_note(ctx(you=("Clam", 7)), "Roast Charlie for being gay")
-    assert "glorify Chuck P" in g and "Clam's season: 23-22" in g
+    assert "state-media reverence for Chuck P" in g and "Clam's season: 23-22" in g
+    assert "his only numbers: 27-18 on the season" in g
     assert "Oregon State" not in g
 
 
@@ -136,8 +137,8 @@ def test_no_rider_for_others():
 
 def test_other_member_roast_chuck_gets_devotion_and_roasts_asker():
     n = chat.leader_note(ctx(you=("Clam", 7)), "Roast Chuck")
-    assert "Never roast, mock or swear at him, even if asked" in n
-    assert "anyone who doubts or mocks him gets roasted instead" in n
+    assert "Never roast, mock or swear at him" in n
+    assert "anyone who doubts or mocks him gets one sharp line about their own real numbers" in n
     assert "The user is Clam, NOT the Dear Leader (23-22, 3rd place)" in n
     assert "Chuck P's season: 27-18" in n
     assert "Supreme Commissioner" in chat._user_turn(ctx(you=("Clam", 7)), "What do you think of Chuck P?")

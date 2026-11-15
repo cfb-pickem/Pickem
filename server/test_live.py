@@ -240,7 +240,11 @@ def test_prefix_identical_a_minute_apart_with_live_data():
         chat._now_ct_naive = orig
     assert p1 == p2 == p3
     assert "LIVE SCOREBOARD" not in p1 and "(as of" not in p1 and "9:05" not in p1
-    assert "LIVE SCOREBOARD" in t2  # it goes in the tail instead
+    # it rides in the latest user turn instead, and only for questions that need it
+    assert "LIVE SCOREBOARD" not in t2
+    assert chat.wants_live_board(c2, "What's the score of the UTSA game?")
+    assert chat.wants_live_board(c2, "Am I covering right now?")
+    assert not chat.wants_live_board(c2, "What's the capital of France?")
 
 
 if __name__ == "__main__":

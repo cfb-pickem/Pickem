@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  League lore for Picky (lore.py): records, streaks, best/worst weeks, upsets
+  hit, blown picks, lone wolves, head-to-head and past champions, computed
+  from Supabase finals (read-only, service key GETs) + js/leagueHistory.js +
+  cfb-genius.html into server/cache/lore.json. Every 3 hours (a few small
+  REST reads; no model, no CFBD). chat.py reads the cache only.
+  Install: cp to ~/Library/LaunchAgents and launchctl load it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.lore-refresh</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/lore.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartInterval</key>
+    <integer>10800</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/lore.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/lore.stderr.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

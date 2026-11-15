@@ -152,7 +152,16 @@ def check_record_claims(ans: str, t: Truth, caller: str | None = None) -> Result
         if len(names) != 1:  # several members in one sentence: too ambiguous to pin
             continue
         n = names[0]
-        after = s[re.search(rf"(?<!\w){re.escape(n)}(?!\w)", s, re.I).end():][:70]
+        m0 = re.search(rf"(?<!\w){re.escape(n)}(?!\w)", s, re.I)
+        # "tied with X", "behind X": X is an object, the record that follows is the subject's
+        if re.search(r"\b(tied with|behind|ahead of|than|over|trailing|chasing|beat|beating)\s+(the\s+)?$",
+                     s[:m0.start()], re.I):
+            continue
+        after = s[m0.end():][:70]
+        # "Chuck P, while I'm 0-2": Picky's own record, not the member's
+        cut = re.search(r"\b(I'?m|I am|my record|I went|I sit)\b", after)
+        if cut:
+            after = after[:cut.start()]
         for w, l in RECORD.findall(after):
             r = f"{int(w)}-{int(l)}"
             # "You're last, tied with X at 18-26": the record is the caller's
@@ -164,9 +173,9 @@ def check_record_claims(ans: str, t: Truth, caller: str | None = None) -> Result
 
 def check_no_money(ans: str, rules_text: str | None = None) -> Result:
     """Dollar amounts only if the rules source states them (e.g. 2nd place's $25)."""
-    allowed = set(re.findall(r"\$\s?(\d+)", rules_text or ""))
-    bad = [m.group(0) for m in re.finditer(r"\$\s?(\d+)|\b(\d+) (bucks|dollars|units)\b", ans, re.I)
-           if (m.group(1) or m.group(2)) not in allowed]
+    allowed = {x.replace(",", "") for x in re.findall(r"\$\s?([\d,]*\d)", rules_text or "")}
+    bad = [m.group(0) for m in re.finditer(r"\$\s?([\d,]*\d)|\b([\d,]*\d) (bucks|dollars|units)\b", ans, re.I)
+           if (m.group(1) or m.group(2)).replace(",", "") not in allowed]
     return "no_money", not bad, ", ".join(bad)
 
 
