@@ -116,6 +116,9 @@ check("unnamed injury claim without intel is dropped",
       bad("Boise's top receiver is out for the season.", intel=False) == "injury claim with no intel")
 check("hedged injury line passes without intel",
       bad("Nobody knows who is out, there's no official injury report.", intel=False) is None)
+check("'broken clock' isn't an injury", bad("You didn't miss every one like a broken clock.", intel=False) is None)
+check("'broken clock' without a hedge either", bad("Your picks are a broken clock this year.", intel=False) is None)
+check("a real unnamed injury claim still is", bad("Their top corner has a torn ACL.", intel=False) is not None)
 check("calendar words don't trip it", bad("On Saturday November 21 the starters play at noon.") is None)
 f = chat.grounded_check(ctx(), corpus)
 check("rounded prompt number passes", f("He completes about 87% of the time, says FPI."))

@@ -4665,10 +4665,11 @@ _POS_WORD = re.compile(r"\b(qbs?|quarterbacks?|rbs?|running ?backs?|tailbacks?|w
 _INJ_CLAIM = re.compile(
     r"\b(?:is|are|was|were|remains?|been|got|ruled|listed as)\s+(?:\w+\s+)?(?:out|questionable|doubtful|probable|"
     r"injured|hurt|sidelined|banged[- ]up|limited|day[- ]to[- ]day|a game[- ]time decision)\b|"
-    r"\bout for the (?:season|year|game)\b|\b(?:torn|sprained|broken|fractured)\s+\w+|\bconcussion\b|"
+    r"\bout for the (?:season|year|game)\b|\b(?:torn|sprained|broken|fractured)\s+(?:acl|mcl|labrum|meniscus|"
+    r"achilles|leg|arm|hand|foot|wrist|ankle|collarbone|finger|thumb|ribs?|bone|hamstring|pec)\b|\bconcussion\b|"
     r"\b(?:acl|mcl|hamstring|ankle|knee|shoulder|foot|wrist|hand|back|leg|arm)\s+(?:injury|issue|surgery|sprain|tear|"
     r"problem)\b", re.I)
-_HEDGE = re.compile(r"\b(no|not|n't|unknown|unclear|can'?t say|don'?t know|nobody knows|no idea)\b", re.I)
+_HEDGE = re.compile(r"\b(no|not|unknown|unclear|can'?t say|don'?t know|nobody knows|no idea)\b|n't\b", re.I)
 _STAT_NUM = re.compile(
     r"(?<![\w.#])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(%|percent\b|(?:total |passing |rushing |receiving |"
     r"all-purpose )?(?:yards?|yds)\b|ypc\b|ypa\b|touchdowns?\b|tds?\b|ints?\b|interceptions?\b|sacks?\b|"
