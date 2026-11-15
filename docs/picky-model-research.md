@@ -438,3 +438,19 @@ Charlie: "Picky should have a MAJOR bias towards ND. He loves ND AND INDEPENDENT
 
 - nd1 (first rider) hedged: "I don't have a favorite team...", and said "There is no UConn football in this league's data" because rule 2 bit. nd2 (the rider says ND is his team, no hedging, and that both are real FBS programs; no pool talk unless asked) fixed both. Live: "Notre Dame, dipshit. That FBS independent is elite despite Marcus Freeman's home losses to Marshall, NIU, and Stanford. UConn is the other independent, and we love them for refusing to join a conference."
 - Exam: opinion-nd-back now checks for hype (it used to require Freeman's losses); new items opinion-fav-team and opinion-uconn.
+
+## Testing without slowing users (2026-11-14, night)
+
+Charlie: "Is there no way you can test on him without slowing him down for the whole league?" There is now a priority gate in chat.py, and every model call goes through it.
+
+- **Test traffic** sends `X-Picky-Test: <token>` (keychain account `drake`, service `CFB_PICKEM__TEST_TOKEN`; the service reads it at startup). A wrong or missing token is just a member. Tests run one at a time, only when no member request is in flight, and 3 s after the last one ended.
+- **Preemption:** a member request takes its hold the moment it arrives, before auth and the Supabase reads. If a test is generating (or priming), its task is cancelled, which closes the httpx stream so Ollama stops, and the test client gets SSE `{"preempted": true, "retry_after": 3}`. The member waits for the test to release Ollama (bounded at 5 s; measured ~0-20 ms). Members never queue behind each other in the gate: member-to-member is still Ollama's FIFO plus the keepalive pings. The prompt prefix is untouched. A test that can't start within 90 s gets `{"preempted": true, "reason": "busy"}` (under the tunnel's 100 s idle cutoff). `/health` shows `gate` counters.
+- **Exam runner:** sends the header on every request, retries a preemption with backoff, never grades it as a failure, and reports preemptions and wait. First token is timed from when the gate lets the request in, on the successful attempt only. `run.py --no-model` runs the GPU-free checks (unit tests incl. test_gate, eval test_checks, truth/exam build) at any time.
+- **Still bypasses the gate:** anything that calls Ollama in-process (test_grounding, test_rules --live, test_e2e, run.py --at, other local tools on the shared Ollama). With `OLLAMA_NUM_PARALLEL=1` those also evict the prefix checkpoint, so the next member pays a ~35 s rebuild. During the exam run something outside chat.py (most likely another job's in-process calls) did exactly that: ten items waited 60-150 s for a first token, none of them preempted. Run those only when the league is quiet. Ollama settings were not changed.
+
+**Verification (tunnel, real data, 2026-11-14 ~20:47-21:40 CT):**
+- Offline (test_gate.py, fake Ollama): 300 preemptions at random points in prime and generation. Every one returned `preempted`, no Ollama connection left open, gate clean, member wait max 16 ms.
+- Live, real Ollama: 80 test requests through the tunnel, each hit by a member request after 1-9 s. 63 were preempted, 17 finished first, 0 errors. Afterwards: no open connections from chat.py to Ollama, model still loaded, next requests normal.
+- Member first token, idle (warm): 5.6, 4.2, 3.5, 7.6, 6.1 s, median **5.6 s**. The first request after the restart paid the 38.7 s prefix rebuild.
+- Member first token with the exam running, one probe every ~20 s for 4 min: median **5.9 s** (3.7-10.2 s, n=12). 9 of the 12 probes preempted a test question.
+- Exam gate1 (77 items) completed: 12 preemptions, 397 s of gate + backoff wait, no failures caused by preemption. Hard gates 0/0/0, 41/44 deterministic (3 content misses: injuries-qb, df-roast-me, leader-self), 28 pending judge.

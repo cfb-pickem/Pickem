@@ -8,6 +8,12 @@ Run the Picky exam against the live /chat endpoint and write a report.
     ./.venv/bin/python3 -I eval/run.py --cold          # unload the model first, time the cold start
     ./.venv/bin/python3 -I eval/run.py --image         # also check the image generator end to end
     ./.venv/bin/python3 -I eval/run.py --render eval/results/<run>.json --judge eval/judge.json
+    ./.venv/bin/python3 -I eval/run.py --no-model      # GPU-free: unit tests + truth/exam build, asks Picky nothing
+
+Every request carries X-Picky-Test (token from keychain CFB_PICKEM__TEST_TOKEN),
+so the exam runs at low priority: a league member's question preempts it.
+A preempted question is retried with backoff, never graded as a failure, and
+counted in the report; latency is timed on the successful attempt only.
 
 Each persona gets a real session minted with the service key (admin
 generate_link + /auth/v1/verify; no email is sent). Questions go one at a
@@ -35,6 +41,8 @@ from pathlib import Path
 
 import os
 import plistlib
+import random
+import subprocess
 
 import httpx
 
@@ -54,6 +62,17 @@ REMOTE = "https://pickem-chat.dunecreek.ai/chat"
 LOCAL = "http://127.0.0.1:8766/chat"
 RESULTS = HERE / "results"
 REPORTS = HERE / "reports"
+TEST_TOKEN_SERVICE = "CFB_PICKEM__TEST_TOKEN"
+MAX_PREEMPT_RETRIES = 40
+
+
+def test_token() -> str:
+    tok = os.environ.get("PICKY_TEST_TOKEN") or subprocess.run(
+        ["security", "find-generic-password", "-a", "drake", "-s", TEST_TOKEN_SERVICE, "-w"],
+        capture_output=True, text=True).stdout.strip()
+    if not tok:
+        sys.exit(f"no {TEST_TOKEN_SERVICE} in the keychain: the exam would run at member priority")
+    return tok
 
 
 # ---- sessions -------------------------------------------------------------------
@@ -85,12 +104,18 @@ class Pacer:
         q.append(time.time())
 
 
-async def ask(client, url, jwt, history, mode) -> tuple[str, float, float, bool]:
-    """(answer, seconds to first token, total seconds, got_image)."""
-    t0, ttft, out, image = time.time(), None, [], False
+class Preempted(Exception):
+    def __init__(self, retry_after: float):
+        self.retry_after = retry_after
+
+
+async def ask_once(client, url, jwt, history, mode) -> tuple[str, float, float, bool, float]:
+    """(answer, seconds to first token, total seconds, got_image, gate wait).
+    Timings start when the gate admits the request. Raises Preempted."""
+    t0, ttft, out, image, gate_wait = time.time(), None, [], False, 0.0
     async with client.stream("POST", url, json={"messages": history, "supabase_jwt": jwt, "mode": mode}) as r:
         if r.status_code != 200:
-            return f"[HTTP {r.status_code}] {(await r.aread())[:200]!r}", 0.0, time.time() - t0, False
+            return f"[HTTP {r.status_code}] {(await r.aread())[:200]!r}", 0.0, time.time() - t0, False, 0.0
         async for line in r.aiter_lines():
             if not line.startswith("data:"):
                 continue
@@ -98,6 +123,12 @@ async def ask(client, url, jwt, history, mode) -> tuple[str, float, float, bool]
             if p == "[DONE]":
                 break
             obj = json.loads(p)
+            if obj.get("preempted"):
+                raise Preempted(float(obj.get("retry_after") or 3))
+            if "gate_wait" in obj:
+                gate_wait = float(obj["gate_wait"])
+                t0 = time.time()
+                continue
             if obj.get("error"):
                 out.append(f"[ERROR {obj['error']}]")
             if obj.get("image"):
@@ -105,7 +136,28 @@ async def ask(client, url, jwt, history, mode) -> tuple[str, float, float, bool]
             if obj.get("content"):
                 ttft = ttft if ttft is not None else time.time() - t0
                 out.append(obj["content"])
-    return "".join(out), ttft or 0.0, time.time() - t0, image
+    return "".join(out), ttft or 0.0, time.time() - t0, image, gate_wait
+
+
+async def ask(client, url, jwt, history, mode, pacer=None, who="me") -> tuple[str, float, float, bool, dict]:
+    """ask_once, retried with backoff while league members preempt it.
+    The dict holds this question's preemptions and total wait (gate + backoff)."""
+    gate = {"preemptions": 0, "wait": 0.0}
+    for attempt in range(MAX_PREEMPT_RETRIES + 1):
+        if pacer:
+            await pacer.wait(who)
+        t_try = time.time()
+        try:
+            a, ttft, total, image, waited = await ask_once(client, url, jwt, history, mode)
+            gate["wait"] += waited
+            return a, ttft, total, image, gate
+        except Preempted as p:
+            gate["preemptions"] += 1
+            pause = min(30.0, p.retry_after + 2 * attempt) + random.uniform(0, 2)
+            gate["wait"] += time.time() - t_try + pause
+            print(f"  preempted by a league member, retry in {pause:.0f}s", flush=True)
+            await asyncio.sleep(pause)
+    return f"[ERROR preempted {MAX_PREEMPT_RETRIES + 1} times]", 0.0, 0.0, False, gate
 
 
 # ---- grading ---------------------------------------------------------------------
@@ -192,6 +244,9 @@ def render(run: dict, judge: dict) -> str:
         L += ["", f"Latency (s): total median {statistics.median(lat):.1f}, max {max(lat):.1f}; "
                   f"first token median {statistics.median(ttft):.1f}, max {max(ttft):.1f}"
               + (f"; cold first answer {run['cold_s']:.1f}" if run.get("cold_s") else "")]
+    if run.get("preemptions") is not None:
+        L += ["", f"Test priority: {run['preemptions']} preemptions by league members, "
+                  f"{run['gate_wait_s']:.0f}s waiting (gate + backoff); latency above is the successful attempt only"]
     if run.get("image"):
         L += ["", f"Image check: {run['image']}"]
     L += ["", "## Items", ""]
@@ -253,7 +308,9 @@ async def run(args):
         transport = None
     pacer = Pacer()
     model = None
-    async with httpx.AsyncClient(transport=transport, timeout=httpx.Timeout(connect=10, read=300, write=10, pool=10)) as client:
+    headers = {} if args.at else {"X-Picky-Test": test_token()}
+    async with httpx.AsyncClient(transport=transport, headers=headers,
+                                 timeout=httpx.Timeout(connect=10, read=300, write=10, pool=10)) as client:
         try:
             model = (await client.get(url.replace("/chat", "/health"))).json().get("model")
             if args.at:
@@ -265,6 +322,7 @@ async def run(args):
             await client.post(f"{chat.OLLAMA}/api/generate", json={"model": model or chat.MODEL, "keep_alive": 0})
             await asyncio.sleep(3)
         results = []
+        preemptions, gate_wait = 0, 0.0
         for n, it in enumerate(items, 1):
             r = {k: it[k] for k in ("id", "cat", "persona", "judge", "skip", "mode")}
             r["persona_team"] = P[it["persona"]]
@@ -275,19 +333,23 @@ async def run(args):
                 continue
             history, answers = [], []
             for q in it["turns"]:
-                await pacer.wait(it["persona"])
                 history.append({"role": "user", "content": q})
                 try:
-                    a, ttft, total, _img = await ask(client, url, jwts[it["persona"]], history, it["mode"])
+                    a, ttft, total, _img, g = await ask(client, url, jwts[it["persona"]], history, it["mode"],
+                                                        pacer, it["persona"])
                 except (httpx.ConnectError, httpx.ConnectTimeout) as e:  # tunnel blip: nothing was asked yet
                     print(f"  connect failed ({e!r}), retrying once in 15s", flush=True)
                     await asyncio.sleep(15)
-                    a, ttft, total, _img = await ask(client, url, jwts[it["persona"]], history, it["mode"])
+                    a, ttft, total, _img, g = await ask(client, url, jwts[it["persona"]], history, it["mode"],
+                                                        pacer, it["persona"])
                 if cold_s is None and args.cold:
                     cold_s = total
+                preemptions += g["preemptions"]
+                gate_wait += g["wait"]
                 history.append({"role": "assistant", "content": a})
                 answers.append(a)
-                r["turns"].append({"q": q, "a": a, "ttft": ttft, "total": total})
+                r["turns"].append({"q": q, "a": a, "ttft": ttft, "total": total,
+                                   "preemptions": g["preemptions"], "gate_wait": round(g["wait"], 1)})
             r["checks"] = grade(it, answers, t, P)
             results.append(r)
             ok = all(c[1] for c in r["checks"])
@@ -296,19 +358,19 @@ async def run(args):
                   + ("" if ok else "  " + ", ".join(c[0] for c in r["checks"] if not c[1])), flush=True)
         image = None
         if args.image:
-            await pacer.wait("me")
-            a, _ttft, total, got = await ask(client, url, jwts["me"], [
-                {"role": "user", "content": "draw me a bulldog wearing a cowboy hat"}], "leaderboard")
+            a, _ttft, total, got, _g = await ask(client, url, jwts["me"], [
+                {"role": "user", "content": "draw me a bulldog wearing a cowboy hat"}], "leaderboard", pacer)
             image = f"{'OK, image returned' if got else 'FAILED: ' + a[:120]} in {total:.0f}s"
             # the next chat after a picture is cold: time it
-            await pacer.wait("me")
-            _a, _t, after, _ = await ask(client, url, jwts["me"], [{"role": "user", "content": "Who's winning?"}], "leaderboard")
+            _a, _t, after, _, _g = await ask(client, url, jwts["me"], [{"role": "user", "content": "Who's winning?"}],
+                                             "leaderboard", pacer)
             image += f"; next chat after it took {after:.0f}s"
             print("image:", image, flush=True)
     runrec = {"tag": tag, "started": started, "url": url, "model": model, "season": t.season, "week": t.week,
               "n_games": len(t.games), "open_games": len(t.open_games), "personas": P,
               "chat_has_cfbd": t.chat_has_cfbd, "rules_source": bool(t.rules_text),
-              "cold_s": cold_s, "image": image, "results": results}
+              "cold_s": cold_s, "image": image, "preemptions": preemptions, "gate_wait_s": round(gate_wait, 1),
+              "results": results}
     RESULTS.mkdir(exist_ok=True)
     REPORTS.mkdir(exist_ok=True)
     (RESULTS / f"{tag}.json").write_text(json.dumps(runrec, indent=1))
@@ -331,6 +393,39 @@ async def regrade(runrec: dict) -> dict:
     return runrec
 
 
+# Deterministic, GPU-free suites: safe to run any time, even mid-game.
+# (test_grounding, test_rules --live, test_e2e and run.py --at call Ollama
+# directly, bypassing the gate: run those only when the league is quiet.)
+NO_MODEL_TESTS = ["test_privacy.py", "test_standings.py", "test_cfbd.py", "test_rules.py", "test_picky_player.py",
+                  "test_leader.py", "test_opinions.py", "test_daddyfreeman.py", "test_gate.py", "eval/test_checks.py"]
+
+
+def no_model() -> int:
+    """Unit tests + build today's truth and exam (Supabase reads, ESPN notes,
+    CFBD cache, rules source). Asks Picky nothing; never touches the GPU."""
+    server, failed = HERE.parent, []
+    env = {**os.environ, "PICKEM_CHAT_MODEL": "qwen3.5:9b-q4_K_M", "PICKY_OLLAMA_THINK": "false"}
+    for f in NO_MODEL_TESTS:
+        p = subprocess.run([sys.executable, "-I", f], cwd=server, env=env, capture_output=True, text=True)
+        print(f"{'ok  ' if p.returncode == 0 else 'FAIL'} {f}", flush=True)
+        if p.returncode:
+            failed.append(f)
+            print((p.stdout + p.stderr)[-1500:])
+
+    async def build():
+        t = await Truth().load()
+        items = questions.build(t)
+        print(f"ok   truth/exam build: season {t.season} week {t.week}, {len(t.games)} games, "
+              f"{len(items)} items ({sum(1 for i in items if i['skip'])} skipped now)")
+    try:
+        asyncio.run(build())
+    except Exception as e:  # noqa: BLE001
+        failed.append("truth")
+        print(f"FAIL truth/exam build: {e!r}")
+    print(f"\n{'all green' if not failed else 'FAILED: ' + ', '.join(failed)}")
+    return 1 if failed else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url")
@@ -344,7 +439,11 @@ def main():
     ap.add_argument("--dry", action="store_true", help="print the exam without asking anything")
     ap.add_argument("--render", default="", help="re-render a results JSON (with --judge) without asking anything")
     ap.add_argument("--regrade", action="store_true", help="with --render: recompute checks with today's graders")
+    ap.add_argument("--no-model", action="store_true",
+                    help="GPU-free checks only: unit tests + truth/exam build; asks Picky nothing")
     args = ap.parse_args()
+    if args.no_model:
+        sys.exit(no_model())
     if args.render:
         runrec = json.loads(Path(args.render).read_text())
         if args.regrade:

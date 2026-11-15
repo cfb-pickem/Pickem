@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import datetime as dt
+import hmac
 import itertools
 import json
 import logging
@@ -341,6 +342,179 @@ def _rate_check(user_id: str) -> None:
     if len(q) >= RATE_LIMIT_PER_MIN:
         raise HTTPException(status_code=429, detail="rate_limited")
     q.append(now)
+
+
+# -----------------------------------------------------------------------------
+# priority gate: league members never wait behind test traffic
+# -----------------------------------------------------------------------------
+# A request with header X-Picky-Test: <token> (keychain account drake, service
+# CFB_PICKEM__TEST_TOKEN) is test traffic: the exam, overnight jobs. Missing or
+# wrong token = a member. Tests run one at a time, only when no member request
+# is in flight and TEST_BACKOFF s after the last one ended. A member request
+# that arrives while a test is generating aborts it (cancelling the task closes
+# the httpx stream, which makes Ollama stop) and the test client gets SSE
+# {"preempted": true, "retry_after": s}. Members are not queued here at all:
+# among themselves they share Ollama's FIFO queue exactly as before.
+
+TEST_TOKEN_SERVICE = "CFB_PICKEM__TEST_TOKEN"
+TEST_BACKOFF = 3.0
+TEST_MAX_WAIT = 90.0  # under the tunnel's 100 s idle cutoff; then "preempted"
+MEMBER_HOLD_STALE = 600.0  # a hold never released stops blocking tests
+
+
+def _test_token() -> str | None:
+    if os.environ.get("PICKY_TEST_TOKEN"):
+        return os.environ["PICKY_TEST_TOKEN"]
+    try:
+        r = subprocess.run(
+            ["security", "find-generic-password", "-a", "drake", "-s", TEST_TOKEN_SERVICE, "-w"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        log.warning("test token lookup failed: %s", e)
+        return None
+    return r.stdout.strip() or None
+
+
+TEST_TOKEN = _test_token()
+if not TEST_TOKEN:
+    log.warning("no %s in keychain: every request runs at member priority", TEST_TOKEN_SERVICE)
+
+
+def is_test_request(req: Request) -> bool:
+    got = req.headers.get("x-picky-test") or ""
+    return bool(TEST_TOKEN and got and hmac.compare_digest(got.encode(), TEST_TOKEN.encode()))
+
+
+class Gate:
+    def __init__(self):
+        self.holds: dict[int, float] = {}  # member request id -> monotonic start
+        self._ids = itertools.count()
+        self.last_member = -1e9
+        self.test_busy = False
+        self.preempt: asyncio.Event | None = None
+        self.test_idle: asyncio.Event | None = None
+        self.stats = collections.Counter()
+
+    def _idle(self) -> asyncio.Event:
+        if self.test_idle is None:
+            self.test_idle = asyncio.Event()
+            self.test_idle.set()
+        return self.test_idle
+
+    def members(self) -> int:
+        now = time.monotonic()
+        for k, t0 in list(self.holds.items()):
+            if now - t0 > MEMBER_HOLD_STALE:
+                log.warning("gate: dropped a member hold %.0fs old", now - t0)
+                self.member_out(k)
+        return len(self.holds)
+
+    def member_in(self) -> int:
+        k = next(self._ids)
+        self.holds[k] = time.monotonic()
+        if self.preempt is not None and not self.preempt.is_set():
+            self.preempt.set()
+            self.stats["preemptions"] += 1
+        return k
+
+    def member_out(self, k: int) -> None:
+        if self.holds.pop(k, None) is not None:
+            self.last_member = time.monotonic()
+
+    async def member_ready(self) -> None:
+        """Wait (bounded) until a preempted test has closed its Ollama stream,
+        so the member's request isn't queued behind it in Ollama."""
+        idle = self._idle()
+        if not idle.is_set():
+            try:
+                await asyncio.wait_for(idle.wait(), 5.0)
+            except asyncio.TimeoutError:
+                log.warning("gate: preempted test still holds Ollama after 5s")
+
+    async def test_in(self, max_wait: float) -> asyncio.Event | None:
+        """Wait for a free slot; returns the preempt event, or None on timeout."""
+        deadline = time.monotonic() + max_wait
+        while True:
+            if (not self.test_busy and self.members() == 0
+                    and time.monotonic() - self.last_member >= TEST_BACKOFF):
+                self.test_busy = True
+                self._idle().clear()
+                self.preempt = asyncio.Event()
+                self.stats["tests"] += 1
+                return self.preempt
+            if time.monotonic() >= deadline:
+                return None
+            await asyncio.sleep(0.2)
+
+    def test_out(self) -> None:
+        if self.test_busy:
+            self.test_busy = False
+            self.preempt = None
+            self._idle().set()
+
+
+GATE = Gate()
+
+
+async def _member_stream(hold: int, stream):
+    try:
+        await GATE.member_ready()
+        async for chunk in stream:
+            yield chunk
+    finally:
+        GATE.member_out(hold)
+
+
+async def _test_stream(make):
+    """Run `make()` (an SSE stream) at test priority; abort it if a member arrives."""
+    t0 = time.monotonic()
+    preempt = await GATE.test_in(TEST_MAX_WAIT)
+    if preempt is None:
+        GATE.stats["test_timeouts"] += 1
+        yield _sse({"preempted": True, "retry_after": TEST_BACKOFF, "reason": "busy"})
+        return
+    yield _sse({"gate_wait": round(time.monotonic() - t0, 2)})
+    it, nxt, stop = None, None, asyncio.ensure_future(preempt.wait())
+    try:
+        it = make().__aiter__()
+        while True:
+            nxt = asyncio.ensure_future(it.__anext__())
+            done, _ = await asyncio.wait({nxt, stop}, return_when=asyncio.FIRST_COMPLETED)
+            if nxt in done:
+                try:
+                    chunk = nxt.result()
+                except StopAsyncIteration:
+                    return
+                yield chunk
+                continue
+            nxt.cancel()  # unwinds _ollama_stream: closes the httpx stream, Ollama stops
+            try:
+                await nxt
+            except BaseException:  # noqa: BLE001
+                pass
+            GATE.test_out()  # free Ollama for the member before talking to the client
+            log.info("gate: test preempted after %.1fs", time.monotonic() - t0)
+            yield _sse({"preempted": True, "retry_after": TEST_BACKOFF})
+            return
+    finally:
+        stop.cancel()
+        if nxt is not None and not nxt.done():
+            nxt.cancel()
+            try:
+                await nxt
+            except BaseException:  # noqa: BLE001
+                pass
+        if it is not None:
+            try:
+                await it.aclose()
+            except BaseException:  # noqa: BLE001
+                pass
+        GATE.test_out()
+
+
+def _gated(test: bool, hold: int | None, make):
+    return _test_stream(make) if test else _member_stream(hold, make())
 
 
 # -----------------------------------------------------------------------------
@@ -2226,11 +2400,25 @@ async def _image_stream(prompt: str, user_id: str):
 @app.get("/health")
 async def health():
     return {"ok": True, "model": CLAUDE_MODEL if CLAUDE else MODEL,
-            "fallback": MODEL if CLAUDE else None}
+            "fallback": MODEL if CLAUDE else None,
+            "gate": {"members_active": GATE.members(), "test_busy": GATE.test_busy, **GATE.stats}}
 
 
 @app.post("/chat")
 async def chat(req: Request):
+    # a member request preempts test traffic the moment it arrives, before
+    # auth and the Supabase reads, so Ollama is free by the time it's ready
+    test = is_test_request(req)
+    hold = None if test else GATE.member_in()
+    try:
+        return await _chat(req, test, hold)
+    except BaseException:
+        if hold is not None:
+            GATE.member_out(hold)
+        raise
+
+
+async def _chat(req: Request, test: bool, hold: int | None):
     body = await req.json()
     messages = body.get("messages") or []
     jwt = body.get("supabase_jwt") or ""
@@ -2255,7 +2443,7 @@ async def chat(req: Request):
         last = messages[-1] if isinstance(messages[-1], dict) else {}
         if last.get("role") == "user" and wants_image(last.get("content", "")):
             return StreamingResponse(
-                _with_opener(opener, _image_stream(last["content"][:2000], user_id)),
+                _gated(test, hold, lambda: _with_opener(opener, _image_stream(last["content"][:2000], user_id))),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
@@ -2288,7 +2476,8 @@ async def chat(req: Request):
     ]
 
     return StreamingResponse(
-        _keepalive(_with_opener(opener, _scrubbed(_model_stream(convo, prefix), looks_bait(last.get("content", ""))))),
+        _keepalive(_gated(test, hold, lambda: _with_opener(
+            opener, _scrubbed(_model_stream(convo, prefix), looks_bait(last.get("content", "")))))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
