@@ -299,8 +299,9 @@ def opinion_note(question: str, ctx: dict | None = None) -> str:
         riders.append(HOMER_RIDER)
     if _FREEMAN_ASK.search(q):
         riders.append(FREEMAN_RIDER)
-    if _COMMITTEE_ASK.search(q) and re.search(r"\b(committee|cfp|playoff|rank\w*|seed\w*|sec)\b|\bSEC\b", q, re.I):
-        riders.append(COMMITTEE_RIDER)
+    if (_COMMITTEE_ASK.search(q) and re.search(r"\b(committee|cfp|playoff|rank\w*|seed\w*|sec)\b|\bSEC\b", q, re.I)
+            and not (_RACE_ASK.search(q) and not re.search(r"\b(cfp|committee|college football playoff)\b", q, re.I))):
+        riders.append(COMMITTEE_RIDER)  # the league's own playoff race isn't the CFP
     tk = takes_note(q)
     if tk:
         riders.append(tk)
@@ -2694,7 +2695,8 @@ def _sentences(text: str) -> list[str]:
 
 
 _WHO_TOOK = (("picky", r"\b(?:I|I'?ve|I am)\s+(?:took|picked|went with|had|have|rode|backed|grabbed|am on|was on|"
-                       r"bet on|got)\s+(?:the\s+)?(?:value side (?:in|on|with)\s+)?|\bmy\s+", 0),
+                       r"bet on|got)\s+(?:the\s+)?(?:value side (?:in|on|with)\s+)?|\b(?i:my)\s+(?:(?:last|latest|first|"
+                       r"other|only|best|worst) )?(?:pick|bet) (?:was|is|on)\s+|\b(?i:my)\s+", 0),
              ("you", r"\b(?:you|you'?ve)\s+(?:took|picked|went with|had|have|rode|backed|grabbed|are on|were on|"
                      r"bet on|got)\s+(?:the\s+)?(?:value side (?:in|on|with)\s+)?|\byour\s+", re.I))
 
@@ -4331,10 +4333,11 @@ def record_check(ctx: dict, question: str):
                 if not who or last8.get(who) != rec:
                     return False
                 continue
-            if re.search(r"\b(vs\.?|versus|against|head to head|h2h|opposite)\b", sent, re.I):
-                continue  # head-to-head records aren't season records
+            if re.search(r"\b(vs\.?|versus|head to head|h2h|opposite)\b|\bagainst (?!the (spread|line|number))", sent, re.I):
+                continue  # head-to-head records aren't season records ('against the spread' is)
             season_claim = (re.search(r"^\s*(overall|on the (season|year)|all season|for the season|season record)\b",
-                                      after, re.I) or sum(rec) > 8)  # a week has 4 games: past 8 it's a season number
+                                      after, re.I) or sum(rec) > 8  # a week has 4 games: past 8 it's a season number
+                            or re.search(r"\bseason record\b[^.]{0,30}\b(is|of|at|sits at)\s*$", before, re.I))
             if not season_claim or re.search(r"\b(week|weeks|last week|this week)\b", before[-25:], re.I):
                 continue
             who = None
@@ -4467,9 +4470,19 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
         st0 = ctx.get("standings_ytd") or []
         if len(st0) > PLAYOFF_SPOTS:
             cut = sorted((r["w"] for r in st0), reverse=True)[PLAYOFF_SPOTS - 1]
+            row0 = next((r for r in st0 if r["team"] == me), None)
+            if row0 and _SELF_WORDS.search(q) and cut > row0["w"]:
+                g = cut - row0["w"]
+                return (lambda t, g=g: bool(re.search(rf"\b{g}\b", t)),
+                        f" For the record: you're {g} point{'s' * (g != 1)} behind the cut line ({cut}).")
             return (lambda t, c=cut: bool(re.search(rf"\b{c}\b", t)),
                     f" For the record, the cut line is {cut} points (4th place right now).")
-    return _required_fact(ctx, question)
+    need = _required_fact(ctx, question)
+    if need is None and leader_note(ctx, q):  # another member asked about Chuck: a title, every time
+        return (lambda t: bool(re.search(r"dear leader|supreme \w+|glorious \w+|great leader|his excellency|"
+                                         r"state media|beloved leader", t, re.I)),
+                " Long live the Supreme Commissioner.")
+    return need
 
 
 def _required_fact(ctx: dict, question: str) -> tuple | None:

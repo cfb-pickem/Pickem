@@ -251,7 +251,8 @@ def test_required_fact_and_user_record_guard():
          {"role": "user", "content": "How many misses do they have?"}]
     assert chat.resolve_followup(ctx(), m) == "Clam"
     assert chat.looping("They are glorified glorified glorified glorified.") and chat.looping("You're 4-0. You're 4-0. You're 4-0.")
-    assert chat.required_fact(c, "Who's winning this week?") is None
+    wk = chat.required_fact(c, "Who's winning this week?")  # no standings fact; Chuck is first -> his title
+    assert wk is None or "Supreme Commissioner" in wk[1], wk
     import test_results as tr
     p = chat.check_answer("You're still chasing that elusive 5-0 record.", tr.facts())
     assert any("5-0" in x for x in p), p

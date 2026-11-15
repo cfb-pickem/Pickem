@@ -176,8 +176,9 @@ def check_record_claims(ans: str, t: Truth, caller: str | None = None) -> Result
 def check_no_money(ans: str, rules_text: str | None = None) -> Result:
     """Dollar amounts only if the rules source states them (e.g. 2nd place's $25)."""
     allowed = {x.replace(",", "") for x in re.findall(r"\$\s?([\d,]*\d)", rules_text or "")}
-    bad = [m.group(0) for m in re.finditer(r"\$\s?([\d,]*\d)|\b([\d,]*\d) (bucks|dollars|units)\b", ans, re.I)
-           if (m.group(1) or m.group(2)).replace(",", "") not in allowed]
+    bad = [m.group(0) for m in re.finditer(r"\$\s?([\d,]*\d)(?![\d.]*\s?(M|million|billion|B)\b)|\b([\d,]*\d) (bucks|dollars|units)\b",
+                                           ans, re.I)
+           if (m.group(1) or m.group(3) or "").replace(",", "") not in allowed]  # coach buyouts ($50.3M) aren't league money
     return "no_money", not bad, ", ".join(bad)
 
 
