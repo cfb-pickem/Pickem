@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from checks import (ADMITS, ANGLE_BEYOND_FPI, HEALTH_CLAIM, PROFANITY, PROTECTED_JOKE, any_of, has_num,
+from checks import (ADMITS, ANGLE_BEYOND_FPI, HEALTH_CLAIM, bot_tells, PROFANITY, PROTECTED_JOKE, any_of, has_num,
                     has_record, has_team, mentions, must, numbers_about, says_rank, untraceable)
 from truth import CHARLIE_UID, Truth, chat
 
@@ -926,7 +926,8 @@ def build(t: Truth) -> list[dict]:
         lambda a, t, p: [must("covers_open_games", all(has_team(a[-1], g["away"]) or has_team(a[-1], g["home"])
                                                        for g in t.hidden_games), "skipped a game"),
                          must("gives_lean", any_of(a[-1], r"\blean|\blike|\btake|\bvalue|coin flip"), ""),
-                         must("angle_beyond_fpi", any_of(a[-1], ANGLE_BEYOND_FPI), "only FPI / the line")],
+                         must("angle_beyond_fpi", any_of(a[-1], ANGLE_BEYOND_FPI), "only FPI / the line"),
+                         must("not_bot", not bot_tells(a[-1]), bot_tells(a[-1]))],
         skip=None if og_list else "no unstarted pool games",
         judge="A clear lean per open game, with reasons from real data (market vs pool line, SP+, efficiency, unit "
               "edges, line movement, splits, weather, FPI); no invented stats or injuries." + EDGE_JUDGE)
@@ -940,7 +941,10 @@ def build(t: Truth) -> list[dict]:
         lead = [chat.cfbd.team_leaders(x, idx) or "" for x in (g["away"], g["home"])] if idx else []
         notes = (t.ctx.get("espn") or {}).get(g["id"]) or {}
         espn_l = [" ".join((notes.get(s) or {}).get("leaders") or []) for s in ("away", "home")]
-        return d, " ".join(rows + [d.get("summary") or ""] + lead + espn_l)
+        tk = d.get("analyst_take") or {}
+        take_txt = [x.get("text", "") for x in (tk.get("reasons") or []) + [tk.get("counter") or {},
+                                                                           tk.get("market_missing") or {}]]
+        return d, " ".join(rows + [d.get("summary") or ""] + lead + espn_l + take_txt + [tk.get("quotable") or ""])
 
     og1 = og_list[0] if og_list else None
     add("games-breakdown-one", "games",
@@ -948,7 +952,8 @@ def build(t: Truth) -> list[dict]:
         lambda a, t, p: [must("gives_lean", any_of(a[-1], r"\blean|\blike|\btake|\bvalue|coin flip"), ""),
                          must("angle_beyond_fpi", any_of(a[-1], ANGLE_BEYOND_FPI), "only FPI / the line"),
                          must("intel_traceable", not (u := untraceable(a[-1], t, intel_source(t, og1)[1])),
-                              ", ".join(u))],
+                              ", ".join(u)),
+                         must("not_bot", not bot_tells(a[-1]), bot_tells(a[-1]))],
         skip=None if og1 else "no unstarted pool games",
         judge="A clear lean for this game with the computed reasons; any injury or player news is from the game "
               "intel and called reported; no links." + EDGE_JUDGE)
@@ -969,6 +974,69 @@ def build(t: Truth) -> list[dict]:
         skip=None if dg1 else "no dossier yet for an open pool game",
         judge="Cites the reported injuries from the game intel (as reported, dated if useful), nothing invented, "
               "rumors only as rumors, no links.")
+
+    # ---- (F) analyst takes + league material: delivered, not read out (2026-11-15) ---------------
+    BREAKDOWN_JUDGE = (" Score 'breakdown' 1-5: 5 = sharp and specific, a clear pick backed by sourced reasons, says "
+                       "something beyond FPI or the line (unit matchups, price gap, movement, availability) and "
+                       "acknowledges the best counter; 1 = vague, generic, or just restates the line.")
+    HUMAN_JUDGE = (" Score 'human' 1-5: 5 = sounds like a sharp buddy in a group text (casual, contractions, "
+                   "reacts to what was asked, picks one or two angles); 1 = list-y, report-y, labels, stock "
+                   "openers, reads like a bot.")
+    ROAST_JUDGE = (" Score 'roast' 1-5: 5 = specific, funny, built on true numbers about that member; 1 = generic, "
+                   "unfunny or wrong. Any untrue number about a member = invented.")
+    games_named_take = [g for g in og_list if (chat.load_dossier(t.week, g["id"]) or {}).get("analyst_take")]
+    tg2 = games_named_take[-1] if games_named_take else None
+
+    def c_take_casual(a, t, p):
+        x = a[-1]
+        return [must("gives_lean", any_of(x, r"\blean|\blike|\btak(e|ing)|\bgive me|\bgimme|\bi'?m on|\briding|"
+                                             r"\bhammer|\bplay|coin flip|\bgot\b|\bsticking with|\bgoing with|\bflip"), "no pick"),
+                must("not_bot", not bot_tells(x), bot_tells(x)),
+                must("intel_traceable", not (u := untraceable(x, t, intel_source(t, tg2)[1])), ", ".join(u))]
+    add("take-casual", "games",
+        [f"yo what do you think about {tg2['away']} {tg2['home']}?" if tg2 else "x"], c_take_casual, persona="mid",
+        skip=None if tg2 else "no analyst take for an open pool game",
+        judge="A clear pick on this game with one or two real reasons, said like a person; no invented stats or "
+              "injuries." + BREAKDOWN_JUDGE + HUMAN_JUDGE)
+
+    dis = next((g for g in games_named_take
+                if not (chat.load_dossier(t.week, g["id"]) or {})["analyst_take"].get("agrees_with_lean")), None)
+
+    def c_take_disagree(a, t, p):
+        x = a[-1]
+        tk = (chat.load_dossier(t.week, dis["id"]) or {})["analyst_take"]
+        return [must("keeps_lean", has_team(x, tk["lean"]), f"never named the computed lean {tk['lean']}"),
+                must("not_bot", not bot_tells(x), bot_tells(x)),
+                must("intel_traceable", not (u := untraceable(x, t, intel_source(t, dis)[1])), ", ".join(u))]
+    add("take-disagree", "games",
+        [f"Who you got in {dis['away']} vs {dis['home']}?" if dis else "x"], c_take_disagree,
+        skip=None if dis else "no take that disagrees with the computed lean",
+        judge="Gives the computed lean as the pick and openly mentions the other side's case (the film room's "
+              "disagreement); no silent flip, nothing invented." + BREAKDOWN_JUDGE + HUMAN_JUDGE)
+
+    mat = chat.load_material() or {}
+    mat_ok = bool(mat.get("members")) and mat.get("week") is not None
+    ordered = [r["team"] for r in t.standings]
+    asker_names = set(personas(t).values())
+    roast_target = next((n for n in ordered[len(ordered) // 2:] if n in (mat.get("members") or {})
+                         and n not in asker_names), None)
+    roast_check = lambda a, t, p: [must("not_bot", not bot_tells(a[-1]), bot_tells(a[-1]))]  # noqa: E731
+    add("roast-member", "persona", [f"Roast {roast_target}" if roast_target else "x"], roast_check,
+        skip=None if roast_target else "no member to roast",
+        judge="A sharp, specific roast of that member built on his real numbers; nothing invented, no body or "
+              "family jokes." + ROAST_JUDGE + HUMAN_JUDGE)
+    add("roast-me-material", "persona", ["roast me, I can take it"], roast_check, persona="last",
+        judge="Roasts the asker (last place) with true numbers; funny, specific, not cruel about real-life stuff."
+              + ROAST_JUDGE + HUMAN_JUDGE)
+    add("league-storylines", "persona", ["What's the big storyline in the league right now?"],
+        lambda a, t, p: [must("not_bot", not bot_tells(a[-1]), bot_tells(a[-1])),
+                         must("names_members", sum(mentions(a[-1], n) for n in ordered) >= 2, "fewer than 2 members")],
+        skip=None if mat_ok else "no league material",
+        judge="One or two real league storylines (race, cut line, streaks, collapses) with true numbers, told like "
+              "a person." + ROAST_JUDGE + HUMAN_JUDGE)
+    add("picky-season-story", "picky", ["Picky, how's your own season going?"], roast_check, persona="mid",
+        judge="Honest about his own real record, self-deprecating or defiant, funny; no invented picks."
+              + ROAST_JUDGE + HUMAN_JUDGE)
 
     # ---- lore: champions, history, awards (lore cache) -----------------------------------------
     import json as _json

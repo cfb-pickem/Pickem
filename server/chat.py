@@ -24,6 +24,7 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import subprocess
 import time
@@ -109,10 +110,15 @@ BLINKSTRADAMUS_LINE = "nice milk, freak."
 # Charlie, 2026-11-15: when anyone else brings him up, Picky works in a milk
 # joke and calls him a freak. Rides in the user turn only when he's named.
 _BLINKS_ASK = re.compile(r"\bblink(?:stradamus|y|ie|s)\b", re.I)
-BLINKS_BIT = ("RUNNING BIT: Blinkstradamus (he, not the user) is the league's milk guy. True origin: at a "
-              "bachelor party he was carrying milk down the roadside when girls in a top-off Jeep yelled "
-              "\"NICE MILK FREAK\" at him. Work in one milk joke, call him a freak, call back to the story "
-              "when it fits. Jokes stay on the carton, the walk, cereal and dairy; nothing about bodies.")
+BLINKS_BIT = ("RUNNING BIT about Blinkstradamus (he, not the user). True origin: at a bachelor party he was "
+              "just walking along the roadside holding a carton of milk when girls in a top-off Jeep yelled "
+              "\"NICE MILK FREAK\" at him. That's all that happened: he never spilled, dropped or crashed "
+              "anything. Work in one milk joke, call him a freak, call back to the Jeep story when it fits. Jokes "
+              "stay on the carton he was holding, the walk, cereal and dairy; nothing about bodies. Shape: a quick "
+              "milk jab first, then the straight answer with his real numbers below. Vary the jab every time, "
+              "never reuse one, and never pretend the asker said something they didn't. The vibe, not lines to "
+              "copy: 'Oh, the milk freak?' / 'Our resident dairy man?' / 'Mr. Two Percent himself?' / 'The guy "
+              "who still owes the Jeep girls a thank-you note?'")
 
 
 def blinks_note(ctx: dict, question: str) -> str:
@@ -3955,6 +3961,188 @@ def dossier_note(ctx: dict, question: str) -> str:
             "rumor a rumor. Name only players listed here or elsewhere above.")
 
 
+# Analyst takes + league material (2026-11-15). Claude does the heavy thinking
+# ahead of time (analyst.py via the dossier job; league_material.py, private)
+# and Picky's small model delivers it. Both are AMMO, never a script: the
+# blocks say so, and the grounding filter sees them (they're in the prompt).
+# PICKY_AMMO=0 turns both off (the exam's "before" runs).
+AMMO_ON = os.environ.get("PICKY_AMMO", "1") != "0"
+TALK_LIKE_A_PERSON = ("Answer the question first: they rely on you. A quick jab is fine, then the real answer, "
+                      "then the fun. Talk like a buddy in a group text: react to what they actually said, pick the one or two "
+                      "best angles (never all of them), contractions, short sentences, opinionated. Never read out "
+                      "labels or structure (no 'reason one', no 'confidence', no 'counter-argument', no lists, no "
+                      "headers), and no stock openers like 'Great question' or 'Here's the breakdown'.")
+_GAME_OPINION_ASK = re.compile(r"\b(think|thoughts?|like|take|lean|play|pick|feel|confident|cover|value|win|"
+                               r"who you got|who'?s got|fade|hammer|lock|sleeper|upset|break(ing)? ?down|"
+                               r"breakdown|preview|matchup|analy[sz]\w*|chances?|smash|spot)\b", re.I)
+
+
+def take_games(ctx: dict, question: str) -> list[dict]:
+    """Open pool games whose analyst take this question should get: every
+    game a breakdown question covers, or the 1-2 games it names when it asks
+    for an opinion (not 'what's the line', not 'who's hurt')."""
+    q = question or ""
+    if not AMMO_ON or ctx.get("error") or not q.strip() or week_locked(ctx):
+        return []
+    ag = analysis_games(ctx, q)
+    if ag:
+        return ag[:4]
+    if _INJURY_ASK.search(q) or not _GAME_OPINION_ASK.search(q):
+        return []
+    now = _now_ct_naive()
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("winner") and not g.get("tiebreaker")
+             and not _game_is_locked({"Start (CT)": g.get("start"), "Status": g.get("status")}, now)]
+    ids = [n["id"] for n in games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games],
+                                        cap=2)]
+    return [g for g in games if g["id"] in ids]
+
+
+def _take_line(g: dict, t: dict, full: bool) -> list[str]:
+    side = _pick_side(g, t["pick"])
+    out = [f"ANALYST TAKE, {g['away']} at {g['home']} (Picky's film room did the homework; ammo, not a script):"]
+    reasons = [r["text"] for r in t.get("reasons") or []]
+    if not t.get("agrees_with_lean"):
+        # the computed lean stays the pick; the film room's case is the other side, said out loud
+        lean_side = _pick_side(g, t["lean"])
+        out.append(f"  YOUR PICK STAYS {lean_side} (your computed LEAN, reasons in the breakdown). But the film "
+                   f"room disagrees and would take {side}: say that honestly as the other side, don't hide it.")
+        out.append(f"  The film room's case for {t['pick']}: " + " / ".join(reasons[: (2 if full else 1)]))
+        if full and t.get("counter"):
+            out.append(f"  Even the film room admits (this backs your pick): {t['counter']['text']}")
+        return out
+    out.append(f"  The play: {side}, {t['confidence']} confidence."
+               + ("" if t.get("lean") else " (your computed signals call it close; this is the tiebreak)"))
+    out.append("  Why: " + " / ".join(reasons[: (5 if full else 2)]))
+    if full and t.get("counter"):
+        out.append(f"  Best case against it: {t['counter']['text']}")
+    if full and t.get("market_missing"):
+        out.append(f"  What the line is missing: {t['market_missing']['text']}")
+    if t.get("quotable"):
+        out.append(f"  A line you can use as is: \"{t['quotable']}\"")
+    return out
+
+
+def _pick_side(g: dict, team: str) -> str:
+    try:
+        ln = float(g.get("line"))
+    except (TypeError, ValueError):
+        return team
+    if ln == 0:
+        return f"{team} (pick'em)"
+    return _side_label(team, g["home"], ln)
+
+
+def take_note(ctx: dict, question: str) -> str:
+    games = take_games(ctx, question)
+    out = []
+    for g in games:
+        d = load_dossier(ctx.get("current_week"), g["id"]) or {}
+        t = d.get("analyst_take")
+        if not t or not t.get("pick") or not t.get("reasons"):
+            continue
+        out += _take_line(g, t, full=len(games) <= 2)
+    if not out:
+        return ""
+    return "\n".join(out) + ("\nDeliver it in your voice and stay faithful to the pick and the reasons: say the "
+                             "pick plainly, by team name and number (your LEAN wherever it says YOUR PICK STAYS), back it "
+                             "with the best one or two reasons, add the other side only if it fits. Teams go by the "
+                             "names written here, no nicknames. Don't add stats or names that aren't "
+                             "in this prompt. " + TALK_LIKE_A_PERSON)
+
+
+LEAGUE_MATERIAL_FILE = Path(os.environ.get("PICKY_LEAGUE_MATERIAL",
+                                           "/Users/Agent/cfb-pickem-private/league_material.json"))
+_material_cache: tuple[float, dict] | None = None
+_STORY_ASK = re.compile(r"\b(storylines?|stories|drama|what'?s (going on|happening|new)|recap|catch me up|"
+                        r"league news|tea|gossip|who'?s (hot|cold)|hot streak|cold streak|collapse|choke|"
+                        r"rivalr\w*|race|narratives?|state of the league)\b", re.I)
+_ROAST_ASK = re.compile(r"\b(roast|trash|clown|rip|burn|mock|dunk on|cook|talk (shit|trash)|thoughts on|"
+                        r"what about|how'?s|how is|doing|think of|opinion|praise|hype|props|credit|"
+                        r"rate|scouting report|tell me about)\b", re.I)
+
+
+def load_material() -> dict | None:
+    global _material_cache
+    try:
+        mt = LEAGUE_MATERIAL_FILE.stat().st_mtime
+    except OSError:
+        return None
+    if _material_cache and _material_cache[0] == mt:
+        return _material_cache[1]
+    try:
+        d = json.loads(LEAGUE_MATERIAL_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+    _material_cache = (mt, d)
+    return d
+
+
+def _material_fresh(ctx: dict, team: str, rec) -> bool:
+    """A member's lines are usable only while his season record still matches
+    the live standings (a game went final since = wait for the refresh)."""
+    row = next((r for r in ctx.get("standings_ytd") or [] if r["team"] == team), None)
+    return bool(row and rec and [row["w"], row["l"]] == list(rec))
+
+
+def material_records(ctx: dict) -> dict[str, set]:
+    """{member: W-Ls that are true about him} from the league material facts
+    (favorites/underdogs splits, head to head, last 8): record_check lets
+    these through so valid material lines aren't stripped as fake season records."""
+    mat = load_material() if AMMO_ON else None
+    if not mat or mat.get("season") != ctx.get("season"):
+        return {}
+    out: dict[str, set] = {}
+    for t, m in (mat.get("members") or {}).items():
+        if not _material_fresh(ctx, t, m.get("record")):
+            continue
+        out[t] = {r for x in (mat.get("facts") or {}).values()
+                  if x.startswith(t + " ") or x.startswith(t + ":") or x.startswith(t + "'")
+                  for r in re.findall(r"\b\d{1,2}-\d{1,2}\b", x)}
+    return out
+
+
+def material_note(ctx: dict, question: str) -> str:
+    if not AMMO_ON or ctx.get("error") or not (question or "").strip():
+        return ""
+    mat = load_material()
+    if not mat or mat.get("season") != ctx.get("season"):
+        return ""
+    q = question or ""
+    members = mat.get("members") or {}
+    names = [n for n in lore_names(ctx, q) if n in members]
+    me = (ctx.get("you") or {}).get("team_name")
+    if me in members and me not in names and re.search(r"\b(me|my|i|i'?m|myself)\b", q, re.I) and (
+            _ROAST_ASK.search(q) or re.search(r"\bhow (am|'?m) i\b", q, re.I)):
+        names.append(me)
+    out = []
+    if names and (_ROAST_ASK.search(q) or _STORY_ASK.search(q) or len(names) == 1):
+        for n in names[:2]:
+            m = members[n]
+            if not _material_fresh(ctx, n, m.get("record")):
+                continue
+            lines = list(m.get("lines") or [])
+            if any(x.get("kind") == "leader" for x in lines):  # the Dear Leader: state media unless he's asking
+                lines = [x for x in lines if (x.get("kind") == "leader") != leader_is_caller(ctx)]
+            random.shuffle(lines)
+            if not lines:
+                continue
+            who = "the user (say 'you')" if n == me else n
+            out.append(f"LEAGUE MATERIAL on {who} (true, checked against the standings; optional ammo):")
+            out += [f"  - {x['text']}  [facts: {'; '.join(x.get('facts') or [])}]" for x in lines[:3]]
+    fresh_all = all(_material_fresh(ctx, t, m.get("record")) for t, m in members.items())
+    if _STORY_ASK.search(q) and fresh_all and mat.get("storylines"):
+        out.append("LEAGUE STORYLINES this week (true; optional ammo):")
+        out += [f"  - {x['text']}  [facts: {'; '.join(x.get('facts') or [])}]" for x in mat["storylines"][:3]]
+    pn = mat.get("picky_narrative")
+    if pn and _PICKY_ASK.search(q) and not names and fresh_all:
+        out.append(f"YOUR OWN SEASON STORY (true; optional ammo): {pn['text']}  [facts: {'; '.join(pn.get('facts') or [])}]")
+    if not out:
+        return ""
+    return "\n".join(out) + ("\nUse at most one or two of these, in your own words, only if they fit what was asked; "
+                             "keep the numbers exactly as written and the running bits as they are. "
+                             + TALK_LIKE_A_PERSON)
+
+
 # League playoff race (site audit #2, stats.html Playoff Race): top 4 after
 # week 15 make the playoffs. Cut line, gaps, bubble and points still
 # available are computed here.
@@ -4215,6 +4403,8 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append(casino_note(ctx, question))
         parts.append(analysis_note(ctx, question))
         parts.append(intel)
+        parts.append(take_note(ctx, question))
+        parts.append(material_note(ctx, question))
         parts.append(race_note(ctx, question))
         parts.append(howto_note(question))
         parts.append(tie_note(ctx, question))
@@ -4469,6 +4659,22 @@ def self_intrusion_off_topic(ctx: dict, question: str, hostile: bool, facts, sa:
     return True
 
 
+def _opener(text: str) -> str:
+    return " ".join(re.findall(r"[A-Za-z']+", (text or "").split(".")[0])[:4])
+
+
+def opener_note(messages: list) -> str:
+    """Picky's last few openers in this conversation (site chat or a group
+    text's rolling history), so he doesn't open the same way twice."""
+    prior = [_opener(m.get("content") or "") for m in messages
+             if isinstance(m, dict) and m.get("role") == "assistant" and (m.get("content") or "").strip()][-3:]
+    prior = [o for o in prior if len(o.split()) >= 2]
+    if not prior:
+        return ""
+    return ("VARY IT: your last answers here opened with " + "; ".join(f"'{o}...'" for o in prior)
+            + ". Open differently this time, new words, and don't reuse a catchphrase.")
+
+
 def banned_ngrams(messages: list) -> set:
     prior = " ".join(m.get("content") or "" for m in messages
                      if isinstance(m, dict) and m.get("role") == "assistant")
@@ -4587,6 +4793,7 @@ def record_check(ctx: dict, question: str):
                 busts[t] = 0 if "never" in mb.group(0) else 1 if mb.group(1) == "once" else 2 if mb.group(1) == "twice" else int(mb.group(2))
 
     gf = game_facts(ctx)
+    mat_recs = material_records(ctx)
     blinks_q = bool(blinks_note(ctx, question or "")) and "Blinkstradamus" in st
     # who won/lost outright, this week and last ('Boise lost outright' when Boise won by 5)
     outr = [(g["won_game"], g["lost_game"]) for g in gf["games"] if g.get("won_game")]
@@ -4689,7 +4896,10 @@ def record_check(ctx: dict, question: str):
                 who = "Blinkstradamus"  # 'Blinky's 19-25' / "he's 19-25" in the running bit
             if who is None and _ACKBAR_ASK.search(before):
                 who = "Ackbar"  # 'Admiral Akbar is 19-25'
-            if who in st and rec != st[who]:
+            mat_ok = m.group(0) in mat_recs.get(who, ()) and not re.search(
+                r"\b(this season|overall|on the (season|year)|season record|for the season|all season|so far)\b",
+                sent, re.I)  # a true split ('favorites went 22-14'), never passed off as the season record
+            if who in st and rec != st[who] and not mat_ok:
                 return False
         return True
     return ok
@@ -4890,12 +5100,21 @@ _MASHUPS = re.compile(r"\b(your|his|their|you'?re|he'?s|my|i'?m)\b[^.]{0,30}\bex
                       r"|\bFreeman\b[^.]{0,40}\b(can'?t lose to|owns|always beats|never loses to) Ohio State\b", re.I)
 
 
+_MILK_SPILL = re.compile(
+    r"\b(milk|carton|dairy|jug)\b[^.!?]{0,60}\bspill\w*|\bspill\w*[^.!?]{0,40}\b(milk|carton|dairy|jug)\b"
+    r"|\b(dropp?\w*|crash\w*|knock\w*|tipp?\w*|smash\w*|splatter\w*)\s+(over\s+|off\s+)?(his\s+|the\s+|a\s+|that\s+|whole\s+)*"
+    r"(milk|carton|jug)\b|\b(milk|carton|jug)\s+(fell|dropped|crashed|smashed|tipped|spilled|burst|went flying|hit the)\b"
+    r"|\b(carton|milk|jug)\s+(off|onto|on)\s+the\s+(counter|road|ground|floor|pavement|street)", re.I)
+
+
 def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False,
                 sides: tuple | None = None, extra=None) -> bool:
     sent = sent.replace("\u2019", "'").replace("\u2018", "'")  # curly apostrophes slipped past "you'?re"
     if _MASHUPS.search(sent):
         return False
     if _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent) or _ANATOMY.search(sent):
+        return False
+    if _MILK_SPILL.search(sent):  # Charlie: Blinkstradamus just held the milk; it never spilled
         return False
     if _TICS.search(sent) and len(sent.split()) <= 14:
         return False
@@ -5381,6 +5600,13 @@ async def _chat(req: Request, test: bool, hold: int | None):
         body, q = convo[-1]["content"], last.get("content", "")
         en = escalate_note(ctx)
         body = (body[: -len(q)] + en + "\n\n" + q) if q and body.endswith(q) else (en + "\n\n" + body)
+        convo[-1] = {"role": "user", "content": body}
+
+    # don't open the same way twice in one conversation (Charlie: no templates, no robot)
+    on = opener_note(messages) if last.get("role") == "user" and not ctx.get("error") else ""
+    if on and convo[-1]["role"] == "user":
+        body, q = convo[-1]["content"], last.get("content", "")
+        body = (body[: -len(q)] + on + "\n\n" + q) if q and body.endswith(q) else (on + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
     # (B) one volunteered fact about the caller's own week, every other question

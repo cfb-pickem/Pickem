@@ -128,10 +128,52 @@ lean (`test_intel.py` pins that). The sentence filter's grounding check
 that isn't in the prompt, an injury claim with no intel behind it, or a stat
 number (yards, TDs, %, sacks...) found nowhere in the prompt.
 
+## Analyst takes and league material (Claude thinks ahead, Picky delivers)
+
+Picky's live model is a 9B, so the heavy thinking happens ahead of time on
+Charlie's subscription (`claude -p` sonnet, no tools, no MCP, API key
+stripped) and Picky only delivers it.
+
+- **Analyst take** (`analyst.py`, rides on the dossier job and schedule, one
+  extra no-tools call per game per run): a numbered brief of the computed
+  signals (S1..) and dossier claims (C1..) -> pick vs the pool line,
+  confidence, 3-5 cited reasons, the best counter, what the line is missing,
+  one quotable line. `validate_take()` drops any reason with a number not in
+  the items it cites, a name not in the brief, or report-speak; under 2
+  reasons = no take (the previous one is kept, marked stale). Stored as
+  `analyst_take` in the dossier. Picky's computed lean stays authoritative:
+  when Claude disagrees, `take_note()` keeps the lean as the pick and has Picky
+  voice the film room's case as the other side. `dossier.py takes` rebuilds
+  only the takes; `--now ISO` replays a past slate for testing.
+- **League material** (`league_material.py`, LaunchAgent
+  `com.pickem.league-material`, hourly check; builds when a pool week goes
+  fully final, Wed 10 AM CT, or on standings drift): DB facts (lore.compute,
+  standings gaps, last week, streaks, chalk vs dog, best/worst picks, Picky's
+  own record) -> 3-6 roast/praise lines per member, 3-5 storylines, Picky's
+  season story, every line citing fact ids; the validator checks every number
+  and name against the cited facts and drops body/family/dark lines. Private:
+  `/Users/Agent/cfb-pickem-private/league_material.json` (0600).
+- **Delivery** (`chat._user_turn`, so the site and text Picky share it):
+  `take_note()` for opinion/breakdown questions about open pool games,
+  `material_note()` when a member is named or the asker asks about himself,
+  storylines and Picky's own story on those questions. Both say "ammo, not a
+  script" and "answer first, talk like a person". Material is used only while
+  the member's season record still matches the live standings. The grounding
+  filter sees both (they're in the prompt) and `record_check` accepts a true
+  material split ("favorites went 22-14") unless it's passed off as the season
+  record. `PICKY_AMMO=0` turns both off.
+- **Exam**: `eval/run.py --at <time> --replay` masks the games after that time
+  as unplayed (game items without a live slate); items take-casual,
+  take-disagree, roast-member, roast-me-material, league-storylines,
+  picky-season-story; a `not_bot` check; the report shows a repetition line;
+  `eval/judge_quality.py BEFORE.json AFTER.json` is the blind breakdown /
+  roast / human / helpful judge.
+
 Tests:
 
     ./.venv/bin/python3 -I test_privacy.py     # unrevealed picks never leak
     ./.venv/bin/python3 -I test_standings.py   # points match the leaderboard
+    ./.venv/bin/python3 -I test_analyst.py     # analyst take + league material validators, delivery
     ./.venv/bin/python3 -I test_grounding.py -v [--model qwen2.5:14b-instruct]
     ./.venv/bin/python3 -I test_e2e.py [--remote] [--as TEAM]  # real /chat, answers printed
 

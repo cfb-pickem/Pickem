@@ -131,7 +131,39 @@ class Truth:
         lw = self.lw_record(team)
         if lw:
             out.add(wl(lw))
-        return out
+        return out | self.derived_records(team)
+
+    def derived_records(self, team: str) -> set[str]:
+        """Other W-Ls that are literally true about a member, from the DB-derived
+        lore cache and the validated league material facts: last 8, head to
+        head, favorites/underdogs splits, upset scores."""
+        if not hasattr(self, "_derived"):
+            import json as _json
+            own: dict[str, list[str]] = collections.defaultdict(list)
+            pairs: dict[str, set] = collections.defaultdict(set)
+            for path in (getattr(chat, "LORE_FILE", None), getattr(chat, "LEAGUE_MATERIAL_FILE", None)):
+                try:
+                    d = _json.loads(Path(path).read_text()) if path else {}
+                except (OSError, ValueError):
+                    d = {}
+                mem = d.get("members") or {}
+                if mem and isinstance(next(iter(mem.values())), list):  # lore: each member's own lines
+                    for m, lines in mem.items():
+                        own[m] += [ln for ln in lines if ln.startswith(m)]
+                if isinstance(d.get("facts"), dict) and d.get("season") == self.season:  # material facts
+                    for x in d["facts"].values():
+                        for m in self.members:
+                            if x.startswith(m + " ") or x.startswith(m + ":") or x.startswith(m + "'"):
+                                own[m].append(x)
+                            for r in re.findall(rf"(?:: |, |top five |place: ){re.escape(m)} (\d{{1,2}}-\d{{1,2}})\b", x):
+                                pairs[m].add(r)  # 'top five Chuck P 30-18, Ackbar 28-20'
+            self._derived = {}
+            for m in self.members:
+                # a member's own line: records before ' vs X' / ' against X' are his; the h2h ones read
+                # 'best vs TG 16-7' = his record against TG, also his
+                self._derived[m] = pairs[m] | {f"{int(a)}-{int(b)}" for x in own[m]
+                                               for a, b in re.findall(r"\b(\d{1,2})-(\d{1,2})\b", x)}
+        return self._derived.get(team, set())
 
     def neutral_scores(self) -> set[str]:
         """Game scores and team records that can sit next to a member's name

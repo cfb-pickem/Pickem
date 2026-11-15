@@ -41,6 +41,7 @@ from pathlib import Path
 
 import os
 import plistlib
+import re
 import random
 import subprocess
 
@@ -236,6 +237,10 @@ def render(run: dict, judge: dict) -> str:
          "",
          "Hard gates: " + ", ".join(f"{k}: **{v}**" for k, v in g.items()),
          "",
+         *[f"{k.title()} (judge, 1-5): {statistics.mean(v):.2f} over {len(v)} answers" for k in
+           ("breakdown", "roast", "human", "helpful")
+           if (v := [judge[r["id"]][k] for r in res if isinstance((judge.get(r["id"]) or {}).get(k), (int, float))])],
+         "Repetition: " + repetition(res), "",
          *([f"Edge (judge, 1-5): {statistics.mean(e):.2f} over {len(e)} breakdown answers", ""]
            if (e := [judge[r["id"]]["edge"] for r in res if isinstance((judge.get(r["id"]) or {}).get("edge"),
                                                                        (int, float))]) else []),
@@ -276,12 +281,82 @@ def render(run: dict, judge: dict) -> str:
 # ---- main -------------------------------------------------------------------------
 
 
+def repetition(res: list[dict]) -> str:
+    """Same opener or catchphrase across answers counts against him (Charlie: no templates)."""
+    import collections as _c
+    answers = [r["turns"][-1].get("a") or "" for r in res if not r.get("skip") and r.get("turns")]
+    if not answers:
+        return "n/a"
+    ops = [" ".join(re.findall(r"[a-z']+", a.lower().split(".")[0])[:3]) for a in answers]
+    oc = _c.Counter(o for o in ops if o)
+    grams = _c.Counter()
+    for a in answers:
+        w = re.findall(r"[a-z']+", a.lower())
+        grams.update({" ".join(w[i:i + 5]) for i in range(len(w) - 4)})
+    reps = [(g, n) for g, n in grams.most_common(5) if n >= 3]
+    top = oc.most_common(1)[0] if oc else ("", 0)
+    return (f"opener distinct {len(oc)}/{len(answers)} ({len(oc) / len(answers):.2f}), most repeated opener "
+            f"'{top[0]}' x{top[1]}; phrases in 3+ answers: "
+            + (", ".join(f"'{g}' x{n}" for g, n in reps) if reps else "none"))
+
+
+REPLAY_MASK = ("Status", "winner", "AwayPts", "HomePts", "Period", "Clock", "status_name", "possession")
+
+
+def install_replay(frozen: dt.datetime) -> None:
+    """--replay (with --at): pretend the pool games that kicked off after the
+    frozen time haven't been played. Every all_games read (chat and Truth both
+    go through chat._rest_get) gets their results blanked and drops them from
+    'final' queries; Picky's own RPC picks are blanked the same way. For game
+    items only: standings fall back to before those games, so roast and
+    material items belong in a normal run."""
+    import truth as _truth
+    key = _truth.service_key()
+    h = {"apikey": key, "Authorization": f"Bearer {key}"}
+    rows = httpx.get(f"{chat.REST}/all_games?select=GameId,week,cfb_season,%22Start%20(CT)%22&picked=eq.true"
+                     "&order=cfb_season.desc,week.desc&limit=60", headers=h, timeout=20).json()
+    season = max(r["cfb_season"] for r in rows)
+    fut = {r["GameId"]: r["week"] for r in rows
+           if r["cfb_season"] == season and str(r.get("Start (CT)") or "") > frozen.isoformat()}
+    if not fut:
+        raise SystemExit(f"--replay: no pool game starts after {frozen}")
+    week = min(fut.values())
+    print(f"replay: {len(fut)} pool games after {frozen} masked as unplayed (week {week})")
+    orig = chat._rest_get
+
+    async def masked(client, path, jwt):
+        out = await orig(client, path, jwt)
+        if not path.startswith("all_games") or not isinstance(out, list):
+            return out
+        if "Status=eq.final" in path:
+            out = [r for r in out if r.get("GameId") not in fut]
+        if "Status=neq.final" in path and "limit=1" in path and not out:
+            return [{"week": week, "Status": None}]
+        for r in out:
+            if r.get("GameId") in fut:
+                for k in REPLAY_MASK:
+                    if k in r:
+                        r[k] = None
+        return out
+    chat._rest_get = masked
+    orig_sum = chat.summarize_picky_player
+
+    def sum_masked(data, current_week, now_ct):
+        data = dict(data, picks=[dict(p, status=None, winner=None) if str(p.get("start") or "") > frozen.isoformat()
+                                 else p for p in data.get("picks") or []])
+        return orig_sum(data, current_week, now_ct)
+    chat.summarize_picky_player = sum_masked
+
+
+
 async def run(args):
     if args.at:
         # In-process, clock frozen: tests "before kickoff" on a day the slate
         # has already started. Same app and model; auth stubbed to the persona.
         frozen = dt.datetime.fromisoformat(args.at)
         chat._now_ct_naive = lambda: frozen
+        if args.replay:
+            install_replay(frozen)
     t = await Truth().load()
     P = questions.personas(t)
     items = questions.build(t)
@@ -401,7 +476,7 @@ async def regrade(runrec: dict) -> dict:
 # directly, bypassing the gate: run those only when the league is quiet.)
 NO_MODEL_TESTS = ["test_privacy.py", "test_standings.py", "test_cfbd.py", "test_rules.py", "test_picky_player.py",
                   "test_leader.py", "test_opinions.py", "test_daddyfreeman.py", "test_gate.py", "test_results.py",
-                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "eval/test_checks.py"]
+                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "eval/test_checks.py"]
 
 
 def no_model() -> int:
@@ -439,6 +514,8 @@ def main():
     ap.add_argument("--cold", action="store_true")
     ap.add_argument("--image", action="store_true")
     ap.add_argument("--at", default="", help="run in-process with the CT clock frozen, e.g. 2026-11-14T08:00")
+    ap.add_argument("--replay", action="store_true",
+                    help="with --at: treat pool games after that time as unplayed (results blanked)")
     ap.add_argument("--judge", default="")
     ap.add_argument("--dry", action="store_true", help="print the exam without asking anything")
     ap.add_argument("--render", default="", help="re-render a results JSON (with --judge) without asking anything")

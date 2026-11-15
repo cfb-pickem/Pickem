@@ -27,13 +27,19 @@ Per game:
   4. A two-sentence summary by Picky's own local model (Ollama, only while
      chat is idle), accepted only if every name and number in it appears in
      the claims; otherwise a rule-built summary.
-  5. Atomic write to cache/dossiers/<week>/<game_id>.json. On any failure
+  5. An analyst take (analyst.py): one more `claude -p` call, no tools, over
+     a numbered brief of the computed signals + the claims above: pick vs the
+     pool line, confidence, 3-5 cited reasons, the best counter, a quotable
+     line, what the market is missing. Validated; on failure the previous
+     take is carried over. Picky's computed lean stays authoritative.
+  6. Atomic write to cache/dossiers/<week>/<game_id>.json. On any failure
      the previous good dossier stays.
 
 The dossier only explains. chat.py never lets it move the computed lean,
 and member answers never show source URLs (they stay here for grounding).
 
-CLI:  dossier.py run [--force] [--week N] [--game ID] [--out DIR] [--no-local]
+CLI:  dossier.py run [--force] [--week N] [--game ID] [--out DIR] [--no-local] [--now ISO]
+      dossier.py takes [--week N] [--game ID] [--now ISO]   (rebuild only the analyst takes)
       dossier.py status
       dossier.py validate FILE      (re-run the validator on a raw JSON file)
 """
@@ -60,6 +66,7 @@ import httpx
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import analyst  # noqa: E402
 import cfbd  # noqa: E402
 
 log = logging.getLogger("picky.dossier")
@@ -170,7 +177,7 @@ def open_slate(db, week: int | None = None) -> tuple[int | None, int | None, lis
     """(season, week, pool games) for the earliest week with a non-final pool
     game, or the given week. ([], week None) until a slate exists."""
     season = db.get("all_games?select=cfb_season&order=cfb_season.desc&limit=1")[0]["cfb_season"]
-    cols = 'GameId,Away,Home,line,Status,week,tiebreaker,"Start (CT)"'
+    cols = 'GameId,Away,Home,line,Status,week,tiebreaker,fpi_margin,"Start (CT)"'
     if week is None:
         rows = db.get(f"all_games?select=week&cfb_season=eq.{season}&picked=eq.true"
                       "&or=(Status.is.null,Status.neq.final)&order=week.asc&limit=1")
@@ -330,15 +337,17 @@ def build_prompt(g: dict, season: int, week: int, leads: list[dict], now: dt.dat
                          max_age=MAX_AGE_DAYS, max_claims=MAX_CLAIMS)
 
 
-def run_claude(prompt: str, timeout: int = GAME_TIMEOUT_S) -> dict:
-    """structured_output from one `claude -p` research run; raises on any failure."""
+def run_claude(prompt: str, timeout: int = GAME_TIMEOUT_S, schema: dict | None = None,
+               tools: str = "WebSearch,WebFetch") -> dict:
+    """structured_output from one `claude -p` run (web research by default;
+    tools="" for the no-tools analyst take); raises on any failure."""
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
     env.update({"DISABLE_AUTOUPDATER": "1", "TERM": "dumb",
                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"})
-    cmd = [CLAUDE, "-p", "--model", "sonnet", "--tools", "WebSearch,WebFetch",
+    cmd = [CLAUDE, "-p", "--model", "sonnet", "--tools", tools,
            "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", str(EMPTY_MCP),
-           "--output-format", "json", "--json-schema", json.dumps(SCHEMA)]
+           "--output-format", "json", "--json-schema", json.dumps(schema or SCHEMA)]
     p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout,
                        cwd=WORK_DIR, env=env)
     if p.returncode != 0:
@@ -564,7 +573,7 @@ def prune_weeks(base: Path, keep: int = KEEP_WEEKS) -> None:
 
 
 def build_one(client: httpx.Client, g: dict, season: int, week: int, trigger: str, now: dt.datetime,
-              prev: dict | None, use_local: bool = True, research=run_claude) -> dict:
+              prev: dict | None, use_local: bool = True, research=run_claude, take_fn=None) -> dict:
     """A new dossier for one game, or raises (caller keeps the previous one)."""
     away, home = g["Away"], g["Home"]
     leads = news_leads(away, home)
@@ -578,7 +587,7 @@ def build_one(client: httpx.Client, g: dict, season: int, week: int, trigger: st
     if n == 0 and prev_n:
         raise RuntimeError(f"empty result ({len(dropped)} dropped) but the previous dossier had {prev_n} claims")
     summary, by = local_summary(client, g, secs) if use_local else (rule_summary(secs), "rule")
-    return {
+    d = {
         "schema": 1, "season": season, "week": week, "game_id": g["GameId"], "away": away, "home": home,
         "kickoff": g.get("Start (CT)"), "generated_at": now.isoformat(timespec="seconds"), "trigger": trigger,
         "researcher": "claude -p sonnet (web search, free public sources)",
@@ -587,6 +596,29 @@ def build_one(client: httpx.Client, g: dict, season: int, week: int, trigger: st
         "notes": str(raw.get("notes") or "")[:400],
         "leads": {"news": len(leads), "reddit": len(rleads), "reddit_status": rstatus},
     }
+    # take_fn None = the real no-tools take, but only with the real researcher (tests pass fakes)
+    take_fn = take_fn or (run_take_claude if research is run_claude else None)
+    if take_fn:
+        add_take(d, g, season, week, now, prev, take_fn)
+    return d
+
+
+def run_take_claude(prompt: str) -> dict:
+    return run_claude(prompt, analyst.TAKE_TIMEOUT_S, analyst.TAKE_SCHEMA, "")
+
+
+def add_take(d: dict, g: dict, season: int, week: int, now: dt.datetime, prev: dict | None, take_fn) -> None:
+    """d["analyst_take"]: a fresh take, else the previous one (marked stale),
+    else nothing. Never raises: the dossier itself is still good."""
+    try:
+        d["analyst_take"] = analyst.build_take(g, d, season, week, now, take_fn)
+        t = d["analyst_take"]
+        log.info("game %s take: %s (%s), lean %s, agrees %s, %d reasons, %d dropped", g["GameId"], t["pick"],
+                 t["confidence"], t["lean"], t["agrees_with_lean"], len(t["reasons"]), len(t["dropped"]))
+    except Exception as e:  # noqa: BLE001
+        log.warning("game %s analyst take failed: %s", g["GameId"], str(e)[:300])
+        if (prev or {}).get("analyst_take"):
+            d["analyst_take"] = dict(prev["analyst_take"], stale=True)
 
 
 # -----------------------------------------------------------------------------
@@ -606,7 +638,8 @@ def _take_lock() -> bool:
 
 
 def run(force: bool = False, week: int | None = None, only_game: int | None = None, base: Path | None = None,
-        use_local: bool = True, db=None, research=run_claude, now: dt.datetime | None = None) -> dict:
+        use_local: bool = True, db=None, research=run_claude, now: dt.datetime | None = None,
+        take_fn=None) -> dict:
     base = base or DOSSIER_DIR
     now = now or now_ct()
     db = db or Supa()
@@ -633,7 +666,8 @@ def run(force: bool = False, week: int | None = None, only_game: int | None = No
             gid = str(g["GameId"])
             t0 = time.time()
             try:
-                d = build_one(c, g, season, wk, reason, now, prev, use_local=use_local, research=research)
+                d = build_one(c, g, season, wk, reason, now, prev, use_local=use_local, research=research,
+                              take_fn=take_fn)
                 write_atomic(path_for(wk, gid, base), d)
                 state[gid] = {"ok_at": time.time(), "trigger": reason}
                 built.append(gid)
@@ -651,6 +685,29 @@ def run(force: bool = False, week: int | None = None, only_game: int | None = No
     return {"ok": not failed, "slate": True, "week": wk, "built": built, "failed": failed}
 
 
+def takes(week: int | None = None, only_game: int | None = None, base: Path | None = None, db=None,
+          now: dt.datetime | None = None, take_fn=None) -> dict:
+    """Rebuild only the analyst takes on the existing dossiers of a week (no
+    web research). For a failed take or a prompt change."""
+    base = base or DOSSIER_DIR
+    now = now or now_ct()
+    db = db or Supa()
+    season, wk, games = open_slate(db, week)
+    done = []
+    for g in games:
+        if only_game and int(g["GameId"]) != int(only_game):
+            continue
+        p = path_for(wk, g["GameId"], base)
+        d = read_json(p)
+        if not d:
+            continue
+        add_take(d, g, season, wk, now, dict(d), take_fn or run_take_claude)
+        if d.get("analyst_take") and not d["analyst_take"].get("stale"):
+            write_atomic(p, d)
+            done.append(str(g["GameId"]))
+    return {"ok": True, "week": wk, "takes": done}
+
+
 def status(base: Path | None = None) -> dict:
     base = base or DOSSIER_DIR
     out = {}
@@ -662,19 +719,22 @@ def status(base: Path | None = None) -> dict:
             "game": f"{j.get('away')} at {j.get('home')}", "generated_at": j.get("generated_at"),
             "trigger": j.get("trigger"), "facts": len(j.get("facts") or []),
             "opinions": len(j.get("opinions") or []), "rumors": len(j.get("rumors") or []),
-            "summary_by": j.get("summary_by")}
+            "summary_by": j.get("summary_by"),
+            "take": (f"{j['analyst_take']['pick']} ({j['analyst_take']['confidence']})"
+                     + (" STALE" if j["analyst_take"].get("stale") else "")) if j.get("analyst_take") else None}
     return out
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["run", "status", "validate"])
+    ap.add_argument("cmd", choices=["run", "status", "validate", "takes"])
     ap.add_argument("file", nargs="?")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--week", type=int)
     ap.add_argument("--game", type=int)
     ap.add_argument("--out", type=Path)
     ap.add_argument("--no-local", action="store_true")
+    ap.add_argument("--now", help="pretend it's this CT time (testing on a past slate), e.g. 2026-11-13T17:30")
     a = ap.parse_args(argv)
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
@@ -692,8 +752,10 @@ def main(argv=None) -> int:
     if not _take_lock():
         log.info("another dossier run is in progress; skipping")
         return 0
+    now = dt.datetime.fromisoformat(a.now).replace(tzinfo=CT) if a.now else None
     try:
-        res = run(force=a.force, week=a.week, only_game=a.game, base=a.out, use_local=not a.no_local)
+        res = (takes(week=a.week, only_game=a.game, base=a.out, now=now) if a.cmd == "takes" else
+               run(force=a.force, week=a.week, only_game=a.game, base=a.out, use_local=not a.no_local, now=now))
     except Exception as e:  # noqa: BLE001 - never crash-loop launchd; log and retry next tick
         log.exception("dossier run failed: %s", e)
         return 1

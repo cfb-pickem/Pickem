@@ -223,6 +223,21 @@ def must(name: str, cond: bool, detail: str = "") -> Result:
     return name, bool(cond), "" if cond else detail
 
 
+# ---- sounds like a person, not a bot (Charlie, 2026-11-15) --------------------------------
+_BOT_TELLS = re.compile(
+    r"^\s*(?:[-*•]|\d+[.)])\s|^\s*#|\*\*|\b(reason (one|two|three|1|2|3)|confidence( level)?:|"
+    r"counter-?argument|what the market is missing|key factors?|in conclusion|in summary|to summarize|"
+    r"bottom line:|takeaway:|analyst take|film room says|here'?s (the|my) (breakdown|analysis|take):?|"
+    r"great question|good question|let'?s break (it|this) down|as an ai|i hope this helps|"
+    r"first(ly)?,.{0,60}second(ly)?,)", re.I | re.M)
+
+
+def bot_tells(text: str) -> str | None:
+    """The first list-y / report-y / stock-opener phrase in an answer, or None."""
+    m = _BOT_TELLS.search(text or "")
+    return m.group(0).strip() if m else None
+
+
 # ---- (E) game intel: player / injury claims traceable to the dossier or the brief ----------
 ANGLE_BEYOND_FPI = (r"SP\+|efficien|\bPPA\b|success rate|explosive|havoc|line (moved|movement)|\bopened\b|\bmoved\b|"
                     r"splits?\b|the money|tickets|% of (the )?bets|weather|\bwind\b|\brain\b|\bdome\b|unit|"
