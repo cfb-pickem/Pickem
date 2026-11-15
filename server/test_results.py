@@ -193,6 +193,11 @@ def test_guard_but_clause():
     assert p and all("Boise State lost the game" in x for x in p), p
 
 
+def test_guard_value_is_not_a_result():
+    assert chat.check_answer("Oregon State +13.5 is a WIN. You took the wrong side of value, but you still got "
+                             "a point.", facts()) == []
+
+
 def test_guard_flags_invented_line():
     allowed = chat.allowed_line_numbers("POOL LINE: Boise State -13.5 / Oregon State +13.5\n"
                                         "ESPN market line now: Boise State -17.5, over/under 65.5")

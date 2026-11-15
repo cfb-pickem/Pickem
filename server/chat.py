@@ -2499,7 +2499,7 @@ def results_block(facts: dict | None) -> str:
 _NEGATION = re.compile(r"(?:\bnot|n't|\bdidnt|\bdoesnt|\bnever|\bno|\bwithout|\bfailed to|\bfails to)\W*(?:\w+\W+){0,2}$",
                        re.I)
 _COVER_WORD = re.compile(r"\bcover(ed|s)?\b", re.I)
-_NEG_ONLY = re.compile(r"\bmiss(ed|es)?\b|\bwrong side\b|\b(pick|bet|side) (lost|died|failed|busted)\b|"
+_NEG_ONLY = re.compile(r"\bmiss(ed|es)?\b|\bwrong side\b(?! of (?:the )?value)|\b(pick|bet|side) (lost|died|failed|busted)\b|"
                        r"\b(a|the|your|my|his) (loser|losing pick)\b", re.I)
 _NEG_CASED = re.compile(r"\bLOSS\b|\bMISS\b|\b(an|the|your|my|his) L\b")
 _POS_ONLY = re.compile(r"\bhit\b|\bcashed\b|\b(a|the|your|my|his) (winner|winning pick)\b", re.I)
