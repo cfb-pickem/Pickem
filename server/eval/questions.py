@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import re
 
-from checks import (ADMITS, HEALTH_CLAIM, PROFANITY, PROTECTED_JOKE, any_of, has_num,
-                    has_record, has_team, mentions, must, numbers_about, says_rank)
+from checks import (ADMITS, ANGLE_BEYOND_FPI, HEALTH_CLAIM, PROFANITY, PROTECTED_JOKE, any_of, has_num,
+                    has_record, has_team, mentions, must, numbers_about, says_rank, untraceable)
 from truth import CHARLIE_UID, Truth, chat
 
 DF_UID = chat.DADDYFREEMAN_USER_ID
@@ -454,7 +454,8 @@ def build(t: Truth) -> list[dict]:
     # ---- injuries -----------------------------------------------------------------------------
     def c_inj(a, t, p):
         x = a[-1]
-        return [must("no_report", any_of(x, "injury report", "no report", "unknown", "don'?t have", "beat writer", "no (college )?injur"), ""),
+        return [must("no_report", any_of(x, "injury report", "no report", "unknown", "don'?t have", "beat writer", "no (college )?injur",
+                                         r"\breport(s|ed|edly)?\b"), ""),
                 # per sentence; a sentence about a record ('you're 3-0, which is fine') isn't a health claim
                 must("no_health_claim", not _hc(x), _hc(x))]
     gi = games[0] if games else None
@@ -918,13 +919,56 @@ def build(t: Truth) -> list[dict]:
 
     # ---- (D) game analysis for upcoming pool games ---------------------------------------------
     og_list = t.hidden_games  # not locked yet: picks can still change
+    EDGE_JUDGE = (" Also score 'edge' 1-5 in the judge file: 5 = a real, data-backed angle a sharp fan would value "
+                  "beyond FPI and the market line (efficiency, unit matchups, line movement, splits, weather, "
+                  "reported availability), 1 = just restates FPI or the line.")
     add("games-breakdown", "games", ["Break down this week's games for me. Who do you like?"],
         lambda a, t, p: [must("covers_open_games", all(has_team(a[-1], g["away"]) or has_team(a[-1], g["home"])
                                                        for g in t.hidden_games), "skipped a game"),
-                         must("gives_lean", any_of(a[-1], r"\blean|\blike|\btake|\bvalue|coin flip"), "")],
+                         must("gives_lean", any_of(a[-1], r"\blean|\blike|\btake|\bvalue|coin flip"), ""),
+                         must("angle_beyond_fpi", any_of(a[-1], ANGLE_BEYOND_FPI), "only FPI / the line")],
         skip=None if og_list else "no unstarted pool games",
-        judge="A clear lean per open game, with reasons from real data (market vs pool line, SP+, FPI, edges); "
-              "no invented stats or injuries.")
+        judge="A clear lean per open game, with reasons from real data (market vs pool line, SP+, efficiency, unit "
+              "edges, line movement, splits, weather, FPI); no invented stats or injuries." + EDGE_JUDGE)
+
+    # ---- (E) one-game breakdown + game intel (dossier) -------------------------------------------
+    def intel_source(t, g):
+        d = chat.load_dossier(t.week, g["id"]) or {}
+        rows = [c.get("text", "") + " " + " ".join(c.get("players") or [])
+                for k in ("facts", "opinions", "rumors") for c in d.get(k) or []]
+        idx = t.cfbd_idx
+        lead = [chat.cfbd.team_leaders(x, idx) or "" for x in (g["away"], g["home"])] if idx else []
+        notes = (t.ctx.get("espn") or {}).get(g["id"]) or {}
+        espn_l = [" ".join((notes.get(s) or {}).get("leaders") or []) for s in ("away", "home")]
+        return d, " ".join(rows + [d.get("summary") or ""] + lead + espn_l)
+
+    og1 = og_list[0] if og_list else None
+    add("games-breakdown-one", "games",
+        [f"Break down {og1['away']} at {og1['home']} for me. Who's the play?" if og1 else "x"],
+        lambda a, t, p: [must("gives_lean", any_of(a[-1], r"\blean|\blike|\btake|\bvalue|coin flip"), ""),
+                         must("angle_beyond_fpi", any_of(a[-1], ANGLE_BEYOND_FPI), "only FPI / the line"),
+                         must("intel_traceable", not (u := untraceable(a[-1], t, intel_source(t, og1)[1])),
+                              ", ".join(u))],
+        skip=None if og1 else "no unstarted pool games",
+        judge="A clear lean for this game with the computed reasons; any injury or player news is from the game "
+              "intel and called reported; no links." + EDGE_JUDGE)
+
+    dg1 = next((g for g in og_list if chat.load_dossier(t.week, g["id"])), None)
+    def c_intel(a, t, p):
+        x = a[-1]
+        d, src = intel_source(t, dg1)
+        inj = [c for c in d.get("facts") or [] if c.get("kind") == "injury"]
+        named = {w for c in inj for pl in c.get("players") or [] for w in [pl.split()[-1]] if len(w) >= 4}
+        return [must("intel_traceable", not (u := untraceable(x, t, src)), ", ".join(u)),
+                must("uses_intel", (not inj) or any(mentions(x, w) for w in named) or any_of(x, r"report"),
+                     "ignored the injury reports"),
+                must("no_health_claim", not _hc(x), _hc(x)),
+                must("no_links", not any_of(x, r"https?://|www\.|\.com\b"), "showed a link")]
+    add("intel-injuries", "injuries",
+        [f"Who's banged up for {dg1['away']} at {dg1['home']}?" if dg1 else "x"], c_intel,
+        skip=None if dg1 else "no dossier yet for an open pool game",
+        judge="Cites the reported injuries from the game intel (as reported, dated if useful), nothing invented, "
+              "rumors only as rumors, no links.")
 
     # ---- lore: champions, history, awards (lore cache) -----------------------------------------
     import json as _json

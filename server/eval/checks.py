@@ -221,3 +221,48 @@ def numbers_about(text: str, name: str) -> bool:
 
 def must(name: str, cond: bool, detail: str = "") -> Result:
     return name, bool(cond), "" if cond else detail
+
+
+# ---- (E) game intel: player / injury claims traceable to the dossier or the brief ----------
+ANGLE_BEYOND_FPI = (r"SP\+|efficien|\bPPA\b|success rate|explosive|havoc|line (moved|movement)|\bopened\b|\bmoved\b|"
+                    r"splits?\b|the money|tickets|% of (the )?bets|weather|\bwind\b|\brain\b|\bdome\b|unit|"
+                    r"defen[cs]e (is |ranks? )?#|offen[cs]e (is |ranks? )?#|\bedge\b|injur|reportedly|per reports")
+_INJ_WORDS = re.compile(r"injur|hurt|\bout\b|questionable|doubtful|sidelined|surgery|ankle|knee|shoulder|"
+                        r"hamstring|concussion|status|return", re.I)
+
+
+def answer_names(text: str, t: Truth) -> list[tuple[str, str]]:
+    """(normalized name, its sentence) for person-like names in an answer,
+    skipping teams, members and calendar/venue words."""
+    cf = chat.cfbd
+    skip = {cf.norm(x) for x in list(t.uid_by_team) + list(chat.LEADER_NAMES) if x}
+    out = []
+    for sent in sentences(text):
+        for m in cf._NAME.finditer(re.sub(r"(\w)['’]s\b", r"\1", sent)):
+            words = m.group(1).split()
+            while words and cf.norm(words[0]) in cf.STOPWORDS | cf._LEAD | {"the", "and", "but", "per"}:
+                words = words[1:]
+            if len(words) < 2:
+                continue
+            n = cf.norm(" ".join(words))
+            if (not n or set(n.split()) & chat._GROUND_SKIP or any(k and (k in n or n in k) for k in skip)
+                    or (t.cfbd_idx and (cf.resolve_team(" ".join(words), t.cfbd_idx)
+                                        or cf.resolve_team(words[0], t.cfbd_idx)))):
+                continue
+            out.append((n, sent))
+    return out
+
+
+def untraceable(text: str, t: Truth, source: str) -> list[str]:
+    """Player names (CFBD players, or any name in an injury sentence) whose
+    last name isn't in `source` (dossier + brief rows for the game)."""
+    src = f" {chat.cfbd.norm(source)} "
+    players = chat._cfbd_player_keys(t.cfbd_idx)
+    bad = []
+    for n, sent in answer_names(text, t):
+        last = n.split()[-1]
+        if f" {n} " in src or (len(last) >= 4 and f" {last} " in src):
+            continue
+        if n in players or _INJ_WORDS.search(sent):
+            bad.append(n)
+    return bad

@@ -119,6 +119,15 @@ and number in it is in the claims. Files: `cache/dossiers/<week>/<game_id>.json`
 log `logs/dossier.log`, `dossier.py status` for a quick look. URLs stay in
 the file for grounding; members never see them.
 
+Intel in chat: `dossier_note()` adds a GAME INTEL block to the user turn
+only when the question names a specific pool game (not for "break down the
+games"), with claims labeled injury report / news / opinion / RUMOR, dated,
+outlet named, no URLs. `matchup_signals` never reads it, so it can't move the
+lean (`test_intel.py` pins that). The sentence filter's grounding check
+(`grounded_check`) drops a sentence naming a CFBD player or a position+name
+that isn't in the prompt, an injury claim with no intel behind it, or a stat
+number (yards, TDs, %, sacks...) found nowhere in the prompt.
+
 Tests:
 
     ./.venv/bin/python3 -I test_privacy.py     # unrevealed picks never leak

@@ -3779,6 +3779,73 @@ def analysis_games(ctx: dict, question: str) -> list[dict]:
     return games
 
 
+# (E) Game dossiers (dossier.py + LaunchAgent com.pickem.picky-dossier, 2026-11-15):
+# public injury / availability / insider notes per pool game. Only for a
+# question about a specific game, only as color: matchup_signals never reads
+# it, so it can't move the lean. URLs stay in the file; members never see them.
+DOSSIER_DIR = Path(os.environ.get("PICKY_DOSSIER_DIR", Path(__file__).resolve().parent / "cache" / "dossiers"))
+DOSSIER_MAX_AGE = dt.timedelta(days=8)
+DOSSIER_MAX_ITEMS = 8
+
+
+def load_dossier(week, game_id) -> dict | None:
+    try:
+        d = json.loads((DOSSIER_DIR / str(week) / f"{game_id}.json").read_text())
+        gen = dt.datetime.fromisoformat(d["generated_at"])
+    except (OSError, ValueError, KeyError):
+        return None
+    if dt.datetime.now(gen.tzinfo) - gen > DOSSIER_MAX_AGE:
+        return None
+    return d
+
+
+def dossier_games(ctx: dict, question: str) -> list[dict]:
+    games = ctx.get("games_this_week") or []
+    named = games_named(question or "", [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games], cap=2)
+    ids = [n["id"] for n in named]
+    return [g for g in games if g["id"] in ids and g.get("status") != "final"]
+
+
+def _intel_line(c: dict, label: str) -> str:
+    try:
+        day = dt.date.fromisoformat(c["date"]).strftime("%b %-d")
+    except (KeyError, ValueError):
+        day = ""
+    src = c.get("source_name") or ""
+    src = src if src and "." not in src and "/" not in src else ""
+    tag = ", ".join(x for x in (day, src) if x)
+    return f"  - {label}{f' ({tag})' if tag else ''}: {c['text']}"
+
+
+def dossier_note(ctx: dict, question: str) -> str:
+    if ctx.get("error") or not (question or "").strip():
+        return ""
+    out = []
+    for g in dossier_games(ctx, question):
+        d = load_dossier(ctx.get("current_week"), g["id"])
+        if not d:
+            continue
+        facts = d.get("facts") or []
+        items = ([_intel_line(c, "injury report") for c in facts if c.get("kind") == "injury"]
+                 + [_intel_line(c, "news") for c in facts if c.get("kind") != "injury"])[:DOSSIER_MAX_ITEMS - 2]
+        items += [_intel_line(c, "opinion, not fact") for c in (d.get("opinions") or [])[:2]]
+        items += [_intel_line(c, "RUMOR, unconfirmed") for c in (d.get("rumors") or [])[:1]]
+        try:
+            asof = dt.datetime.fromisoformat(d["generated_at"]).strftime("%a %b %-d")
+        except (KeyError, ValueError):
+            asof = "recently"
+        head = f"GAME INTEL, {g['away']} at {g['home']} (public reports gathered {asof}):"
+        if not items:
+            out.append(head + "\n  - no injury or availability news found in public reports.")
+            continue
+        out.append("\n".join([head] + ([f"  Summary: {d['summary']}"] if d.get("summary") else []) + items))
+    if not out:
+        return ""
+    return ("\n".join(out) + "\nIntel is color only: it never changes the LEAN or the value side. Say 'reportedly' "
+            "or 'per reports' for intel items, give the date when it matters, never give links, and only call a "
+            "rumor a rumor. Name only players listed here or elsewhere above.")
+
+
 # League playoff race (site audit #2, stats.html Playoff Race): top 4 after
 # week 15 make the playoffs. Cut line, gaps, bubble and points still
 # available are computed here.
@@ -4021,8 +4088,12 @@ def _user_turn(ctx: dict, question: str) -> str:
                                                              question or "", re.I)):
         parts.append(stats_focus(ctx, question).strip())
     parts.append(guard)
+    intel = dossier_note(ctx, question) if not guard.startswith("GUARDRAIL") else ""
     if _INJURY_ASK.search(question or ""):
-        parts.append("INJURIES: there's no official college injury report: say so and send them to the beat "
+        parts.append("INJURIES: there's no official college injury report, but the GAME INTEL block below has "
+                     "public reports: cite those as reported, nothing else. Never say 'no injuries', and never "
+                     "call anyone healthy." if intel else
+                     "INJURIES: there's no official college injury report: say so and send them to the beat "
                      "writers. If a NEWS QUESTION block carries an injury item, you may cite it exactly as written. "
                      "Never say 'no injuries', and never call anyone healthy.")
     parts.append(leader_note(ctx, question))
@@ -4034,6 +4105,7 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append(lore_note(ctx, question))
         parts.append(casino_note(ctx, question))
         parts.append(analysis_note(ctx, question))
+        parts.append(intel)
         parts.append(race_note(ctx, question))
         parts.append(howto_note(question))
         parts.append(tie_note(ctx, question))
@@ -4494,6 +4566,100 @@ def trait_word_check(ctx: dict, question: str):
         return None
     word = re.escape(m.group(0).lower())
     return lambda sent: not re.search(rf"\b{word}\w*\b", sent, re.I)
+
+
+# (E) Grounding: a sentence naming a player, an injury or a stat that isn't in
+# the prompt (league brief, stats rows, game intel) is dropped. Player = a
+# name in the CFBD player stats, or any unknown name next to a position word;
+# coaches and jokes about celebrities pass. Stat = a number tied to yards,
+# TDs, %, sacks... that appears nowhere in the prompt.
+_POS_WORD = re.compile(r"\b(qbs?|quarterbacks?|rbs?|running ?backs?|tailbacks?|wrs?|receivers?|wideouts?|tight ends?|"
+                       r"linebackers?|cornerbacks?|safety|safeties|kickers?|punters?|edge rushers?|lineman|linemen|"
+                       r"defensive (end|tackle)s?|starters?|backups?|freshmen|freshman|transfers?)\b", re.I)
+_INJ_CLAIM = re.compile(
+    r"\b(?:is|are|was|were|remains?|been|got|ruled|listed as)\s+(?:\w+\s+)?(?:out|questionable|doubtful|probable|"
+    r"injured|hurt|sidelined|banged[- ]up|limited|day[- ]to[- ]day|a game[- ]time decision)\b|"
+    r"\bout for the (?:season|year|game)\b|\b(?:torn|sprained|broken|fractured)\s+\w+|\bconcussion\b|"
+    r"\b(?:acl|mcl|hamstring|ankle|knee|shoulder|foot|wrist|hand|back|leg|arm)\s+(?:injury|issue|surgery|sprain|tear|"
+    r"problem)\b", re.I)
+_HEDGE = re.compile(r"\b(no|not|n't|unknown|unclear|can'?t say|don'?t know|nobody knows|no idea)\b", re.I)
+_STAT_NUM = re.compile(
+    r"(?<![\w.#])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(%|percent\b|(?:total |passing |rushing |receiving |"
+    r"all-purpose )?(?:yards?|yds)\b|ypc\b|ypa\b|touchdowns?\b|tds?\b|ints?\b|interceptions?\b|sacks?\b|"
+    r"tackles?\b|catches\b|receptions?\b|carries\b|ppg\b|points per game\b|completions?\b)", re.I)
+_NUMS = re.compile(r"\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?")
+_GROUND_SKIP = {"dear leader", "supreme commissioner", "glorious creator", "picky", "pool line", "big ten",
+                "sun belt", "mountain west", "conference usa", "fpi", "espn", "cfbd", "draftkings", "playoff",
+                "stadium", "field", "bowl", "trophy", "conference", "university", "college football", "heisman",
+                "january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+                "november", "december", "jan", "feb", "aug", "sept", "sep", "oct", "nov", "dec", "monday",
+                "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "game intel", "open meteo"}
+_player_keys: tuple | None = None
+
+
+def _cfbd_player_keys(idx: dict | None) -> set:
+    global _player_keys
+    if not idx:
+        return set()
+    if _player_keys is None or _player_keys[0] is not idx:
+        _player_keys = (idx, {p["key"] for p in idx.get("players") or [] if p.get("key") and " " in p["key"]})
+    return _player_keys[1]
+
+
+def ungrounded(sent: str, corpus_norm: str, corpus_nums: set, skip_names: set, players: set,
+               idx: dict | None, has_intel: bool) -> str | None:
+    """Why `sent` isn't grounded in the prompt (None = fine)."""
+    s = sent.replace("\u2019", "'")
+    for m in _STAT_NUM.finditer(s):
+        n = m.group(1).replace(",", "")
+        if n in ("0", "1") or (n == "100" and m.group(2).lower() in ("%", "percent")):
+            continue
+        if n not in corpus_nums:
+            return f"stat {m.group(0)!r}"
+    names = []
+    for m in cfbd._NAME.finditer(re.sub(r"(\w)'s\b", r"\1", s)):
+        words = m.group(1).split()
+        while words and cfbd.norm(words[0]) in cfbd.STOPWORDS | cfbd._LEAD | {"the", "and", "but", "per", "like"}:
+            words = words[1:]
+        if len(words) < 2 or any(w.upper().strip(".") in cfbd._ACRONYMS for w in words):
+            continue
+        n = cfbd.norm(" ".join(words))
+        if (not n or set(n.split()) & _GROUND_SKIP or any(k in n for k in _GROUND_SKIP if " " in k)
+                or n in cfbd._NOT_NAMES or any(k and (k in n or n in k) for k in skip_names)
+                or (idx and (cfbd.resolve_team(" ".join(words), idx) or cfbd.resolve_team(words[0], idx)
+                             or cfbd.resolve_team(" ".join(words[:2]), idx)))):
+            continue
+        names.append(n)
+    for n in names:
+        last = n.split()[-1]
+        if f" {n} " in corpus_norm or (len(last) >= 4 and f" {last} " in corpus_norm):
+            continue
+        if n in players or _POS_WORD.search(s):
+            return f"player {n!r}"
+    if _INJ_CLAIM.search(s) and not names and not has_intel and not _HEDGE.search(s):
+        return "injury claim with no intel"
+    return None
+
+
+def grounded_check(ctx: dict, corpus: str):
+    """Sentence predicate for _filtered: True when every player, injury and
+    stat in the sentence is backed by the prompt (brief + game intel)."""
+    if ctx.get("error") or not corpus:
+        return None
+    idx = _cfbd_index()
+    cn = f" {cfbd.norm(corpus)} "
+    nums = {x.replace(",", "") for x in _NUMS.findall(corpus)}
+    skip = {cfbd.norm(x) for x in (ctx.get("teams") or []) + [r["team"] for r in ctx.get("standings_ytd") or []]
+            + LEADER_NAMES if x}
+    players = _cfbd_player_keys(idx)
+    has_intel = "GAME INTEL," in corpus
+
+    def ok(sent: str) -> bool:
+        why = ungrounded(sent, cn, nums, skip, players, idx, has_intel)
+        if why:
+            log.info("grounding filter: %s in %r", why, sent[:100])
+        return why is None
+    return ok
 
 
 # Known-false mashups from the final exam run: only Picky has exhibition picks; Bo Nix never
@@ -5024,6 +5190,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
         convo[-1] = {"role": "user", "content": body}
 
     qtext = last.get("content", "") if last.get("role") == "user" else ""
+    # everything the model was shown (system + user turns, not its own past answers)
+    corpus = "\n".join(m["content"] for m in convo if m["role"] != "assistant")
 
     def _answer():
         return _guarded_stream(convo, prefix, facts) if facts else _model_stream(convo, prefix)
@@ -5036,7 +5204,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
                          and not yb and "(the user" not in convo[-1]["content"]),
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
-                extra=_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)) if not ctx.get("error") else None),
+                extra=_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
+                            grounded_check(ctx, corpus)) if not ctx.get("error") else None),
                 looks_bait(qtext)), (required_fact(ctx, qtext) or rankings_fact(rn)) if not ctx.get("error")
                 else None))))),
         media_type="text/event-stream",
