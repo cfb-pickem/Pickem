@@ -167,6 +167,28 @@ def test_group_context_hides_unlocked_picks_even_the_senders():
     assert "GROUP TEXT" in tail and "1 to 3 short sentences" in tail
 
 
+def test_answer_rerolls_when_filter_cuts_a_sentence():
+    # attempt 1: the filter drops the opener, leaving an orphan; attempt 2 is whole
+    tries = iter([["BAD opener that answered.", "That's not luck."], ["You're in first.", "Ackbar is 2nd."]])
+
+    class Resp:
+        def __init__(self, text):
+            self.text = text
+
+        @property
+        async def body_iterator(self):
+            yield 'data: {"content": "%s"}\n\n' % self.text
+
+    async def fake_chat(_req):  # stands in for chat.py's _filtered, which calls chat.sentence_ok
+        return Resp(" ".join(x for x in next(tries) if chat.sentence_ok(x, set())))
+
+    with patch.object(gc, "_orig_sentence_ok", lambda x, *a, **k: not x.startswith("BAD")), \
+            patch.object(chat, "chat", fake_chat), \
+            patch.object(gc.VIEWER, "session", lambda c: asyncio.sleep(0)), \
+            patch.object(gc.VIEWER, "sender", lambda h: gc.Sender(handle=h)):
+        assert asyncio.run(gc.answer("+15555550199", "@Picky who's winning")) == "You're in first. Ackbar is 2nd."
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_") and callable(v)]
     failed = 0

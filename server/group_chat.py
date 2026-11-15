@@ -67,6 +67,8 @@ MEMBERS_FILE = Path(os.environ.get(
     "PICKY_GROUP_MEMBERS", "/Users/Agent/cfb-pickem-private/picky_group_members.json"))
 MAX_SENTENCES = 3
 MAX_CHARS = 480
+MAX_TRIES = 3          # rerolls when chat.py's sentence filter cut part of an answer
+REROLL_BUDGET = 120.0  # seconds; the watcher gives up at 240
 
 GROUP_RIDER = (
     "\n\nGROUP TEXT: you're answering in the league's iMessage group chat. Every member reads "
@@ -258,6 +260,46 @@ chat._build_context = _build_context
 chat.you_block = _you_block
 chat._system_tail = _system_tail
 chat.wants_image = lambda _t: False  # no image replies in the group
+# Every group question arrives as a fresh one-turn chat, so the site's
+# every-other-question "fact about the user" hook fired on every answer and
+# bolted the sender's own week onto it ("You're 4-0, Charlie"), even on a game
+# question. Off in the group.
+chat.proactive_note = lambda *_a, **_k: ""
+
+# chat.py hands the model the sender's own graded week ("Say 'you're 4-0'")
+# on every results question, then its self-intrusion filter drops exactly that
+# sentence when the question isn't about the sender. 'roast Ackbar' opened
+# "You're 4-0, while he's 3-1..." every time, lost it, and went out as "He
+# took...". Records are public in the group, so let that sentence stand.
+chat.self_intrusion_off_topic = lambda *_a, **_k: False
+
+# chat.py's sentence filter drops bad sentences one at a time. On the site a
+# member can ask again; in the group what's left goes out as is, and it reads
+# as nonsense ("That's not luck..." after the opener that answered the question
+# was dropped). Count drops per attempt so answer() can reroll.
+DROPS: contextvars.ContextVar[list | None] = contextvars.ContextVar("picky_group_drops", default=None)
+_orig_sentence_ok = chat.sentence_ok
+
+
+def _sentence_ok(sent, *a, **kw):
+    ok = _orig_sentence_ok(sent, *a, **kw)
+    d = DROPS.get()
+    if not ok and d is not None:
+        d.append(sent)
+    return ok
+
+
+chat.sentence_ok = _sentence_ok
+
+# The results guard drops contradicting sentences on its own and then appends
+# facts_sentence (or falls back to templated_answer): count those as drops too.
+for _name in ("facts_sentence", "templated_answer"):
+    def _counted(facts, _f=getattr(chat, _name)):
+        d = DROPS.get()
+        if d is not None:
+            d.append(_f.__name__)
+        return _f(facts)
+    setattr(chat, _name, _counted)
 
 
 # -----------------------------------------------------------------------------
@@ -327,6 +369,10 @@ async def answer(handle: str, text: str) -> str:
     token = SENDER.set(s)
     try:
         q = strip_trigger(text)[:2000]
+        # the group calls him "blinky": tag the real team name, the way chat.py
+        # tags follow-ups, so he isn't OFF-TOPIC and his results get checked
+        if chat._BLINKS_ASK.search(q) and not re.search(r"blinkstradamus", q, re.I):
+            q += " (Blinkstradamus)"
         if _STATUS_ASK.search(q):
             q += _STATUS_NUDGE
         body = json.dumps({"messages": [{"role": "user", "content": q}],
@@ -335,10 +381,27 @@ async def answer(handle: str, text: str) -> str:
         async def receive():
             return {"type": "http.request", "body": body, "more_body": False}
 
-        req = StarletteRequest({"type": "http", "method": "POST", "path": "/chat", "headers": [],
-                                "query_string": b""}, receive)
-        resp = await chat.chat(req)
-        return group_trim(status_guard(q, await _collect(resp)))
+        # keep the first answer the filter left whole; else the one it cut least
+        t0, best = time.time(), None
+        for i in range(MAX_TRIES):
+            drops = []
+            dtok = DROPS.set(drops)
+            try:
+                req = StarletteRequest({"type": "http", "method": "POST", "path": "/chat", "headers": [],
+                                        "query_string": b""}, receive)
+                reply = group_trim(status_guard(q, await _collect(await chat.chat(req))))
+            except HTTPException:
+                if best is None:
+                    raise
+                break  # a reroll hit the rate limit: send the best so far
+            finally:
+                DROPS.reset(dtok)
+            if best is None or len(drops) < best[0]:
+                best = (len(drops), reply)
+            if not drops or time.time() - t0 > REROLL_BUDGET:
+                break
+            log.info("group reroll %d: filter dropped %d sentence(s)", i + 1, len(drops))
+        return best[1]
     finally:
         SENDER.reset(token)
 
