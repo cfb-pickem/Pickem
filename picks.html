@@ -1737,15 +1737,15 @@
       paintPickyPicks();
     }
 
-    // Picky the player (exhibition bot), behind the pickyOn() flag: once a
+    // Picky the player (exhibition bot), behind the pickyPlayerOn() flag: once a
     // game's picks are revealed its card says what he took; tapping the pick
     // opens his line. picky_player() only returns revealed picks, so this
     // can't leak one early.
     function paintPickyPicks(){
       if (currentSeason == null) return;
       const season = currentSeason;
-      import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
-        if (!pickyOn()) return;
+      import('./js/pickyFlag.js').then(async ({ pickyPlayerOn }) => {
+        if (!pickyPlayerOn()) return;
         const pp = await import('./js/pickyPlayer.js');
         const pl = await pp.loadPickyPlayer(season);
         if (pl) pp.paintPickyCards(pl, document);

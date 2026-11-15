@@ -2739,7 +2739,7 @@
       if (!playoffMode && !isTiebreakerView && !isPlayoffView) refreshPickyPlayer();
     }
 
-    // Picky the player, only behind the pickyOn() flag: drawn as a normal row,
+    // Picky the player, only behind the pickyPlayerOn() flag: drawn as a normal row,
     // sorted in by points. His team and picks are invisible to every other read
     // (RLS), so lastTeams, the points maps and the playoff cut never include
     // him; renderTable() merges him into the drawn rows only. Regular-season
@@ -2764,8 +2764,8 @@
     // Resolves truthy only when his data changed. Never rejects.
     function loadPicky(){
       const season = currentSeason;
-      return import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
-        if (!pickyOn()) return;
+      return import('./js/pickyFlag.js').then(async ({ pickyPlayerOn }) => {
+        if (!pickyPlayerOn()) return;
         const pp = await import('./js/pickyPlayer.js');
         const pl = await pp.loadPickyPlayer(season);
         if (season !== currentSeason) return false;

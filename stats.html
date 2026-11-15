@@ -615,13 +615,13 @@
     let liveState = null;   // { season, gameIds:Set, openStarted:Set, renderOdds(rowsById), nextKickoff:Date|null }
 
     let loadSeq = 0;
-    // Picky the player (exhibition bot), behind the pickyOn() flag: hands his
+    // Picky the player (exhibition bot), behind the pickyPlayerOn() flag: hands his
     // picky_player() answer to `paint`, which sorts him into the season table
     // like anyone else. His picks are hidden from every other query on this
     // page, so nothing else here counts him.
     function appendPickySeasonRow(season, stale, paint){
-      import('./js/pickyFlag.js').then(async ({ pickyOn }) => {
-        if (!pickyOn()) return;
+      import('./js/pickyFlag.js').then(async ({ pickyPlayerOn }) => {
+        if (!pickyPlayerOn()) return;
         const pp = await import('./js/pickyPlayer.js');
         const pl = await pp.loadPickyPlayer(season);
         if (!pl || stale()) return;

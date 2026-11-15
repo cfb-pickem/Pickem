@@ -6,12 +6,12 @@
 // (RLS, see 20261114180000_picky_the_player.sql), so all the existing
 // standings math runs exactly as if he didn't exist; the pages only merge him
 // in at paint time. This module is the only way the site sees him, and only
-// while pickyOn() is true.
+// while pickyPlayerOn() is true.
 //
 // picky_player() applies the same reveal rule as human picks, so anything it
 // returns is already safe to show.
 
-import { pickyOn } from './pickyFlag.js';
+import { pickyPlayerOn } from './pickyFlag.js';
 import { supabase } from './supabaseClient.js';
 import { sameTeam, escapeHtml } from './utils.js';
 
@@ -21,7 +21,7 @@ const cache = new Map();
 const TTL_MS = 60_000;
 
 export function loadPickyPlayer(season) {
-  if (!pickyOn() || season == null) return Promise.resolve(null);
+  if (!pickyPlayerOn() || season == null) return Promise.resolve(null);
   const hit = cache.get(season);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.promise;
   const promise = Promise.resolve(
