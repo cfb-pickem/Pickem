@@ -2714,6 +2714,8 @@ def results_block(facts: dict | None) -> str:
         if s["kind"] == "you":
             head = f"THE USER'S ({s['team']}'s) PICKS THIS WEEK, say 'you':"
             rec = f"THE USER'S RECORD THIS WEEK ON DECIDED GAMES: {w}-{l}{left}. Say 'you're {w}-{l}'."
+            if w and not l:  # 'go fix your record, you're 4-0'
+                rec += " That's perfect so far: never tell them to fix, improve or turn around their record."
         elif s["kind"] == "picky":
             head = ("PICKY'S OWN PICKS THIS WEEK (you are Picky: say 'I' and 'my'). These are the only "
                     "picks of yours that have kicked off; never count anyone else's picks as yours:")

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import sys
 import time
 from pathlib import Path
@@ -70,8 +71,11 @@ def test_should_act():
     now = time.time()
     assert watcher.should_act(_row(), now) == (True, "ok")
     assert watcher.should_act(_row(text="picky hi"), now)[0] is False
-    assert watcher.should_act(_row(style=45), now) == (False, "dm")                       # DM: ignored
-    assert watcher.should_act(_row(style=45, handle="+15555550199"), now) == (True, "ok")  # Charlie test DM
+    # DMs: no @Picky needed; the sidecar decides who gets answered
+    assert watcher.should_act(_row(style=45, text="how about that SMU game?"), now) == (True, "ok")
+    assert watcher.should_act(_row(style=45, text=None), now) == (False, "empty")
+    assert watcher.should_act(_row(style=45, associated_message_type=2000), now) == (False, "tapback")
+    assert watcher.should_act(_row(associated_message_type=2000), now) == (False, "tapback")
     assert watcher.should_act(_row(date=1), now) == (False, "stale")
 
 
@@ -186,7 +190,97 @@ def test_answer_rerolls_when_filter_cuts_a_sentence():
             patch.object(chat, "chat", fake_chat), \
             patch.object(gc.VIEWER, "session", lambda c: asyncio.sleep(0)), \
             patch.object(gc.VIEWER, "sender", lambda h: gc.Sender(handle=h)):
-        assert asyncio.run(gc.answer("+15555550199", "@Picky who's winning")) == "You're in first. Ackbar is 2nd."
+        out = asyncio.run(gc.answer("+15555550199", "@Picky who's winning"))
+        assert out["reply"] == "You're in first. Ackbar is 2nd." and out["mode"] == "group"
+
+
+# ---- DMs: a mapped member gets the site as is; others public or nothing ----
+
+
+def test_dm_context_is_the_site_for_a_mapped_member():
+    tok = gc.MODE.set("dm")
+    try:
+        ctx, yb, tail = asyncio.run(_dm_ctx())
+    finally:
+        gc.MODE.reset(tok)
+    assert ctx["you"]["team_name"] == "Ackbar"
+    assert "Penn State" in yb, yb  # their own unlocked pick, as on the site
+    assert "GROUP TEXT" not in tail and "TEXT MESSAGE" in tail
+
+
+async def _dm_ctx():
+    # same fixture as the group, but the hooks step aside: _build_context runs as the member
+    return await _group_ctx("Ackbar")
+
+
+def test_dm_hooks_defer_to_chat_py():
+    tok = gc.MODE.set("dm")
+    try:
+        assert chat.proactive_note is not gc._orig_proactive_note
+        with patch.object(gc, "_orig_proactive_note", lambda *a, **k: "HOOK"), \
+                patch.object(gc, "_orig_self_intrusion", lambda *a, **k: True):
+            assert chat.proactive_note({}, [], "q") == "HOOK"
+            assert chat.self_intrusion_off_topic({}, "q", False, None, "") is True
+    finally:
+        gc.MODE.reset(tok)
+    with patch.object(gc, "_orig_proactive_note", lambda *a, **k: "HOOK"), \
+            patch.object(gc, "_orig_self_intrusion", lambda *a, **k: True):
+        assert chat.proactive_note({}, [], "q") == ""                       # group: off
+        assert chat.self_intrusion_off_topic({}, "q", False, None, "") is False
+
+
+def _fake_answer_env(sender, seen):
+    class Resp:
+        @property
+        async def body_iterator(self):
+            yield 'data: {"content": "Sure."}\n\n'
+
+    async def fake_chat(req):
+        seen.append(json.loads((await req.body()).decode()))
+        return Resp()
+
+    async def member_session(c, uid):
+        return "jwt-" + uid
+
+    gc.VIEWER.jwt = "jwt-picky"
+    return [patch.object(chat, "chat", fake_chat),
+            patch.object(gc.VIEWER, "session", lambda c: asyncio.sleep(0)),
+            patch.object(gc.VIEWER, "member_session", member_session),
+            patch.object(gc.VIEWER, "sender", lambda h: sender)]
+
+
+def test_dm_routing_and_history():
+    import contextlib
+    import tempfile
+    mapped = gc.Sender(handle="+15555550100", team="Chuck P", team_id=1, user_id="uuid-chuck")
+    unmapped = gc.Sender(handle="+15555550111")
+    with tempfile.TemporaryDirectory() as d, patch.object(gc, "HISTORY_FILE", Path(d) / "h.json"):
+        seen = []
+        with contextlib.ExitStack() as st:
+            for pt in _fake_answer_env(mapped, seen):
+                st.enter_context(pt)
+            out = asyncio.run(gc.answer("+15555550100", "how about that SMU game?", chat_id="any;-;x", dm=True))
+            assert out["mode"] == "dm" and seen[-1]["supabase_jwt"] == "jwt-uuid-chuck"
+            asyncio.run(gc.answer("+15555550100", "what about him?", chat_id="any;-;x", dm=True))
+            assert [m["content"] for m in seen[-1]["messages"]] == ["how about that SMU game?", "Sure.", "what about him?"]
+            assert oct((Path(d) / "h.json").stat().st_mode & 0o777) == "0o600"
+            # a group message never sees the DM's history
+            asyncio.run(gc.answer("+15555550100", "@Picky hi", chat_id="iMessage;+;chat1"))
+            assert seen[-1]["messages"] == [{"role": "user", "content": "hi"}]
+            assert seen[-1]["supabase_jwt"] == "jwt-picky"
+        with contextlib.ExitStack() as st:
+            for pt in _fake_answer_env(unmapped, seen):
+                st.enter_context(pt)
+            assert asyncio.run(gc.answer("+15555550111", "yo", dm=True)) is None           # not allowed
+            out = asyncio.run(gc.answer("+15555550111", "yo", dm=True, allowlisted=True))
+            assert out["mode"] == "dm-public" and seen[-1]["supabase_jwt"] == "jwt-picky"
+        # expiry: turns older than HISTORY_TTL drop out
+        assert gc.load_history("dm:+15555550100", now=time.time() + gc.HISTORY_TTL + 1) == []
+
+
+def test_dm_trim():
+    assert gc.dm_trim("## Take\n**Bold** call.") == "Take\nBold call."
+    assert len(gc.dm_trim("Word. " * 600)) <= gc.DM_MAX_CHARS
 
 
 if __name__ == "__main__":

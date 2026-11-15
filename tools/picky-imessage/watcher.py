@@ -8,7 +8,13 @@ a GROUP chat that contains "@Picky" (also "@ Picky", any case, or a
 confirmed iMessage mention of Picky's own handle), asks the localhost
 group sidecar (server/group_chat.py, 127.0.0.1:8768) for a reply and sends
 it back to the same chat through Messages via AppleScript, in this user's
-session. DMs are ignored, except from TEST_DM_HANDLES.
+session. A picture reply goes out as an attachment.
+
+DMs need no @Picky. Every 1-on-1 text goes to the sidecar marked dm, and
+the sidecar answers only mapped league members (from the private member
+map, re-read live) and TEST_DM_HANDLES (allowlisted: public mode when not
+mapped); anyone else gets no reply. Tapbacks and attachment-only messages
+are skipped.
 
 Deduped by message ROWID (state persisted). At most one reply per 10 s and
 60 per hour. Logs carry a short preview only, never full bodies.
@@ -38,6 +44,7 @@ STATE_FILE = STATE_DIR / "state.json"
 SECRET_FILE = STATE_DIR / "secret"
 CONFIG_FILE = STATE_DIR / "config.json"  # written by install.sh: self_handles, test_dm_handles
 LOG_FILE = HOME / "Library/Logs/picky-imessage.log"
+OUT_DIR = HOME / "Pictures/picky-out"  # Messages can attach from ~/Pictures (TCC)
 
 BOT_URL = os.environ.get("PICKY_GROUP_URL", "http://127.0.0.1:8768/group")
 POLL_SECONDS = 3.0
@@ -133,7 +140,7 @@ class RateLimit:
 
 NEW_MESSAGES = """
 SELECT m.ROWID, m.text, m.attributedBody, m.date, h.id AS handle,
-       c.guid AS chat_guid, c.style AS style
+       c.guid AS chat_guid, c.style AS style, m.associated_message_type
 FROM message m
 JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
 JOIN chat c ON c.ROWID = cmj.chat_id
@@ -161,11 +168,13 @@ def msg_unix_time(date: int | None) -> float:
 
 def should_act(row: dict, now: float) -> tuple[bool, str]:
     text = row["text"] or decode_attributed_body(row["attributedBody"])
-    is_group = row["style"] == GROUP_STYLE
-    if not is_group and (row["handle"] or "") not in TEST_DM_HANDLES:
-        return False, "dm"
-    if not triggered(text, row["attributedBody"]):
-        return False, "no-trigger"
+    if row.get("associated_message_type"):
+        return False, "tapback"
+    if row["style"] == GROUP_STYLE:
+        if not triggered(text, row["attributedBody"]):
+            return False, "no-trigger"
+    elif not (text or "").strip():
+        return False, "empty"  # DMs: any text, no @Picky needed (the sidecar checks the sender)
     if now - msg_unix_time(row["date"]) > MAX_AGE:
         return False, "stale"
     return True, "ok"
@@ -176,14 +185,17 @@ def should_act(row: dict, now: float) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
-def ask_bot(handle: str, text: str, secret: str) -> str | None:
-    if not TRIGGER.search(text):  # mention-only messages: hand the sidecar a literal trigger
+def ask_bot(handle: str, text: str, secret: str, chat: str = "", dm: bool = False) -> dict:
+    """{"reply": str|None, "image": base64 png|None}"""
+    if not dm and not TRIGGER.search(text):  # mention-only messages: hand the sidecar a literal trigger
         text = "@Picky " + text
+    payload = {"handle": handle, "text": text, "chat": chat, "dm": dm,
+               "allowlisted": dm and handle in TEST_DM_HANDLES}
     req = urllib.request.Request(
-        BOT_URL, data=json.dumps({"handle": handle, "text": text}).encode(),
+        BOT_URL, data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "X-Picky-Group-Secret": secret}, method="POST")
-    with urllib.request.urlopen(req, timeout=240) as r:
-        return (json.loads(r.read().decode()) or {}).get("reply")
+    with urllib.request.urlopen(req, timeout=420) as r:  # pictures take a few minutes
+        return json.loads(r.read().decode()) or {}
 
 
 SEND_SCRIPT = [
@@ -193,15 +205,23 @@ SEND_SCRIPT = [
 ]
 
 
-def send(chat_guid: str, text: str) -> bool:
-    """AppleScript in this (picky) user's session. Text and guid go in argv,
-    never spliced into the script. Newer macOS sometimes wants the 'iMessage;'
-    form of an 'any;' guid, so that's tried second."""
+SEND_FILE_SCRIPT = [
+    "on run argv",
+    "set f to POSIX file (item 1 of argv)",
+    'tell application "Messages" to send f to chat id (item 2 of argv)',
+    "end run",
+]
+
+
+def send(chat_guid: str, text: str, script: list[str] = SEND_SCRIPT) -> bool:
+    """AppleScript in this (picky) user's session. Text (or file path) and guid
+    go in argv, never spliced into the script. Newer macOS sometimes wants the
+    'iMessage;' form of an 'any;' guid, so that's tried second."""
     guids = [chat_guid]
     if chat_guid.startswith("any;"):
         guids.append("iMessage;" + chat_guid[4:])
     for g in guids:
-        args = ["osascript"] + sum((["-e", ln] for ln in SEND_SCRIPT), []) + [text, g]
+        args = ["osascript"] + sum((["-e", ln] for ln in script), []) + [text, g]
         r = subprocess.run(args, capture_output=True, text=True, timeout=30)
         if r.returncode == 0:
             return True
@@ -256,7 +276,8 @@ def main() -> int:
                     state["last_rowid"] = max_rowid(db)
                     save_state(state)
             rows = db.execute(NEW_MESSAGES, (state["last_rowid"],)).fetchall()
-            cols = ["ROWID", "text", "attributedBody", "date", "handle", "chat_guid", "style"]
+            cols = ["ROWID", "text", "attributedBody", "date", "handle", "chat_guid", "style",
+                    "associated_message_type"]
             for raw in rows:
                 row = dict(zip(cols, raw))
                 ok, why = should_act(row, time.time())
@@ -277,17 +298,21 @@ def main() -> int:
 def handle_one(row: dict, secret: str, rate: RateLimit) -> None:
     text = row["text"] or decode_attributed_body(row["attributedBody"]) or ""
     handle = row["handle"] or ""
-    log.info("trigger rowid=%s from=...%s preview=%r", row["ROWID"], handle[-4:], preview(text))
+    dm = row["style"] != GROUP_STYLE
+    # DM bodies from people Picky won't answer stay out of the log
+    log.info("%s rowid=%s from=...%s preview=%r", "dm" if dm else "trigger", row["ROWID"], handle[-4:],
+             "" if dm else preview(text))
     wait = rate.wait_needed()
     if wait is None:
         log.warning("hourly cap hit, skipping rowid=%s", row["ROWID"])
         return
     try:
-        reply = ask_bot(handle, text, secret)
+        out = ask_bot(handle, text, secret, chat=row["chat_guid"], dm=dm)
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         log.error("bot unreachable for rowid=%s: %s", row["ROWID"], e)
         return
-    if not reply:
+    reply, image = out.get("reply"), out.get("image")
+    if not reply and not image:
         log.info("no reply for rowid=%s", row["ROWID"])
         return
     wait = rate.wait_needed()
@@ -296,9 +321,26 @@ def handle_one(row: dict, secret: str, rate: RateLimit) -> None:
         return
     if wait:
         time.sleep(wait)
-    if send(row["chat_guid"], reply):
+    if reply and send(row["chat_guid"], reply):
         rate.mark()
         log.info("replied rowid=%s preview=%r", row["ROWID"], preview(reply))
+    if image:
+        send_image(row, image)
+
+
+def send_image(row: dict, b64: str) -> None:
+    import base64
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / f"picky-{row['ROWID']}.png"
+    try:
+        path.write_bytes(base64.b64decode(b64))
+    except (ValueError, OSError) as e:
+        log.error("image write failed rowid=%s: %s", row["ROWID"], e)
+        return
+    if send(row["chat_guid"], str(path), SEND_FILE_SCRIPT):
+        log.info("sent image rowid=%s", row["ROWID"])
+    for old in sorted(OUT_DIR.glob("picky-*.png"))[:-20]:  # keep the last 20
+        old.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
