@@ -4313,9 +4313,23 @@ def record_check(ctx: dict, question: str):
                 w_, l_ = lw_rec.get(t, (0, 0))
                 lw_rec[t] = (w_ + 1, l_) if same_team(pk, g.get("covered")) else (w_, l_ + 1)
 
+    busts = {}
+    for t, lines in (((load_lore() or {}).get("casino") or {}).get("members") or {}).items():
+        for ln in lines:
+            mb = re.search(r"busted (once|twice|(\d+) times)|never busted", ln)
+            if mb and "blackjack hands" in ln:
+                busts[t] = 0 if "never" in mb.group(0) else 1 if mb.group(1) == "once" else 2 if mb.group(1) == "twice" else int(mb.group(2))
+
     def ok(sent: str) -> bool:
         if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
             return False
+        mb = re.search(r"\bbust(?:ed|s)? (once|twice|(\d+|two|three|four) times)\b", sent, re.I)
+        if mb and busts:  # 'busted twice' when the stored hands say once (three runs running)
+            n = {"once": 1, "twice": 2, "two": 2, "three": 3, "four": 4}.get((mb.group(2) or mb.group(1)).lower())
+            n = n if n is not None else int(mb.group(2))
+            who = next((t for t in busts if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", sent, re.I)), None)
+            if who is None or busts[who] != n:
+                return False
         if lw_rec and not re.search(r"\bthis week\b", sent, re.I):
             for t, rec0 in lw_rec.items():
                 for mm in re.finditer(rf"(?<!\w){re.escape(t)}(?!\w)[^.;]{{0,40}}?\b(\d)-(\d)\b", sent):
@@ -4366,15 +4380,38 @@ def record_check(ctx: dict, question: str):
     return ok
 
 
+# Sexual/anatomy vulgarity is out everywhere (R-rated yes, sexual no): m11 had "USC can suck my dick".
+_ANATOMY = re.compile(r"\b(dick|dicks|cock|cocks|penis|weenie|wiener|schlong|pecker|tits?|boobs?|blow ?jobs?|"
+                      r"suck (my|his|a)\b)", re.I)
+
+
 # Verbal tics from the exam (m4: "don't get cocky" closed 16 of 122 answers). A
 # short filler sentence built on one is dropped; a longer one with real content stays.
 _TICS = re.compile(r"\b(don'?t get cocky|sitting pretty|the rest of us|here to watch|dumpster fire|god among men|"
                    r"so maybe you should|don'?t let it go to your head)\b", re.I)
 
 
+def _both(a, b):
+    if a is None or b is None:
+        return a or b
+    return lambda x: a(x) and b(x)
+
+
+def trait_word_check(ctx: dict, question: str):
+    """On a trait bait (race, religion...), a sentence that names the trait again
+    ('Race doesn't matter, but his 2-2 week does') is dropped; the short refusal
+    ('Hard no.') and the pivot to picks survive."""
+    q = question or ""
+    m = _TRAIT.search(q)
+    if not (m and _MOCK.search(q)) or _BODY.search(q):
+        return None
+    word = re.escape(m.group(0).lower())
+    return lambda sent: not re.search(rf"\b{word}\w*\b", sent, re.I)
+
+
 def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False,
                 sides: tuple | None = None, extra=None) -> bool:
-    if _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent):
+    if _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent) or _ANATOMY.search(sent):
         return False
     if _TICS.search(sent) and len(sent.split()) <= 14:
         return False
@@ -4459,6 +4496,23 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
 def required_fact(ctx: dict, question: str) -> tuple | None:
     q = question or ""
     me = (ctx.get("you") or {}).get("team_name")
+    if _CHAMP_ASK.search(q):
+        champ = re.search(r"LAST SEASON \((\d{4})\) the champion was ([^;.]+)", " ".join((load_lore() or {}).get("league") or []))
+        if champ:
+            nm = champ.group(2).strip()
+            return (lambda t, nm=nm: nm.lower() in t.lower(),
+                    f" For the record: {nm} won it last season ({champ.group(1)}), and he gets the respect.")
+    if _FREEMAN_ASK.search(q):
+        return (lambda t: bool(re.search(r"marshall|stanford|niu|northern illinois", t, re.I)),
+                " Still: Marshall, Stanford and NIU, all at home in South Bend.")
+    g = guard_note(ctx, q)
+    if g.startswith("GUARDRAIL"):
+        who = guard_target(ctx, q)
+        row = next((r for r in ctx.get("standings_ytd") or [] if r["team"] == who), None)
+        if row:
+            rec = f"{row['w']}-{row['l']}"
+            subj = "You're" if who == me else f"{who} is"
+            return (lambda t, rec=rec: rec in t, f" For the record: {subj} {rec} on the season.")
     if wants_rules(q) and _MONEY_ASK.search(q) and ctx.get("teams"):
         pm = payout_math(len(ctx["teams"]))
         key = ("first" if re.search(r"\b(first|1st|winner|champion)\b", q, re.I) else
@@ -4879,7 +4933,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
                          and not yb and "(the user" not in convo[-1]["content"]),
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
-                extra=record_check(ctx, qtext) if not ctx.get("error") else None),
+                extra=_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)) if not ctx.get("error") else None),
                 looks_bait(qtext)), (required_fact(ctx, qtext) or rankings_fact(rn)) if not ctx.get("error")
                 else None))))),
         media_type="text/event-stream",

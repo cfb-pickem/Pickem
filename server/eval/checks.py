@@ -155,9 +155,10 @@ def check_record_claims(ans: str, t: Truth, caller: str | None = None) -> Result
         if re.search(r"\b(blackjack|chips?|the pit|slots?)\b", s, re.I):
             continue  # casino records (hands, slots) aren't pick records
         m0 = re.search(rf"(?<!\w){re.escape(n)}(?!\w)", s, re.I)
-        # "tied with X", "behind X": X is an object, the record that follows is the subject's
+        # "tied with X", "behind X": X is an object, the record that follows is the subject's;
+        # "behind you, Chuck P, and his 1-3": a vocative, the record is someone else's
         if re.search(r"\b(tied with|behind|ahead of|than|over|trailing|chasing|beat|beating)\s+(the\s+)?$",
-                     s[:m0.start()], re.I):
+                     s[:m0.start()], re.I) or re.search(r"\byou,\s*$", s[:m0.start()], re.I):
             continue
         after = s[m0.end():][:70]
         # "Chuck P, while I'm 0-2": Picky's own record, not the member's
