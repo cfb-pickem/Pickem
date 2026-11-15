@@ -31,11 +31,11 @@ def test_body_bait_needs_no_roast_word():
 
 def test_leader_miss_rule_follows_results():
     # Chuck: Wake Forest final WIN, Oregon State not started -> no misses this week
-    assert "NO misses this week" in chat.leader_miss_rule(ctx(), "Chuck P")
+    assert "NO misses THIS WEEK" in chat.leader_miss_rule(ctx(), "Chuck P")
     lost = dict(G1, winner="SMU")
     assert "never flipped" in chat.leader_miss_rule(ctx(games=(lost, G2)), "Chuck P")
     n = chat.leader_note(ctx(you=("Clam", 7)), "How's Chuck P doing?")
-    assert "NO misses this week" in n and "deadpan" in n, n
+    assert "NO misses THIS WEEK" in n and "deadpan" in n, n
 
 
 def test_hostility_detects_insults_at_picky_only():
@@ -204,6 +204,60 @@ def test_tie_cascade():
             assert chat.tie_note(ctx(), "How are ties in the final standings broken?") == ""
         finally:
             chat.LORE_FILE = real
+
+
+def test_you_block_only_when_about_the_caller():
+    c = ctx()
+    assert "THE USER is the team" not in chat._system_tail(c)
+    assert chat.wants_you_block(c, "How am I doing?", [])
+    assert chat.wants_you_block(c, "Who's winning the pool?", [])
+    assert not chat.wants_you_block(c, "Roast TG", [])
+    assert not chat.wants_you_block(c, "Who's the best college QB ever?", [])
+    assert chat.wants_you_block(c, "Roast TG", [{"role": "user", "content": "you suck picky"}])  # escalated
+    assert "THE USER is the team" in chat._system_tail(dict(c, mode="picks"))
+
+
+def test_mascot_filter_and_no_blurb_quotes():
+    import re as _re
+    real = chat._MASCOT_RE
+    chat._MASCOT_RE = _re.compile(r"\b[Tt]he (Beavers|Ducks|Rebels|Broncos)\b")
+    try:
+        assert not chat.sentence_ok("Oregon State covered since the Rebels lost by five.", set())
+        assert chat.sentence_ok("Oregon State covered by losing by five.", set())
+        assert chat.sentence_ok("The Fighting Irish are back.", set())
+    finally:
+        chat._MASCOT_RE = real
+    pp = {"name": "Picky", "season": (0, 1), "last_week": None, "this_week": [
+        {"pick": "Boise State", "away": "Oregon State", "home": "Boise State", "line": -13.5, "winner": "Oregon State",
+         "status": "final", "why": "market value", "blurb": "faceless doom losers", "tiebreaker": False}]}
+    c = dict(ctx(), picky_player=pp)
+    try:
+        b = chat.picky_player_block(c)
+    except Exception:  # noqa: BLE001 - shape differs: the summarizer owns it
+        b = ""
+    assert "faceless doom" not in b
+
+
+def test_required_fact_and_user_record_guard():
+    c = ctx(you=("Clam", 7))
+    chk, fb = chat.required_fact(c, "How far behind first am I?")
+    assert not chk("You're way back, pal.") and chk("You're 4 points back.") and "4 points behind" in fb
+    chk, fb = chat.required_fact(c, "Who's in first place?")
+    assert chk("Chuck P is up top.") and not chk("Someone's up top.") and "Chuck P" in fb
+    assert chat.required_fact(c, "Who's winning this week?") is None
+    import test_results as tr
+    p = chat.check_answer("You're still chasing that elusive 5-0 record.", tr.facts())
+    assert any("5-0" in x for x in p), p
+    assert not chat.check_answer("You're 2-0 on decided games.", tr.facts())
+
+
+def test_record_check_and_lore_season_filter():
+    c = ctx()
+    ok = chat.record_check(c, "Should I change any of those")
+    assert not ok("You're 34-18 overall now.") and ok("You're 27-18 overall.")
+    assert not ok("Ackbar is 20-19 on the season.") and ok("Ackbar is 26-19 on the season.")
+    op = chat.record_check(c, "What do you think of Marcus Freeman?")
+    assert not op("He's 1-3 at home.") and op("They lost 26-21 to Marshall.")
 
 
 def test_standings_answer():

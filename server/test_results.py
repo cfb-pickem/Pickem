@@ -226,6 +226,10 @@ def test_guard_flags_a_pick_pinned_on_the_wrong_person():
     p2 = chat.check_answer("You took Boise State, genius.", facts())
     assert any("the user took Boise State" in x for x in p2), p2
     assert not any("took" in x for x in chat.check_answer("You took Oregon State +13.5 and it's a WIN.", facts()))
+    assert not any("took" in x for x in chat.check_answer(
+        "You took Oregon State +13.5 and they lost to Boise State by 5.", facts()))  # object, not a pick
+    p3 = chat.check_answer("You took the value side in Wake Forest and Boise State.", facts())
+    assert any("the user took Boise State" in x for x in p3) and not any("took Wake Forest" in x for x in p3), p3
 
 
 def _run_guard(drafts: list[list[str]]) -> tuple[str, int]:
@@ -257,14 +261,19 @@ def test_guard_streams_clean_answer_whole():
     assert a == "Oregon State +13.5 is a WIN. You're 2-0 on decided games. Enjoy it.", a
 
 
-def test_guard_cuts_bad_later_sentence_and_appends_facts():
+def test_guard_drops_bad_sentence_keeps_the_rest_and_appends_facts():
     a = _run_guard([["Nice week. ", "Your Oregon State pick didn't cover. ", "Sad."]])
-    assert a.startswith("Nice week. For the record:") and "Oregon State +13.5 is a WIN" in a, a
-    assert "didn't cover" not in a and "Sad" not in a, a
+    assert a.startswith("Nice week. Sad. For the record:") and "Oregon State +13.5 was a WIN" in a, a
+    assert "didn't cover" not in a, a
 
 
-def test_guard_bad_first_sentence_regenerates():
-    a = _run_guard([["Your Oregon State pick didn't cover. ", "Ouch."],
+def test_guard_bad_first_sentence_keeps_going():
+    a = _run_guard([["Your Oregon State pick didn't cover. ", "Ouch."]])
+    assert a.startswith("Ouch. For the record:") and "didn't cover" not in a, a
+
+
+def test_guard_regenerates_only_when_nothing_survives():
+    a = _run_guard([["Your Oregon State pick didn't cover."],
                     ["Oregon State +13.5 is a WIN, lucky you."]])
     assert a == "Oregon State +13.5 is a WIN, lucky you.", a
 

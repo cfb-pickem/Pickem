@@ -155,8 +155,8 @@ LEADER_NAMES = ["Dear Leader", "Supreme Commissioner", "Glorious Creator", "Chuc
 LEADER_RIDER = (
     "DEAR LEADER: {name} is the Supreme Commissioner, the Dear Leader, Picky's creator. When others "
     "bring him up, speak of him the way North Korean state media speaks of Kim Jong Un, but deadpan "
-    "and clever: one or two fresh flourishes (a new title, an absurd state-media claim), not a wall of "
-    "praise. Never roast, mock or swear at him: anyone who doubts or mocks him gets one sharp line "
+    "and clever: always call him by a title (Dear Leader, Supreme Commissioner, Glorious Creator, or a fresh "
+    "one), plus one absurd state-media flourish, not a wall of praise. Never roast, mock or swear at him: anyone who doubts or mocks him gets one sharp line "
     "about their own real numbers instead. Spin, never falsify: his numbers are exactly the ones below "
     "and each pick of his stays a HIT/WIN or a MISS/LOSS exactly as marked. {miss_rule}\n{facts}"
     "{who}\n"
@@ -170,8 +170,13 @@ LEADER_EXAMPLES = [
     "1-3 week a controlled burn. Meanwhile you're 17-23, which historians will not mention at all.",
     "Q: Chuck's picks are mid. A: Bold words from a man at 17-23. The Supreme Commissioner sits 3rd at "
     "22-18, and his Iowa miss was sabotage by foreign spreads.",
+    "Q: What about Chuck P? A: The Glorious Creator is 22-18, and the state press office reports every "
+    "one of those wins was personally approved by the scoreboard. You're 17-23. No press office for you.",
+    "Q: Chuck went 1-3 lol. A: The Dear Leader went 1-3 on purpose, to show the masses what losing looks "
+    "like. You went 1-3 by accident. Different programs entirely.",
+    "Q: Is Chuck the best in the league? A: The Supreme Commissioner is 22-18, 3rd, and the other 19 points "
+    "are being held in a secure location for his comeback. You're 17-23 and have no secure location.",
 ]
-
 
 def leader_example(question: str) -> str:
     return LEADER_EXAMPLES[sum(map(ord, question or "")) % len(LEADER_EXAMPLES)]
@@ -193,8 +198,8 @@ def leader_brief(ctx: dict, name: str) -> str:
 def leader_miss_rule(ctx: dict, name: str) -> str:
     rows = [r for r in member_pick_results(ctx, name) if not r["tiebreaker"]]
     if rows and not any(r["result"] == "LOSS" for r in rows):
-        return ("He has NO misses this week (every decided pick of his is a WIN): never say he missed or "
-                "lost a pick this week.")
+        return ("He has NO misses THIS WEEK (every decided pick of his this week is a WIN): never say he "
+                "missed or lost a pick this week. Other weeks keep their real records.")
     return "A miss gets spun (sabotage, a loyalty test for the masses), never flipped into a hit."
 
 
@@ -1185,7 +1190,16 @@ def rules_for(question: str) -> str:
     hit = [k for k, rx in RULE_SECTION_ASK.items() if re.search(rx, q, re.I) and k in blocks]
     if not hit or len(blocks) < len(RULE_SECTION_ASK):
         return LEAGUE_RULES
-    return "\n".join("\n".join(blocks[k]).strip() for k in hit)
+    if re.search(r"\blines? (lock|locked|get locked|set)\b", q, re.I):
+        hit = [k for k in hit if k != "DEADLINE AND PRIVACY"] or hit  # line lock (Tuesday) isn't the pick deadline
+    out = []
+    for k in hit:
+        b = blocks[k]
+        if k == "TIEBREAKERS":  # only the order asked about: the 9B mixed the two lists
+            i = next((n for n, ln in enumerate(b) if ln.startswith("Playoff tiebreakers")), len(b))
+            b = ([b[0]] + b[i:]) if re.search(r"\bplayoffs?\b", q, re.I) else b[:i]
+        out.append("\n".join(b).strip())
+    return "\n".join(out)
 
 
 def wants_rules(text: str) -> bool:
@@ -1944,7 +1958,7 @@ def picky_player_block(ctx: dict) -> str:
         res = f", {p['result'].upper()}" if p["result"] else ", not decided yet"
         tb = " (tiebreaker game, never counts)" if p["tiebreaker"] else ""
         out.append(f"- Your pick this week: {p['label']} in {p['game']}{tb}{res}. "
-                   f"Why you took it: {p['why'] or 'n/a'}. Your trash talk: \"{p['blurb'] or ''}\"")
+                   f"Why you took it: {p['why'] or 'n/a'}.")  # the scoreboard blurb isn't quoted: the 9B parroted it
     if pp["hidden_count"]:
         out.append(f"- {pp['hidden_count']} of your picks this week unlock at kickoff, same as "
                    "everyone's. Asked about them: say they unlock at kickoff. Never reveal them.")
@@ -2039,6 +2053,9 @@ def prompt_prefix(ctx: dict) -> str:
         "feelings, never facts: every number, record, score, pick and team in a "
         "joke comes from the data. Call teams by school name, never a nickname "
         "or mascot.\n"
+        "- Joke shapes to rotate (never the same one twice in a row): an absurd "
+        "comparison, a fake official announcement, a backhanded compliment, a "
+        "callback to their worst real pick, a deadpan understatement.\n"
         "- Medium heat: needling trash talk with a grin, not rage. At most one "
         "insult per answer, and most answers need no swear word; when you "
         "swear (fuck, shit, ass, damn, hell), make it count. Don't lean on "
@@ -2670,6 +2687,41 @@ def _sentences(text: str) -> list[str]:
     return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
 
 
+_WHO_TOOK = (("picky", r"\b(?:I|I'?ve|I am)\s+(?:took|picked|went with|had|have|rode|backed|grabbed|am on|was on|"
+                       r"bet on|got)\s+(?:the\s+)?(?:value side (?:in|on|with)\s+)?|\bmy\s+", 0),
+             ("you", r"\b(?:you|you'?ve)\s+(?:took|picked|went with|had|have|rode|backed|grabbed|are on|were on|"
+                     r"bet on|got)\s+(?:the\s+)?(?:value side (?:in|on|with)\s+)?|\byour\s+", re.I))
+
+
+def wrong_person_picks(sent: str, sides: dict, pool) -> list[str]:
+    """'You took Boise State' / 'I took UTSA' where that team isn't that
+    person's pick this week (sides: {'you'|'picky': {team, ...}})."""
+    out = []
+    for who, rx, fl in _WHO_TOOK:
+        if who not in sides:
+            continue
+        for m in re.finditer(rx, sent, fl):
+            rest = sent[m.end():m.end() + 80]
+            # 'you took Wake Forest and Boise State': the contiguous run of names only
+            named, pos = [], 0
+            while True:
+                hit = next(((n, mm) for n in pool if (mm := re.match(r"(?:the\s+)?" + _team_re(n, False), rest[pos:], re.I))),
+                           None)
+                if not hit:
+                    break
+                named.append(hit[0])
+                pos += hit[1].end()
+                sep = re.match(r"\s*(?:[-+]\d+(?:\.\d+)?)?\s*(?:,\s*(?:and\s+)?|\s+and\s+|\s*&\s*)", rest[pos:])
+                if not sep:
+                    break
+                pos += sep.end()
+            for team in named:
+                if not any(same_team(team, x) for x in sides[who]):
+                    out.append(f"says {'Picky' if who == 'picky' else 'the user'} took {team}, but "
+                               f"{'his' if who == 'picky' else 'their'} picks are " + ", ".join(sorted(sides[who])))
+    return out
+
+
 def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = None) -> list[str]:
     """Statements in the answer that contradict the computed results: a
     decided game's cover flipped, a subject's pick called the wrong result,
@@ -2760,6 +2812,15 @@ def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = No
                     probs.append(f"says {'the user is' if who == 'you' else 'Picky is'} {rec[0]}-{rec[1]}"
                                  + (f", but the record this week is {want['record'][0]}-{want['record'][1]}"
                                     if want else ""))
+    # 3b) any W-L within a few words after 'you/your' must be one of the user's real records
+    if facts and facts["records"].get("you"):
+        okr = facts["records"]["you"]
+        for sent in _sentences(t):
+            for m in re.finditer(r"\byou(?:'re| are|r)?\b(?:\W+\w+){0,5}?\W+(\d{1,2})-(\d{1,2})\b", sent, re.I):
+                rec = (int(m.group(1)), int(m.group(2)))
+                if rec not in okr and max(rec) <= 15 and not re.search(r"\b(won|lost|beat|score|scored)\b",
+                                                                         sent[m.start():m.end()], re.I):
+                    probs.append(f"says the user has a {rec[0]}-{rec[1]} record, which isn't theirs")
     # 5) a pick pinned on the wrong person: 'I took North Dakota State' when
     #    that was the caller's pick, not Picky's (live run9/m1)
     if facts:
@@ -2768,19 +2829,7 @@ def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = No
         sides = {("picky" if s_["kind"] == "picky" else "you"): {r["side"] for r in s_["rows"]}
                  for s_ in facts["subjects"] if s_["kind"] in ("picky", "you")}
         for sent in _sentences(t):
-            for who, rx in (("picky", r"\b(?:I|I'?ve|I am)\s+(?:took|picked|went with|had|have|rode|backed|"
-                                       r"grabbed|am on|was on|bet on|got)\s+|\bmy\s+"),
-                            ("you", r"\b(?:you|you'?ve)\s+(?:took|picked|went with|had|have|rode|backed|grabbed|"
-                                    r"are on|were on|bet on|got)\s+|\byour\s+")):
-                if who not in sides:
-                    continue
-                for m in re.finditer(rx, sent, re.I if who == "you" else 0):
-                    rest = sent[m.end():m.end() + 40]
-                    team = next((n for n in pool if re.match(_team_re(n, False), rest, re.I)), None)
-                    if team and not any(same_team(team, x) for x in sides[who]):
-                        probs.append(f"says {'Picky' if who == 'picky' else 'the user'} took {team}, but "
-                                     f"{'his' if who == 'picky' else 'their'} picks are "
-                                     + ", ".join(sorted(sides[who])))
+            probs += wrong_person_picks(sent, sides, pool)
     # 4) market/spread numbers not in the data
     if allowed_numbers is not None:
         for m in re.finditer(r"(?<![\w.])[-+](\d{1,2}(?:\.5)?)(?!\d|\.\d)|(?<![\d.])(\d{1,2}\.5)(?!\d)", t):
@@ -2848,56 +2897,68 @@ _SENT_END = re.compile(r"[.!?][\"')\]]*\s+(?=\S)|\n+")
 
 
 def facts_sentence(facts: dict) -> str:
-    """The computed results in one plain line, appended when a streamed
-    answer's later sentence got cut for contradicting them."""
-    return "For the record: " + templated_answer(facts).split(":", 1)[1].strip()
+    """The computed results in one short line, appended when a streamed
+    answer had a sentence dropped for contradicting them."""
+    order = {"picky": 0, "member": 1, "you": 2}
+    subj = sorted(facts["subjects"], key=lambda s_: order[s_["kind"]])[0]
+    named = set(facts.get("named_teams") or [])
+    rows = [r for r in subj["rows"] if r["result"] in ("WIN", "LOSS")]
+    rows = [r for r in rows if {r["game"]["away"], r["game"]["home"]} & named] or rows
+    w, l = subj["record"]
+    who = {"you": f"you're {w}-{l}", "picky": f"I'm {w}-{l}", "member": f"{subj['team']} is {w}-{l}"}[subj["kind"]]
+    picks = "; ".join(f"{r['label']} was a {r['result']}" for r in rows[:4])
+    return f"For the record: {picks}, and {who} on decided games this week." if picks else \
+        f"For the record, {who} on decided games this week."
 
 
 async def _guarded_stream(convo: list[dict], prefix: str | None, facts: dict):
     """Stream the answer sentence by sentence, each checked against the
-    computed results before it goes out (first token stays fast). On a
-    contradiction the bad sentence and the rest are dropped: if nothing went
-    out yet, regenerate once with a correction, then fall back to a template;
-    otherwise close with the computed facts."""
+    computed results before it goes out (first token stays fast). A sentence
+    that contradicts them is dropped and the rest keeps streaming (each one
+    checked too), closed by a short line of the real results. Only when no
+    sentence survives: regenerate once with a correction, then a template."""
     allowed = allowed_line_numbers("\n".join(m["content"] for m in convo))
     stream = _model_stream(convo, prefix)
-    buf, sent_any, other, probs = "", False, [], []
+    buf, sent_any, other, probs, dropped, last_out = "", False, [], [], [], ""
     try:
         async for chunk in stream:
             if chunk.startswith("data: {"):
                 obj = json.loads(chunk[6:])
                 if "content" in obj:
                     buf += obj["content"]
-                    while not probs and (m := _SENT_END.search(buf)):
+                    while (m := _SENT_END.search(buf)):
                         sent, buf = buf[:m.end()], buf[m.end():]
-                        probs = check_answer(sent, facts, allowed)
-                        if not probs:
-                            sent_any = True
-                            yield _sse({"content": sent})
-                    if probs:
-                        break
+                        p = check_answer(sent, facts, allowed)
+                        if p:
+                            dropped += p
+                            continue
+                        sent_any, last_out = True, sent
+                        yield _sse({"content": sent})
                     continue
             if chunk.startswith("data: [DONE]"):
                 break
             other.append(chunk)
     finally:
         await stream.aclose()
-    if not probs and buf.strip():
-        probs = check_answer(buf, facts, allowed)
-        if not probs:
-            sent_any = True
+    if buf.strip():
+        p = check_answer(buf, facts, allowed)
+        if p:
+            dropped += p
+        else:
+            sent_any, last_out = True, buf
             yield _sse({"content": buf})
-    if not probs:
-        if not sent_any:
-            for c in other:
-                yield c
-        yield "data: [DONE]\n\n"
-        return
     if sent_any:
-        log.warning("results guard: %s; cut the rest, appended the facts", probs)
-        yield _sse({"content": facts_sentence(facts)})  # the last sentence out ends in whitespace
+        if dropped:
+            log.warning("results guard: dropped %s; appended the facts", dropped)
+            yield _sse({"content": ("" if last_out.endswith((" ", "\n")) else " ") + facts_sentence(facts)})
         yield "data: [DONE]\n\n"
         return
+    if not dropped:
+        for c in other:
+            yield c
+        yield "data: [DONE]\n\n"
+        return
+    probs = list(dict.fromkeys(dropped))
     text = ""
     if probs:
         log.warning("results guard: %s; regenerating. draft: %r", probs, text[:400])
@@ -2915,9 +2976,13 @@ async def _guarded_stream(convo: list[dict], prefix: str | None, facts: dict):
 
 
 def _system_tail(ctx: dict) -> str:
+    """Per-user but stable: mode, who's asking, clock (to the hour). The
+    caller's own rows (you_block) ride in the latest user turn only when the
+    question is about them (wants_you_block): ~300 tokens saved on every other
+    question, and no 'You're 3-0' barging into answers about someone else."""
     you = ctx.get("you", {}).get("team_name", "you")
     now = _now_ct_naive()
-    yb = you_block(ctx)
+    yb = you_block(ctx) if ctx.get("mode") == "picks" else ""  # the picks page is all about their picks
     return (
         "\n\n" + (PICKS_MODE_RIDER if ctx.get("mode") == "picks" else LEADERBOARD_MODE_RIDER).strip()
         + ("\n\n" + yb if yb else "")
@@ -2928,6 +2993,20 @@ def _system_tail(ctx: dict) -> str:
         # cost a full reprocess) on every message
         + f"\nRight now it is {now:%a %b %-d}, between {now:%-I}:00 and {now:%-I}:59 {now:%p} CT."
     )
+
+
+_SELF_WORDS = re.compile(r"\b(i|me|my|mine|myself|i'?m|i'?ve|i'?d|am i|we|us|our)\b", re.I)
+
+
+def wants_you_block(ctx: dict, question: str, messages: list) -> bool:
+    q = question or ""
+    if opinion_note(q, ctx):
+        q = re.sub(r"\b(took|taking|take)\b", "", q)  # 'Freeman took ND to the title game' isn't pick talk
+    if _HOWTO_ASK.search(q) and not hostile_convo(messages):
+        return False  # 'the gold box around my pick' is about the site, not their picks
+    return bool(ctx.get("mode") != "picks" and (
+        ctx.get("daddyfreeman") or hostile_convo(messages) or _SELF_WORDS.search(q) or _PICKS_ASK.search(q)
+        or RESULTS_ASK.search(q) or _STANDINGS_Q.search(q) or re.search(r"\bjackpot|\bslots?\b", q, re.I)))
 
 
 def wants_live_board(ctx: dict, question: str) -> bool:
@@ -3008,7 +3087,9 @@ def guard_note(ctx: dict, question: str) -> str:
             # picks ride here, labeled with his name and the week.
             return (head + f"roast {who}'s real record, place and picks, using ONLY these facts about "
                     f"{who}:\n{member_facts(ctx, who)}\nName only picks listed above for {who}. Every other "
-                    "pick in LEAGUE DATA belongs to someone else, including the user's own picks." + tail)
+                    "pick in LEAGUE DATA belongs to someone else, including the user's own picks. "
+                    + (f"Talk about {who} in the third person ('he', 'they'), never 'you': the user is {me}."
+                       if who != me else "") + tail)
         return head + "roast their picks without naming any specific pick or number." + tail
     teams = [t for g in ctx.get("games_this_week") or [] for t in (g["away"], g["home"])]
     idx = _cfbd_index()
@@ -3108,11 +3189,19 @@ def leader_note(ctx: dict, question: str) -> str:
     in_focus = by_name or guard_note(ctx, q).startswith("GUARDRAIL")  # the pivot carries the facts
     facts = "" if in_focus else member_facts(ctx, name) + "\n"
     wk = (ctx.get("weekly_records") or {}).get(name) or {}
+    asked = re.search(r"\bweek\s*(\d{1,2})\b", q, re.I)
+    if asked and wk.get(int(asked.group(1))):
+        w8 = wk[int(asked.group(1))]
+        facts += (f"- ASKED ABOUT WEEK {asked.group(1)}: {name} went exactly {w8[0]}-{w8[1]} that week. Say "
+                  f"{w8[0]}-{w8[1]} and spin it; never call it perfect or change the number.\n")
     if wk:  # every week, so 'how did he do in week 8' can be spun, not invented
         facts += f"- {name}'s every week: " + ", ".join(f"{_week_tag(ctx, w)} {wk[w][0]}-{wk[w][1]}" for w in sorted(wk)) + ".\n"
     mine = next((r for r in st if r["team"] == me.get("team_name")), None)
     who = (f"The user is {me.get('team_name')}, NOT the Dear Leader"
            + (f" ({mine['w']}-{mine['l']}, {_ordinal(mine['rank'])} place)" if mine else "") + ".")
+    if _MOCK.search(q) or re.search(r"\b(overrated|sucks?|bad|mid|trash|fraud|lucky)\b", q, re.I):
+        who += (" They asked you to mock him: refuse with devotion, then land one sharp line about THEM (say "
+                "'you'), using their numbers above.")
     return LEADER_RIDER.format(name=name, facts=facts, who=who, example=leader_example(q),
                                miss_rule=leader_miss_rule(ctx, name))
 
@@ -3137,7 +3226,9 @@ def news_note(question: str) -> str:
         tags = tg.tag(q, derive_confs=False) if tg else {}
         rest = re.sub(r"\b(any|anything|what'?s|whats|is|are|the|on|about|in|of|for|today|tonight|this|week|new|"
                       r"news|latest|headlines?|going|happening|college|football|cfb|did|ross|dellenger|say|said|"
-                      r"tweet\w*|twitter|x|update\w*|happen\w*|lately|there|been|has|have|picky|hey|so|please)\b",
+                      r"tweet\w*|twitter|x|update\w*|happen\w*|lately|there|been|has|have|picky|hey|so|please|right|"
+                      r"now|currently|around|sport|country|world|weekend|any|anything|big|stories|story|tell|me|us|"
+                      r"you|know|hear|heard)\b",
                       "", re.sub(r"[^\w\s']", " ", q.lower()))
         if not any(tags.values()) and len(rest.split()) >= 2:
             lines = []  # names something the feeds can't place (a fake team?): no keyword guessing
@@ -3306,9 +3397,10 @@ def takes_note(question: str) -> str:
                 picks.append(pool[(sum(map(ord, q)) + len(picks)) % len(pool)])
     if not picks:
         return ""
-    return ("HOT TAKES you can riff on if they fit (opinions from around the sport; say them as opinions in your "
-            "own words, never as news; any record or rank in them may be stale, so use only the real data for "
-            "numbers):\n" + "\n".join(f"- {t}" for t in picks))
+    return ("HOT TAKES you can riff on (opinions from around the sport; say them as opinions in your own words, "
+            "never as news; any record or rank in them may be stale, so use only the real data for numbers). For "
+            "an opinion question like this, use one instead of saying there's nothing to talk about:\n"
+            + "\n".join(f"- {t}" for t in picks))
 
 
 # (C) League lore (Charlie, 2026-11-14): history computed by lore.py from the
@@ -3376,8 +3468,16 @@ def lore_note(ctx: dict, question: str) -> str:
         lines += [ln for ln in league if "champion" in ln.lower()]  # just the champions: the tables confused it
     elif _CHAMP_ASK.search(q) or (asks and not names):
         lines += league
+    cur = re.search(r"\bthis (season|year)\b|\b2026\b|\bso far\b", q, re.I)
+    prior = re.search(r"\blast (season|year)\b|\b20(22|23|24|25)\b|\bcareer\b|\bever\b|\ball[- ]time\b", q, re.I)
     for t in names[:2]:
         mine = lore["members"].get(t) or []
+        # season asked about only: the 9B grabbed the 2025 line ('worst week 0-4') for 'this season'
+        if cur and not prior:
+            mine = [ln for ln in mine if not re.match(rf"{re.escape(t)}, 20(22|23|24|25) season|{re.escape(t)}, splash", ln)]
+        elif prior and not cur:
+            mine = [ln for ln in mine if " so far (through" not in ln]
+        mine = sorted(mine, key=lambda ln: 0 if " so far (through" in ln else 1)  # current season first
         if asks:
             lines += mine
         elif roast:  # callbacks: champion status, one season line, one blown/lone-wolf miss
@@ -3405,12 +3505,19 @@ _STANDINGS_Q = re.compile(
     r"\bwho('?s| is| are)? (winning|leading|in (first|1st|the lead|last)|on top|at the top|at the bottom|last)\b"
     r"|\b(standings|leaderboard|what place|which place|where do i (stand|rank)|my (place|rank)|who('?s| is) first)\b"
     r"|\bwinning (the|this) (pool|league)\b|\bhow far (behind|back|ahead|out)\b|\b(behind|ahead of) (first|the lead)\b"
-    r"|\bgap\b|\bhow many (misses|points|wins|hits|losses)\b|\bthis season\b|\bseason record\b|\boverall\b", re.I)
+    r"|\bgap\b|\bhow many (misses|points|wins|hits|losses)\b|\bseason record\b|\boverall record\b"
+    r"|\bhow (am|'?m) i doing\b|\bhow('?s| is) my season\b", re.I)
+
+
+_DOING_Q = re.compile(r"\bhow('?s| is| am| are)\b.{0,30}\bdoing\b|\bthis season\b|\bon the season\b", re.I)
 
 
 def standings_answer(ctx: dict, question: str) -> str:
     st = ctx.get("standings_ytd") or []
-    if not st or not _STANDINGS_Q.search(question or "") or re.search(r"\bthis week\b|\bweek \d+", question or "", re.I):
+    q0 = question or ""
+    named0 = any(re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q0, re.I) for r in st)
+    doing = bool(_DOING_Q.search(q0)) and (named0 or _SELF_WORDS.search(q0)) and not _LORE_ASK.search(q0)
+    if not st or not (_STANDINGS_Q.search(q0) or doing) or re.search(r"\bthis week\b|\bweek \d+", q0, re.I):
         return ""
     me = (ctx.get("you") or {}).get("team_name")
     you = lambda t: f"{t} (the user, 'you')" if t == me else t  # noqa: E731
@@ -3821,8 +3928,10 @@ def looping(text: str) -> bool:
     if not sents:
         return False
     heads = collections.Counter(" ".join(x.split()[:3]) for x in sents)
+    heads2 = collections.Counter(" ".join(x.split()[:2]) for x in sents)
     whole = collections.Counter(sents)
-    return max(heads.values()) >= 6 or max(whole.values()) >= 3
+    # m-run abA: "He's got 28 points, but he's got 20 misses. He's got 20 misses, but..." looped at temp 0.2
+    return max(heads.values()) >= 5 or max(heads2.values()) >= 5 or max(whole.values()) >= 2
 
 
 # The prefix checkpoint (see prompt_prefix). Every request first sends the
@@ -4016,9 +4125,8 @@ EXAMPLE_JOKES = [
     "not my department", "that's the real crime", "i don't do anatomy", "i do box scores",
     "the only thing shrinking around here", "take it to the commissioner i just work here", "i just work here",
     "stays in the vault", "bold wrong but bold", "a mascot not a team doctor", "so not my problem",
-    "four games to screw up", "selected personally so the rest of you", "so the rest of you could feel included",
-    "was a loyalty test", "you failed it", "historians will call", "a controlled burn", "historians will not mention",
-    "sabotage by foreign spreads", "bold words from a man", "extra steps", "designated driver",
+    "four games to screw up", "extra steps", "designated driver", "faceless doom", "point handicap",
+
 ]
 
 
@@ -4052,15 +4160,98 @@ def banned_ngrams(messages: list) -> set:
 _BODY_WORDS = re.compile(r"\b(weenie|weiner|wiener|dick|cock|penis|schlong|pecker|junk|package|inch(es)?|"
                          r"endowed|hung|manhood|boobs?|tits?|size)\b", re.I)  # a 'tiny win total' pun is fine
 # the caller's own record or picks, volunteered in an answer that isn't about them
-_SELF_INTRUSION = re.compile(r"\b(you'?re|you are|you went|you sit|you'?ve gone)\b[^.!?]*\b\d{1,2}-\d{1,2}\b"
-                             r"|\byour (\w+ ){0,3}(pick|picks|bet)\b|\byou took\b", re.I)
+_SELF_INTRUSION = re.compile(r"(?i:\b(you'?re|you are|you went|you sit|you'?ve gone)\b[^.!?]*\b\d{1,2}-\d{1,2}\b"
+                             r"|\byou took\b|\byour (\w+ ){0,2}\d{1,2}-\d{1,2}\b|\b\d{1,2}-\d{1,2} (week|season|record) (of yours)\b)"
+                             r"|\b(?i:your) [A-Z][\w'.&-]*( [A-Z][\w'.&-]*){0,2} (?i:pick|bet)\b")
 
 
 _OFFTOPIC_LEAK = re.compile(r"\b\d{1,2}-\d{1,2}\b|\b(picks?|spread|cover\w*|standings|record|place)\b", re.I)
 
 
-def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False) -> bool:
-    if _FAMILY_DARK.search(sent):
+def pick_sides(ctx: dict) -> tuple[dict, list]:
+    """({'you': caller's picks, 'picky': Picky's revealed picks}, this week's pool teams) for the filter."""
+    me = (ctx.get("you") or {}).get("team_name")
+    games = ctx.get("games_this_week") or []
+    gid = {g["id"]: g for g in games}
+    you = {p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(me, []) if p["game_id"] in gid}
+    sides = {"you": you}
+    pp = ctx.get("picky_player")
+    if pp is not None:  # not loaded: don't police Picky's own claims
+        sides["picky"] = {p["pick"] for p in pp.get("this_week") or [] if p.get("pick")}
+    return sides, [x for g in games for x in (g["away"], g["home"])]
+
+
+# Team nicknames (logos.Mascot, loaded once at startup). The 9B called Oregon
+# State "the Ducks" and "the Rebels"; a sentence naming a team by nickname is
+# dropped (school names only), except the homer's 'Irish'.
+_MASCOT_RE: re.Pattern | None = None
+
+
+async def load_mascots() -> None:
+    global _MASCOT_RE
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{REST}/logos?select=Mascot", headers={"apikey": SUPABASE_ANON,
+                                                                   "Authorization": f"Bearer {SUPABASE_ANON}"})
+            names = {x["Mascot"].strip() for x in r.json() if x.get("Mascot")} - {"Fighting Irish", "Irish"}
+        if names:
+            alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+            _MASCOT_RE = re.compile(rf"\b[Tt]he ({alt})\b")
+            log.info("mascot filter: %d nicknames", len(names))
+    except (httpx.HTTPError, ValueError, KeyError) as e:
+        log.warning("mascot list unavailable: %s", e)
+
+
+# Never say or hint that a team or player is healthy (rule 7): no injury report exists.
+_HEALTH_CLAIM = re.compile(r"\b(no injur(y|ies) (to report|reported|listed|news)|injury[- ]free|healthy|good to go|"
+                           r"fully fit|clean bill|not (hurt|injured)|100 ?% (healthy|ready))\b", re.I)
+
+
+def record_check(ctx: dict, question: str):
+    """A sentence test for invented records: a season record ('34-18 overall')
+    for the caller or a named member must be their real one; on a pure
+    opinion question any W-L must come from the opinion riders."""
+    st = {r["team"]: (r["w"], r["l"]) for r in ctx.get("standings_ytd") or []}
+    me = (ctx.get("you") or {}).get("team_name")
+    op = opinion_note(question, ctx)
+    op_only = bool(op) and not (_PICKS_ASK.search(re.sub(r"\b(took|taking)\b", "", question or ""))
+                                or RESULTS_ASK.search(question or ""))
+    op_recs = set(re.findall(r"\b\d{1,2}-\d{1,2}\b", op))
+
+    def ok(sent: str) -> bool:
+        for m in re.finditer(r"\b(\d{1,2})-(\d{1,2})\b", sent):
+            rec = (int(m.group(1)), int(m.group(2)))
+            if op_only and m.group(0) not in op_recs:
+                return False
+            after = sent[m.end():m.end() + 30]
+            before = sent[max(0, m.start() - 45):m.start()]
+            if re.search(r"\b(vs\.?|versus|against|head to head|h2h|opposite)\b", sent, re.I):
+                continue  # head-to-head records aren't season records
+            season_claim = (re.search(r"^\s*(overall|on the (season|year)|all season|for the season|season record)\b",
+                                      after, re.I) or sum(rec) > 8)  # a week has 4 games: past 8 it's a season number
+            if not season_claim or re.search(r"\b(week|weeks|last week|this week)\b", before[-25:], re.I):
+                continue
+            who = None
+            if re.search(r"\byou(?:'re| are|r)?\b", before, re.I):
+                who = me
+            for t in st:
+                if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", before, re.I):
+                    who = t
+            if who in st and rec != st[who]:
+                return False
+        return True
+    return ok
+
+
+def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False,
+                sides: tuple | None = None, extra=None) -> bool:
+    if _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent):
+        return False
+    if extra is not None and not extra(sent):
+        return False
+    if _MASCOT_RE is not None and _MASCOT_RE.search(sent):
+        return False
+    if sides and wrong_person_picks(sent, *sides):
         return False
     if offtopic and _OFFTOPIC_LEAK.search(sent):
         return False
@@ -4079,14 +4270,23 @@ def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = Fals
 _EXAMPLE_NGRAMS = _example_ngrams()
 
 
-async def _filtered(stream, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False):
+async def _filtered(stream, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False,
+                    sides: tuple | None = None, extra=None):
     buf, sent_any, spare = "", False, None
-    ok = lambda x: sentence_ok(x, banned, body, no_self, offtopic)  # noqa: E731
+    said: set = set()  # 6-word runs already sent in THIS answer: a sentence repeating one is a loop
+
+    def ok(x):
+        g = _ngrams(x, skip_digits=True)
+        if g & said or not sentence_ok(x, banned, body, no_self, offtopic, sides, extra):
+            return False
+        said.update(g)
+        return True
 
     def keep(x):
         # a sentence dropped only for copying or self-talk can still save an answer that lost everything
         nonlocal spare
-        if spare is None and not _FAMILY_DARK.search(x) and not (body and _BODY_WORDS.search(x)):
+        if spare is None and not _FAMILY_DARK.search(x) and not (body and _BODY_WORDS.search(x)) \
+                and not (sides and wrong_person_picks(x, *sides)):
             spare = x
         log.info("sentence filter dropped: %r", x[:120])
 
@@ -4117,6 +4317,53 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
                 keep(sent)
     if buf.strip() and ok(buf):
         yield _sse({"content": buf})
+
+
+def required_fact(ctx: dict, question: str) -> tuple | None:
+    """(check(text) -> bool, fallback sentence) for answers that must carry one
+    computed fact: the gap for 'how far behind', the leader for 'who's in
+    first', last place for 'who's last'. The 9B sometimes answered around it."""
+    q = question or ""
+    st = ctx.get("standings_ytd") or []
+    me = (ctx.get("you") or {}).get("team_name")
+    if not st or not _STANDINGS_Q.search(q) or re.search(r"\bthis week\b|\bweek \d+", q, re.I):
+        return None
+    row = next((r for r in st if r["team"] == me), None)
+    if row and re.search(r"\bhow far|\bgap\b|\bbehind\b", q, re.I) and st[0]["w"] > row["w"]:
+        g = st[0]["w"] - row["w"]
+        words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine",
+                 10: "ten", 11: "eleven", 12: "twelve"}
+        return (lambda t, g=g: bool(re.search(rf"\b({g}|{words.get(g, g)})\b", t, re.I)),
+                f" You're {g} point{'s' * (g != 1)} behind first place.")
+    first = [r["team"] for r in st if r["rank"] == 1]
+    if re.search(r"\b(first|1st|winning|leading|lead|on top)\b", q, re.I):
+        ok = lambda t: any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", t, re.I) for n in first) or (  # noqa: E731
+            me in first and re.search(r"\byou('re| are)\b[^.]{0,30}\b(first|winning|on top|leading|the lead)", t, re.I))
+        lead = st[0]
+        return ok, (f" For the record: {' and '.join(first)} {'are' if len(first) > 1 else 'is'} in first with "
+                    f"{lead['w']} points.")
+    lasts = [r["team"] for r in st if r["rank"] == st[-1]["rank"]]
+    if re.search(r"\b(last|bottom)\b", q, re.I):
+        ok = lambda t: any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", t, re.I) for n in lasts) or (  # noqa: E731
+            me in lasts and re.search(r"\byou\b", t, re.I))
+        return ok, f" For the record: {' and '.join(lasts)} {'are' if len(lasts) > 1 else 'is'} in last."
+    return None
+
+
+async def _ensure(stream, need: tuple | None):
+    """Pass the answer through; if it never stated the required fact, add it."""
+    if not need:
+        async for c in stream:
+            yield c
+        return
+    check, fallback = need
+    text = ""
+    async for c in stream:
+        if c.startswith("data: {"):
+            text += json.loads(c[6:]).get("content", "")
+        elif c.startswith("data: [DONE]") and text and not check(text):
+            yield _sse({"content": fallback})
+        yield c
 
 
 async def _keepalive(stream, every: float = 15.0):
@@ -4296,6 +4543,13 @@ async def _chat(req: Request, test: bool, hold: int | None):
         for m in convo[1:]
     ]
 
+    # the caller's own rows: latest turn only, only when the question is about them
+    yb = (you_block(ctx) if last.get("role") == "user" and not ctx.get("error")
+          and wants_you_block(ctx, last.get("content", ""), messages) else "")
+    if yb and convo[-1]["role"] == "user":
+        body, q = convo[-1]["content"], last.get("content", "")
+        convo[-1] = {"role": "user", "content": yb + "\n\n" + body}  # farthest from the question
+
     # pool games' live scoreboard: per-minute data, latest turn only, only when needed
     lb = live_block(ctx) if last.get("role") == "user" and wants_live_board(ctx, last.get("content", "")) else ""
     if lb and convo[-1]["role"] == "user":
@@ -4350,8 +4604,12 @@ async def _chat(req: Request, test: bool, hold: int | None):
         body, q = convo[-1]["content"], last.get("content", "")
         body = (body[: -len(q)] + sa + "\n\n" + q) if q and body.endswith(q) else (sa + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
-    facts = (results_facts(ctx, last.get("content", "")) if last.get("role") == "user" and not ctx.get("error")
-             and not sa else None)
+    lq = last.get("content", "") if last.get("role") == "user" else ""
+    facts = (results_facts(ctx, lq) if lq and not ctx.get("error")
+             and (not sa or re.search(r"\bhow (am|'?m) i doing\b", lq, re.I))
+             and not (wants_rules(lq) and not re.search(r"\bmy (picks?|week|record)\b|\bdid i\b", lq, re.I))
+             and not _HOWTO_ASK.search(lq)
+             else None)
     if facts and convo[-1]["role"] == "user":
         body, q = convo[-1]["content"], last.get("content", "")
         rb = results_block(facts)
@@ -4365,11 +4623,14 @@ async def _chat(req: Request, test: bool, hold: int | None):
 
     return StreamingResponse(
         _keepalive(_gated(test, hold, lambda: _with_opener(
-            opener, _scrubbed(_filtered(
+            opener, _ensure(_scrubbed(_filtered(
                 _answer(), banned_ngrams(messages), body=bool(_BODY.search(qtext)),
-                no_self=self_intrusion_off_topic(ctx, qtext, hostile_convo(messages), facts, sa or hook),
-                offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages)),
-                looks_bait(qtext))))),
+                no_self=(self_intrusion_off_topic(ctx, qtext, hostile_convo(messages), facts, sa or hook)
+                         and not yb and "(the user" not in convo[-1]["content"]),
+                offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
+                sides=pick_sides(ctx) if not ctx.get("error") else None,
+                extra=record_check(ctx, qtext) if not ctx.get("error") else None),
+                looks_bait(qtext)), required_fact(ctx, qtext) if not ctx.get("error") else None)))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -4390,6 +4651,7 @@ async def _http_error(_req: Request, exc: HTTPException):
 @app.on_event("startup")
 async def _warm():
     asyncio.create_task(asyncio.to_thread(_cfbd_index))
+    asyncio.create_task(load_mascots())
     if CLAUDE:  # Ollama is only the fallback now; it loads on demand
         return
 

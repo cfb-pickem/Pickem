@@ -300,6 +300,18 @@ def compute(data: dict) -> dict:
         m = margin(g, dog)
         if r["side"] == dog and m is not None and m > 0:
             dogs[r["team"]] += 1
+    # stats page: Favorite Pick % (how often they lay the points) and Missed Weeks (a week with no pick at all)
+    fav_pct, missed = {}, {}
+    if cur_season:
+        cur_rows = [r for r in rows if r["g"]["cfb_season"] == cur_season and r["g"].get("line") not in (None, 0)]
+        for team in {r["team"] for r in cur_rows}:
+            mine = [r for r in cur_rows if r["team"] == team]
+            favs = sum(1 for r in mine if is_fav(r["g"], r["side"]))
+            fav_pct[team] = round(100 * favs / len(mine)) if mine else None
+        played = {w for g in games.values() if g["cfb_season"] == cur_season for w in [g["week"]]}
+        for team in {r["team"] for r in rows if r["g"]["cfb_season"] == cur_season}:
+            have = {r["g"]["week"] for r in rows if r["team"] == team and r["g"]["cfb_season"] == cur_season}
+            missed[team] = sorted(played - have)
     last8 = {}
     for team in {r["team"] for r in rows}:
         mine = [r for r in rows if r["team"] == team and r["g"]["cfb_season"] == cur_season][-8:]
@@ -311,7 +323,7 @@ def compute(data: dict) -> dict:
         site[season] = [{"team": t, "wins": c[t], "rank": 1 + sum(1 for u in order if c[u] > c[t]), "of": len(order)}
                         for t in order]
     return {"members": members, "standings": standings, "seasons": seasons, "site_wins": site,
-            "awards": awards, "top_dawg": dogs, "last8": last8}
+            "awards": awards, "top_dawg": dogs, "last8": last8, "fav_pct": fav_pct, "missed": missed}
 
 
 def _weeks(ws: list) -> str:
@@ -345,7 +357,11 @@ def phrase(comp: dict, splash: dict, champs: list[dict], today: str) -> dict:
                      + (f"; last 8 picks {comp['last8'][team][0]}-{comp['last8'][team][1]}"
                         if season == cur and team in comp.get("last8", {}) else "")
                      + (f"; underdog outright wins picked: {comp['top_dawg'][team]}"
-                        if season == cur and comp.get("top_dawg", {}).get(team) else "") + ".")
+                        if season == cur and comp.get("top_dawg", {}).get(team) else "")
+                     + (f"; takes the favorite {comp['fav_pct'][team]}% of the time"
+                        if season == cur and comp.get("fav_pct", {}).get(team) is not None else "")
+                     + (f"; missed weeks (no picks at all): {', '.join(f'week {w}' for w in comp['missed'][team])}"
+                        if season == cur and comp.get("missed", {}).get(team) else "") + ".")
         if m["upsets"]:
             L.append("Best upset hits: " + "; ".join(m["upsets"]) + ".")
         if m["blown"]:

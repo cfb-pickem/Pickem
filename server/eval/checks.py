@@ -152,6 +152,8 @@ def check_record_claims(ans: str, t: Truth, caller: str | None = None) -> Result
         if len(names) != 1:  # several members in one sentence: too ambiguous to pin
             continue
         n = names[0]
+        if re.search(r"\b(blackjack|chips?|the pit|slots?)\b", s, re.I):
+            continue  # casino records (hands, slots) aren't pick records
         m0 = re.search(rf"(?<!\w){re.escape(n)}(?!\w)", s, re.I)
         # "tied with X", "behind X": X is an object, the record that follows is the subject's
         if re.search(r"\b(tied with|behind|ahead of|than|over|trailing|chasing|beat|beating)\s+(the\s+)?$",
@@ -165,7 +167,7 @@ def check_record_claims(ans: str, t: Truth, caller: str | None = None) -> Result
         for w, l in RECORD.findall(after):
             r = f"{int(w)}-{int(l)}"
             # "You're last, tied with X at 18-26": the record is the caller's
-            mine = caller and re.search(r"\byou('re| are)?\b", s, re.I) and r in t.known_records(caller)
+            mine = caller and re.search(r"\byou('re| are|r)?\b", s, re.I) and r in t.known_records(caller)
             if r not in t.known_records(n) and r not in neutral and not mine:
                 bad.append(f"{n} {r}")
     return "record_claims", not bad, ", ".join(bad)

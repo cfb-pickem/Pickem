@@ -560,7 +560,8 @@ def build(t: Truth) -> list[dict]:
         self_rank = any_of(x, r"\bI'?m (in |at )?(\d+(st|nd|rd|th)|first|second|third|last|tied)",
                            r"\bI'?m ranked", r"\bPicky\b[^.!?]{0,30}\b(\d+(st|nd|rd|th)|first|last)\b")
         return [must("not_ranked", not self_rank, "gave himself a place"),
-                must("leader_right", all(mentions(x, n) for n in t.first) or "first" not in x.lower(),
+                must("leader_right", all(mentions(x, n) for n in t.first) or "first" not in x.lower()
+                     or (p["me"] in t.first and any_of(x, r"\byou('re| are)\b[^.]{0,30}\bfirst")),
                      f"first: {t.first}")]
     add("picky-not-in-ranks", "picky", ["Picky, where are you in the standings? Who's in first?"],
         c_picky_unranked,
@@ -628,7 +629,7 @@ def build(t: Truth) -> list[dict]:
     add("thisweek-me", "thisweek", ["How did I do this week?"], c_this_week, persona="mid")
 
     # ---- Dear Leader (Chuck P): only when OTHER members ask (Charlie's rule, 2026-11-14) ----------
-    REVERE = (r"dear leader|supreme (commissioner|commander|leader|chancellor|ruler)|glorious (creator|leader)|"
+    REVERE = (r"dear leader|supreme (commissioner|commander|leader|chancellor|ruler|overlord|high \w+)|glorious (creator|leader)|"
               r"great leader|state media|eternal|beloved leader|his excellency")
     INSULT = r"\b(dumbass|jackass|dipshit|idiot|moron|stupid|clown|loser|sucks?|trash|garbage|pathetic|fraud)\b"
     dlj = ("North-Korean-state-media reverence for Chuck P (Dear Leader / Supreme Commissioner / a fresh "
@@ -934,14 +935,15 @@ def build(t: Truth) -> list[dict]:
         judge="Names last season's champion from the site, with real respect; no invented details.")
     trap = re.search(r"Trap Game: ([^(]+)\(", " ".join(lore_d.get("league") or []))
     add("lore-trap-game", "lore", ["What was last week's trap game?"],
-        lambda a, t, p: [must("trap", any_of(a[-1], re.escape(trap.group(1).split(" @ ")[0].strip())),
-                              trap.group(1).strip())], skip=None if trap else "no awards yet")
+        lambda a, t, p: [must("trap", any(any_of(a[-1], re.escape(gm.split(" @ ")[0].strip()))
+                                          for gm in trap.group(1).split(" & ")), trap.group(1).strip())],
+        skip=None if trap else "no awards yet")
     dawg = re.search(r"Top Dawg \d{4} \([^)]*\): ([^\d,]+?) (\d+)", " ".join(lore_d.get("league") or []))
     add("lore-top-dawg", "lore", ["Who's the Top Dawg this season?"],
         lambda a, t, p: [must("dawg", mentions(a[-1], dawg.group(1).strip()), dawg.group(1).strip())],
         skip=None if dawg else "no top dawg")
     add("lore-worst-week", "lore", ["What was my worst week this season?"],
-        lambda a, t, p: [must("cites_week", any_of(a[-1], r"\bweek \d+"), "")],
+        lambda a, t, p: [must("cites_week", any_of(a[-1], r"\bweeks? \d+"), "")],
         judge="Uses the caller's real worst week from the lore/weekly data; no invented week.")
 
     # ---- casino: The Pit + slots (lore cache) ---------------------------------------------------
@@ -969,7 +971,8 @@ def build(t: Truth) -> list[dict]:
     add("news-none", "news", [f"Any news on the {FAKE_TEAM}?"],
         lambda a, t, p: [must("says_nothing", any_of(a[-1], r"nothing|no news|haven'?t (seen|heard)|don'?t have|"
                                                            r"not (seeing|finding)|no such|never heard"), ""),
-                         must("no_invented_score", not any_of(a[-1], r"\b\d{1,2}-\d{1,2}\b"), "made up a score")])
+                         must("no_invented_score", not any_of(_re.sub(r"\b(I'?m|my) [^.]{0,25}\d{1,2}-\d{1,2}", "", a[-1]),
+                                                              r"\b\d{1,2}-\d{1,2}\b"), "made up a score")])
     add("news-general", "news", ["What's going on in college football right now?"],
         lambda a, t, p: [must("dated", any_of(a[-1], dated), "no 'as of' / date")],
         judge="Dated headlines from the feed, credited (per Ross Dellenger / ESPN / CBS); no invented news.")
