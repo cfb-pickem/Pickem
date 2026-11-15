@@ -110,13 +110,22 @@ def parse_summary(d: dict) -> dict:
     market = None
     pc = (d.get("pickcenter") or [None])[0]
     if pc:
+        hs = ((pc.get("pointSpread") or {}).get("home")) or {}
         market = {
             "book": (pc.get("provider") or {}).get("name"),
             "details": pc.get("details"),  # e.g. "BOIS -16.5"
             "over_under": pc.get("overUnder"),
             "away_ml": (pc.get("awayTeamOdds") or {}).get("moneyLine"),
             "home_ml": (pc.get("homeTeamOdds") or {}).get("moneyLine"),
+            # home spread at open and now (negative = home favored), for line movement
+            "home_open": _spread((hs.get("open") or {}).get("line")),
+            "home_now": _spread((hs.get("close") or {}).get("line")),
         }
+
+    v = (d.get("gameInfo") or {}).get("venue") or {}
+    venue = {"id": v.get("id"), "name": v.get("fullName"),
+             "city": (v.get("address") or {}).get("city"),
+             "indoor": v.get("indoor")} if v.get("fullName") else None
 
     pred = d.get("predictor") or {}
     win_prob = None
@@ -152,9 +161,21 @@ def parse_summary(d: dict) -> dict:
         "market": market,
         "espn_win_prob": win_prob,
         "weather": weather,
+        "venue": venue,
         "headlines": heads,
         "injury_report_available": bool(d.get("injuries")),
     }
+
+
+def _spread(v) -> float | None:
+    """'-19.5' / '+3' / 'PK' / 'EVEN' -> float, else None."""
+    t = str(v or "").strip().upper()
+    if t in ("PK", "EVEN", "PICK"):
+        return 0.0
+    try:
+        return float(t)
+    except ValueError:
+        return None
 
 
 async def _fetch_one(client: httpx.AsyncClient, event_id: int) -> dict:

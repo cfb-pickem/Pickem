@@ -35,6 +35,7 @@ import anthropic
 import httpx
 
 import cfbd
+import edge
 import espn
 import news
 
@@ -913,7 +914,7 @@ async def _build_context(
 
     week_games_t = _rest_get(
         client,
-        f"all_games?select=GameId,Away,Home,line,Status,winner,week,tiebreaker,"
+        f"all_games?select=GameId,Away,Home,line,Status,winner,week,tiebreaker,fpi_margin,"
         f"\"Start (CT)\""
         f"&cfb_season=eq.{season}&week=eq.{current_week}&picked=eq.true"
         f"&order=\"Start (CT)\".asc",
@@ -1013,6 +1014,7 @@ async def _build_context(
                 "status": g["Status"],
                 "winner": g.get("winner"),
                 "tiebreaker": g.get("tiebreaker", False),
+                "fpi_margin": g.get("fpi_margin"),
             }
             for g in week_games
         ],
@@ -3677,16 +3679,22 @@ _ANALYSIS_ASK = re.compile(r"\b(break(ing)? ?down|breakdown|analy[sz]\w*|preview
                            r"edge in|who wins)\b", re.I)
 
 
-def matchup_signals(g: dict, notes: dict | None, idx: dict | None) -> dict:
+def matchup_signals(g: dict, notes: dict | None, idx: dict | None, extras: dict | None = None) -> dict:
+    """Every computed signal for one pool game and the weighted lean. Weights
+    and thresholds are documented in edge.py. `extras` is edge.load()'s output
+    (splits, weather, dome), fetched only for breakdown questions. Dossier and
+    insider intel never come in here: they explain, they don't move the lean."""
     away, home, line = g["away"], g["home"], float(g.get("line") or 0)
+    extras = extras or {}
     sig = []
     mg = _market_gap(notes or {}, line)
     if mg is not None:
         gap = mg[1]
         if abs(gap) >= 0.5:
             side = home if gap > 0 else away
-            sig.append({"side": side, "w": 3, "why": f"market: the betting market rates {side} {_num(abs(gap))} "
-                                                       "points better than the pool line (value side)"})
+            w = edge.W_MARKET_BIG if abs(gap) >= edge.MARKET_BIG_GAP else edge.W_MARKET
+            sig.append({"side": side, "w": w, "why": f"market: the betting market rates {side} {_num(abs(gap))} "
+                                                     "points better than the pool line (value side)"})
         else:
             sig.append({"side": None, "w": 0, "why": "market: the pool line matches the market, no value either way"})
 
@@ -3698,55 +3706,77 @@ def matchup_signals(g: dict, notes: dict | None, idx: dict | None) -> dict:
         fav = home if home_margin >= 0 else away
         return {"side": side, "w": w, "why": f"{src}: projects {fav} by {_num(round(abs(home_margin), 1))}, so "
                                              f"{side} covers the pool line by {_num(round(abs(cover), 1))}"}
+    edges: list[dict] = []
     if idx:
         ta, th = cfbd.resolve_team(away, idx), cfbd.resolve_team(home, idx)
         sa, sh = ((ta or {}).get("sp") or {}).get("rating"), ((th or {}).get("sp") or {}).get("rating")
         if sa is not None and sh is not None:
-            sig.append(by_margin(float(sh) - float(sa) + SP_HOME_FIELD, "SP+ (ratings + 2.5 home field)", 2))
+            sig.append(by_margin(float(sh) - float(sa) + SP_HOME_FIELD, "SP+ (ratings + 2.5 home field)", edge.W_SP))
+        em = edge.efficiency_margin(ta, th)
+        if em is not None:
+            sig.append(by_margin(em, "efficiency (season PPA per play + 2.5 home field)", edge.W_EFF))
+        us, edges = edge.units_signal(away, home, idx)
+        if us:
+            sig.append(us)
     if g.get("fpi_margin") is not None:
-        sig.append(by_margin(float(g["fpi_margin"]), "ESPN FPI", 1))
+        sig.append(by_margin(float(g["fpi_margin"]), "ESPN FPI", edge.W_FPI))
+    for x in (edge.move_signal(away, home, edge.line_move(notes, away, home, idx)),
+              edge.splits_signal(away, home, (extras.get("splits") or {}).get(g.get("id"))),
+              edge.weather_signal(away, home, line, (extras.get("weather") or {}).get(g.get("id")),
+                                  bool((extras.get("dome") or {}).get(g.get("id"))))):
+        if x:
+            sig.append(x)
     score = collections.Counter()
     for x in sig:
         if x["side"]:
             score[x["side"]] += x["w"]
-    lean = None
+    lean, a, b = None, 0, 0
     if score:
         (top, a), *rest = score.most_common()
         b = rest[0][1] if rest else 0
         lean = top if a > b else None
-    return {"signals": sig, "lean": lean, "strength": ("strong" if lean and len([x for x in sig if x["side"] == lean]) >= 2
-                                                       and not [x for x in sig if x["side"] not in (lean, None)]
-                                                       else "lean" if lean else "none")}
+    strength = "strong" if lean and a >= 4 and b <= a / 3 else "lean" if lean else "none"
+    return {"signals": sig, "lean": lean, "strength": strength, "edges": edges[:3],
+            "score": {k: v for k, v in score.items()}}
 
 
 def analysis_note(ctx: dict, question: str) -> str:
-    q = question or ""
-    if not _ANALYSIS_ASK.search(q):
+    games = analysis_games(ctx, question)
+    if not games:
         return ""
+    idx = _cfbd_index()
+    notes_all = ctx.get("espn") or {}
+    out = ["MATCHUP BREAKDOWN (computed from real data; give a clear lean with these reasons and no others, "
+           "one or two lines per game; this is advice, not a lock; cite at least one reason that isn't FPI or "
+           "the line):"]
+    for g in games[:4]:
+        m = matchup_signals(g, notes_all.get(g["id"]), idx, ctx.get("edge"))
+        out.append(f"{g['away']} at {g['home']}, pool line {pool_line(g['away'], g['home'], g.get('line'))}:")
+        out += [f"  - {x['why']}" for x in m["signals"]] or ["  - no market, SP+ or FPI data for this game"]
+        sp_edges = cfbd.matchup_edges(g["away"], g["home"], idx) if idx else None
+        if sp_edges:
+            out.append(f"  - SP+ unit ranks: {sp_edges}")
+        for e in m["edges"]:
+            out.append(f"  - unit edge: {e['text']}")
+        out.append(f"  LEAN: {m['lean']} ({m['strength']})" if m["lean"] else
+                   "  LEAN: none, the signals split or show no edge: say it's a coin flip and why")
+    return "\n".join(out)
+
+
+def analysis_games(ctx: dict, question: str) -> list[dict]:
+    """Open pool games a breakdown question is about ([] if it isn't one)."""
+    q = question or ""
+    if not _ANALYSIS_ASK.search(q) or ctx.get("error"):
+        return []
     if week_locked(ctx):
-        return ""  # picks are locked: no 'take this side' advice (the locked-week note covers it)
+        return []  # picks are locked: no 'take this side' advice (the locked-week note covers it)
     now = _now_ct_naive()
     games = [g for g in ctx.get("games_this_week") or [] if not g.get("winner") and not g.get("tiebreaker")
              and not _game_is_locked({"Start (CT)": g.get("start"), "Status": g.get("status")}, now)]
     named = games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games])
     if named:
         games = [g for g in games if g["id"] in {n["id"] for n in named}]
-    if not games:
-        return ""
-    idx = _cfbd_index()
-    notes_all = ctx.get("espn") or {}
-    out = ["MATCHUP BREAKDOWN (computed from real data; give a clear lean with these reasons and no others, "
-           "one or two lines per game; this is advice, not a lock):"]
-    for g in games[:4]:
-        m = matchup_signals(g, notes_all.get(g["id"]), idx)
-        out.append(f"{g['away']} at {g['home']}, pool line {pool_line(g['away'], g['home'], g.get('line'))}:")
-        out += [f"  - {x['why']}" for x in m["signals"]] or ["  - no market, SP+ or FPI data for this game"]
-        edges = cfbd.matchup_edges(g["away"], g["home"], idx) if idx else None
-        if edges:
-            out.append(f"  - edges: {edges}")
-        out.append(f"  LEAN: {m['lean']} ({m['strength']})" if m["lean"] else
-                   "  LEAN: none, the signals split or show no edge: say it's a coin flip and why")
-    return "\n".join(out)
+    return games
 
 
 # League playoff race (site audit #2, stats.html Playoff Race): top 4 after
@@ -4895,6 +4925,10 @@ async def _chat(req: Request, test: bool, hold: int | None):
         ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
     # (re)load the CFBD cache off the event loop; ~3 s only after a refresh
     await asyncio.to_thread(_cfbd_index)
+    # breakdown questions only: public splits + kickoff weather (cached, fail soft)
+    ag = analysis_games(ctx, last.get("content", "")) if last.get("role") == "user" else []
+    if ag:
+        ctx["edge"] = await edge.load(ag[:4], ctx.get("espn"), _cfbd_index())
     ctx["daddyfreeman"] = user_id == DADDYFREEMAN_USER_ID
 
     # follow-up pronouns: tag the latest question with the member the previous answer was about

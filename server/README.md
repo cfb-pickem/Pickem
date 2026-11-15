@@ -93,6 +93,16 @@ The prompt is ~6.5k tokens on qwen. Ollama runs with `num_ctx` 16384,
 temperature 0.2 and `presence_penalty` 0 (qwen3.5's default 1.5 garbles
 names and numbers it has already used).
 
+Matchup breakdowns (`analysis_note` / `matchup_signals`, only for "break
+down / who do you like" questions): a weighted lean from market vs pool line,
+SP+, CFBD PPA efficiency, unit-vs-unit rank edges (success rate,
+explosiveness, havoc), ESPN FPI, line movement (ESPN open vs now, CFBD
+fallback), DraftKings Network's public betting splits (keyless page) and
+kickoff weather (ESPN, else Open-Meteo at the CFBD venue's lat/lon; domes
+skipped). All in `edge.py`, weights documented at its top, tests in
+`test_edge.py`. Splits and Open-Meteo are fetched per breakdown question
+(20 / 60 minute caches, fail soft) and never touch the shared system prompt.
+
 Tests:
 
     ./.venv/bin/python3 -I test_privacy.py     # unrevealed picks never leak

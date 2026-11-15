@@ -55,7 +55,12 @@ DATASETS = {
     "records": ("/records", {"year": "{year}"}),
     "ats": ("/teams/ats", {"year": "{year}"}),
     "lines": ("/lines", {"year": "{year}"}),
+    "venues": ("/venues", {}),  # stadium lat/lon + dome flag for weather; see STATIC_MAX_AGE
 }
+
+# Datasets that barely change: refreshed only when the cached copy is older
+# than this (seconds), so venues cost ~1 call a month, not 30.
+STATIC_MAX_AGE = {"venues": 30 * 86400}
 
 
 def season_year(today: dt.date | None = None) -> int:
@@ -126,6 +131,15 @@ def _api_key() -> str:
     ).stdout.strip()
 
 
+def _fresh_static(db, name: str) -> bool:
+    """True for a STATIC_MAX_AGE dataset whose cached copy is still young."""
+    age = STATIC_MAX_AGE.get(name)
+    if age is None:
+        return False
+    row = db.execute("SELECT fetched_at FROM datasets WHERE name=?", (name,)).fetchone()
+    return bool(row and row[0] and time.time() - row[0] < age)
+
+
 def refresh(db=None, client=None, year: int | None = None, only: list[str] | None = None) -> dict:
     """Pull every dataset (or `only` these). Each one is saved as it lands; a
     failed one keeps its previous copy and is not retried (retries cost calls).
@@ -141,7 +155,8 @@ def refresh(db=None, client=None, year: int | None = None, only: list[str] | Non
             headers={"Authorization": f"Bearer {_api_key()}", "Accept": "application/json"},
         )
     try:
-        names = [n for n in DATASETS if not only or n in only]
+        names = list(only) if only else [n for n in DATASETS if not _fresh_static(db, n)]
+        names = [n for n in names if n in DATASETS]
         info = client.get("/info").json() or {}  # free: doesn't count against the tier
         check_budget(db, len(names), info.get("usedCalls"))
         rows, failed = {}, {}
@@ -259,6 +274,7 @@ def build_index(data: dict) -> dict:
             t.setdefault("adv", {})[side] = {
                 "ppa": o.get("ppa"), "success": o.get("successRate"),
                 "explosive": o.get("explosiveness"),
+                "havoc": (o.get("havoc") or {}).get("total"),
             }
     # scores + this week's market from lines (one row per game, all season)
     for g in data.get("lines") or []:
@@ -281,6 +297,7 @@ def build_index(data: dict) -> dict:
                            ("pass_ypg", "netPassingYards"), ("rush_ypg", "rushingYards")):
                 if st.get(src) is not None:
                     t[k] = round(float(st[src]) / gms, 1)
+    _rank_adv(teams)
     _rank(teams, "opp_ppg", reverse=False)
     _rank(teams, "opp_ypg", reverse=False)
     _rank(teams, "ppg", reverse=True)
@@ -296,7 +313,46 @@ def build_index(data: dict) -> dict:
     by_team: dict[str, list] = {}
     for p in players.values():
         by_team.setdefault(norm(p["team"]), []).append(p)
-    return {"teams": teams, "players": list(players.values()), "by_team": by_team}
+    venues = [v for v in data.get("venues") or [] if v.get("name") and v.get("latitude") is not None]
+    return {"teams": teams, "players": list(players.values()), "by_team": by_team, "venues": venues}
+
+
+# Advanced-stat ranks (1 = best) among teams with SP+ (FBS). Offense: higher
+# PPA/success/explosiveness is better, lower havoc allowed is better. Defense:
+# the reverse, and more havoc created is better.
+ADV_BETTER_HIGH = {"offense": {"ppa": True, "success": True, "explosive": True, "havoc": False},
+                   "defense": {"ppa": False, "success": False, "explosive": False, "havoc": True}}
+
+
+def _rank_adv(teams: dict) -> None:
+    for side, stats in ADV_BETTER_HIGH.items():
+        for stat, high in stats.items():
+            pool = [t for t in teams.values() if t.get("sp")
+                    and isinstance(((t.get("adv") or {}).get(side) or {}).get(stat), (int, float))]
+            pool.sort(key=lambda t: t["adv"][side][stat], reverse=high)
+            for i, t in enumerate(pool, 1):
+                t["adv"][side][stat + "_rank"] = i
+
+
+def venue(venue_id=None, name: str | None = None, city: str | None = None, idx: dict | None = None) -> dict | None:
+    """CFBD venue row (lat/lon, dome) for an ESPN venue: by id (CFBD venue ids
+    are ESPN's), else by name with the city breaking ties (there are two
+    Spartan Stadiums). None if unknown."""
+    idx = idx or load_index()
+    if not idx:
+        return None
+    vs = idx.get("venues") or []
+    hits = [v for v in vs if venue_id is not None and str(v.get("id")) == str(venue_id)]
+    if not hits and name:
+        n, c = norm(name), norm(city or "")
+        hits = [v for v in vs if norm(v["name"]) == n]
+        if len(hits) > 1 and c:
+            hits = [v for v in hits if norm(v.get("city") or "") == c]
+    if len(hits) != 1:
+        return None
+    v = hits[0]
+    return {"name": v["name"], "lat": float(v["latitude"]), "lon": float(v["longitude"]),
+            "dome": bool(v.get("dome")), "city": v.get("city"), "state": v.get("state")}
 
 
 def _rank(teams: dict, field: str, reverse: bool) -> None:
