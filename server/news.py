@@ -47,6 +47,7 @@ CT = ZoneInfo("America/Chicago")
 KEEP_DAYS = 7
 SUMMARY_MAX = 240
 DATE_FETCH_MAX = 30
+DELLENGER_BOOST = dt.timedelta(days=2)
 LONG_DESC = 400
 OLLAMA_MAX_PER_RUN = 2
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
@@ -202,7 +203,7 @@ def parse_author_page(page: str) -> list[dict]:
 def parse_espn(data: dict) -> list[dict]:
     out = []
     for a in data.get("articles") or []:
-        if not a.get("headline"):
+        if not a.get("headline") or a.get("type") == "Media":  # skip video clips
             continue
         link = ((a.get("links") or {}).get("web") or {}).get("href")
         it = _item(a["headline"], link, a.get("published"), a.get("description"), "ESPN")
@@ -333,9 +334,18 @@ _STOP = set("""what whats what's going news latest about any anything tell know 
 there their they them this that with from have been were will would could should does
 did doing your yours you the and for are was not but who how why when where which
 today tonight week weekend game games team teams college football update updates
-happening happened think picky said says report reports""".split())
+happening happened think picky said says report reports deal get got his her has had
+can its out all one say now see new lol yo hey man bro""".split())
 
 _mem: tuple[float, dict] | None = None
+
+
+def _stem(w: str) -> str:
+    """'injuries' -> 'injur', 'transfers' -> 'transfer' (prefix-matched)."""
+    for suf in ("ies", "es", "s", "ed", "ing"):
+        if w.endswith(suf) and len(w) - len(suf) >= 4:
+            return w[: -len(suf)]
+    return w
 
 
 def load_cache(path: Path | None = None) -> dict:
@@ -370,7 +380,9 @@ def news_for(query: str | None = None, teams: list[str] | None = None, limit: in
     """Short dated lines ("Nov 14, Dellenger: ...") for a question and/or
     team names. If the question names a team, conference or player, only
     items tagged with one of them come back (empty list if none). Otherwise
-    keyword matches, then simply the latest. Dellenger's items rank first."""
+    keyword matches (empty list if none); ties go to the newest, his items
+    counted 2 days newer. A generic question ("what's going on?", "any
+    news?") gets his newest item plus the newest FBS news."""
     cache = cache if cache is not None else load_cache()
     items = list(cache.get("items", {}).values())
     if not items:
@@ -381,7 +393,7 @@ def news_for(query: str | None = None, teams: list[str] | None = None, limit: in
         for k, v in tg.tag(query, derive_confs=False).items():
             want[k] |= set(v)
     entity = any(want.values())
-    words = {w for w in re.findall(r"[a-z][a-z'-]{3,}", (query or "").lower()) if w not in _STOP}
+    words = {_stem(w) for w in re.findall(r"[a-z0-9][a-z0-9'-]{2,}", (query or "").lower()) if w not in _STOP}
 
     def entity_score(it):
         s = 3 * len(want["teams"] & set(it.get("teams", [])))
@@ -399,9 +411,19 @@ def news_for(query: str | None = None, teams: list[str] | None = None, limit: in
         if entity and not e:
             continue  # named a team/conf/player: nothing off-topic
         scored.append((e + word_score(it), it))
-    if not entity and any(s for s, _ in scored):
-        scored = [(s, it) for s, it in scored if s > 0]
-    scored.sort(key=lambda x: (x[0], x[1].get("dellenger", False), item_time(x[1])), reverse=True)
+    if not entity and words and not any(s for s, _ in scored):
+        return []  # a specific topic nobody covered: say so, never filler
+    if not entity and not words:
+        # generic "what's going on": his newest item, then the newest FBS news
+        newest = sorted(items, key=item_time, reverse=True)
+        top = [it for it in newest if it.get("dellenger")][:1]
+        top += [it for it in newest if not it.get("dellenger")
+                and (it.get("teams") or "teams" not in it)][: limit - len(top)]
+        return [news_line(it) for it in top[:limit]]
+    scored = [(s, it) for s, it in scored if s > 0]
+    # equal relevance: newest first, with his items counted DELLENGER_BOOST newer
+    scored.sort(key=lambda x: (x[0], item_time(x[1]) + (DELLENGER_BOOST if x[1].get("dellenger")
+                                                          else dt.timedelta(0))), reverse=True)
     return [news_line(it) for _, it in scored[:limit]]
 
 

@@ -60,6 +60,8 @@ ESPN = {"articles": [
      "categories": [{"type": "team", "description": "Kansas Jayhawks"}]},
     {"headline": "Weber State Wildcats vs. Northern Arizona Lumberjacks: Full Highlights",
      "published": "2026-11-15T02:21:24Z", "links": {"web": {"href": "https://www.espn.com/v/2"}}},
+    {"headline": "Florida Gators vs. Kentucky Wildcats: Full Highlights", "type": "Media",
+     "published": "2026-11-15T02:30:00Z"},
     {"published": "2026-11-15T02:00:00Z"},  # no headline -> skipped
 ]}
 
@@ -90,7 +92,7 @@ check("rss: whitespace trimmed", c[0]["title"] == "Kyle Whittingham buyout: How 
       and c[0]["link"].startswith("https://"), c[0])
 
 e = news.parse_espn(ESPN)
-check("espn: headline-less article skipped", len(e) == 2, e)
+check("espn: headline-less article and video clip skipped", len(e) == 2, e)
 check("espn: summary keeps at most 3 sentences", e[0]["summary"].count(".") <= 4 and "fourth" not in e[0]["summary"],
       e[0]["summary"])
 check("summary capped", len(news.short_summary("word " * 200)) <= news.SUMMARY_MAX + 3)
@@ -131,8 +133,12 @@ L = news.news_for("what's the SEC cap policy thing", cache=cache, tg=TG)
 check("Dellenger item labeled and first", L and L[0].startswith("Nov 12, Dellenger: SEC's proposed cap policy"), L)
 L = news.news_for("Whittingham", cache=cache, tg=TG)
 check("keyword match without a team", L and "Whittingham" in L[0], L)
-L = news.news_for("what's going on", cache=cache, tg=TG, limit=2)
-check("generic question -> latest, Dellenger first", len(L) == 2 and all("Dellenger" in x for x in L), L)
+check("topic nobody covered -> empty, never filler", news.news_for("who got fired", cache=cache, tg=TG) == [])
+check("plural/singular match ('penalties' -> 'penalty')", news._stem("penalties") == "penalt"
+      and news.news_for("any penalties?", cache=cache, tg=TG)[0].startswith("Nov 12, Dellenger"))
+L = news.news_for("what's going on", cache=cache, tg=TG, limit=3)
+check("generic question -> his newest item first, then newest FBS news",
+      len(L) == 3 and "Dellenger" in L[0] and "Dellenger" not in L[1] + L[2] and "Weber" not in " ".join(L), L)
 check("teams= argument works", news.news_for(teams=["Michigan"], cache=cache, tg=TG)[0].startswith("Nov 14, CBS Sports"))
 check("limit respected", len(news.news_for(None, cache=cache, tg=TG, limit=1)) == 1)
 check("empty cache -> []", news.news_for("Kansas", cache={"items": {}}, tg=TG) == [])
