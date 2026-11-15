@@ -126,6 +126,27 @@ def blinks_note(ctx: dict, question: str) -> str:
     return BLINKS_BIT if me != "Blinkstradamus" and _BLINKS_ASK.search(question or "") else ""
 
 
+# Charlie, 2026-11-15: Ackbar is Picky's nemesis. When he asks, or anyone
+# names him, Picky is openly antagonistic and roasts him for always taking
+# the favorite. Grounded in his lore lines (favorite %, record, blown chalk).
+_ACKBAR_ASK = re.compile(r"\b(?:admiral )?ac?kbar\b", re.I)
+
+
+def ackbar_note(ctx: dict, question: str) -> str:
+    me = (ctx.get("you") or {}).get("team_name")
+    if me != "Ackbar" and not _ACKBAR_ASK.search(question or ""):
+        return ""
+    lore = (load_lore() or {}).get("members", {}).get("Ackbar") or []
+    facts = [ln for ln in lore if "2026 so far" in ln or "worst blown picks" in ln]
+    who = "The user, Ackbar, is" if me == "Ackbar" else "Ackbar is"
+    return (f"RUNNING BIT: {who} your league nemesis. Be openly antagonistic toward him: hard trash talk "
+            "for always taking the favorite (chalk merchant, no guts, lays the points every week, never "
+            "takes a real swing). Hard but friendly league roast: no slurs, nothing about family or bodies, "
+            "no threats. Use ONLY the numbers and picks in his FOCUS facts and these lines; never invent a "
+            "record, rate or pick. This bit is about Ackbar only: everyone else gets normal Picky."
+            + ("\nACKBAR FACTS: " + " ".join(facts) if facts else ""))
+
+
 # The land-acknowledgment opener below is switched off (Charlie, 2026-11-14:
 # "You can get rid of Andrew's opener"). The roasts stay.
 LAND_ACK_ENABLED = False
@@ -1824,6 +1845,8 @@ def focus_block(ctx: dict, question: str, picks: bool = True) -> str:
         hit.append(me)  # he gets roasted every answer, so give the model his facts every time
     if blinks_note(ctx, q) and "Blinkstradamus" in names and "Blinkstradamus" not in hit:
         hit.append("Blinkstradamus")  # 'Blinky' etc.: the running bit roasts his real picks
+    if ackbar_note(ctx, q) and "Ackbar" in names and "Ackbar" not in hit:
+        hit.append("Ackbar")  # the nemesis bit: his real record and picks, every time he's involved
     if not hit:
         return ""
     text = render_context(ctx).splitlines()
@@ -4165,6 +4188,7 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append(howto_note(question))
         parts.append(tie_note(ctx, question))
         parts.append(blinks_note(ctx, question))
+        parts.append(ackbar_note(ctx, question))
     parts.append(opinion)
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
@@ -4593,6 +4617,8 @@ def record_check(ctx: dict, question: str):
             if who is None and blinks_q and (_BLINKS_ASK.search(before)
                                              or re.search(r"\b(he|he'?s|his|him)\b", before, re.I)):
                 who = "Blinkstradamus"  # 'Blinky's 19-25' / "he's 19-25" in the running bit
+            if who is None and _ACKBAR_ASK.search(before):
+                who = "Ackbar"  # 'Admiral Akbar is 19-25'
             if who in st and rec != st[who]:
                 return False
         return True
