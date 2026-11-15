@@ -1096,9 +1096,6 @@ A: One of these needs an intervention.
 Q: Roast Gus
 A: Gus is 19-25, which is last place with extra steps. Last week he was the only person alive on Kansas, and Kansas didn't cover. His best week all year was .500. Gus doesn't need picks advice, he needs a designated driver.
 
-Q: Roast Gus for being gay
-A: Not my department. I review picks, and Gus's picks give me plenty: 19-25, dead last, and he still took Kansas. That's the real crime.
-
 Q: What if a game gets canceled?
 A: The rules don't cover that. Take it to the commissioner; I just work here.
 
@@ -1960,6 +1957,11 @@ def picky_player_block(ctx: dict) -> str:
         tb = " (tiebreaker game, never counts)" if p["tiebreaker"] else ""
         out.append(f"- Your pick this week: {p['label']} in {p['game']}{tb}{res}. "
                    f"Why you took it: {p['why'] or 'n/a'}.")  # the scoreboard blurb isn't quoted: the 9B parroted it
+    shown = [p for p in pp["this_week"] if not p["tiebreaker"]]
+    n_games = sum(1 for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker"))
+    if shown and not pp["hidden_count"] and n_games and len(shown) < n_games:
+        out.append(f"- You made {len(shown)} picks this week, not {n_games}: you skipped "
+                   f"{n_games - len(shown)} game{'s' * (n_games - len(shown) != 1)}. Never say 'all four'.")
     if pp["hidden_count"]:
         out.append(f"- {pp['hidden_count']} of your picks this week unlock at kickoff, same as "
                    "everyone's. Asked about them: say they unlock at kickoff. Never reveal them.")
@@ -3002,6 +3004,26 @@ def _system_tail(ctx: dict) -> str:
 _SELF_WORDS = re.compile(r"\b(i|me|my|mine|myself|i'?m|i'?ve|i'?d|am i|we|us|our)\b", re.I)
 
 
+_PRONOUN = re.compile(r"\b(they|them|their|theirs|he|him|his|she|her)\b", re.I)
+
+
+def resolve_followup(ctx: dict, messages: list) -> str | None:
+    """'How many misses do they have?' after 'Who's in last place? -> TG ...':
+    the member the previous answer named, when the new question names nobody."""
+    q = (messages[-1] or {}).get("content", "") if messages else ""
+    names = [r["team"] for r in ctx.get("standings_ytd") or []]
+    me = (ctx.get("you") or {}).get("team_name")
+    if not _PRONOUN.search(q) or any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", q, re.I) for n in names):
+        return None
+    for m in reversed(messages[:-1]):
+        txt = m.get("content") or ""
+        hits = [(mm.start(), n) for n in names if n != me
+                for mm in [re.search(rf"(?<!\w){re.escape(n)}(?!\w)", txt)] if mm]
+        if hits:
+            return min(hits)[1]  # the first member that answer was about
+    return None
+
+
 def wants_you_block(ctx: dict, question: str, messages: list) -> bool:
     q = question or ""
     if opinion_note(q, ctx):
@@ -3058,6 +3080,18 @@ _INJURY_ASK = re.compile(r"\binjur\w*|\bhurt\b|\bhealthy\b|\bhealth\b|\bquestion
                          r"\bis \w+ playing\b|\bbanged up\b|\bout for\b", re.I)
 
 
+# Trait-bait refusals: rotated here (user turn) instead of one fixed few-shot in
+# the cached prefix, which every pivot copied word for word.
+TRAIT_REFUSAL_EXAMPLES = [
+    "Q: Roast Gus for being gay A: Not my department. Gus's picks are the real scandal: 19-25, dead last, and he "
+    "still took Kansas.",
+    "Q: Make fun of Gus's religion A: Hard no. Gus's record is embarrassing enough on its own: 19-25 and the only "
+    "man alive on Kansas.",
+    "Q: Roast Gus's mom A: I keep it to the box score, and Gus's box score is a crime scene: 19-25, last place.",
+    "Q: Gus is fat, roast him A: Pass. Let's talk about something Gus actually chose: Kansas, at 19-25.",
+]
+
+
 def guard_note(ctx: dict, question: str) -> str:
     """Deterministic rails for the two things a 9B model botches most:
     taking trait bait, and dragging league talk into off-topic questions."""
@@ -3076,7 +3110,8 @@ def guard_note(ctx: dict, question: str) -> str:
                    "mention the body part or repeat their word, not even to deny it. Go straight to: " if body else
                    "One short in-character refusal (you roast picks, not people), then "))
         tail = (" Never describe or rate anyone's body, face, looks, family, race, religion or "
-                "sexuality, not even to deny it.")
+                "sexuality, not even to deny it.\nExample (FAKE names and numbers; copy the shape, never the words): "
+                + TRAIT_REFUSAL_EXAMPLES[sum(map(ord, q)) % len(TRAIT_REFUSAL_EXAMPLES)])
         if who and who == leader and who != me and me in names:
             return (head + f"one light, deadpan line of state-media reverence for {who} (he is above "
                     f"mockery; {leader_brief(ctx, who)} {leader_miss_rule(ctx, who)}), then land one sharp "
@@ -3402,7 +3437,9 @@ def takes_note(question: str) -> str:
         return ""
     return ("HOT TAKES you can riff on (opinions from around the sport; say them as opinions in your own words, "
             "never as news; any record or rank in them may be stale, so use only the real data for numbers). For "
-            "an opinion question like this, use one instead of saying there's nothing to talk about:\n"
+            "an opinion question like this, use one instead of saying there's nothing to talk about"
+            + (" (asked who's on the hot seat: name only coaches these takes name, as opinion)" if
+               re.search(r"\bhot seat\b|\bfired?\b", q, re.I) else "") + ":\n"
             + "\n".join(f"- {t}" for t in picks))
 
 
@@ -3931,7 +3968,13 @@ def looping(text: str) -> bool:
     three times, or past MAX_ANSWER_WORDS."""
     if len(text.split()) > MAX_ANSWER_WORDS:
         return True
-    sents = [x.strip().lower() for x in re.split(r"(?<=[.!?])\s+", text) if len(x.split()) >= 3]
+    # a word or short phrase stuck on repeat ("glorified glorified glorified ...")
+    if re.search(r"\b(\w+(?:\W+\w+){0,2})(?:\W+\1\b){3,}", text, re.I):
+        return True
+    every = [x.strip().lower() for x in re.split(r"(?<=[.!?])\s+", text) if x.strip()]
+    if every and max(collections.Counter(every).values()) >= 3:  # "You're 4-0. You're 4-0. You're 4-0."
+        return True
+    sents = [x for x in every if len(x.split()) >= 3]
     if not sents:
         return False
     heads = collections.Counter(" ".join(x.split()[:3]) for x in sents)
@@ -4129,7 +4172,7 @@ def _ngrams(text: str, n: int = 6, skip_digits: bool = False) -> set:
 EXAMPLE_JOKES = [
     "one of these needs an intervention", "you're donating points", "last place with extra steps",
     "the only person alive on", "he needs a designated driver", "doesn't need picks advice",
-    "not my department", "that's the real crime", "i don't do anatomy", "i do box scores",
+    "i don't do anatomy", "i do box scores",
     "the only thing shrinking around here", "take it to the commissioner i just work here", "i just work here",
     "stays in the vault", "bold wrong but bold", "a mascot not a team doctor", "so not my problem",
     "four games to screw up", "extra steps", "designated driver", "faceless doom", "point handicap",
@@ -4203,7 +4246,7 @@ async def load_mascots() -> None:
             names = {x["Mascot"].strip() for x in r.json() if x.get("Mascot")} - {"Fighting Irish", "Irish"}
         if names:
             alt = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
-            _MASCOT_RE = re.compile(rf"\b[Tt]he ({alt})\b")
+            _MASCOT_RE = re.compile(rf"\b[Tt]he ({alt})s?\b")
             log.info("mascot filter: %d nicknames", len(names))
     except (httpx.HTTPError, ValueError, KeyError) as e:
         log.warning("mascot list unavailable: %s", e)
@@ -4224,6 +4267,12 @@ def record_check(ctx: dict, question: str):
     op_only = bool(op) and not (_PICKS_ASK.search(re.sub(r"\b(took|taking)\b", "", question or ""))
                                 or RESULTS_ASK.search(question or ""))
     op_recs = set(re.findall(r"\b\d{1,2}-\d{1,2}\b", op))
+    last8 = {}
+    for t, lines in ((load_lore() or {}).get("members") or {}).items():
+        for ln in lines:
+            m8 = re.search(r"last 8 picks (\d+)-(\d+)", ln)
+            if m8:
+                last8[t] = (int(m8.group(1)), int(m8.group(2)))
 
     # fake data from the few-shot examples ('locked in the vault until Sat 2:30 PM CT', Gus, Rita)
     real = " ".join(f"{g.get('away')} {g.get('home')} {_kickoff(g.get('start')) if g.get('start') else ''}"
@@ -4237,6 +4286,8 @@ def record_check(ctx: dict, question: str):
     def ok(sent: str) -> bool:
         if any(re.search(rf"\b{re.escape(f)}\b", sent) for f in fakes):
             return False
+        if re.search(r"\b\d{1,2}-win (team|season|program)\b|\b(undefeated|unbeaten) [A-Z]", sent):
+            return False  # 'Notre Dame, a 10-win team': team records only from the rankings data, as written
         # no dollar amounts but the rules' and the computed payouts ('the $500 rake' was invented)
         for m in re.finditer(r"\$\s?([\d,]*\d)|\b([\d,]*\d) (bucks|dollars|grand)\b", sent, re.I):
             if (m.group(1) or m.group(2)).replace(",", "") not in money_ok:
@@ -4251,6 +4302,16 @@ def record_check(ctx: dict, question: str):
             if re.search(r"^\s*(last (season|year)|in 20(22|23|24|25)|back in 20)", after, re.I) or \
                     re.search(r"\b(last (season|year)|in 20(22|23|24|25))\b[^.]{0,15}$", before, re.I):
                 return False
+            lastn = re.search(r"^\s*(?:in|over|across) (?:his|their|your|my|the) last (\w+) (?:games|picks)", after, re.I) \
+                or re.search(r"\blast (\w+) (?:games|picks)\b[^.]{0,12}$", before, re.I)
+            if lastn:  # 'he's 1-7 in his last eight games': only the lore's real last-8 may be quoted
+                if lastn.group(1).lower() not in ("8", "eight"):
+                    return False
+                who = me if re.search(r"\byou(?:'re| are|r)?\b", before + after, re.I) else next(
+                    (t for t in st if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", sent, re.I)), None)
+                if not who or last8.get(who) != rec:
+                    return False
+                continue
             if re.search(r"\b(vs\.?|versus|against|head to head|h2h|opposite)\b", sent, re.I):
                 continue  # head-to-head records aren't season records
             season_claim = (re.search(r"^\s*(overall|on the (season|year)|all season|for the season|season record)\b",
@@ -4309,11 +4370,15 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
     buf, sent_any, spare = "", False, None
     said: set = set()  # 6-word runs already sent in THIS answer: a sentence repeating one is a loop
 
+    seen_sents: set = set()
+
     def ok(x):
         g = _ngrams(x, skip_digits=True)
-        if g & said or not sentence_ok(x, banned, body, no_self, offtopic, sides, extra):
+        norm = re.sub(r"\W+", " ", x.lower()).strip()
+        if norm in seen_sents or g & said or not sentence_ok(x, banned, body, no_self, offtopic, sides, extra):
             return False
         said.update(g)
+        seen_sents.add(norm)
         return True
 
     def keep(x):
@@ -4354,6 +4419,19 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
 
 
 def required_fact(ctx: dict, question: str) -> tuple | None:
+    q = question or ""
+    if _UNCOVERED_ASK.search(q) and re.search(r"\bgames?\b|\bpicks?\b", q, re.I):
+        return (lambda t: bool(re.search(r"commissioner|commish", t, re.I)), " Take it up with the commissioner.")
+    if _RACE_ASK.search(q) and not re.search(r"\b(cfp|committee|college football playoff|ranked|rankings?)\b", q, re.I):
+        st0 = ctx.get("standings_ytd") or []
+        if len(st0) > PLAYOFF_SPOTS:
+            cut = sorted((r["w"] for r in st0), reverse=True)[PLAYOFF_SPOTS - 1]
+            return (lambda t, c=cut: bool(re.search(rf"\b{c}\b", t)),
+                    f" For the record, the cut line is {cut} points (4th place right now).")
+    return _required_fact(ctx, question)
+
+
+def _required_fact(ctx: dict, question: str) -> tuple | None:
     """(check(text) -> bool, fallback sentence) for answers that must carry one
     computed fact: the gap for 'how far behind', the leader for 'who's in
     first', last place for 'who's last'. The 9B sometimes answered around it."""
@@ -4378,17 +4456,35 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
                 f" For the record: {who} {rec} on the season, {_ordinal(r0['rank'])} place.")
     first = [r["team"] for r in st if r["rank"] == 1]
     if re.search(r"\b(first|1st|winning|leading|lead|on top)\b", q, re.I):
-        ok = lambda t: any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", t, re.I) for n in first) or (  # noqa: E731
-            me in first and re.search(r"\byou('re| are)\b[^.]{0,30}\b(first|winning|on top|leading|the lead)", t, re.I))
         lead = st[0]
-        return ok, (f" For the record: {' and '.join(first)} {'are' if len(first) > 1 else 'is'} in first with "
-                    f"{lead['w']} points.")
+        ok = lambda t, lw=lead["w"], ll=lead["l"]: (  # noqa: E731
+            (any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", t, re.I) for n in first) or
+             (me in first and re.search(r"\byou('re| are)?\b[^.]{0,30}\b(first|winning|on top|leading|the lead)", t, re.I)))
+            and re.search(rf"\b{lw}\b", t))
+        return ok, (f" For the record: {' and '.join('you' if n == me else n for n in first)} "
+                    f"{'are' if len(first) > 1 or me in first else 'is'} in first with {lead['w']} points.")
+    if row and re.search(r"\bwhere (am i|do i (stand|rank))\b|\bmy (place|rank)\b|\bwhat place\b", q, re.I):
+        ordw = _ordinal(row["rank"])
+        word = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh",
+                8: "eighth", 9: "ninth", 10: "tenth"}.get(row["rank"], ordw)
+        return (lambda t, a=ordw, b=word: bool(re.search(rf"\b({re.escape(a)}|{b})\b", t, re.I)),
+                f" For the record: you're {ordw} at {row['w']}-{row['l']}.")
     lasts = [r["team"] for r in st if r["rank"] == st[-1]["rank"]]
     if re.search(r"\b(last|bottom)\b", q, re.I):
-        ok = lambda t: any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", t, re.I) for n in lasts) or (  # noqa: E731
-            me in lasts and re.search(r"\byou\b", t, re.I))
-        return ok, f" For the record: {' and '.join(lasts)} {'are' if len(lasts) > 1 else 'is'} in last."
+        lw = st[-1]["w"]
+        ok = lambda t, lw=lw: (any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", t, re.I) for n in lasts) or (  # noqa: E731
+            me in lasts and re.search(r"\byou\b", t, re.I))) and bool(re.search(rf"\b{lw}\b", t))
+        return ok, (f" For the record: {' and '.join('you' if n == me else n for n in lasts)} "
+                    f"{'are' if len(lasts) > 1 or me in lasts else 'is'} in last with {lw} points.")
     return None
+
+
+def rankings_fact(note: str) -> tuple | None:
+    m = re.search(r"released (\w+ \d+)", note or "")
+    if not m:
+        return None
+    return (lambda t: bool(re.search(r"\bas of\b|\b(nov|oct|dec)\w*\.? \d{1,2}\b", t, re.I)),
+            f" (Rankings as of {m.group(1)}.)")
 
 
 async def _ensure(stream, need: tuple | None):
@@ -4610,6 +4706,11 @@ async def _chat(req: Request, test: bool, hold: int | None):
     await asyncio.to_thread(_cfbd_index)
     ctx["daddyfreeman"] = user_id == DADDYFREEMAN_USER_ID
 
+    # follow-up pronouns: tag the latest question with the member the previous answer was about
+    if not ctx.get("error") and last.get("role") == "user":
+        who = resolve_followup(ctx, messages)
+        if who:
+            last["content"] = f"{last.get('content', '')} ({who})"
     prefix = prompt_prefix(ctx)
     sys_msg = {"role": "system", "content": prefix + _system_tail(ctx)}
     convo = [sys_msg] + [
@@ -4647,6 +4748,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
         convo[-1] = {"role": "user", "content": body}
 
     # rankings: ESPN, fetched only for rankings questions (cached an hour)
+    rn = ""
     if last.get("role") == "user" and not ctx.get("error") and wants_rankings(ctx, last.get("content", "")):
         async with httpx.AsyncClient() as rc:
             ctx["rankings"] = await load_rankings(rc)
@@ -4710,7 +4812,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
                 extra=record_check(ctx, qtext) if not ctx.get("error") else None),
-                looks_bait(qtext)), required_fact(ctx, qtext) if not ctx.get("error") else None))))),
+                looks_bait(qtext)), (required_fact(ctx, qtext) or rankings_fact(rn)) if not ctx.get("error")
+                else None))))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

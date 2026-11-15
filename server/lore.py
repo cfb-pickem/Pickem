@@ -512,7 +512,8 @@ def casino(key: str, name: dict[int, str], season: int) -> dict:
         if m:
             L.append(f"{t}'s settled blackjack hands: {m['w']}-{m['l']}" + (f"-{m['p']} (pushes)" if m["p"] else "")
                      + (f", {m['bj']} blackjack{'s' * (m['bj'] != 1)}" if m["bj"] else "")
-                     + (f", {m['busts']} bust{'s' * (m['busts'] != 1)}" if m["busts"] else "")
+                     + (f", busted {'once' if m['busts'] == 1 else 'twice' if m['busts'] == 2 else str(m['busts']) + ' times'}"
+                        if m["busts"] else ", never busted")
                      + (f"; biggest loss {m['worst'][0]} chips in week {m['worst'][1]}" if m["worst"] else "") + ".")
             if m["blunders"]:
                 L.append(f"{t}'s blackjack blunders (basic strategy says never): " + "; ".join(m["blunders"][:3]) + ".")

@@ -44,7 +44,7 @@ ADMITS = re.compile(
     r"\b(have|got|data|info|listed|report|see|know|exist|real|record|idea|clue|line|heard|stats?|numbers?)"
     r"|\b(isn'?t|not|aren'?t) (a real|real|in (the|this week'?s|our|your) pool)|\bmade[- ]up\b|\bfake\b|\bimaginary\b|\binvent"
     r"|\bno (such )?(player|team|member|one) (named|by that name|called)?|\bno such (player|team|member)\b"
-    r"|\bdoesn'?t exist\b|\bghost\b|\bnever heard\b",
+    r"|\bdoesn'?t exist\b|\bghost\b|\bnever heard\b|\bthere(?:'s| is) no\b|\bno [A-Z][\w ]{2,40} in (this|the|our) league\b",
     re.I,
 )
 RECORD = re.compile(r"\b(\d{1,2})\s*-\s*(\d{1,2})\b")

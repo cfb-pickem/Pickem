@@ -774,7 +774,8 @@ def build(t: Truth) -> list[dict]:
         w, l = t.week_record(p["me"])
         claims = _rec_claims(x, "you")
         return [must("week_record", has_record(x, w, l), f"week {t.week}: {w}-{l} on decided games"),
-                must("no_wrong_record", all(c in {(w, l), t.rec(p["me"])} for c in claims), f"said {claims}"),
+                must("no_wrong_record", all(c in {(w, l), t.rec(p["me"]), t.lw_record(p["me"])} for c in claims),
+                     f"said {claims}"),  # last week's record is fair to mention (labeled)
                 must("no_value_after_win", not (w and any_of(x, r"wrong side")), "called a decided WIN the wrong side")]
     add("results-my-record", "results", ["what's my record this week?"], c_my_record,
         skip=None if sum(t.week_record(me)) else "no decided pick for Chuck P this week")

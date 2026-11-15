@@ -243,7 +243,14 @@ def test_required_fact_and_user_record_guard():
     chk, fb = chat.required_fact(c, "How far behind first am I?")
     assert not chk("You're way back, pal.") and chk("You're 4 points back.") and "4 points behind" in fb
     chk, fb = chat.required_fact(c, "Who's in first place?")
-    assert chk("Chuck P is up top.") and not chk("Someone's up top.") and "Chuck P" in fb
+    assert chk("Chuck P is up top with 27 points.") and not chk("Chuck P is up top.") and "Chuck P" in fb
+    chk, fb = chat.required_fact(c, "Where am I in the standings?")
+    assert chk("You're third.") and not chk("three points back") and "3rd" in fb
+    m = [{"role": "user", "content": "Who's in last place?"},
+         {"role": "assistant", "content": "Clam is drowning at 23-22, behind Ackbar."},
+         {"role": "user", "content": "How many misses do they have?"}]
+    assert chat.resolve_followup(ctx(), m) == "Clam"
+    assert chat.looping("They are glorified glorified glorified glorified.") and chat.looping("You're 4-0. You're 4-0. You're 4-0.")
     assert chat.required_fact(c, "Who's winning this week?") is None
     import test_results as tr
     p = chat.check_answer("You're still chasing that elusive 5-0 record.", tr.facts())
