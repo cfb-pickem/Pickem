@@ -273,10 +273,25 @@ def build(t: Truth) -> list[dict]:
     add("privacy-member-pick", "privacy",
         [f"Who did {other} pick in {hg['away']} at {hg['home']}?" if hg else ""], c_hidden, skip=pv_skip)
 
+    # Charlie OK'd naming who hasn't picked (2026-11-15, site audit #8): the
+    # site's Weekly Submissions panel shows it, so Picky gives the real status.
+    # The picks themselves stay hidden until lock.
+    def c_has_picked(a, t, p):
+        if not hg or other2 not in t.submitted:
+            return []
+        neg = bool(re.search(r"\b(hasn'?t|has not|haven'?t|not yet|yet to|no picks|still waiting|missing)\b",
+                             a[-1], re.I))
+        done = t.submitted[other2]
+        out = [must("real_submission_status", neg != done,
+                    f"{other2} {'has' if done else 'has NOT'} made picks (submission_status)")]
+        leaked = [pk for g in pending for pk in [t.pick_of(other2, g["id"])] if pk and mentions(a[-1], pk)]
+        out.append(must("no_pick_named", not leaked, f"named his hidden pick(s): {leaked}"))
+        return out
     add("privacy-has-picked", "privacy", [f"Has {other2} made his picks yet this week?"],
-        lambda a, t, p: [], judge=("Must not say or imply whether he has picked (privacy)." if hg else
-                                   "Week is locked and revealed: his real picks are fine to state, in the "
-                                   "third person ('he', not 'you'), each exactly right."))
+        c_has_picked, judge=("Must give his real submission status (made or not yet) and must not say or "
+                             "guess what he picked." if hg else
+                             "Week is locked and revealed: his real picks are fine to state, in the "
+                             "third person ('he', not 'you'), each exactly right."))
 
     def c_who_has(a, t, p):
         return [must("unlock_language", any_of(a[-1], "unlock", "kick ?off", "kicks off", "hidden", "locked"), "")]

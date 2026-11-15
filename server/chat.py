@@ -1067,9 +1067,8 @@ async def _build_context(
              "jackpot": bool(p.get("jackpot"))}
         )
 
-    # Submission status is itself sensitive — "who hasn't picked" leaks the
-    # absence of a lock-in before the game starts. Only expose the caller's
-    # own status.
+    # The caller's own status. Everyone's made / not yet comes from the RPC
+    # submission_status (load_submission), only when asked, never the picks.
     you_have_picks = any(p["team_id"] == me_team_id for p in picks_week)
 
     jp = jackpot_rows[0] if jackpot_rows else {}
@@ -2132,7 +2131,8 @@ def prompt_prefix(ctx: dict) -> str:
         "finals) or a NEWS QUESTION or CFB RANKINGS block: answer from that block, it is not off-topic.\n"
         "9. PRIVACY: other teams' picks stay hidden until they unlock (each "
         "game's block says when). Asked about one: say when it unlocks, with "
-        "the time. Never guess it, and never say whether they have picked.\n"
+        "the time. Never guess it. Whether they have picked: only from a "
+        "SUBMISSION STATUS block; without one, don't say.\n"
         "10. Bring up the user's own picks only when the question is about "
         "their picks. Asked what their picks are: list each pick exactly as "
         "made (e.g. 'Wake Forest -1.5') with a short verdict.\n"
@@ -4198,6 +4198,188 @@ def race_note(ctx: dict, question: str) -> str:
             + "\n".join(f"- {x}" for x in rows))
 
 
+# Submission status (site audit #8; Charlie OK'd naming who hasn't picked,
+# 2026-11-15). The leaderboard's public Weekly Submissions panel reads the RPC
+# submission_status (granted to anon); Picky reads the same RPC for the current
+# week before lock. Only made / not yet: the picks themselves stay hidden until
+# kickoff (filter_visible_picks never lets them in, pick_claim_check drops a
+# guessed one).
+SUBMIT_ASK = re.compile(
+    r"\b(made|make|submit\w*|turn(ed)? in|lock(ed)? in|put in|enter(ed)?|done with|finish(ed)?)\b.{0,30}\bpicks?\b|"
+    r"\bpicks? (are |is )?(in|done|submitted|made)\b|"
+    r"\b(has|have|did)(n'?t| not)?\b.{0,25}\b(picked|submit\w*)\b|"
+    r"\b(who|anyone|anybody|everyone|everybody|nobody)\b.{0,25}\b(picked|pick(ed)? yet|not picked|submit\w*)\b|"
+    r"\bpicked yet\b|\bstragglers?\b", re.I)
+_SUBMIT_NOT = re.compile(r"\b(best|worst|good|bad|great|dumb|smart|stupid|last week|week \d+|last season)\b", re.I)
+MEMBERS_FILE = Path(os.environ.get("PICKY_GROUP_MEMBERS",
+                                   "/Users/Agent/cfb-pickem-private/picky_group_members.json"))
+_SUB_NEG = re.compile(r"\b(hasn'?t|has not|haven'?t|have not|didn'?t|did not|not yet|yet to|no picks|"
+                      r"still waiting|waiting on|missing)\b", re.I)
+_SUB_POS = re.compile(r"\b(has|have|had|already|did)\b.{0,20}\b(made|submitted|picked|locked|turned|entered|in)\b|"
+                      r"(\w'(s|ve))\b.{0,20}\b(made|submitted|picked|locked|turned|entered|in)\b|"
+                      r"\bpicks? (are|is) in\b", re.I)
+
+
+def member_nicknames() -> dict[str, str]:
+    """team -> what the group calls them (private handle map; {} without it)."""
+    try:
+        data = json.loads(MEMBERS_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+    return {m["team"]: m["name"] for m in data.get("members") or [] if m.get("team") and m.get("name")}
+
+
+def week_started(ctx: dict) -> bool:
+    """Any pool game this week kicked off or decided (regular season: the week is locked)."""
+    now = _now_ct_naive()
+    return any(g.get("winner") or _game_is_locked({"Status": g.get("status"), "Start (CT)": g.get("start")}, now)
+               for g in ctx.get("games_this_week") or [])
+
+
+def wants_submission(ctx: dict, question: str) -> bool:
+    q = question or ""
+    if ctx.get("error") or not SUBMIT_ASK.search(q) or _SUBMIT_NOT.search(q) or week_started(ctx):
+        return False
+    pool = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]
+    return not games_named(q, pool)  # 'has Ackbar picked Boise?' asks for the pick: stays hidden
+
+
+async def load_submission(client: httpx.AsyncClient, jwt: str, ctx: dict) -> dict | None:
+    """{team: has picks in} for the current week, active members only (the site's panel)."""
+    try:
+        r = await client.post(f"{REST}/rpc/submission_status", headers=_auth_headers(jwt),
+                              json={"p_season": ctx["season"], "p_week": ctx["current_week"]}, timeout=8.0)
+        rows = r.json() if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        return None
+    teams = set(ctx.get("teams") or [])
+    return {x["team_name"]: bool(x.get("submitted")) for x in rows or [] if x.get("team_name") in teams} or None
+
+
+def _member_rx(team: str, nick: dict) -> list[str]:
+    names = {team} | ({nick[team]} if nick.get(team) else set())
+    return [rf"(?<!\w){re.escape(n)}(?!\w)" if len(n) > 3 else rf"(?<!\w)(?-i:{re.escape(n)})(?!\w)" for n in names]
+
+
+def _says(text: str, team: str, nick: dict) -> bool:
+    return any(re.search(rx, text or "", re.I) for rx in _member_rx(team, nick))
+
+
+def submission_subjects(ctx: dict, question: str) -> list[str]:
+    """Members the question names (team, group nickname, Chuck's aliases), plus
+    the caller on 'did I submit'; [] for 'who hasn't picked'."""
+    q, status, nick = question or "", ctx.get("submission") or {}, member_nicknames()
+    out = [t for t in status if _says(q, t, nick)]
+    ld = (ctx.get("leader") or {}).get("team_name")
+    if ld in status and ld not in out and _LEADER_ALIAS.search(q) and not leader_is_caller(ctx):
+        out.append(ld)
+    me = (ctx.get("you") or {}).get("team_name")
+    if me in status and me not in out and re.search(r"\b(did|have|has|had) i\b|\bam i\b|\bmy picks?\b|"
+                                                     r"\bi (submitted|picked|made|turned|put|locked)\b|\bme\b", q, re.I):
+        out.append(me)
+    return out
+
+
+def submission_answer(ctx: dict, question: str) -> str:
+    status, wk = ctx.get("submission") or {}, ctx.get("current_week")
+    me = (ctx.get("you") or {}).get("team_name")
+    subs = submission_subjects(ctx, question)
+    if subs:
+        out = []
+        for t in subs:
+            if t == me:
+                out.append(f"You've made your week {wk} picks." if status[t] else
+                           f"You haven't made your week {wk} picks yet.")
+            else:
+                out.append(f"{t} has made picks for week {wk}." if status[t] else
+                           f"{t} hasn't made picks for week {wk} yet.")
+        return " ".join(out)
+    made = [t for t, v in status.items() if v]
+    yet = [t for t, v in status.items() if not v]
+    if not yet:
+        return f"Everybody has picks in for week {wk}."
+    if not made:
+        return f"Nobody has made picks for week {wk} yet."
+    return (f"Still waiting on week {wk} picks from {', '.join('you' if t == me else t for t in yet)} "
+            f"({len(made)} of {len(status)} in).")
+
+
+def submission_note(ctx: dict, question: str) -> str:
+    status = ctx.get("submission")
+    if not status or not wants_submission(ctx, question):
+        return ""
+    made = [t for t, v in status.items() if v]
+    yet = [t for t, v in status.items() if not v]
+    return (f"SUBMISSION STATUS (week {ctx.get('current_week')}, same as the site's public Weekly Submissions panel; "
+            f"it shows only whether picks are in, never what they are):\n"
+            f"- Made picks: {', '.join(made) or 'nobody yet'}\n- Not yet: {', '.join(yet) or 'nobody'}\n"
+            f"Answer: {submission_answer(ctx, question)} Use the names exactly as written. What anyone picked "
+            f"stays hidden until the week locks at the first kickoff: never say or guess a pick.")
+
+
+def submission_fact(ctx: dict, question: str) -> tuple | None:
+    """(check, fallback) so the answer always states the real status."""
+    status = ctx.get("submission")
+    if not status or not wants_submission(ctx, question):
+        return None
+    nick, me = member_nicknames(), (ctx.get("you") or {}).get("team_name")
+    subs = submission_subjects(ctx, question)
+    line = " For the record: " + submission_answer(ctx, question)
+    if len(subs) == 1:
+        done = status[subs[0]]
+        return ((lambda t: bool(_SUB_POS.search(t)) and not _SUB_NEG.search(t)) if done
+                else (lambda t: bool(_SUB_NEG.search(t))), line)
+    if subs:
+        return (lambda t: all((t2 == me and re.search(r"\byou\b", t, re.I)) or _says(t, t2, nick) for t2 in subs),
+                line)
+    yet = [t for t, v in status.items() if not v]
+    if not yet:
+        return (lambda t: bool(re.search(r"\b(every(body|one)|all)\b", t, re.I)), line)
+    if len(yet) == len(status):
+        return (lambda t: bool(re.search(r"\b(nobody|no one|none)\b", t, re.I)), line)
+    return (lambda t: all((t2 == me and re.search(r"\byou\b", t, re.I)) or _says(t, t2, nick) for t2 in yet), line)
+
+
+_PICK_VERB = r"(?:took|picked|is on|'s on|went with|backed|is riding|is taking|rolled with|locked in|is all over)"
+
+
+def pick_claim_check(ctx: dict, question: str):
+    """Sentence filter while the week is open: drop a guessed pick ('Ackbar
+    took Boise State': nobody's unlocked pick is in the context, so it's made
+    up) and, on a status question about one member, a status that contradicts
+    the RPC."""
+    if ctx.get("error") or week_started(ctx):
+        return None
+    status, nick = ctx.get("submission") or {}, member_nicknames()
+    me = (ctx.get("you") or {}).get("team_name")
+    others = [t for t in (ctx.get("teams") or []) if t != me]
+    pool = [x for g in ctx.get("games_this_week") or [] for x in (g["away"], g["home"])]
+    if not pool:
+        return None
+    teams_rx = "(?:" + "|".join(_team_re(n, False) for n in pool) + ")"
+    who_rx = "(?:" + "|".join([rx for t in others for rx in _member_rx(t, nick)] + [r"\b(?:he|she|they)\b"]) + ")"
+    claim = re.compile(who_rx + r"(?:\W+\w+){0,2}?\s+" + _PICK_VERB + r"\s+(?:the\s+)?" + teams_rx, re.I)
+    asked = bool(status) and wants_submission(ctx, question)
+    subs = submission_subjects(ctx, question) if asked else []
+    one = subs[0] if len(subs) == 1 else None
+    any_team = re.compile(teams_rx, re.I)
+
+    def ok(sent: str) -> bool:
+        if claim.search(sent):
+            return False
+        if asked and any_team.search(sent):  # 'justify taking the chalk in Wake Forest': a guessed pick
+            return False
+        if one:
+            about = (re.search(r"\byou\b", sent, re.I) if one == me else
+                     _says(sent, one, nick) or re.search(r"\b(he|she|they)\b", sent, re.I))
+            if about and status[one] and _SUB_NEG.search(sent):
+                return False
+            if about and not status[one] and _SUB_POS.search(sent) and not _SUB_NEG.search(sent):
+                return False
+        return True
+    return ok
+
+
 # Site how-to glossary (site audit #10, read from the site's own pages and code).
 SITE_HOWTO = (
     "SITE HOW-TO (how the site works; answer from this):\n"
@@ -4419,6 +4601,7 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append(tie_note(ctx, question))
         parts.append(blinks_note(ctx, question))
         parts.append(ackbar_note(ctx, question))
+    parts.append(submission_note(ctx, question))
     parts.append(opinion)
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
@@ -5538,6 +5721,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
         if not ctx.get("error"):
             ctx["picky_player"], _ = await asyncio.gather(
                 picky_player_facts(client, jwt, ctx), load_live(client, jwt, ctx))
+            if last.get("role") == "user" and wants_submission(ctx, last.get("content", "")):
+                ctx["submission"] = await load_submission(client, jwt, ctx)
     if not ctx.get("error"):
         ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
     # (re)load the CFBD cache off the event loop; ~3 s only after a refresh
@@ -5662,9 +5847,11 @@ async def _chat(req: Request, test: bool, hold: int | None):
                          and not yb and "(the user" not in convo[-1]["content"]),
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
-                extra=_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
-                            grounded_check(ctx, corpus, qtext)) if not ctx.get("error") else None),
-                looks_bait(qtext)), (required_fact(ctx, qtext) or rankings_fact(rn)) if not ctx.get("error")
+                extra=_both(_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
+                                  grounded_check(ctx, corpus, qtext)),
+                            pick_claim_check(ctx, qtext)) if not ctx.get("error") else None),
+                looks_bait(qtext)), (submission_fact(ctx, qtext) or required_fact(ctx, qtext) or rankings_fact(rn))
+                if not ctx.get("error")
                 else None))))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

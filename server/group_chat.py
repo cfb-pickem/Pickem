@@ -14,8 +14,10 @@ com.pickem.chat needs no restart) with these group-chat changes:
   player's own session, which has no visible league team, so
   filter_visible_picks keeps only picks the site shows any member about
   another member (locked games). The sender's own unlocked picks never enter
-  the context, and their submission status is dropped from the you-block.
-  The privacy invariant is asserted on every request.
+  the context, and the you-block's own-status line is dropped (it would read
+  NOT made). Who has picks in (made / not yet, never the picks) comes from
+  chat.py's SUBMISSION STATUS rider, the same public RPC as the site's Weekly
+  Submissions panel. The privacy invariant is asserted on every request.
 
   PERSONA. ctx["you"] is set to the sender's team (from the private handle
   map), so the Blinkstradamus opener, Ackbar nemesis, DaddyFreeman, Dear
@@ -308,7 +310,7 @@ def _you_block(ctx: dict) -> str:
     if _site():
         return _orig_you_block(ctx)
     out = _orig_you_block(ctx)
-    out = out.replace("'s pick: not made yet", "'s pick: hidden until kickoff (never say if it's made)")
+    out = out.replace("'s pick: not made yet", "'s pick: hidden until kickoff")
     return "\n".join(ln for ln in out.split("\n") if not re.search(r" has (NOT )?made picks this week\.$", ln))
 
 
@@ -465,28 +467,10 @@ chat.race_note = _race_note
 # reply shaping
 # -----------------------------------------------------------------------------
 
-# Submission status is private (chat.py never gives it to the model), but the
-# 9B will still make one up ("No, he hasn't"). Nudge on the way in, and swap
-# any claim for a fixed line on the way out.
-_STATUS_ASK = re.compile(r"\b(made|make|submit\w*|turn(ed)? in|lock(ed)? in|put in|enter(ed)?|done with|"
-                         r"finish(ed)?)\b.{0,30}\bpicks?\b|\bpicks? (in|done|submitted|made)\b|"
-                         r"\b(who|anyone|anybody|everyone|everybody)\b.{0,25}\b(picked|pick(ed)? yet|not picked)\b", re.I)
-_STATUS_NUDGE = (" (You can't see whether anyone has made picks; nobody can until kickoff. Never say anyone "
-                 "has or hasn't picked.)")
-_STATUS_CLAIM = re.compile(r"\b(has|have|had)(n'?t| not)\b.{0,25}\b(made|submitted|picked|turned|locked|put|entered)\b|"
-                           r"\b(no|yes|nope|yep),? (he|she|they|you)\b.{0,6}\b(has|have|hasn'?t|haven'?t|did|didn'?t)\b|"
-                           r"\b(already|has|have|had)\b.{0,12}\b(made|submitted|turned in|locked in|put in|entered)\b"
-                           r".{0,20}\bpicks?\b|\b(still )?(hasn'?t|haven'?t|didn'?t) (picked|pick)\b|"
-                           r"\b(?!I\b)\w+ (has|have)( not| already| all)? (picked|submitted|turned (them|it|picks) in)\b|"
-                           r"\b(nobody|no one|everyone|everybody|someone|somebody)\b.{0,15}\b(picked|picks? in)\b", re.I)
-STATUS_LINE = "Who has or hasn't picked stays in the vault until kickoff. Same rules for everybody."
-
-
-def status_guard(question: str, reply: str) -> str:
-    if _STATUS_CLAIM.search(reply or ""):
-        lead = chat.BLINKSTRADAMUS_LINE + " " if (reply or "").lower().startswith(chat.BLINKSTRADAMUS_LINE) else ""
-        return lead + STATUS_LINE
-    return reply
+# Submission status is public (the site's Weekly Submissions panel; Charlie OK'd
+# naming who hasn't picked, 2026-11-15): chat.py answers it from the RPC. What
+# anyone picked stays hidden: the teamless context never holds an unlocked pick
+# (asserted in _build_context) and chat.pick_claim_check drops a guessed one.
 
 _SENT = re.compile(r"(?<=[.!?])[\"')\]]*\s+(?=\S)")
 
@@ -606,8 +590,6 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         if chat._BLINKS_ASK.search(q) and not re.search(r"blinkstradamus", q, re.I):
             q += " (Blinkstradamus)"
         q_hist = q
-        if mode != "dm" and _STATUS_ASK.search(q):
-            q += _STATUS_NUDGE
         key = history_key(chat_id, handle, dm)
         if playoff_race.is_need_question(q) or chat._RACE_ASK.search(q):
             exact = race_answer(q, s, await race_data())
@@ -621,9 +603,7 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             return {"type": "http.request", "body": body, "more_body": False}
 
         def shape(raw: str) -> str:
-            if mode == "group":
-                return group_trim(status_guard(q, raw))
-            return dm_trim(raw if mode == "dm" else status_guard(q, raw))
+            return group_trim(raw) if mode == "group" else dm_trim(raw)
 
         # keep the first answer the filter left whole; else the one it cut least
         t0, best = time.time(), None

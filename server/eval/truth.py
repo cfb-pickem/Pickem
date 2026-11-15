@@ -64,6 +64,9 @@ class Truth:
             ids = [g["id"] for g in self.ctx["games_this_week"]]
             # Picky the player's own revealed picks (same call /chat makes).
             self.picky = await chat.picky_player_facts(c, "x", self.ctx)
+            # Who has picks in this week (the site's public Weekly Submissions panel).
+            self.submitted = (await chat.load_submission(c, "x", self.ctx)
+                              if hasattr(chat, "load_submission") else None) or {}
             # Raw, unfiltered week picks: leak detection only.
             self._all_week_picks = await chat._rest_get(
                 c, f"picks?select=team_id,game_id,pick&game_id=in.{chat._in_ids(ids)}", "x") if ids else []

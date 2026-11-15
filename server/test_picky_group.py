@@ -102,18 +102,36 @@ def test_group_trim():
     assert len(gc.group_trim("word " * 300)) <= gc.MAX_CHARS + 3
 
 
-def test_status_guard():
-    for bad in ["No, he hasn't. His picks stay locked.", "He hasn't made his picks yet.", "Yep, he has made them.",
-                "Ackbar already submitted his picks.", "TG still hasn't picked lol",
-                "Nobody has picked yet, so relax.", "Everyone has submitted.", "Ackbar has picked already."]:
-        assert gc.status_guard("", bad) == gc.STATUS_LINE, bad
-    assert gc.status_guard("", "nice milk, freak. No, he hasn't.").startswith("nice milk, freak. ")
-    for ok in ["Ackbar's picks are locked until kickoff.", "He took Boise State -13.5 and missed.",
-               "I have picked Boise and I'm sweating."]:
-        assert gc.status_guard("", ok) == ok
-    assert gc._STATUS_ASK.search("has Blinkstradamus made his picks yet?")
-    assert gc._STATUS_ASK.search("who hasn't picked yet")
-    assert not gc._STATUS_ASK.search("who's winning?")
+def test_submission_status_answers_but_picks_stay_hidden():
+    """Site audit #8 (Charlie OK'd 2026-11-15): made / not yet from the RPC,
+    before lock; never the picks themselves."""
+    ctx = {"season": 2026, "current_week": 13, "teams": ["Ackbar", "Rival", "TG"],
+           "you": {"team_id": 10, "team_name": "Ackbar"}, "leader": None,
+           "games_this_week": [{"id": 2, "away": "Ohio State", "home": "Penn State", "status": "scheduled",
+                                "start": NOT_STARTED, "winner": None}],
+           "submission": {"Ackbar": True, "Rival": False, "TG": True}}
+    with patch.object(chat, "_now_ct_naive", return_value=NOW), patch.object(chat, "member_nicknames", lambda: {}):
+        for q in ["has Rival made his picks yet?", "who hasn't picked yet", "did I submit?", "are TG's picks in?"]:
+            assert chat.wants_submission(ctx, q), q
+        for q in ["who's winning?", "who made the best picks last week?", "has Rival picked Penn State?"]:
+            assert not chat.wants_submission(ctx, q), q
+        assert chat.submission_answer(ctx, "has Rival made his picks yet?") == "Rival hasn't made picks for week 13 yet."
+        assert chat.submission_answer(ctx, "did I submit?") == "You've made your week 13 picks."
+        assert chat.submission_answer(ctx, "who hasn't picked yet") == "Still waiting on week 13 picks from Rival (2 of 3 in)."
+        note = chat.submission_note(ctx, "who hasn't picked yet")
+        assert "Not yet: Rival" in note and "Penn State" not in note and "Ohio State" not in note
+        check, fallback = chat.submission_fact(ctx, "has Rival made his picks yet?")
+        assert check("Nope, Rival hasn't turned them in.") and not check("Yep, he has made them.")
+        ok = chat.pick_claim_check(ctx, "has Rival made his picks yet?")
+        assert not ok("Rival took Ohio State, obviously.") and not ok("He went with Penn State.")
+        assert not ok("Yep, he has made them.")  # contradicts the RPC
+        assert ok("Rival hasn't made his picks yet.")
+        assert not ok("He's sweating his chalk in Penn State again.")  # any pool team on a status question
+        assert chat.pick_claim_check(ctx, "who's winning?")("Penn State is a 6.5-point favorite.")
+    # once the week locks, the rider is gone (picks are revealed instead)
+    with patch.object(chat, "_now_ct_naive", return_value=NOW + dt.timedelta(days=3)):
+        assert not chat.wants_submission(ctx, "who hasn't picked yet")
+        assert chat.pick_claim_check(ctx, "x") is None
 
 
 # ---- privacy: the group context never holds an unlocked pick, not even the sender's ----
