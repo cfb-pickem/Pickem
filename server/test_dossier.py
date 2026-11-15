@@ -107,6 +107,11 @@ check("free nytimes page not paid", not dossier._paid("https://www.nytimes.com/2
 check("forum detection", dossier._forum("https://old.reddit.com/r/x") and dossier._forum("https://x.com/a/status/1")
       and not dossier._forum("https://www.miamiherald.com/sports/x.html"))
 
+check("injury status inferred when missing", facts[0]["status"] == "probable", facts[0])
+check("status kept when given", dossier.validate({"claims": [claim(status="out")]}, now)[0]["facts"][0]["status"] == "out")
+check("infer: surgery/missed = out", dossier.infer_status("He had surgery and missed the game.") == "out")
+check("infer: no update = questionable", dossier.infer_status("Left in the third quarter; no update.") == "questionable")
+
 # -- summary grounding ------------------------------------------------------------------
 src = "- [injury] Miami QB Carson Beck is probable after leaving last week's game with 2 minutes left."
 check("grounded summary passes", dossier.summary_grounded("Carson Beck is probable for Miami.", src))

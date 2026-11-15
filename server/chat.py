@@ -22,6 +22,7 @@ import hmac
 import itertools
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -35,6 +36,7 @@ import anthropic
 import httpx
 
 import cfbd
+import dossier
 import edge
 import espn
 import news
@@ -3763,20 +3765,31 @@ def analysis_note(ctx: dict, question: str) -> str:
         return ""
     idx = _cfbd_index()
     notes_all = ctx.get("espn") or {}
-    out = ["MATCHUP BREAKDOWN (computed from real data; give a clear lean with these reasons and no others, "
-           "one or two lines per game; this is advice, not a lock; cite at least one reason that isn't FPI or "
-           "the line):"]
+    out = ["MATCHUP BREAKDOWN (computed from real data; this is advice, not a lock). For each game say the LEAN "
+           "in your own voice in two or three plain sentences: the strongest one or two reasons FOR it (at least "
+           "one that isn't FPI or the line), plus the best reason against if there is one. Use only these "
+           "reasons. No headings, no bullets, no labels like FOR or NO EDGE, don't copy these lines word for word:"]
     for g in games[:4]:
         m = matchup_signals(g, notes_all.get(g["id"]), idx, ctx.get("edge"))
         out.append(f"{g['away']} at {g['home']}, pool line {pool_line(g['away'], g['home'], g.get('line'))}:")
-        out += [f"  - {x['why']}" for x in m["signals"]] or ["  - no market, SP+ or FPI data for this game"]
-        sp_edges = cfbd.matchup_edges(g["away"], g["home"], idx) if idx else None
-        if sp_edges:
-            out.append(f"  - SP+ unit ranks: {sp_edges}")
-        for e in m["edges"]:
-            out.append(f"  - unit edge: {e['text']}")
         out.append(f"  LEAN: {m['lean']} ({m['strength']})" if m["lean"] else
                    "  LEAN: none, the signals split or show no edge: say it's a coin flip and why")
+        if not m["signals"]:
+            out.append("  - no market, SP+ or FPI data for this game")
+        sides = [m["lean"]] if m["lean"] else []
+        sides += [t for t in (g["away"], g["home"]) if t not in sides]
+        for t in sides:
+            rows = [x["why"] for x in sorted(m["signals"], key=lambda x: -x["w"]) if x["side"] == t]
+            if rows:
+                out.append(f"  FOR {t}: " + "; ".join(rows))
+        flat = [x["why"] for x in m["signals"] if not x["side"]]
+        if flat:
+            out.append("  NO EDGE either way: " + "; ".join(flat))
+        sp_edges = cfbd.matchup_edges(g["away"], g["home"], idx) if idx else None
+        if sp_edges:
+            out.append(f"  SP+ unit ranks: {sp_edges}")
+        for e in m["edges"]:
+            out.append(f"  unit edge: {e['text']}")
     return "\n".join(out)
 
 
@@ -3834,6 +3847,26 @@ def _intel_line(c: dict, label: str) -> str:
     return f"  - {label}{f' ({tag})' if tag else ''}: {c['text']}"
 
 
+def _status(c: dict) -> str:
+    return c.get("status") or dossier.infer_status(c.get("text") or "")
+
+
+def intel_status(ctx: dict, question: str) -> dict[str, str]:
+    """{player last name (normalized): reported status} for the injury claims
+    in the GAME INTEL this question gets."""
+    out = {}
+    for g in dossier_games(ctx, question):
+        d = load_dossier(ctx.get("current_week"), g["id"]) or {}
+        for c in d.get("facts") or []:
+            if c.get("kind") != "injury":
+                continue
+            for pl in c.get("players") or []:
+                last = cfbd.norm(re.sub(r"\b(jr|sr|ii|iii|iv)\.?$", "", pl.strip(), flags=re.I)).split()
+                if last and len(last[-1]) >= 3:
+                    out[last[-1]] = _status(c)
+    return out
+
+
 def dossier_note(ctx: dict, question: str) -> str:
     if ctx.get("error") or not (question or "").strip():
         return ""
@@ -3843,7 +3876,8 @@ def dossier_note(ctx: dict, question: str) -> str:
         if not d:
             continue
         facts = d.get("facts") or []
-        items = ([_intel_line(c, "injury report") for c in facts if c.get("kind") == "injury"]
+        items = ([_intel_line(c, f"injury report, status {_status(c).upper()}") for c in facts
+                  if c.get("kind") == "injury"]
                  + [_intel_line(c, "news") for c in facts if c.get("kind") != "injury"])[:DOSSIER_MAX_ITEMS - 2]
         items += [_intel_line(c, "opinion, not fact") for c in (d.get("opinions") or [])[:2]]
         items += [_intel_line(c, "RUMOR, unconfirmed") for c in (d.get("rumors") or [])[:1]]
@@ -4659,21 +4693,83 @@ def ungrounded(sent: str, corpus_norm: str, corpus_nums: set, skip_names: set, p
     return None
 
 
-def grounded_check(ctx: dict, corpus: str):
+_SAYS_AVAILABLE = re.compile(r"\b(back|returns?|returning|healthy|good to go|will play|expected to play|set to play|"
+                             r"cleared|available|should help|suits? up|is a go|full go|ready to go|playing)\b", re.I)
+_SAYS_OUT = re.compile(r"\b(out|won'?t play|will not play|sidelined|ruled out|miss(es|ing)?|missed|done for|"
+                       r"injured|hurt|surgery|doubtful|questionable|won'?t be back|isn'?t back|not back)\b", re.I)
+
+
+_SAYS_RETURNING = re.compile(r"\b(expected back|back soon|should be back|will be back|back this week|"
+                             r"returns? (this|on|saturday|friday)|ready (to go|for (saturday|friday|this))|"
+                             r"good to go|will play|expected to play|cleared to play|set to play|full strength)\b",
+                             re.I)
+
+
+def contradicts_intel(sent: str, status: dict[str, str]) -> str | None:
+    """A sentence that names a reported player and says the opposite of his
+    reported status ('Toney is back' when the report says out)."""
+    if not status:
+        return None
+    words = set(cfbd.norm(sent).split())
+    for last, st in status.items():
+        if last not in words:
+            continue
+        if st in ("out", "doubtful", "questionable") and (_SAYS_RETURNING.search(sent) or (
+                _SAYS_AVAILABLE.search(sent) and not _SAYS_OUT.search(sent))):
+            return f"says {last} is available, report says {st}"
+        if st in ("probable", "returning") and re.search(r"\b(out|ruled out|won'?t play|will not play|sidelined)\b",
+                                                          sent, re.I):
+            return f"says {last} is out, report says {st}"
+    return None
+
+
+_ATTRIB = (("fpi", re.compile(r"\bFPI\b", re.I)), ("sp+", re.compile(r"\bSP\+", re.I)),
+           ("efficiency", re.compile(r"\b(efficiency|PPA)\b", re.I)))
+_PROJ_NUM = re.compile(r"\bby (\d+(?:\.\d+)?)\b")
+
+
+def source_numbers(corpus: str) -> dict[str, set]:
+    """{'fpi'|'sp+'|'efficiency': numbers on the prompt lines that cite it}."""
+    out = {k: set() for k, _ in _ATTRIB}
+    for line in re.split(r"[\n;]", corpus):
+        for k, rx in _ATTRIB:
+            if rx.search(line):
+                out[k] |= set(_NUMS.findall(line))
+    return out
+
+
+def misattributed(sent: str, src_nums: dict[str, set]) -> str | None:
+    """'FPI projects Miami by 19.9' when 19.9 is SP+'s number (or FPI isn't in
+    the prompt at all)."""
+    cited = [k for k, rx in _ATTRIB if rx.search(sent)]
+    if len(cited) != 1:
+        return None
+    for n in _PROJ_NUM.findall(sent):
+        if n not in src_nums[cited[0]]:
+            return f"{cited[0]} by {n} isn't {cited[0]}'s number"
+    return None
+
+
+def grounded_check(ctx: dict, corpus: str, question: str = ""):
     """Sentence predicate for _filtered: True when every player, injury and
-    stat in the sentence is backed by the prompt (brief + game intel)."""
+    stat in the sentence is backed by the prompt (brief + game intel), and no
+    sentence contradicts a reported injury status."""
     if ctx.get("error") or not corpus:
         return None
+    status = intel_status(ctx, question) if question else {}
     idx = _cfbd_index()
     cn = f" {cfbd.norm(corpus)} "
     nums = {x.replace(",", "") for x in _NUMS.findall(corpus)}
+    nums |= {str(f(float(x))) for x in nums if "." in x for f in (math.floor, math.ceil)}  # 65.6% -> "66%" is fine
     skip = {cfbd.norm(x) for x in (ctx.get("teams") or []) + [r["team"] for r in ctx.get("standings_ytd") or []]
             + LEADER_NAMES if x}
     players = _cfbd_player_keys(idx)
     has_intel = "GAME INTEL," in corpus
+    src = source_numbers(corpus)
 
     def ok(sent: str) -> bool:
-        why = ungrounded(sent, cn, nums, skip, players, idx, has_intel)
+        why = (ungrounded(sent, cn, nums, skip, players, idx, has_intel) or contradicts_intel(sent, status)
+               or misattributed(sent, src))
         if why:
             log.info("grounding filter: %s in %r", why, sent[:100])
         return why is None
@@ -5223,7 +5319,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
                 extra=_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
-                            grounded_check(ctx, corpus)) if not ctx.get("error") else None),
+                            grounded_check(ctx, corpus, qtext)) if not ctx.get("error") else None),
                 looks_bait(qtext)), (required_fact(ctx, qtext) or rankings_fact(rn)) if not ctx.get("error")
                 else None))))),
         media_type="text/event-stream",

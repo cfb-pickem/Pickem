@@ -166,6 +166,8 @@ def test_matchup_signals_and_lean():
     c["espn"] = {9: notes}
     n = chat.analysis_note(c, "Break down Utah at Iowa for me")
     assert n.startswith("MATCHUP BREAKDOWN") and "LEAN: Iowa (" in n, n  # real SP+ may disagree: lean, not strong
+    body = n.split("\n", 2)[2]
+    assert body.startswith("  LEAN: Iowa") and "  FOR Iowa: market: the betting market rates Iowa 3 points" in n, n
     assert chat.analysis_note(c, "What's the jackpot at?") == ""
     assert chat.analysis_note(ctx(), "Break down the games") == ""  # locked or decided: nothing
 

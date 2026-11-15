@@ -53,7 +53,15 @@ with tempfile.TemporaryDirectory() as d:
         n = chat.dossier_note(c, "Is Madsen playing for Boise State this week?")
         check("intel for a named game", n.startswith("GAME INTEL, Oregon State at Boise State"), n)
         check("injury first, labeled, dated, outlet named",
-              "  - injury report (" in n and "Idaho Statesman): Boise State QB Maddux Madsen" in n, n)
+              "  - injury report, status QUESTIONABLE (" in n and "Idaho Statesman): Boise State QB Maddux Madsen" in n, n)
+        st = chat.intel_status(c, "Is Madsen playing for Boise State?")
+        check("status map from the intel", st == {"madsen": "questionable"}, st)
+        check("contradiction dropped", chat.contradicts_intel("Madsen is back and good to go.", st) is not None)
+        check("consistent line kept", chat.contradicts_intel("Madsen is questionable, so keep an eye on it.", st) is None)
+        check("'won't be back' is not a contradiction",
+              chat.contradicts_intel("Madsen won't be back to full speed soon.", st) is None)
+        f2 = chat.grounded_check(c, "Maddux Madsen questionable GAME INTEL,", "Is Madsen playing for Boise State?")
+        check("grounded_check applies the intel status", not f2("Madsen returns this week and should help."))
         check("opinion and rumor labeled", "opinion, not fact" in n and "RUMOR, unconfirmed" in n, n)
         check("never a URL, never a bare domain", "http" not in n and "osubeavers.com" not in n
               and "reddit.com" not in n, n)
@@ -110,8 +118,22 @@ check("hedged injury line passes without intel",
       bad("Nobody knows who is out, there's no official injury report.", intel=False) is None)
 check("calendar words don't trip it", bad("On Saturday November 21 the starters play at noon.") is None)
 f = chat.grounded_check(ctx(), corpus)
+check("rounded prompt number passes", f("He completes about 87% of the time, says FPI."))
+check("far-off number still dropped", not f("Boise State wins 95% of the time."))
 check("grounded_check builds a predicate", callable(f) and f("Madsen is questionable, per reports."))
 check("no corpus -> no check", chat.grounded_check(ctx(), "") is None)
+
+st = {"toney": "out"}
+check("'was out ... but expected back soon' is a contradiction",
+      chat.contradicts_intel("Malachi Toney was out against Duke, but he's expected back soon.", st) is not None)
+src = chat.source_numbers("  FOR Miami: SP+ (ratings + 2.5 home field): projects Miami by 19.9, so Miami covers by 2.9\n"
+                          "  ESPN FPI: projects Miami by 21.3, so Miami covers by 4.3")
+check("SP+ number called FPI is dropped", chat.misattributed("FPI projects Miami by 19.9, an easy cover.", src))
+check("right attribution passes", chat.misattributed("SP+ projects Miami by 19.9.", src) is None
+      and chat.misattributed("FPI has Miami by 21.3.", src) is None)
+check("FPI not in the prompt at all", chat.misattributed("FPI projects Miami by 19.9.",
+                                                         chat.source_numbers("SP+ projects Miami by 19.9")))
+check("two sources in one sentence: not judged", chat.misattributed("SP+ and FPI both have Miami by 20.", src) is None)
 
 if FAILED:
     print(f"\n{len(FAILED)} FAILED")

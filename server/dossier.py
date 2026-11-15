@@ -86,6 +86,25 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 
 KINDS = ("fact", "injury", "insider_opinion", "rumor")
+STATUSES = ("out", "doubtful", "questionable", "probable", "returning", "unknown")
+_OUT_RX = re.compile(r"\b(ruled out|out for|is out|are out|was out|listed as out|as out|will not play|won'?t play|"
+                     r"missed|misses|surgery|season-ending|sidelined|unavailable|not expected to play)\b", re.I)
+_Q_RX = re.compile(r"\b(questionable|doubtful|game-time decision|day-to-day|uncertain|unclear|no update|"
+                   r"left (the|in the|with)|limited)\b", re.I)
+_P_RX = re.compile(r"\b(probable|expected to play|cleared|returns|returning|back at practice|will play|"
+                   r"available|full participant)\b", re.I)
+
+
+def infer_status(text: str) -> str:
+    """Availability status from an injury claim's own words (when the
+    researcher didn't give one). Out beats questionable beats probable."""
+    if _OUT_RX.search(text):
+        return "out"
+    if _Q_RX.search(text):
+        return "questionable"
+    if _P_RX.search(text):
+        return "probable"
+    return "unknown"
 CONF = ("high", "medium", "low")
 SECTION = {"fact": "facts", "injury": "facts", "insider_opinion": "opinions", "rumor": "rumors"}
 # paid / login-walled: Charlie's rule is free public sources only
@@ -110,6 +129,7 @@ SCHEMA = {
                     "source_name": {"type": "string"},
                     "date": {"type": "string"},
                     "confidence": {"type": "string", "enum": list(CONF)},
+                    "status": {"type": "string", "enum": list(STATUSES)},
                 },
                 "required": ["text", "kind", "team", "players", "source_url", "date", "confidence"],
             },
@@ -295,6 +315,7 @@ Rules for each claim:
   give the page, leave the claim out.
 - date: the page's publication date, YYYY-MM-DD. Skip anything older than {max_age} days.
 - confidence: high (official/report or multiple outlets), medium (one reputable outlet), low (thin or rumor).
+- status (injury claims only): out, doubtful, questionable, probable, returning, or unknown, for THIS game.
 - Never guess a stat, a name or a status. Fewer true claims beat many shaky ones. Max {max_claims} claims.
 If you find nothing reliable, return an empty claims list and say why in notes.
 Return only the JSON object."""
@@ -423,7 +444,11 @@ def validate(raw: dict, now: dt.datetime, url_status: dict[str, str] | None = No
             kind = "rumor"  # a forum post is never a fact
             conf = "low"
         players = [re.sub(r"\s+", " ", str(p)).strip() for p in c.get("players") or [] if str(p).strip()]
-        secs[SECTION[kind]].append({
+        extra = {}
+        if kind == "injury":
+            extra["status"] = c.get("status") if c.get("status") in STATUSES and c.get("status") != "unknown" \
+                else infer_status(text)
+        secs[SECTION[kind]].append({**extra,
             "text": text, "kind": kind, "team": team, "players": players[:6], "source_url": url,
             "source_name": str(c.get("source_name") or _domain(url))[:60], "date": str(c.get("date"))[:10],
             "confidence": conf, "url_check": (url_status or {}).get(url, "unchecked")})
