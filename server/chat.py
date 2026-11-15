@@ -3524,6 +3524,8 @@ def lore_note(ctx: dict, question: str) -> str:
     roast = bool(_MOCK.search(q)) and not _TRAIT.search(q) and not _BODY.search(q)
     lines: list[str] = []
     league = lore.get("league") or []
+    if re.search(r"\bnational|title game|\bcfp\b|heisman", q, re.I) and not names:
+        return ""  # 'Freeman took ND to the national title game' isn't league history
     if _CHAMP_ASK.search(q) and not re.search(r"\b(standings|wins|records?|finish\w*|place|splash|20(22|23|24))\b", q, re.I):
         lines += [ln for ln in league if "champion" in ln.lower()]  # just the champions: the tables confused it
     elif _CHAMP_ASK.search(q) or (asks and not names):
@@ -4231,6 +4233,7 @@ _BODY_WORDS = re.compile(r"\b(weenie|weiner|wiener|dick|cock|penis|schlong|pecke
                          r"endowed|hung|manhood|boobs?|tits?|size|anatomy|anatomical)\b", re.I)  # a 'tiny win total' pun is fine
 # the caller's own record or picks, volunteered in an answer that isn't about them
 _SELF_INTRUSION = re.compile(r"(?i:\b(you'?re|you are|you went|you sit|you'?ve gone)\b[^.!?]*\b\d{1,2}-\d{1,2}\b"
+                             r"|\byou (just )?(lost|missed|blew|went \w+ on) (every|all|each)\b|\byou'?re (winless|perfect|undefeated)\b"
                              r"|\byou took\b|\byour (\w+ ){0,2}\d{1,2}-\d{1,2}\b|\b\d{1,2}-\d{1,2} (week|season|record) (of yours)\b)"
                              r"|\b(?i:your) [A-Z][\w'.&-]*( [A-Z][\w'.&-]*){0,2} (?i:pick|bet)\b")
 
@@ -4496,15 +4499,15 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
 def required_fact(ctx: dict, question: str) -> tuple | None:
     q = question or ""
     me = (ctx.get("you") or {}).get("team_name")
-    if _CHAMP_ASK.search(q):
+    if _FREEMAN_ASK.search(q):
+        return (lambda t: bool(re.search(r"marshall|stanford|niu|northern illinois", t, re.I)),
+                " Still: Marshall, Stanford and NIU, all at home in South Bend.")
+    if _CHAMP_ASK.search(q) and not re.search(r"\bnational|title game|\bcfp\b|heisman|\bplayoff", q, re.I):
         champ = re.search(r"LAST SEASON \((\d{4})\) the champion was ([^;.]+)", " ".join((load_lore() or {}).get("league") or []))
         if champ:
             nm = champ.group(2).strip()
             return (lambda t, nm=nm: nm.lower() in t.lower(),
                     f" For the record: {nm} won it last season ({champ.group(1)}), and he gets the respect.")
-    if _FREEMAN_ASK.search(q):
-        return (lambda t: bool(re.search(r"marshall|stanford|niu|northern illinois", t, re.I)),
-                " Still: Marshall, Stanford and NIU, all at home in South Bend.")
     g = guard_note(ctx, q)
     if g.startswith("GUARDRAIL"):
         who = guard_target(ctx, q)
