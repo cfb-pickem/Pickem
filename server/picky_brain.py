@@ -176,6 +176,19 @@ def insert_rider(messages: list[dict], rider: str, question: str) -> list[dict]:
     return messages[:-1] + [{**messages[-1], "content": body}]
 
 
+_CARD_HEADS = ("GAME CARD (", "THIS WEEK'S NOTABLE GAMES")
+
+
+def slate_block(messages: list[dict]) -> str:
+    """The slate card chat.py put in the latest user turn ('' if none), for the understand pass."""
+    c = str((messages[-1] if messages else {}).get("content") or "")
+    i = min([c.find(h) for h in _CARD_HEADS if h in c] or [-1])
+    if i < 0:
+        return ""
+    j = c.find("\n\n", i)
+    return c[i:j if j > 0 else None].strip()
+
+
 def brief_notes(question: str) -> str:
     """The insider notes and picked hot takes for the understand pass (the
     drafts get them as riders); '' when neither rides."""
@@ -187,8 +200,12 @@ def brief_notes(question: str) -> str:
 
 
 def understand_user(question: str, sender: str, recent: str, last_reply: str, stance: str = "",
-                    notes: str = "", live: str = "", rules: str = "") -> str:
+                    notes: str = "", live: str = "", rules: str = "", card: str = "") -> str:
     L = [f"Sent by: {sender}" if sender else "Sent by: a league member"]
+    if card:  # slate_cards.py: computed data on a non-pool game (genius exam 2026-11-16: without it the brief said "no data")
+        L.append(card + "\nThis card IS your data on this game (it's not a pool game, but you know it). Your 'answer' "
+                 "note must answer from it: the line and its move, ATS records, matchup, rest, news. Anything the "
+                 "card doesn't have (an injury not listed): say it's not known.")
     if live:  # game-day live feed (live_games.py): scores/plays/QB news happening now, any game, pool or not
         L.append(live + "\nYour 'answer' note must use these live facts (exact score, scorer, clock) for a live-game ask.")
     if rules:  # league_rules.answer(): the rule, computed from the site's code (or a "may have changed" hedge)
@@ -243,10 +260,10 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
 
 async def understand(prefix: str, question: str, sender: str, recent: str, last_reply: str = "",
                      timeout: float = 60.0, stance: str = "", notes: str = "", live: str = "",
-                     rules: str = "") -> Brief:
+                     rules: str = "", card: str = "") -> Brief:
     try:
         raw = await _json_call(prefix, UNDERSTAND_TAIL,
-                               understand_user(question, sender, recent, last_reply, stance, notes, live, rules),
+                               understand_user(question, sender, recent, last_reply, stance, notes, live, rules, card),
                                UNDERSTAND_SCHEMA, 0.1, 260, timeout)
     except (httpx.HTTPError, ValueError) as e:
         log.warning("understand failed: %s", e)
@@ -942,7 +959,8 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
                                        st.get("last_reply", ""), stance=stance_rider(st["stance"]),
                                        **({"notes": nb} if (nb := brief_notes(st["q"])) else {}),
                                        **({"live": lv} if (lv := (st.get("ctx") or {}).get("live_rider")) else {}),
-                                       **({"rules": rule} if rule else {}))
+                                       **({"rules": rule} if rule else {}),
+                                       **({"card": cb} if (cb := slate_block(messages)) else {}))
         rt = st.get("route")
         if rt is not None:  # the router's fallback: no rule matched, the brief decides (plan 2d)
             nr = router.from_brief(rt, st["brief"].intent, st["brief"].asking, st["q"])

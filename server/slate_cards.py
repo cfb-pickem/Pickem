@@ -382,6 +382,22 @@ def board(top: list[dict], notes: dict) -> str:
     return "THIS WEEK'S NOTABLE GAMES (market, computed; not all are pool games):\n" + "\n".join(rows)
 
 
+def player_teams(question: str, idx: dict) -> list[str]:
+    """'Is Sayin playing?': a capitalized surname that belongs to exactly one
+    team's regular (QB/RB/WR with real volume) -> that team."""
+    words = set(re.findall(r"\b([A-Z][a-z'’]{3,})\b", question or ""))
+    words = {w.lower() for w in words} - cfbd.STOPWORDS
+    teams = set()
+    for p in idx.get("players") or []:
+        k = (p.get("key") or "").split()
+        if not k or k[-1] not in words:
+            continue
+        vol = sum(cfbd._volume(c, st) for c, st in (p.get("stats") or {}).items() if c in cfbd.STAT_ORDER)
+        if vol >= 40:
+            teams.add(p["team"])
+    return sorted(teams) if len(teams) == 1 else []
+
+
 _FOLLOW_UP = re.compile(r"^\W*(why|how come|explain|and\b|what about|best case|what would change|change your mind|"
                         r"other side|you sure|really|the other team|counter|devil'?s advocate|what if)\b", re.I)
 
@@ -406,7 +422,7 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     if not games:
         return ""
     pool_ids = {int(g["id"]) for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
-    named = cfbd.other_teams_named(q, [], idx)
+    named = cfbd.other_teams_named(q, [], idx) or player_teams(q, idx)
     picks = []
     for team in named:
         n = cfbd.norm(team)
