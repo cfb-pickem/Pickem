@@ -162,7 +162,9 @@ def test_board_voice_rides_with_takes_only():
     n = chat._user_turn(CTX, "what do you think of the committee")
     assert "BOARD VOICE" in n and "HOT TAKES" in n, n
     assert "BOARD VOICE" in chat._user_turn(CTX, "roast the SEC for me")
-    for q in ("what's my record", "who won the UTSA game", "how far am I from a playoff spot"):
+    assert "BOARD VOICE" in chat._user_turn(CTX, "talk shit about Ackbar")
+    for q in ("what's my record", "who won the UTSA game", "how far am I from a playoff spot",
+              "you talk shit for a bot that's 0-3", "lol nice pick idiot", "Picky you suck"):
         assert "BOARD VOICE" not in chat._user_turn(CTX, q), q
 
 

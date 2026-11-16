@@ -697,7 +697,8 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         messages = drop_hook(messages)  # 'you're in first place, 2 ahead' tacked onto a comeback reads like a bot
     # board voice rides on opinion / hot-take answers and explicit roast asks only (plan 2026-11-16): banter,
     # reactions and shots at Picky belong to the short banter path, where "unhinged" came out long and ranty
-    if st.get("stance") or (b.intent in ("banter", "insult", "reaction") and not chat._ROAST_VOICE.search(st["q"])):
+    if st.get("stance") or ((b.intent in ("banter", "insult", "reaction") or b.tone in ("hostile", "annoyed"))
+                            and not chat._ROAST_VOICE.search(st["q"])):
         messages = drop_voice(messages)
     rider = "\n\n".join(x for x in (brief_rider(b, stance=bool(sr)), st.get("ammo") or "" if i in (1, 2) else "",
                                      sr, ANGLES[i]) if x)

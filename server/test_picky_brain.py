@@ -181,6 +181,40 @@ def test_hook_injects_brief_ammo_angle_and_temperature():
     assert u.index("AMMO") < u.rindex("you suck")
 
 
+def test_board_voice_dropped_on_banter_kept_on_opinion():
+    """Plan 2026-11-16: the board voice rides on opinion / hot-take answers only; on banter and jabs
+    ("unhinged" came out long and ranty) the short banter path wins."""
+    voice = "BOARD VOICE (for the opinion or roast part only: short):\n- Unhinged certainty: book it.\n- Doom-posting.\n\n"
+
+    def run(q, intent, tone="joking"):
+        got = {}
+
+        async def fake_orig(messages, prefix=None):
+            got["user"] = messages[-1]["content"]
+            yield 'data: {"content": "hi"}\n\n'
+
+        async def fake_understand(prefix, q, sender, recent, last_reply="", timeout=60.0, stance="", notes=""):
+            return pb.Brief(asking="x", intent=intent, tone=tone, about="the committee", answer="Give a take.")
+
+        async def go():
+            st = {"q": q, "idx": 0, "brief": None, "options": {"temperature": 0.2}}
+            t1, t2 = pb.STATE.set(st), chat.OPTIONS_OVERRIDE.set(st["options"])
+            try:
+                return [x async for x in pb._ollama_stream([{"role": "user", "content": voice + q}], "PFX")]
+            finally:
+                chat.OPTIONS_OVERRIDE.reset(t2)
+                pb.STATE.reset(t1)
+        with patch.object(pb, "_orig_ollama_stream", fake_orig), patch.object(pb, "understand", fake_understand):
+            asyncio.run(go())
+        return got["user"]
+    assert "BOARD VOICE" in run("hot take on the committee?", "question")
+    assert "BOARD VOICE" in run("roast the SEC for me", "request")
+    for q, intent, tone in (("lol the committee is a joke", "banter", "joking"),
+                            ("the committee is rigged and so are you", "question", "hostile")):
+        u = run(q, intent, tone)
+        assert "BOARD VOICE" not in u and "Unhinged certainty" not in u and u.endswith(q), u
+
+
 def test_banter_match_options_and_rider():
     assert banter.match("you suck") == "suck" and banter.match("all bark no bite lol") == "bark"
     assert banter.match("why don't you work better") == "bad" and banter.match("are you a bot or what") == "bot"

@@ -3774,7 +3774,9 @@ def insider_note(question: str, limit: int = 4) -> str:
             "and standings beat these notes.")
 
 
-_ROAST_VOICE = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|talk (shit|trash)|trash talk|light (him|her|them|\w+) up)\b", re.I)
+# an ASK to roast someone ('roast Ackbar', 'talk shit about the SEC'), not a jab ('you talk shit for a bot')
+_ROAST_VOICE = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|(?<!you )(?<!u )talk (shit|trash)|trash talk|"
+                          r"light (him|her|them|\w+) up)\b", re.I)
 
 
 def voice_note(question: str) -> str:
