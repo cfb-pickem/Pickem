@@ -642,7 +642,7 @@ def lock_text(ctx: dict, q: str) -> str | None:
             return dt.datetime.fromisoformat(str(g["start"])).replace(tzinfo=None)
         except ValueError:
             return None
-    starts = sorted((x, g) for g in games if (x := t(g)))
+    starts = sorted(((x, g) for g in games if (x := t(g))), key=lambda p: p[0])  # same kickoff: no dict compare
     if not starts:
         return None
     if not chat.week_locks_together(ctx.get("current_week")):
@@ -708,11 +708,24 @@ _FACTY = re.compile(r"\d|\b(cover\w*|miss\w*|won|lost|record|points?|place|ahead
                     r"in last|spread|line)\b", re.I)
 
 
-def voice_line_ok(line: str, answer: str, ctx: dict | None) -> bool:
-    """The wrap may only add personality: no number, no result/standing word, no team or member name that
-    could restate or contradict the code-written answer, nothing the filters would cut."""
+# the line talks to the texter: a he/they line is about someone in the answer (live exam 2026-11-16: "He is
+# just riding a wave of pure, unadulterated luck." about the 30-18 Dear Leader: mocks a good number)
+_THIRD = re.compile(r"\b(he|him|his|he'?s|she|her|she'?s|they|them|their|they'?re)\b", re.I)
+LEADER_TITLE = re.compile(r"dear leader|supreme \w+|glorious \w+|great leader|his excellency|state media|beloved leader",
+                          re.I)
+LEADER_HAIL = "Long live the Supreme Commissioner."
+
+
+def voice_line_ok(line: str, answer: str, ctx: dict | None, leader: bool = False) -> bool:
+    """The wrap may only add personality aimed at the texter: no number, no result/standing word, no team or
+    member name or he/they that could restate, contradict or mock someone in the code-written answer, nothing
+    the filters would cut. When the answer is the Dear Leader's place, the line must hail him."""
     import no_repeat
     if not line or len(line.split()) > 14 or _FACTY.search(line) or PREACHY.search(line) or no_repeat.banned_tic(line):
+        return False
+    if leader:
+        return bool(LEADER_TITLE.search(line)) and chat.sentence_ok(line, set())
+    if _THIRD.search(line):
         return False
     names = [r["team"] for r in (ctx or {}).get("standings_ytd") or []]
     names += [x for g in (ctx or {}).get("games_this_week") or [] for x in (g.get("away"), g.get("home")) if x]
