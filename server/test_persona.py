@@ -131,10 +131,12 @@ def test_news_rider_from_cache_only():
     import tempfile, json as _json
     from pathlib import Path
     import news
-    items = {"a": {"title": "Notre Dame routs Boston College 41-7", "date": "2026-11-14T22:00:00+00:00",
+    import datetime as _dt
+    _now = _dt.datetime.now(_dt.timezone.utc)  # item dates relative to now (fixed dates aged past news max age)
+    items = {"a": {"title": "Notre Dame routs Boston College 41-7", "date": (_now - _dt.timedelta(hours=6)).isoformat(),
                    "source": "ESPN", "summary": "CJ Carr threw two touchdowns.", "teams": ["Notre Dame"],
                    "confs": [], "players": [], "link": "x"},
-             "b": {"title": "Inside LSU's coaching search", "date": "2026-11-12T12:00:00+00:00", "source": "Yahoo",
+             "b": {"title": "Inside LSU's coaching search", "date": (_now - _dt.timedelta(days=2)).isoformat(), "source": "Yahoo",
                    "dellenger": True, "summary": "Who's next in Baton Rouge.", "teams": ["LSU"], "confs": [],
                    "players": [], "link": "y"}}
     with tempfile.TemporaryDirectory() as d:
