@@ -3172,7 +3172,8 @@ async def _collect(stream) -> tuple[str, list[str]]:
     return text, other
 
 
-_SENT_END = re.compile(r"[.!?][\"')\]]*\s+(?=\S)|\n+")
+# not after Jr./Sr./St. (live play-by-play names: 'Billy Edwards Jr. was reported injured' is one sentence)
+_SENT_END = re.compile(r"(?<!\bJr)(?<!\bSr)(?<!\bSt)(?<!\bvs)[.!?][\"')\]]*\s+(?=\S)|\n+")
 
 
 def facts_sentence(facts: dict) -> str:

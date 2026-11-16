@@ -977,7 +977,8 @@ _SCORE_VERB = re.compile(r"\b(scored|scores|scoring|touchdown|td|ran it in|punch
                          r"hauled in|field goal|fg|kicked)\b", re.I)
 _INJ_WORD = re.compile(r"\b(injur\w*|hurt|went down|carted|limp\w*|left the game|out of the game|knocked out|"
                        r"concussion|banged up)\b", re.I)
-_MARGIN = re.compile(r"\b(?:up|leads?|leading|ahead|down|trails?|trailing|behind)\s+(?:by\s+)?(\d{1,2})\b(?!\s*-)", re.I)
+_MARGIN = re.compile(r"\b(?:up|leads?|leading|ahead|down|trails?|trailing|behind)\s+(?:by\s+)?(\d{1,2})\b"
+                     r"(?!\s*(?:-|–|to\s+\d|points? to))", re.I)  # 'up 13 to 7' is a score, not a margin
 
 
 def claim_check(games: list[dict]):

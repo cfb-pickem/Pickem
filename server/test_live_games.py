@@ -210,6 +210,9 @@ class Claims(unittest.TestCase):
         u = state(UNC, at(UNC, r"B\.Edwards Jr\. injured on the play"))
         cu = L.claim_check([u])
         self.assertTrue(cu("UNC's QB Edwards got hurt on a sack, reported."))
+        # replay r2: the right answer was cut as a 13-point 'margin'
+        self.assertTrue(cu(f"Louisville is up {u['away_score']} to {u['home_score']} with 9:14 left in the 3rd quarter."))
+        self.assertFalse(cu("Louisville is up 10 on North Carolina."))
         self.assertFalse(cu("North Carolina lost Hall to an injury."))  # in the feed, not reported hurt
 
 
@@ -281,6 +284,16 @@ class Poller(unittest.TestCase):
         p.step()
         self.assertEqual(p.fails.get("sb"), 2)
         self.assertGreater(p.hold["sb"] - clock["t"], held)  # doubled
+
+
+class Sentences(unittest.TestCase):
+    def test_no_split_after_jr(self):
+        try:
+            import chat
+        except Exception:  # noqa: BLE001
+            return
+        t = "Billy Edwards Jr. was reported injured at 3Q 9:14. T.Burgess is in. "
+        self.assertEqual([m.end() for m in chat._SENT_END.finditer(t)][0], t.index("T.Burgess"))
 
 
 class Brain(unittest.TestCase):
