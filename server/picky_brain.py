@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 import httpx
 
 import banter
+import burn_book
 import callbacks
 import chat
 import league_rules
@@ -652,6 +653,128 @@ def stance_violations(text: str, s: dict | None) -> list[str]:
 
 
 # -----------------------------------------------------------------------------
+# banter fast path (router lane "banter", plan W1/W3): no understand pass, no drafts, no riders.
+# Code picks burn-book lines; one short gemma call picks the best fit (or writes its own short line).
+# -----------------------------------------------------------------------------
+
+# W3 A/B switch for Charlie's scorecard: 1 = gemma may put up to 8 words in front of the chosen line
+# to tie it to the exact text; 0 = the chosen line goes out verbatim
+BANTER_ADAPT = os.environ.get("PICKY_BANTER_ADAPT", "1") != "0"
+BANTER_TIMEOUT = 40.0
+BANTER_N = 4
+# burn-book type for each banter kind (pile-on / spiral levels map onto the book's own types)
+BOOK_TYPE = {"spiral2": "insult", "banter": None}
+
+
+def lane() -> str | None:
+    """The current text's router lane, or None outside a brain run."""
+    st = STATE.get()
+    rt = st.get("route") if st else None
+    return rt.lane if rt is not None else None
+
+
+def banter_ptype(st: dict) -> str:
+    """The provocation type with thread and league context: a spiral's 2nd shot gets the sharper/shorter
+    shape; a shot from someone crushing it is a good-week shot (never mock a good number)."""
+    rt, ctx, team = st["route"], st.get("ctx"), st.get("team")
+    p = rt.kind or "banter"
+    if p in router.HECKLES and rt.level == 2:
+        return "spiral2"
+    if p in ("insult", "vulgar", "egging") and ctx and team and not ctx.get("error"):
+        me = member_rec(ctx, team)
+        if (me.week or me.season) and crushing(me):
+            return "good_week_shot"
+    return p
+
+
+def banter_target(st: dict, ptype: str) -> str | None:
+    """Whose material the line uses: the member a roast names, the pile-on's worst week, else the sender."""
+    rt = st["route"]
+    if ptype == "pileon" and rt.shooters:
+        return worst_week(st.get("ctx"), rt.shooters) or rt.shooters[0]
+    if ptype in ("roast", "looks_bait"):
+        return burn_book._named_team(st["q"]) or st.get("team")
+    return st.get("team")
+
+
+def worst_week(ctx: dict | None, teams: list[str]) -> str | None:
+    """The member with the worst record this week (else last week, else season) among `teams`."""
+    if not ctx or ctx.get("error"):
+        return None
+    scored = []
+    for t in teams:
+        r = member_rec(ctx, t)
+        p = _pct(r.week) if r.week else _pct(r.season)
+        if p is not None:
+            scored.append((p, t))
+    return min(scored)[1] if scored else None
+
+
+def banter_material(st: dict, ptype: str, target: str | None) -> tuple[list[dict], list[str]]:
+    """(burn-book candidates, true jab facts) for the banter call. Candidates: provocation type + sender +
+    roast target, A-tier first, unused per the no_repeat ledger (burn_book.candidates)."""
+    book = BOOK_TYPE.get(ptype, ptype)
+    cands: list[dict] = []
+    if book:
+        try:
+            team = st.get("team")
+            cands = burn_book.candidates(book, sender_team=team, target_team=target if target != team else None,
+                                         chat_id=st.get("chat_id"), n=BANTER_N)
+        except Exception as e:  # noqa: BLE001  a broken book never blocks a reply
+            log.warning("burn book candidates failed: %s", e)
+    facts: list[str] = []
+    ctx = st.get("ctx")
+    if ptype in ("insult", "vulgar", "egging", "pileon", "roast", "looks_bait", "spiral2") and target and ctx \
+            and not ctx.get("error") and not (target == (ctx.get("leader") or {}).get("team_name")
+                                              and not chat.leader_is_caller(ctx)):
+        facts = [f for f in jab_material(ctx, target) if chat.sentence_ok(f, set())][:2]
+    return cands, facts
+
+
+async def banter_reply(st: dict, prefix: str) -> str:
+    """One short gemma call: the number of the best-fitting line (optionally tied to the text) or its own
+    short line; then W1's shape rules in code."""
+    ptype = banter_ptype(st)
+    target = banter_target(st, ptype)
+    cands, facts = banter_material(st, ptype, target)
+    lines = [c["text"] for c in cands]
+    st.update(ptype=ptype, banter_target=target, banter_cands=cands)
+    user = router.banter_user(st["q"], ptype, st.get("sender", ""), st.get("last_reply", ""), st.get("recent", ""),
+                              lines, facts, target=target if ptype in ("pileon", "roast") else None,
+                              adapt=BANTER_ADAPT)
+    t0 = time.time()
+    try:
+        raw = await _json_call(prefix, router.BANTER_TAIL, user, router.BANTER_SCHEMA, 0.6, router.BANTER_TOKENS,
+                               BANTER_TIMEOUT)
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("banter call failed: %s", e)
+        raw = ""
+    text, how = router.parse_banter(raw, lines, BANTER_ADAPT)
+    m = re.match(r"line (\d+)", how)
+    st["banter_pick"] = cands[int(m.group(1)) - 1] if m else None
+    shaped = router.shape_banter(text, st["q"], chat.member_nicknames(), max_words=10 if ptype == "spiral2" else 25)
+    log.info("banter (%s, %s, target %s, %d lines, %.1fs): %r", ptype, how, target, len(lines), time.time() - t0,
+             shaped[:160])
+    st["banter_how"] = how
+    return shaped
+
+
+def banter_fallback(st: dict, bad: str = "") -> str | None:
+    """A verbatim candidate the filters keep, for when the model's line got cut."""
+    for c in st.get("banter_cands") or []:
+        if c["text"] != bad and chat.sentence_ok(c["text"], set()):
+            st["banter_pick"] = c
+            return router.shape_banter(c["text"], st["q"], chat.member_nicknames())
+    return None
+
+
+async def _text_stream(text: str):
+    if text:
+        yield chat._sse({"content": text})
+    yield "data: [DONE]\n\n"
+
+
+# -----------------------------------------------------------------------------
 # hooks into chat.py (installed by group_chat; inert unless STATE is set)
 # -----------------------------------------------------------------------------
 
@@ -681,6 +804,17 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         async for x in _orig_ollama_stream(messages, prefix):
             yield x
         return
+    rt = st.get("route")
+    if rt is not None and rt.lane == "banter" and st.get("banter_text") is not None:
+        async for x in _text_stream(st["banter_text"]):  # a guard regen asks again: same line, no new call
+            yield x
+        return
+    if prefix and st.get("brief") is None and rt is not None and rt.lane == "banter":
+        st["prefix"], st["brief"] = prefix, Brief(intent="banter")  # no understand pass on the fast path
+        st["banter_text"] = await banter_reply(st, prefix)
+        async for x in _text_stream(st["banter_text"]):
+            yield x
+        return
     if prefix and st.get("brief") is None:
         st["prefix"] = prefix
         st["stance"] = compute_stance(st.get("ctx"), st["q"], st.get("team"))
@@ -698,6 +832,11 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             if nr is not rt:
                 log.info("route (from brief): %s -> %s", rt.label(), nr.label())
                 rt.__dict__.update(nr.__dict__)
+                if rt.lane == "banter":  # the brief read a bare insult / plain banter: the fast path's one call
+                    st["banter_text"] = await banter_reply(st, prefix)
+                    async for x in _text_stream(st["banter_text"]):
+                        yield x
+                    return
         if not st["stance"] and st["brief"].intent == "insult" and re.search(r"\bpicky\b|^(you|me)?$", st["brief"].about, re.I):
             # a bare insult ('Pussy', live 2026-11-16) slips past the regexes; without a stance the brief said
             # "fire back first" and 0-3 Picky mocked the 4-0 leader
@@ -802,16 +941,28 @@ def install() -> None:
 # the pipeline
 # -----------------------------------------------------------------------------
 
+def _trace(st: dict, q: str, sender: str, route, drafts: list, eligible_idx: list, pick: int, how: str,
+           t0: float) -> None:
+    """One PICKY_BRAIN_TRACE row per text (exam judge agreement + the scorecard's lane column)."""
+    if not TRACE:
+        return
+    with open(TRACE, "a") as f:
+        f.write(json.dumps({"q": q, "sender": sender, "lane": route.label(), "route": route.as_dict(),
+                            "ptype": st.get("ptype"), "brief": (st["brief"] or Brief()).__dict__,
+                            "drafts": [d.__dict__ for d in drafts], "eligible": eligible_idx,
+                            "pick": pick, "how": how, "secs": round(time.time() - t0, 1)}) + "\n")
+
+
 async def run(draft, *, q: str, sender: str = "", team: str | None = None, recent: str = "", last_reply: str = "",
               recent_picky: list[str] | None = None, t0: float | None = None,
-              route: "router.Route | None" = None) -> tuple[str, str | None]:
+              route: "router.Route | None" = None, chat_id: str | None = None) -> tuple[str, str | None]:
     """(reply, image). `draft()` runs chat.py's pipeline once and returns
     (shaped reply, sentences the filters dropped, image or None). `route` (router.classify) picks the
     lane; the run may refine it in place (the brief's fallback), so the caller can log the final lane."""
     t0 = t0 or time.time()
     route = route if route is not None else router.Route("full", why="no router")
     st = {"q": q, "sender": sender, "team": team, "recent": recent, "last_reply": last_reply, "brief": None, "ammo": None,
-          "prefix": None, "idx": 0, "options": dict(SAMPLING[0]), "route": route}
+          "prefix": None, "idx": 0, "options": dict(SAMPLING[0]), "route": route, "chat_id": chat_id}
     tok, otok = STATE.set(st), chat.OPTIONS_OVERRIDE.set(st["options"])
     try:
         drafts: list[Draft] = []
@@ -830,6 +981,15 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                 break
             if image:
                 return text, image
+            if route.lane == "banter":  # the fast path: one call, no reroll; a cut line falls back to the book
+                if drops or not text.strip():
+                    log.info("banter line cut by the filters (%d drops): %r", drops, text[:120])
+                    text = banter_fallback(st, st.get("banter_text") or "") or text
+                text = router.shape_banter(text, q, chat.member_nicknames(),
+                                           max_words=10 if st.get("ptype") == "spiral2" else 25)
+                log.info("banter reply (%.0fs, %s): %r", time.time() - t0, route.label(), text[:160])
+                _trace(st, q, sender, route, [Draft(text, drops, 0)], [0], 0, st.get("banter_how") or "banter", t0)
+                return text, None
             stale = stale_records(text, st.get("ctx"), st.get("team"))
             if stale:
                 log.warning("draft %d: stale record %r", i + 1, stale[0][:160])
@@ -858,12 +1018,7 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
             how = "out of time"
         log.info("picked draft %d of %d (%s, %d eligible) in %.0fs", pick.idx + 1, len(drafts), how, len(pool),
                  time.time() - t0)
-        if TRACE:
-            with open(TRACE, "a") as f:
-                f.write(json.dumps({"q": q, "sender": sender, "lane": route.label(), "route": route.as_dict(),
-                                    "brief": (st["brief"] or Brief()).__dict__,
-                                    "drafts": [d.__dict__ for d in drafts], "eligible": [d.idx for d in pool],
-                                    "pick": pick.idx, "how": how, "secs": round(time.time() - t0, 1)}) + "\n")
+        _trace(st, q, sender, route, drafts, [d.idx for d in pool], pick.idx, how, t0)
         return pick.text, None
     finally:
         chat.OPTIONS_OVERRIDE.reset(otok)

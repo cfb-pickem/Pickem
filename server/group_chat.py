@@ -446,6 +446,35 @@ for _name in ("facts_sentence", "templated_answer"):
     setattr(chat, _name, _counted)
 
 
+# The banter fast path (router lane "banter", plan W1): no required-facts appender ("For the record:
+# ..." after a comeback), no results block or results guard, no code-picked body dodge in front of the
+# line (the looks-bait burn-book lines carry their own dodge). The lane is read lazily: the brief's
+# fallback can switch to banter after these were set up.
+_orig_results_facts = chat.results_facts
+_orig_ensure = chat._ensure
+_orig_body_dodge = chat.body_dodge
+
+
+def _results_facts(ctx, question):
+    return None if picky_brain.lane() == "banter" else _orig_results_facts(ctx, question)
+
+
+def _ensure(stream, need):
+    if need:
+        check, fallback = need
+        need = (lambda t, c=check: picky_brain.lane() == "banter" or c(t), fallback)
+    return _orig_ensure(stream, need)
+
+
+def _body_dodge(ctx, question):
+    return None if picky_brain.lane() == "banter" else _orig_body_dodge(ctx, question)
+
+
+chat.results_facts = _results_facts
+chat._ensure = _ensure
+chat.body_dodge = _body_dodge
+
+
 # -----------------------------------------------------------------------------
 # playoff race: exact numbers (playoff_race.py), never the model's arithmetic
 # -----------------------------------------------------------------------------
@@ -672,14 +701,17 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
         log.warning("exchange log: %r", e)
 
 
-def no_repeat_screen(reply: str, q: str, team: str | None, key: str | None) -> str:
+def no_repeat_screen(reply: str, q: str, team: str | None, key: str | None, route=None) -> str:
     """Checklist 7 at the send point: a banter/roast reply that repeats a line, angle, opener or
     stock phrase (no_repeat ledger) goes out as a fresh burn-book line instead; what's sent is
-    recorded. Fails open: a ledger/book error never blocks a reply."""
+    recorded. Fails open: a ledger/book error never blocks a reply. A banter-lane reply whose type
+    burn_book can't see from the text alone (the brief's fallback, pile-ons, spirals) is recorded here."""
     try:
         out, info = burn_book.enforce(reply, q, sender_team=team, chat_id=key)
         if info and info.get("why"):
             log.info("no-repeat: %s -> %s (%s)", info["why"][:80], info["src"], info["ptype"])
+        if info is None and route is not None and route.lane in ("banter", "jailbreak") and out:
+            burn_book.no_repeat.default_ledger().record(out, target=team, chat_id=key)
         return out
     except Exception:  # noqa: BLE001
         log.warning("no-repeat screen failed", exc_info=True)
@@ -777,9 +809,9 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply, image = await picky_brain.run(
                 draft, q=q, sender=f"{s.name or s.team} (team \"{s.team}\")" if s.team else (s.name or ""),
                 team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:],
-                route=route)
+                route=route, chat_id=key or chat_id)
             if not image:
-                reply = no_repeat_screen(reply, q, s.team, key or chat_id)
+                reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
             log.info("lane: %s", route.label())
             await save_turn(key, q_hist, reply, who, lane=route.label())
