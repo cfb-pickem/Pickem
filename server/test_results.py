@@ -24,24 +24,24 @@ OSU, BSU, WF, SMU, UTSA, NT = "Oregon State", "Boise State", "Wake Forest", "SMU
 def test_underdog_loses_by_less_than_spread_is_win():
     r = chat.grade_pick(OSU, OSU, BSU, -13.5, winner=OSU, status="final", away_pts=41, home_pts=46)
     assert r["result"] == "WIN" and r["label"] == "Oregon State +13.5", r
-    assert "lost the game 41-46, by 5" in r["why"] and "13 or fewer" in r["why"], r
+    assert r["why"].startswith("covered by 8.5; lost the game by 5, 41-46") and "13 or fewer" in r["why"], r
 
 
 def test_favorite_wins_but_fails_to_cover_is_loss():
     r = chat.grade_pick(BSU, OSU, BSU, -13.5, winner=OSU, status="final", away_pts=41, home_pts=46)
     assert r["result"] == "LOSS" and r["label"] == "Boise State -13.5", r
-    assert "won the game by 5" in r["why"] and "14 or more" in r["why"], r
+    assert r["why"].startswith("did not cover: missed the cover by 8.5; won the game by 5") and "14 or more" in r["why"], r
 
 
 def test_underdog_wins_outright_and_favorite_covers():
     assert chat.grade_pick(WF, WF, SMU, 1.5, winner=WF, status="final", away_pts=49, home_pts=7)["result"] == "WIN"
     # line +1.5 = home SMU gets 1.5, so Wake Forest is the -1.5 favorite
     r = chat.grade_pick(WF, WF, SMU, 1.5, winner=WF, status="final", away_pts=49, home_pts=7)
-    assert r["label"] == "Wake Forest -1.5" and "won by 42" in r["why"], r
+    assert r["label"] == "Wake Forest -1.5" and "covered by 40.5; won the game by 42" in r["why"], r
     r = chat.grade_pick(SMU, WF, SMU, 1.5, winner=WF, status="final", away_pts=49, home_pts=7)
-    assert r["result"] == "LOSS" and "lost by 42" in r["why"], r
+    assert r["result"] == "LOSS" and "lost the game by 42" in r["why"], r
     r = chat.grade_pick(SMU, WF, SMU, 1.5, winner=SMU, status="final", away_pts=20, home_pts=24)
-    assert r["result"] == "WIN" and "won outright 24-20 as the underdog" in r["why"], r
+    assert r["result"] == "WIN" and "won the game outright, 24-20, as the underdog" in r["why"], r
 
 
 def test_push_goes_to_away():
@@ -50,6 +50,9 @@ def test_push_goes_to_away():
     home = chat.grade_pick(NT, UTSA, NT, -3, winner=UTSA, status="final", away_pts=20, home_pts=23)
     assert away["result"] == "WIN" and home["result"] == "LOSS"
     assert "exactly on the number" in away["why"] and "push" in home["why"]
+    # ATS wording for a push follows the league rule (the away side gets it), never 'won'/'lost'
+    assert chat.ats_text(away) == "pushed, and a push goes to the away side, so it counts as covered"
+    assert chat.ats_text(home) == "pushed, and a push goes to the away side, so it did not cover"
 
 
 def test_winner_beats_score_math():
@@ -98,7 +101,7 @@ def ctx_week11():
 def test_results_block_for_caller():
     f = chat.results_facts(ctx_week11(), "how did my Oregon State pick do?")
     b = chat.results_block(f)
-    assert "- Oregon State +13.5 = WIN (covered: lost the game 41-46, by 5" in b, b
+    assert "- Oregon State +13.5 = WIN (covered by 8.5; lost the game by 5, 41-46" in b, b
     assert "- Wake Forest -1.5 = WIN" in b, b
     assert "- UTSA +2.5 = IN PROGRESS (currently covering)" in b, b
     assert "RECORD THIS WEEK ON DECIDED GAMES: 2-0, 1 still in progress" in b, b
@@ -107,7 +110,7 @@ def test_results_block_for_caller():
 
 def test_results_block_for_picky_only_his_games():
     b = chat.results_block(chat.results_facts(ctx_week11(), "what's Picky's record this week?"))
-    assert "- Boise State -13.5 = LOSS (did not cover: won the game by 5 (46-41)" in b, b
+    assert "- Boise State -13.5 = LOSS (did not cover: missed the cover by 8.5; won the game by 5, 46-41" in b, b
     assert "PICKY'S RECORD THIS WEEK ON DECIDED GAMES: 0-1" in b, b
     picky_part = b.split("PICKY'S OWN")[1]
     assert "Wake Forest" not in picky_part  # he never picked it
@@ -210,11 +213,12 @@ def test_guard_flags_invented_line():
 def test_template_is_true():
     f = facts()
     t = chat.templated_answer(f)
-    assert "Oregon State +13.5 is a WIN" in t and "You're 2-0" in t, t
+    assert "Oregon State +13.5 covered by 8.5 (lost the game by 5" in t and "You're 2-0" in t, t
     assert chat.check_answer(t, f) == [], t
     f = facts("what's Picky's record this week?")
     t = chat.templated_answer(f)
-    assert "Boise State -13.5 is a LOSS" in t and "I'm 0-1" in t and chat.check_answer(t, f) == [], t
+    assert "Boise State -13.5 missed the cover by 8.5 (won the game by 5" in t and "I'm 0-1" in t \
+        and chat.check_answer(t, f) == [], t
 
 
 def test_guard_flags_a_pick_pinned_on_the_wrong_person():
@@ -263,7 +267,7 @@ def test_guard_streams_clean_answer_whole():
 
 def test_guard_drops_bad_sentence_keeps_the_rest_and_appends_facts():
     a = _run_guard([["Nice week. ", "Your Oregon State pick didn't cover. ", "Sad."]])
-    assert a.startswith("Nice week. Sad. For the record:") and "Oregon State +13.5 was a WIN" in a, a
+    assert a.startswith("Nice week. Sad. For the record:") and "Oregon State +13.5 covered by 8.5" in a, a
     assert "didn't cover" not in a, a
 
 
@@ -297,6 +301,58 @@ def test_guard_lets_the_users_stats_page_oddity_through():
         assert chat.check_answer("You're 2-7 in Oklahoma games.", f) == []
         assert chat.check_answer("You're 1-5 this week.", f)            # no split named: still a fake record
         assert chat.check_answer("You're 1-5 picking against Texas.", f)  # wrong school
+
+
+# ---- ATS first (Charlie 2026-11-16: "we don't care who won the game, we care who covered") -------------
+
+def test_lsu_example_leads_with_the_cover():
+    # LSU -5.5 at home, lost 13-31: 'LSU -5.5 lost by 18, missed the cover by 23.5'
+    r = chat.grade_pick("LSU", "Alabama", "LSU", -5.5, winner="Alabama", status="final", away_pts=31, home_pts=13)
+    assert r["result"] == "LOSS" and r["su"] == "lost" and r["margin"] == 23.5, r
+    assert r["why"] == "did not cover: missed the cover by 23.5; lost the game outright by 18, 13-31", r
+    assert chat.ats_text(r) == "missed the cover by 23.5"
+
+
+def test_su_framing_flagged_when_the_cover_differs():
+    pf = facts("what's Picky's record this week?")  # Picky: Boise State -13.5 won by 5, did NOT cover
+    for bad in ("My Boise State pick won.", "I took Boise State and they won by 5.", "I won with Boise State."):
+        p = chat.check_answer(bad, pf)
+        assert any("a win on the final score" in x and "did NOT cover" in x for x in p), (bad, p)
+    f = facts()  # caller: Oregon State +13.5 lost by 5, covered
+    for bad in ("You took Oregon State and they lost.", "Your Oregon State pick went down by 5, rough."):
+        p = chat.check_answer(bad, f)
+        assert any("a loss on the final score" in x and "but it covered" in x for x in p), (bad, p)
+    # the cover stated alongside the score, or score and cover agree: fine
+    for ok, ff in (("I took Boise State and they won by 5 but missed the cover by 8.5.", pf),
+                   ("My Boise State pick won the game but didn't cover.", pf),
+                   ("You took Oregon State, they lost by 5 and still covered.", f),
+                   ("You took Wake Forest and they won by 42.", f),  # won and covered: no mixup
+                   ("You took Oregon State and Boise State beat them by 5.", f)):  # verb is about the opponent
+        assert not any("final score" in x for x in chat.check_answer(ok, ff)), (ok, chat.check_answer(ok, ff))
+
+
+def test_missed_the_cover_is_a_no_cover():
+    p = chat.check_answer("Oregon State missed the cover.", facts())
+    assert p == ["says Oregon State did not cover, but Oregon State COVERED"], p
+    assert chat.check_answer("Boise State missed the cover by 8.5.", facts()) == []
+
+
+def test_straight_up_record_named_in_the_correction():
+    ctx = ctx_week11()  # Chuck P: Wake Forest won + covered, Oregon State lost + covered -> 2-0 ATS, 1-1 SU
+    p = chat.check_answer("You're 1-1 this week.", chat.results_facts(ctx, "how did my picks do?"))
+    assert any("straight-up record" in x for x in p), p
+
+
+def test_sender_pick_won_on_the_score_is_cut_in_banter():
+    ok = chat.picky_claim_check(ctx_week11(), "you")
+    assert ok("You took Oregon State and they covered, fine.")
+    assert not ok("You took Oregon State and they lost, so sit down.")
+
+
+def test_persona_says_ats_is_core():
+    import inspect
+    src = inspect.getsource(chat.prompt_prefix)
+    assert "GRADED ONLY AGAINST THE SPREAD" in src and "only who covered" in src
 
 
 if __name__ == "__main__":

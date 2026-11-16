@@ -200,18 +200,20 @@ def roast_pick_lines(ctx: dict, team: str, chalk: bool = False) -> str:
             continue
         mine, theirs = (ap, hp) if same_team(pk, g["away"]) else (hp, ap)
         other = g["home"] if same_team(pk, g["away"]) else g["away"]
-        res = (f"{pk} won the game by {mine - theirs:g}" if mine > theirs else f"{pk} lost the game by {theirs - mine:g}")
         hit = same_team(pk, cov)
-        res += (" and covered" if hit else " but didn't cover" if mine > theirs else "")
+        # the cover first, with its margin computed here ('missed that game by five' was really 8.5);
+        # who won the game is only context
         sp = re.search(r"\s([-+]\d+(?:\.\d+)?)$", lab)
-        if sp:  # the cover margin in code ('missed that game by five' was really 8.5)
-            cm = abs(mine - theirs + float(sp.group(1)))
-            res += f" ({'covered by' if hit else 'missed the cover by'} {cm:g})" if cm else ""
-        out.append((hit, f"- {team} {when}: took {lab} vs {other}; final {pk} {mine:g}, {other} {theirs:g}: "
-                         f"{res}. {team}'s pick {'HIT' if hit else 'MISSED'}."))
+        cm = abs(mine - theirs + float(sp.group(1))) if sp else 0
+        res = (f"{'covered' if hit else 'missed the cover'}{f' by {cm:g}' if cm else ''}; "
+               + (f"{pk} won the game by {mine - theirs:g}" if mine > theirs else f"{pk} lost the game by {theirs - mine:g}")
+               + (", but that's not a cover" if mine > theirs and not hit else
+                  ", still a cover" if mine < theirs and hit else ""))
+        out.append((hit, f"- {team} {when}: took {lab} vs {other}: {res} (final {pk} {mine:g}, {other} {theirs:g}). "
+                         f"{team}'s pick {'HIT' if hit else 'MISSED'}."))
     out.sort(key=lambda x: x[0])
-    return ("ROAST PICKS (quote each outcome exactly as written; a pick that won the game but didn't cover "
-            "did NOT lose outright):\n"
+    return ("ROAST PICKS (graded on the cover, never the final score; quote each outcome exactly as written; a "
+            "pick that won the game but didn't cover did NOT lose outright):\n"
             + "\n".join(x[1] for x in out[:3])) if out else ""
 
 
@@ -2120,6 +2122,12 @@ def prompt_prefix(ctx: dict) -> str:
         "clever, not because it's loud. "
         "But you ALWAYS answer the question correctly from LEAGUE DATA. "
         "Accuracy beats jokes.\n\n"
+        "THE LEAGUE IS GRADED ONLY AGAINST THE SPREAD, and that's core to who you "
+        "are: nobody here cares who won the game, only who covered. Every pick "
+        "result, record, streak, roast and piece of advice is covered or didn't "
+        "cover, with the margin against the line when it helps (a -5.5 favorite "
+        "that lost by 18 missed the cover by 23.5). Who won the game is only "
+        "context, never the result.\n\n"
         "WHO YOU ARE (opinions only; they never change a fact, and you bring "
         "them up only when the topic does): a Notre Dame homer and a Bo Nix "
         "believer. About your own picks you're smug when they hit and "
@@ -2209,7 +2217,9 @@ def prompt_prefix(ctx: dict) -> str:
         "(+13.5) covers by winning, or losing by 13 or fewer. A covered pick "
         "is a point. WIN/LOSS and records are already computed in the RESULTS "
         "lines: copy them, never recompute a cover from the score. A pick that "
-        "lost the game can still be a WIN.\n\n"
+        "lost the game can still be a WIN, and a favorite that won the game can "
+        "still miss the cover. Never call a pick a win or a loss because of who "
+        "won the game.\n\n"
         + EXAMPLES
         + "\n\nLEAGUE DATA:\n"
         + render_context(ctx)
@@ -2581,27 +2591,45 @@ def grade_pick(pick, away, home, line, winner=None, status=None, away_pts=None, 
     fav = ln != 0 and ((side == home) == (ln < 0))
     sp = abs(ln)
     margin = (hp + ln - ap) * (1 if side == home else -1)
+    # ATS first (Charlie: 'we don't care who won the game, we care who covered'): the cover and its
+    # margin lead, the final score is only context ('LSU -5.5 lost by 18, missed the cover by 23.5')
+    out["su"] = "won" if diff > 0 else "lost" if diff < 0 else None
     if margin == 0:
         why = (f"landed exactly on the number ({sc}); the league gives a push to the away side, "
                + ("so it counts as covered" if win else "so it did not cover"))
     elif ln == 0:
-        why = f"{'won' if diff > 0 else 'lost'} the game {sc}"
-    elif win:
-        why = (f"covered: won outright {sc} as the underdog" if not fav and diff > 0 else
-               f"covered: lost the game {sc}, by {_num(-diff)}, and only {_need(sp, False)}" if not fav else
-               f"covered: won by {_num(diff)} ({sc}), {_need(sp, True)}")
+        why = f"{'covered' if win else 'did not cover'} (pick'em, no spread): {'won' if diff > 0 else 'lost'} the game {sc}"
     else:
-        why = (f"did not cover: won the game by {_num(diff)} ({sc}) but {_need(sp, True)}" if fav and diff > 0 else
-               f"did not cover: lost the game outright {sc}" if fav else
-               f"did not cover: lost by {_num(-diff)} ({sc}), {_need(sp, False)}")
-    # the cover margin, computed here so the model never does the math ('missed by five' when it was 8.5)
-    if margin != 0 and ln != 0:
-        why += f"; {'covered by' if win else 'missed the cover by'} {_num(abs(margin))}"
+        out["margin"] = abs(margin)
+        why = (f"covered by {_num(abs(margin))}; " if win else f"did not cover: missed the cover by {_num(abs(margin))}; ")
+        why += (f"won the game outright, {sc}, as the underdog" if win and not fav and diff > 0 else
+                f"lost the game by {_num(-diff)}, {sc}, and only {_need(sp, False)}" if win and not fav else
+                f"won the game by {_num(diff)}, {sc}, {_need(sp, True)}" if win else
+                f"won the game by {_num(diff)}, {sc}, but {_need(sp, True)}" if fav and diff > 0 else
+                f"lost the game outright by {_num(-diff)}, {sc}" if fav else
+                f"lost the game by {_num(-diff)}, {sc}, {_need(sp, False)}")
     # trust the graded winner; if the score disagrees (stale row), drop the explanation
     if (margin > 0 or (margin == 0 and side == away)) != win:
         why = "covered" if win else "did not cover"
+        out.pop("margin", None)
+        out.pop("su", None)
     out["why"] = why
     return out
+
+
+def ats_text(r: dict) -> str:
+    """'covered by 8.5' / 'missed the cover by 23.5': a graded pick's result as the league counts it."""
+    if r.get("result") not in ("WIN", "LOSS"):
+        return r.get("result", "").lower()
+    if r.get("why", "").startswith("slots jackpot"):
+        return "counts as a win (slots jackpot)"
+    if r.get("why", "").startswith("landed exactly on the number"):  # a push: the away side gets it
+        return "pushed, and a push goes to the away side, so it " + ("counts as covered" if r["result"] == "WIN"
+                                                                      else "did not cover")
+    m = r.get("margin")
+    if r["result"] == "WIN":
+        return f"covered by {_num(m)}" if m else "covered"
+    return f"missed the cover by {_num(m)}" if m else "did not cover"
 
 
 def _live_by_teams(ctx: dict) -> dict:
@@ -2813,8 +2841,9 @@ def polarity(clause: str) -> tuple[bool, bool]:
     neg = bool(_NEG_ONLY.search(clause) or _NEG_CASED.search(clause))
     for m in _COVER_WORD.finditer(clause):
         before = clause[: m.start()]
-        if _NEGATION.search(before[-40:]):
-            neg = True
+        if _NEGATION.search(before[-40:]) or re.search(r"\b(miss\w*|short of|blew|fell short of)\s+(the\s+)?$",
+                                                       before, re.I):
+            neg = True  # 'missed the cover by 8.5' is a no-cover, not a cover
         elif re.search(r"\b(to|needed|need|needs|had to|would|could|must)\s*$", before, re.I):
             continue  # 'needed to cover' says nothing about the result
         else:
@@ -2869,6 +2898,73 @@ def wrong_person_picks(sent: str, sides: dict, pool) -> list[str]:
                     out.append(f"says {'Picky' if who == 'picky' else 'the user'} took {team}, but "
                                f"{'his' if who == 'picky' else 'their'} picks are " + ", ".join(sorted(sides[who])))
     return out
+
+
+# Straight-up framing passed off as the pick's result (Charlie 2026-11-16: "We don't care who won the game,
+# we care who covered the spread"): 'your Boise State pick won' when Boise State won by 5 and missed the
+# -13.5 cover, 'you took Oregon State and they lost' when Oregon State +13.5 covered.
+_SU_VERB = re.compile(r"\b(won|wins|win|beat|beats|pulled it off|got the w|"
+                      r"lost|loses|lose|fell|dropped|got beat|got beaten|went down)\b", re.I)
+_ATS_SAID = re.compile(r"\bcover\w*|\bspread\b|\bthe (number|line)\b|\bats\b|\bhit\b|\bmiss\w*|\bcash\w*|"
+                       r"\b(a|the) point\b", re.I)
+_SU_WITH = re.compile(r"\b(you|i|he|they)\s+(won|lost)\s+(with|on)\b", re.I)
+
+
+def su_record(rows: list[dict]) -> tuple[int, int] | None:
+    """The picked teams' straight-up W-L on decided games (only to name the mixup in a correction)."""
+    rows = [r for r in rows if r["result"] in ("WIN", "LOSS") and not r.get("tiebreaker")]
+    if not rows or any(not r.get("su") for r in rows):
+        return None
+    w = sum(r["su"] == "won" for r in rows)
+    return w, len(rows) - w
+
+
+def su_framing_problems(text: str, facts: dict | None) -> list[str]:
+    """Sentences that call a subject's pick a win/loss from who won the game when the cover went the
+    other way. A sentence that also states the cover ('won by 5 but didn't cover') is fine: the
+    polarity checks hold that part to the facts."""
+    if not facts or not facts.get("subjects"):
+        return []
+    by_kind = {("you" if s["kind"] == "you" else "picky" if s["kind"] == "picky" else s["team"]): s
+               for s in facts["subjects"]}
+    members = [s for s in facts["subjects"] if s["kind"] == "member"]
+    probs = []
+    for sent in _sentences((text or "").replace("’", "'")):
+        if _ATS_SAID.search(sent) or re.search(r"\bWIN\b|\bLOSS\b", sent):
+            continue
+        m = _PICKREF.search(sent) or _SU_WITH.search(sent)
+        if not m:
+            continue
+        who = m.group(0).split()[0].lower()
+        subj = (by_kind.get("you") if who in ("your", "you") else
+                by_kind.get("picky") if who in ("my", "i") else
+                (members[0] if len(members) == 1 else None) if who in ("his", "their", "he", "they") else
+                (members[0] if len(members) == 1 else by_kind.get("you")))
+        if not subj:
+            continue
+        decided = [r for r in subj["rows"] if r["result"] in ("WIN", "LOSS")]
+        rows = [r for r in decided if any(re.search(_team_re(x, False), sent, re.I)
+                                          for x in (r["game"]["away"], r["game"]["home"]))]
+        if not rows and len(decided) == 1:
+            rows = decided
+        if len(rows) != 1:
+            continue
+        r = rows[0]
+        if not r.get("su") or (r["su"] == "won") == (r["result"] == "WIN"):
+            continue  # the final score and the cover agree: nothing to mix up
+        v = _SU_VERB.search(sent, m.start())
+        if not v:
+            continue
+        opp = r["game"]["home"] if same_team(r["side"], r["game"]["away"]) else r["game"]["away"]
+        if re.search(_team_re(opp, False), sent[m.end():v.start()], re.I):
+            continue  # 'you took Boise State and Oregon State beat them': the verb isn't about the pick
+        said = "lost" if v.group(1).lower() in ("lost", "loses", "lose", "fell", "dropped", "got beat",
+                                                "got beaten", "went down") else "won"
+        if said == r["su"]:
+            probs.append(f"calls {subj['team']}'s {r['label']} pick a {'win' if said == 'won' else 'loss'} on the "
+                         f"final score ({r['side']} {r['su']} the game), but it "
+                         f"{'covered' if r['result'] == 'WIN' else 'did NOT cover'}: the league grades the cover")
+    return probs
 
 
 def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = None) -> list[str]:
@@ -2948,6 +3044,8 @@ def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = No
                             probs.append(f"says {subj['team']}'s {r['label']} pick lost, but it is a WIN")
                         elif r["result"] == "LOSS" and p and not ng:
                             probs.append(f"says {subj['team']}'s {r['label']} pick won, but it is a LOSS")
+        # 2c) a pick called a win/loss on the final score when the cover says otherwise
+        probs += su_framing_problems(t, facts)
         # 3) records
         for sent in _sentences(t):
             other_span = re.search(r"\b(last week|week \d+|season|year|overall|on the year|all year|"
@@ -2961,7 +3059,9 @@ def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = No
                     want = by_kind.get(who)
                     probs.append(f"says {'the user is' if who == 'you' else 'Picky is'} {rec[0]}-{rec[1]}"
                                  + (f", but the record this week is {want['record'][0]}-{want['record'][1]}"
-                                    if want else ""))
+                                    if want else "")
+                                 + (" (that's the straight-up record; the league counts covers)"
+                                    if want and rec == su_record(want["rows"]) else ""))
     # 2b) the question names a game the caller won/lost: "you took the underdog and got crushed" with no
     #     team in the sentence still contradicts it
     if facts:
@@ -3040,9 +3140,10 @@ def templated_answer(facts: dict) -> str:
     rows = [r for r in subj["rows"] if {r["game"]["away"], r["game"]["home"]} & named] or subj["rows"]
     w, l = subj["record"]
     lines = []
-    for r in rows:
-        why = f" ({r['why']})" if r["why"] else ""
-        lines.append(f"{r['label']} is {'a ' + r['result'] if r['result'] in ('WIN', 'LOSS') else r['result'].lower()}{why}.")
+    for r in rows:  # covered / didn't cover first, the final score only as context
+        why = r["why"].split("; ", 1)[1] if "; " in r["why"] and r.get("margin") else r["why"]
+        why = f" ({why})" if why and why not in ("covered", "did not cover") else ""
+        lines.append(f"{r['label']} {ats_text(r) if r['result'] in ('WIN', 'LOSS') else 'is ' + r['result'].lower()}{why}.")
     who = {"you": f"You're {w}-{l}", "picky": f"I'm {w}-{l}", "member": f"{subj['team']} is {w}-{l}"}[subj["kind"]]
     tail = {"you": "", "picky": " Don't rub it in.", "member": ""}[subj["kind"]]
     jab = _TEMPLATE_JABS[sum(map(ord, q)) % len(_TEMPLATE_JABS)]
@@ -3077,7 +3178,7 @@ def facts_sentence(facts: dict) -> str:
     rows = [r for r in rows if {r["game"]["away"], r["game"]["home"]} & named] or rows
     w, l = subj["record"]
     who = {"you": f"you're {w}-{l}", "picky": f"I'm {w}-{l}", "member": f"{subj['team']} is {w}-{l}"}[subj["kind"]]
-    picks = "; ".join(f"{r['label']} was a {r['result']}" for r in rows[:4])
+    picks = "; ".join(f"{r['label']} {ats_text(r)}" for r in rows[:4])
     return f"For the record: {picks}, and {who} on decided games this week." if picks else \
         f"For the record, {who} on decided games this week."
 
@@ -4807,9 +4908,11 @@ def games_recap_note(ctx: dict, question: str) -> str:
         won = g["away"] if ap > hp else g["home"] if hp > ap else None
         sc = f"{g['away']} {_num(ap)}, {g['home']} {_num(hp)}"
         line = f"{fav} -{_num(abs(ln))}" if fav else "pick'em"
-        s = f"- {sc}. Pool line {line}. "
-        s += f"{won} won by {_num(abs(ap - hp))}" if won else "Tied"
-        s += f"; {cov} covered by {_num(abs(hp + ln - ap))}." if hp + ln != ap else f"; landed on the number, {cov} gets the push."
+        # the cover first (that's the result in this league), the final score only as context
+        s = (f"- {cov} covered by {_num(abs(hp + ln - ap))}" if hp + ln != ap else
+             f"- landed exactly on the number, a push, and the push goes to the away side, so {cov} covered")
+        s += f". Final {sc}, pool line {line}; "
+        s += f"{won} won the game by {_num(abs(ap - hp))}." if won else "tied."
         if won and dog and same_team(won, dog):
             s += f" UPSET: {dog} was the underdog and won outright."
         elif won and fav and same_team(won, fav) and not same_team(cov, fav):
@@ -5674,6 +5777,9 @@ def picky_claim_check(ctx: dict, who: str = "picky"):
         if not picks:
             return None
         anchor, others, brk = _YOU, _OTHER_SUBJ_2P, r"i|he|she|they|ackbar|chuck"
+        facts = results_facts(ctx, "how did my picks do?")  # only for the straight-up-vs-cover check below
+        if facts:
+            facts = {**facts, "subjects": [s for s in facts["subjects"] if s["kind"] == "you"]}
     else:
         pp = ctx.get("picky_player")
         if not pp:
@@ -5734,8 +5840,8 @@ def picky_claim_check(ctx: dict, who: str = "picky"):
         s = sent.replace("’", "'").replace("‘", "'")
         if not re.search(anchor, s, re.I):
             return True
-        if facts and facts["subjects"] and check_answer(s, facts):
-            return False  # 'my Boise pick cashed', "I'm 3-0 this week"
+        if facts and facts["subjects"] and (su_framing_problems(s, facts) if who == "you" else check_answer(s, facts)):
+            return False  # 'my Boise pick cashed', "I'm 3-0 this week"; 'your Boise pick won' (it didn't cover)
         m = _SELF_PERFECT.search(s)
         if has_l and m and not re.search(r"\b(not|far from|never been)\b", m.group(0), re.I):
             return False
@@ -6148,8 +6254,9 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
         for r in member_pick_results(ctx, me):
             g = r["game"]
             if r["result"] in ("WIN", "LOSS") and re.search(_team_re(r["side"], False), q, re.I):
-                return (lambda t: bool(re.search(r"\b(WIN|LOSS|won|lost|hit|miss\w*|covered|cash\w*)\b", t, re.I)),
-                        f" For the record: {r['label']} was a {r['result']}.")
+                # the cover, not the final score: 'Boise won' doesn't answer 'how'd my Boise pick do'
+                return (lambda t: bool(re.search(r"\b(WIN|LOSS|hit|miss\w*|cover\w*|cash\w*)\b", t, re.I)),
+                        f" For the record: {r['label']} {ats_text(r)}.")
     if _UNCOVERED_ASK.search(q) and re.search(r"\bgames?\b|\bpicks?\b", q, re.I):
         return (lambda t: bool(re.search(r"commissioner|commish", t, re.I)), " Take it up with the commissioner.")
     if _RACE_ASK.search(q) and not re.search(r"\b(cfp|committee|college football playoff|ranked|rankings?)\b", q, re.I):

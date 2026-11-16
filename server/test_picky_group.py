@@ -370,7 +370,7 @@ def test_games_question_is_about_the_games():
     q = "what did you think of this weekend's games?"
     note = chat.games_recap_note(ctx, q)
     assert "UPSET: UTSA was the underdog and won outright" in note
-    assert "Boise State won by 5; Oregon State covered by 8.5" in note
+    assert "- Oregon State covered by 8.5. Final" in note and "Boise State won the game by 5." in note, note
     assert "Best week: Ackbar, Blinkstradamus at 3-1" in note
     assert not chat.games_recap_note(ctx, "how did my picks do this weekend?")
     f = chat.results_facts(ctx, q)

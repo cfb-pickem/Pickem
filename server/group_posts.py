@@ -445,8 +445,11 @@ def recap_facts(lg: League, w: int) -> tuple[list[str], dict]:
         fav = favorite(g)
         fm = cover_margin(g, fav)
         out = ("won outright" if (fav == g["Home"]) == (float(g["HomePts"]) > float(g["AwayPts"])) else "lost outright")
-        facts.append(f"Week {w} final: {score_line(g)}. Pool line {side_label(g, fav)}. {side_label(g, cov)} covered "
-                     f"(favorite {fav} {out}).")
+        cm = cover_margin(g, cov)
+        facts.append(f"Week {w} final: {side_label(g, cov)} covered"
+                     + (f" by {abs(cm):g}" if cm else "" if cm is None else
+                        " (landed on the number; the push goes to the away side)")
+                     + f". {score_line(g)}, pool line {side_label(g, fav)} (favorite {fav} {out}).")
         for side in (g["Away"], g["Home"]):
             who = by_side.get((g["GameId"], side), [])
             if who:
