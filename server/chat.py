@@ -3585,7 +3585,7 @@ def leader_note(ctx: dict, question: str) -> str:
 # posts are not available (no free, ToS-clean source), so Picky says so.
 _NEWS_ASK = re.compile(
     r"\b(news|headlines?|latest|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
-    r"hot seat|buyout|transfer\w*|portal|decommit\w*|what'?s (going on|happening|new)|happening in|dellenger|"
+    r"hot seat|buyout|transfer\w*|portal|decommit\w*|what('?s| is) (going on|happening|new)|going on in|happening in|dellenger|"
     r"tweet\w*|twitter|recruit\w*|suspend\w*|any updates?|breaking|questionable|doubtful|injury report|"
     r"availability|game[- ]time decision|(is|are|will)\b[^?.!]{0,30}\b(qb|quarterback|starter)s?\b[^?.!]{0,20}"
     r"\b(play|playing|start|starting|out|back|healthy|available|suit\w* up)|will [A-Z]\w+( [A-Z]\w+)? play)\b",
@@ -3608,6 +3608,8 @@ def news_note(question: str) -> str:
                       "", re.sub(r"[^\w\s']", " ", q.lower()))
         if not any(tags.values()) and len(rest.split()) >= 2:
             lines = []  # names something the feeds can't place (a fake team?): no keyword guessing
+        elif not any(tags.values()):  # a general ask ("what's the latest nees", a typo): the top stories
+            lines = news.breaking_for("latest news", limit=5)
         else:
             lines = news.breaking_for(q, limit=5)  # plain-code pipeline: deduped, superseded, newest first
         fv = freshness.check("news", news.load_cache().get("fetched_at"))
