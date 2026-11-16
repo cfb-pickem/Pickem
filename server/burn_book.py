@@ -982,7 +982,9 @@ _EGGING = re.compile(r"\b(you gonna take that|gonna let (him|her|them|that)|(he|
                      r"you got (cooked|smoked|roasted|owned|destroyed)|respond to (that|this|him|her)|say something back|"
                      r"clap back|get (him|her) picky|roast (him|her) back|ratio(ed)?|you just gonna sit there|"
                      r"he got you|she got you|picky got (cooked|smoked|owned))\b", re.I)
-_COMPLIMENT = re.compile(r"\b(good one|nice one|well played|lol picky|lmao picky|haha picky|love (you|this bot|picky)|"
+_COMPLIMENT = re.compile(r"\b((that was|that'?s|thats|so|pretty|actually|lowkey|kinda) (funny|hilarious|good|clever)|"
+                         r"(lol|lmao|lmfao|haha+|hah) (ok|okay|nice|good|picky)|ok that was|"
+                         r"good one|nice one|well played|lol picky|lmao picky|haha picky|love (you|this bot|picky)|"
                          r"picky'?s the (best|goat|man)|picky (is|you'?re) (the )?(goat|best|funny|great|hilarious|elite)|"
                          r"(good|great|funny) bot|good job picky|nice picky|picky w\b)\b", re.I)
 _ROAST_REQ = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|light (him|her|them|\w+) up|go after|"
@@ -1008,7 +1010,7 @@ def ptype_for(q: str) -> str | None:
     cat = banter.match(t)
     if cat == "bot":
         return "bot"
-    if _COMPLIMENT.search(t):
+    if _COMPLIMENT.search(t) and not chat._HOSTILE.search(t):
         return "compliment"
     if _ROAST_REQ.search(t) and _named_team(t):
         return "roast"
@@ -1047,7 +1049,14 @@ def enforce(reply: str, q: str, sender_team: str | None = None, chat_id: str | N
     with a banned tic) is replaced by the best fresh burn-book candidate; what goes out is recorded.
     Non-banter texts pass untouched (None info). Never raises past a bad book."""
     ptype = ptype_for(q)
-    if not ptype or not (reply or "").strip():
+    if not (reply or "").strip():
+        return reply, None
+    if not ptype:
+        # not banter: no ledger, but a banned tic sentence never goes out if anything else is left
+        sents = [x for x in re.split(r"(?<=[.!?])\s+", reply.strip()) if x]
+        kept = " ".join(x for x in sents if not no_repeat.banned_tic(x)).strip()
+        if kept and kept != reply.strip():
+            return kept, {"ptype": None, "target": None, "why": "banned tic (not banter)", "src": "model-trimmed"}
         return reply, None
     ledger = ledger or no_repeat.default_ledger()
     jab = jab_target(q, sender_team, ptype)

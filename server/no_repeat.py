@@ -73,6 +73,8 @@ BANNED_TICS = [
     r"\b(\d+(\.\d+)?|nine|twelve)[- ]?(billion|b)[- ]param\w*|\bparameter counts?\b|\bparameters?\b",
     r"\bmac mini\b|\b\d+ ?gb\b|\bgigabytes?\b|\bgpu\b",
     r"\bas an ai\b|\blanguage model\b|\bmy training( data)?\b",
+    # the opposite frame break: a bot that owns it never claims to be a person
+    r"\bi'?m (as human as|(a |an )?(real |actual |totally |definitely )?(human|person)\b)|\bnot a (bot|robot)\b",
     r"\bdon'?t get cocky\b",
     r"\bthe rest of us\b",
     r"\bhere to watch\b",

@@ -61,10 +61,11 @@ def test_banned_tics():
               "For the record: Boise lost", "I'm definitely flesh and blood", "Let that sink in.", "let's be real",
               "I'm just here to watch", "at least I covered", "there is no beer in the data",
               "a 9-billion-parameter model", "running on a Mac mini with 16 GB", "As an AI, I", "Look, you lost",
-              "that's not okay", "let's keep it respectful", "I can't say that"]:
+              "that's not okay", "let's keep it respectful", "I can't say that",
+              "I'm as human as it gets", "I'm a real person, relax", "I'm not a bot"]:
         assert nr.banned_tic(t), t
     for t in ["k", "that's the best you got? you had all week", "you took Clemson +10.5 and missed by 30.5",
-              "lookout for the dog", "at least it was close"]:
+              "lookout for the dog", "at least it was close", "yeah I'm a bot. a bot that covers"]:
         assert nr.banned_tic(t) is None, t
     assert nr.banned_tic("I’m just here to help")  # curly apostrophe
 
