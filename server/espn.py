@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 
 import httpx
@@ -22,7 +23,7 @@ import freshness
 
 log = logging.getLogger("picky.espn")
 
-SUMMARY = (
+SUMMARY = os.environ.get("PICKY_ESPN_SUMMARY") or (  # replays point this at their fake ESPN (never set live)
     "https://site.api.espn.com/apis/site/v2/sports/football/college-football/"
     "summary?event="
 )
