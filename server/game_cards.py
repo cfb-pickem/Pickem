@@ -309,7 +309,7 @@ def add_case(card: dict, dossier: dict | None, prev: dict | None, research) -> N
 def opus_research(prompt: str) -> dict:
     import analyst
     import dossier
-    return dossier.run_claude(prompt, analyst.TAKE_TIMEOUT_S, analyst.TAKE_SCHEMA, "")
+    return dossier.run_claude(prompt, analyst.TAKE_TIMEOUT_S, analyst.TAKE_SCHEMA, "", caller="game_cards")
 
 
 # -----------------------------------------------------------------------------

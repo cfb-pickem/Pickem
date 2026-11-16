@@ -1,7 +1,7 @@
 """
 How often does text Picky's local judge (picky_brain.judge, the 9B) pick the
 draft a stronger grader would? Reads a PICKY_BRAIN_TRACE JSONL from an exam
-run, has one offline `claude -p` call (sonnet, no tools) pick the best of the
+run, has one offline `claude -p` call (Opus via picky_claude, no tools) pick the best of the
 same eligible drafts by the same criteria, and prints the agreement rate.
 Below ~70%, best-of-N is mostly noise and the judge needs work.
 
@@ -50,7 +50,7 @@ def main(path: str) -> int:
                       + "\n".join(f"  DRAFT {k + 1}: {drafts[i]}" for k, i in enumerate(el)))
     import dossier
     out = dossier.run_claude(PROMPT + "\n\n## FACT SHEET\n\n" + facts() + "\n\n## ITEMS\n\n" + "\n\n".join(blocks),
-                             900, SCHEMA, "")
+                             900, SCHEMA, "", caller="judge_agree")
     claude = {p["tag"]: p["best"] for p in out.get("picks") or []}
     both = [t for t in local if t in claude]
     agree = sum(local[t] == claude[t] for t in both)

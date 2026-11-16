@@ -1,6 +1,6 @@
 """
 Blind judge for text-exam runs (eval/run.py --text): one offline `claude -p`
-call (sonnet, no tools, no MCP) scores every answer of every run side by side,
+call (Opus via picky_claude, no tools, no MCP) scores every answer of every run side by side,
 versions shuffled per item so the judge can't tell which build wrote what.
 Picky never calls a hosted model; this is the exam's grader, run by hand.
 
@@ -113,9 +113,9 @@ def main(paths: list[str]) -> int:
         vers = [f"  --- Version {string.ascii_uppercase[k]} ---\n{_convo(by[ri][iid])}" for k, ri in enumerate(order)]
         blocks.append(head + "\n" + "\n".join(vers))
     prompt = RUBRIC + "\n\n## FACT SHEET\n\n" + facts() + "\n\n## ITEMS\n\n" + "\n\n".join(blocks)
-    import dossier  # run_claude: claude -p sonnet, strict empty MCP, no API key
+    import dossier  # run_claude -> picky_claude: Opus, strict empty MCP, no API key
     print(f"judging {len(ids)} items x {len(runs)} versions ({len(prompt) // 1000}k chars)...", flush=True)
-    out = dossier.run_claude(prompt, 1500, SCHEMA, "")
+    out = dossier.run_claude(prompt, 1500, SCHEMA, "", caller="judge_text")
     got = {it["tag"]: {v["label"]: v for v in it.get("versions") or []} for it in out.get("items") or []}
     judges = [{} for _ in runs]
     for tag, k in key.items():

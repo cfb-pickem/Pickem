@@ -13,11 +13,12 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(1, str(Path(__file__).resolve().parents[2] / "server"))
 import make_specs as ms  # noqa: E402
+import picky_claude  # noqa: E402  (Opus, zero MCP, no API key, usage log; kill switch aborts the run)
 
 LOG = Path("/Users/Agent/cfb-pickem-private/picky_exchanges.jsonl")
 SEEN = Path("/Users/Agent/picky-lora/data/harvested_ts.json")  # exchanges already graded
-EMPTY_MCP = "/Users/Agent/cfb-pickem-private/empty.mcp.json"
 KINDS = [t for t, _, _ in ms.TYPES]
 PROMPT = """You're reviewing replies from "Picky", the trash-talking bot member of a college football pick'em league's group text. For each exchange below, grade Picky's reply 1-5 on:
 - helpful: did it actually answer what was asked, clearly and up front? (a sharp comeback counts for a heckle; a real opinion counts for an off-topic question)
@@ -46,10 +47,12 @@ def main():
         body = PROMPT.format(kinds=", ".join(KINDS), teams=", ".join(ms.MEMBERS)) + "\n".join(
             json.dumps({"i": i, "chat": r["mode"], "sender_team": r.get("team"), "member": r["q"][:400],
                         "picky": r["a"][:600]}) for i, r in enumerate(batch))
-        res = subprocess.run(["/usr/bin/perl", "-e", "alarm shift; exec @ARGV", "600", "/opt/homebrew/bin/claude",
-                              "-p", "--model", "sonnet", "--strict-mcp-config", "--mcp-config", EMPTY_MCP,
-                              "--output-format", "text"], input=body, capture_output=True, text=True,
-                             cwd="/Users/Agent/.imessage-claude/delegate-cwd")
+        try:
+            res = picky_claude.run(body, timeout=600, caller="lora-harvest", output_format="text",
+                                   cwd="/Users/Agent/.imessage-claude/delegate-cwd")
+        except subprocess.TimeoutExpired:
+            print("grading batch timed out")
+            continue
         try:
             t = res.stdout
             grades = json.loads(t[t.index("["):t.rindex("]") + 1])

@@ -16,8 +16,8 @@ Per game:
   1. Leads, deterministic (no LLM): team-tagged items from news.py's RSS
      cache and r/CFB's public RSS (www.reddit.com/r/CFB/.rss; no login, no
      app; skipped quietly when Reddit blocks it).
-  2. `claude -p` (sonnet on Charlie's subscription; ANTHROPIC_API_KEY is
-     stripped so it can never bill an API key), web tools only
+  2. `claude -p` via picky_claude.run (Opus on Charlie's subscription;
+     ANTHROPIC_API_KEY is stripped so it can never bill an API key), web tools only
      (--tools WebSearch,WebFetch), zero MCP servers, neutral cwd outside the
      home dir, hard timeout. Output is schema-checked JSON.
   3. validate(): schema, kinds, dates, URL required, paywalled/paid sites
@@ -68,6 +68,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import analyst  # noqa: E402
 import cfbd  # noqa: E402
+import picky_claude  # noqa: E402
 
 log = logging.getLogger("picky.dossier")
 
@@ -76,8 +77,6 @@ DOSSIER_DIR = Path(os.environ.get("PICKY_DOSSIER_DIR", HERE / "cache" / "dossier
 LOG_PATH = HERE / "logs" / "dossier.log"
 LOCK = Path("/tmp/picky-dossier.lock")
 LOCK_STALE_S = 3 * 3600
-CLAUDE = os.environ.get("PICKY_CLAUDE_BIN", "/opt/homebrew/bin/claude")
-EMPTY_MCP = HERE / "empty.mcp.json"
 WORK_DIR = Path("/tmp/picky-dossier-work")  # outside $HOME: no project CLAUDE.md gets loaded
 GAME_TIMEOUT_S = 900
 MAX_GAMES_PER_RUN = 8
@@ -247,7 +246,7 @@ def news_leads(away: str, home: str, limit: int = 8) -> list[dict]:
             or _mentions(it.get("title", ""), away) or _mentions(it.get("title", ""), home)]
     hits.sort(key=lambda it: it.get("date") or "", reverse=True)
     return [{"title": it["title"], "url": it["link"], "date": (it.get("date") or "")[:10],
-             "source": it.get("source")} for it in hits[:limit]]
+             "source": it.get("source"), "summary": it.get("summary") or ""} for it in hits[:limit]]
 
 
 def parse_reddit_rss(xml_text: str) -> list[dict]:
@@ -338,20 +337,14 @@ def build_prompt(g: dict, season: int, week: int, leads: list[dict], now: dt.dat
 
 
 def run_claude(prompt: str, timeout: int = GAME_TIMEOUT_S, schema: dict | None = None,
-               tools: str = "WebSearch,WebFetch") -> dict:
-    """structured_output from one `claude -p` run (web research by default;
-    tools="" for the no-tools analyst take); raises on any failure."""
-    import picky_claude
+               tools: str = "WebSearch,WebFetch", caller: str | None = None) -> dict:
+    """structured_output from one `claude -p` run via picky_claude (Opus, zero MCP,
+    no API key; web research by default, tools="" for the no-tools writers/judges);
+    raises on any failure, incl. picky_claude.AnthropicDisabled."""
     picky_claude.guard()
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-    env.update({"DISABLE_AUTOUPDATER": "1", "TERM": "dumb",
-                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"})
-    cmd = [CLAUDE, "-p", "--model", picky_claude.MODEL, "--tools", tools,
-           "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", str(EMPTY_MCP),
-           "--output-format", "json", "--json-schema", json.dumps(schema or SCHEMA)]
-    p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout,
-                       cwd=WORK_DIR, env=env)
+    p = picky_claude.run(prompt, timeout=timeout, caller=caller, cwd=WORK_DIR, tools=tools,
+                         schema=schema or SCHEMA)
     if p.returncode != 0:
         raise RuntimeError(f"claude exit {p.returncode}: {(p.stderr or p.stdout)[-400:]}")
     out = json.loads(p.stdout)
@@ -537,6 +530,67 @@ def local_summary(client: httpx.Client, g: dict, secs: dict) -> tuple[str, str]:
     return rule_summary(secs), "rule"
 
 
+LOCAL_PROMPT = """Game: {away} (away) at {home} (home), kickoff {kick}. Today is {today}.
+Below are news items about these teams (headline + the outlet's own blurb), numbered.
+Pull out up to {max_claims} short claims a fan would want before picking this game: injuries and
+availability, quarterback status, suspensions, coaching changes. Use ONLY what an item's own text says;
+copy names and numbers exactly; skip items that don't bear on this game. For each claim give the item
+number it came from. kind: injury (availability), fact (other news), insider_opinion (a named person's
+view). team: away, home or both. If nothing applies, return an empty list.
+
+{items}"""
+
+LOCAL_SCHEMA = {"type": "object", "properties": {"claims": {"type": "array", "items": {
+    "type": "object", "properties": {
+        "item": {"type": "integer"}, "text": {"type": "string"},
+        "kind": {"type": "string", "enum": ["fact", "injury", "insider_opinion"]},
+        "team": {"type": "string", "enum": ["away", "home", "both"]},
+        "players": {"type": "array", "items": {"type": "string"}}},
+    "required": ["item", "text", "kind", "team", "players"]}}}, "required": ["claims"]}
+
+
+def local_research(client: httpx.Client, g: dict, leads: list[dict], now: dt.datetime) -> dict:
+    """Anthropic down: the same claims shape from Picky's own model (Ollama, only while chat is
+    idle) over the news-cache leads news.py already fetched (headline + feed blurb). A claim keeps
+    its item's URL and date, and every name and number in it must be in that item's text, so
+    nothing gets a source it doesn't have. Then the normal validator runs. Raises when chat is busy
+    or the model fails (the caller keeps the previous dossier)."""
+    items = [x for x in leads if x.get("url") and x.get("date")][:MAX_CLAIMS]
+    if not items:
+        return {"claims": [], "notes": "local fallback: no news-cache leads for this game"}
+    if not _chat_idle(client):
+        raise RuntimeError("local fallback: chat is busy")
+    k = kickoff(g)
+    prompt = LOCAL_PROMPT.format(away=g["Away"], home=g["Home"], today=now.strftime("%A %Y-%m-%d"),
+                                 kick=k.strftime("%a %b %-d, %-I:%M %p CT") if k else "TBD", max_claims=MAX_CLAIMS,
+                                 items="\n".join(f"{i + 1}. [{x['date']}, {x.get('source') or 'news'}] {x['title']}. "
+                                                 f"{x.get('summary') or ''}" for i, x in enumerate(items)))
+    r = client.post(f"{OLLAMA}/api/chat", timeout=300, json={
+        "model": LOCAL_MODEL, "stream": False, "think": False, "format": LOCAL_SCHEMA,
+        "messages": [{"role": "user", "content": prompt}],
+        "options": {"num_ctx": 16384, "temperature": 0.1, "num_predict": 1200}})
+    r.raise_for_status()
+    out = json.loads((r.json().get("message") or {}).get("content") or "{}")
+    claims, skipped = [], 0
+    for c in out.get("claims") or []:
+        i = c.get("item") if isinstance(c, dict) else None
+        if not isinstance(i, int) or not 1 <= i <= len(items):
+            skipped += 1
+            continue
+        x = items[i - 1]
+        src = f"{x['title']} {x.get('summary') or ''} {g['Away']} {g['Home']}"
+        text = str(c.get("text") or "").strip()
+        players = [str(p) for p in c.get("players") or [] if str(p).lower() in src.lower()]
+        if not text or not summary_grounded(text, src):
+            skipped += 1
+            continue
+        claims.append({"text": text, "kind": c.get("kind"), "team": c.get("team"), "players": players,
+                       "source_url": x["url"], "source_name": x.get("source") or "", "date": x["date"],
+                       "confidence": "medium"})
+    return {"claims": claims, "searched": [], "notes": f"local fallback over {len(items)} news-cache items "
+                                                        f"({skipped} ungrounded claims skipped)"}
+
+
 # -----------------------------------------------------------------------------
 # files
 # -----------------------------------------------------------------------------
@@ -581,7 +635,15 @@ def build_one(client: httpx.Client, g: dict, season: int, week: int, trigger: st
     away, home = g["Away"], g["Home"]
     leads = news_leads(away, home)
     rstatus, rleads = reddit_leads(client, away, home)
-    raw = research(build_prompt(g, season, week, leads + rleads, now))
+    researcher = f"claude -p {picky_claude.MODEL} (web search, free public sources)"
+    try:
+        raw = research(build_prompt(g, season, week, leads + rleads, now))
+    except Exception as e:  # noqa: BLE001 - Anthropic down / timeout / bad run
+        if not use_local:
+            raise
+        log.warning("game %s research failed (%s); local fallback", g["GameId"], str(e)[:200])
+        raw = local_research(client, g, leads, now)
+        researcher = f"local {LOCAL_MODEL} over news-cache leads (Anthropic unavailable)"
     urls = sorted({str(c.get("source_url") or "") for c in raw.get("claims") or [] if isinstance(c, dict)})
     status = check_urls(client, [u for u in urls if _url_ok(u)])
     secs, dropped = validate(raw, now, status)
@@ -593,7 +655,7 @@ def build_one(client: httpx.Client, g: dict, season: int, week: int, trigger: st
     d = {
         "schema": 1, "season": season, "week": week, "game_id": g["GameId"], "away": away, "home": home,
         "kickoff": g.get("Start (CT)"), "generated_at": now.isoformat(timespec="seconds"), "trigger": trigger,
-        "researcher": "claude -p sonnet (web search, free public sources)",
+        "researcher": researcher,
         "summary": summary, "summary_by": by, **secs,
         "dropped": dropped, "searched": [str(x)[:120] for x in (raw.get("searched") or [])][:12],
         "notes": str(raw.get("notes") or "")[:400],
@@ -607,7 +669,7 @@ def build_one(client: httpx.Client, g: dict, season: int, week: int, trigger: st
 
 
 def run_take_claude(prompt: str) -> dict:
-    return run_claude(prompt, analyst.TAKE_TIMEOUT_S, analyst.TAKE_SCHEMA, "")
+    return run_claude(prompt, analyst.TAKE_TIMEOUT_S, analyst.TAKE_SCHEMA, "", caller="dossier-take")
 
 
 def add_take(d: dict, g: dict, season: int, week: int, now: dt.datetime, prev: dict | None, take_fn) -> None:

@@ -33,10 +33,8 @@ import picky_claude  # noqa: E402
 BANK = Path(os.environ.get("PICKY_INSIDER", "/Users/Agent/cfb-pickem-private/insider_bank.md"))
 WORK_DIR = Path(os.environ.get("PICKY_INSIDER_WORK", "/Users/Agent/cfb-pickem-private/tmp/insider-work"))
 PROMPT = HERE / "insider_refresh_prompt.md"
-EMPTY_MCP = HERE / "empty.mcp.json"
 LOG = HERE / "logs" / "insider_refresh.log"
 LOCK = Path("/tmp/picky-insider-refresh.lock")
-CLAUDE = "/opt/homebrew/bin/claude"
 RESEARCH_TIMEOUT_S, REPAIR_TIMEOUT_S = 2400, 600
 
 SECTIONS = ["Realignment", "Revenue sharing / House / NIL", "CFP format and committee",
@@ -102,15 +100,9 @@ def stamp(text: str, today: dt.date) -> str:
 
 
 def run_claude(prompt: str, tools: str, timeout: int) -> str:
-    """Text result of one `claude -p` run; raises on any failure."""
-    picky_claude.guard()
-    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-    env.update({"DISABLE_AUTOUPDATER": "1", "TERM": "dumb",
-                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"})
-    cmd = [CLAUDE, "-p", "--model", picky_claude.MODEL, "--tools", tools,
-           "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", str(EMPTY_MCP),
-           "--output-format", "text"]
-    p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, cwd=WORK_DIR, env=env)
+    """Text result of one `claude -p` run (picky_claude: Opus, zero MCP, no API key); raises on any failure."""
+    p = picky_claude.run(prompt, timeout=timeout, caller="insider_refresh", cwd=WORK_DIR, tools=tools,
+                         output_format="text")
     if p.returncode != 0:
         raise RuntimeError(f"claude exit {p.returncode}: {(p.stderr or p.stdout)[-400:]}")
     return p.stdout

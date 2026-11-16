@@ -3,8 +3,9 @@ League Assistant chat backend.
 
 FastAPI service that answers natural-language questions about the pick'em league.
 Context is pulled from Supabase using the caller's own JWT so RLS applies;
-inference runs on the local Ollama daemon on the mini. The Claude Haiku path
-is still here but off unless PICKY_USE_CLAUDE=1 (then Ollama is its fallback).
+inference runs on the local Ollama daemon on the mini. Live replies never call
+Anthropic: the old hosted-model path is dormant (off unless PICKY_USE_CLAUDE=1,
+and PICKY_NO_ANTHROPIC=1 always keeps it off).
 
 Public surface:
   POST /chat   {messages, supabase_jwt}  -> SSE stream of assistant tokens
@@ -48,6 +49,7 @@ import league_rules
 import live_flag
 import live_games
 import news
+import picky_claude
 import rare_bits
 
 CT = zoneinfo.ZoneInfo("America/Chicago")
@@ -73,7 +75,7 @@ AUTH = f"{SUPABASE_URL}/auth/v1"
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 MODEL = os.environ.get("PICKEM_CHAT_MODEL", "gemma4:12b-it-qat")
-CLAUDE_MODEL = os.environ.get("PICKY_CLAUDE_MODEL", "claude-haiku-5-5")
+CLAUDE_MODEL = picky_claude.MODEL  # dormant live path (below); every Anthropic call uses the one model
 CLAUDE_EFFORT = os.environ.get("PICKY_CLAUDE_EFFORT", "medium")
 # The API key never touches the repo (public GitHub Pages): env first, else
 # the login keychain, account "drake".
@@ -477,7 +479,7 @@ def _anthropic_key() -> str | None:
 
 # Off by default: Picky runs 100% on the local model so there are no API costs.
 # PICKY_USE_CLAUDE=1 turns the Claude path back on (key isn't even read otherwise).
-USE_CLAUDE = os.environ.get("PICKY_USE_CLAUDE") == "1"
+USE_CLAUDE = os.environ.get("PICKY_USE_CLAUDE") == "1" and not picky_claude.disabled()
 _key = _anthropic_key() if USE_CLAUDE else None
 CLAUDE = anthropic.AsyncAnthropic(api_key=_key, max_retries=1, timeout=60.0) if _key else None
 if not CLAUDE:

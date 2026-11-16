@@ -4,8 +4,8 @@ small live model only has to deliver it in his voice.
 
 Called by dossier.py right after a game's dossier is (re)built, so it runs on
 the dossier's schedule (slate set / Fri 5 PM / Sat 7 AM CT) and costs one
-extra no-tools `claude -p` call per game per run (sonnet, Charlie's
-subscription, ANTHROPIC_API_KEY stripped by dossier.run_claude).
+extra no-tools `claude -p` call per game per run (Opus via picky_claude, Charlie's
+subscription, ANTHROPIC_API_KEY stripped).
 
 The brief is numbered so every reason must cite where it came from:
   S1..  computed signals from chat.matchup_signals (market vs pool line, SP+,
@@ -291,6 +291,7 @@ def build_take(g: dict, dossier: dict, season, week, now: dt.datetime, research,
     take, probs = validate_take(raw, items, cg, m)
     if not take:
         raise RuntimeError("take rejected: " + "; ".join(probs)[:400])
-    take.update({"generated_at": now.isoformat(timespec="seconds"), "by": "claude -p sonnet (no tools)",
+    import picky_claude
+    take.update({"generated_at": now.isoformat(timespec="seconds"), "by": f"claude -p {picky_claude.MODEL} (no tools)",
                  "brief": items, "dropped": probs})
     return take

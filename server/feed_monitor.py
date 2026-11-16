@@ -60,8 +60,6 @@ MEMORY = Path(os.environ.get("PICKY_MEMORY_FILE",
                              "/Users/Agent/.claude/projects/-Users-Agent/memory/project_cfb_pickem.md"))
 AGENTS_DIR = Path.home() / "Library/LaunchAgents"
 PY = str(REPO / "server/.venv/bin/python3")
-CLAUDE = os.environ.get("PICKY_CLAUDE_BIN", "/opt/homebrew/bin/claude")
-EMPTY_MCP = HERE / "empty.mcp.json"
 # same path the Picky watchdog and the LoRA cycle use to text Charlie
 NOTIFY = [PY, "-I", "/Users/Agent/picky-marathon/wit_eval.py", "notify"]
 
@@ -304,17 +302,11 @@ End with one line: FIXED: <what you changed> or NO_FIX: <why>."""
 
 
 def call_claude(prompt: str, cwd: Path, timeout: int = REPAIR_TIMEOUT) -> tuple[int, str]:
-    """One unattended claude -p run in cwd: (exit code, last of its output)."""
+    """One unattended claude -p run in cwd via picky_claude (Opus, guard(), zero MCP,
+    no API key): (exit code, last of its output)."""
     import picky_claude
-    picky_claude.guard()
-    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-    env.update({"DISABLE_AUTOUPDATER": "1", "TERM": "dumb",
-                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"})
-    cmd = [CLAUDE, "-p", "--model", picky_claude.MODEL, "--tools", CLAUDE_TOOLS,
-           "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", str(EMPTY_MCP),
-           "--output-format", "json"]
     try:
-        p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=env)
+        p = picky_claude.run(prompt, timeout=timeout, caller="feed_monitor-repair", cwd=cwd, tools=CLAUDE_TOOLS)
     except subprocess.TimeoutExpired:
         return 124, "timed out"
     try:

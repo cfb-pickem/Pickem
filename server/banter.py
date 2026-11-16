@@ -251,6 +251,7 @@ def due(doc: dict | None, now: dt.datetime) -> str | None:
 
 def refresh(force: bool = False, research=None, out: Path | None = None, now: dt.datetime | None = None) -> dict:
     import dossier  # run_claude, read_json, write_atomic
+    import picky_claude
     out = out or BANK
     now = now or dt.datetime.now(CT)
     prev = dossier.read_json(out)
@@ -260,7 +261,7 @@ def refresh(force: bool = False, research=None, out: Path | None = None, now: dt
     fail = out.with_suffix(".failed")
     if not force and fail.exists() and time.time() - fail.stat().st_mtime < FAIL_BACKOFF_S:
         return {"ok": True, "built": False, "backoff": True}
-    research = research or (lambda p: dossier.run_claude(p, TIMEOUT_S, schema(), ""))
+    research = research or (lambda p: dossier.run_claude(p, TIMEOUT_S, schema(), "", caller="banter"))
     try:
         cats, dropped = validate(research(build_prompt()), (prev or {}).get("categories"))
     except Exception:
@@ -272,7 +273,7 @@ def refresh(force: bool = False, research=None, out: Path | None = None, now: dt
         fail.touch()
         raise RuntimeError(f"only {fresh} categories got valid new lines; kept the previous bank")
     doc = {"schema": 1, "generated_at": now.isoformat(timespec="seconds"), "trigger": reason,
-           "by": "claude -p sonnet (no tools)", "categories": cats, "dropped": dropped}
+           "by": f"claude -p {picky_claude.MODEL} (no tools)", "categories": cats, "dropped": dropped}
     dossier.write_atomic(out, doc)
     os.chmod(out, 0o600)
     fail.unlink(missing_ok=True)

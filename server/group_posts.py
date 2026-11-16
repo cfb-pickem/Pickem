@@ -27,12 +27,15 @@ is due (Central time):
             ONE short line on who it helped or hurt. One per game, games that
             end close together are batched, quiet hours 23:30-08:00.
 
-Writing: `claude -p` sonnet on Charlie's subscription (dossier.run_claude: no
-tools, zero MCP, ANTHROPIC_API_KEY stripped), offline, never live chat. The
+Writing: `claude -p` Opus on Charlie's subscription (picky_claude via
+dossier.run_claude: no tools, zero MCP, ANTHROPIC_API_KEY stripped), offline,
+never live chat. The
 facts are computed here; validate() rejects any number not in the facts, any
 member not in the facts, repeated openers, and the known canon breakers.
-Reminders and pings fall back to a plain line when the writer fails; the
-scheduled posts are skipped instead.
+Reminders and pings fall back to a plain line when the writer fails; recap,
+preview and saturday fall back to plain fact-only templates (plain_recap /
+plain_preview / plain_saturday), so posts still go out with Anthropic down
+(PICKY_NO_ANTHROPIC=1).
 
 CLI:
   group_posts.py tick [--dry-run]
@@ -306,7 +309,7 @@ _BODY = re.compile(r"\b(penis|dick|weiner|wiener|tits|boobs|fat|ugly|bald|mom|mo
 
 def run_writer(prompt: str) -> list[str]:
     import dossier
-    out = dossier.run_claude(prompt, WRITE_TIMEOUT_S, SCHEMA, "")
+    out = dossier.run_claude(prompt, WRITE_TIMEOUT_S, SCHEMA, "", caller="group_posts")
     return [str(t) for t in out.get("texts") or []]
 
 
@@ -537,8 +540,8 @@ def make_recap(lg: League, w: int, writer=run_writer) -> list[str] | None:
             "math: that goes in a separate text after yours.")
     texts, probs = write(task, facts, lg.names, writer=writer)
     if texts is None:
-        log.warning("recap week %s skipped: %s", w, "; ".join(probs))
-        return None
+        log.warning("recap week %s writer fell back to the template: %s", w, "; ".join(probs))
+        texts = plain_recap(w, facts)
     if w <= pr.LAST_REGULAR_WEEK:
         rt, _, _ = race_text(lg)
         if rt:
@@ -629,7 +632,8 @@ def make_preview(lg: League, w: int, writer=run_writer) -> list[str] | None:
             "what's at stake. Never mention anyone else's picks (they're hidden until lock).")
     texts, probs = write(task, facts, lg.names, n_texts="3 to 4", writer=writer)
     if texts is None:
-        log.warning("preview week %s skipped: %s", w, "; ".join(probs))
+        log.warning("preview week %s writer fell back to the template: %s", w, "; ".join(probs))
+        texts = plain_preview(w, games, card, lock, stakes_facts(lg))
     return texts
 
 
@@ -653,8 +657,42 @@ def make_saturday(lg: League, w: int, writer=run_writer) -> list[str] | None:
             "leans), with swagger, and get people fired up. Never mention anyone else's picks.")
     texts, probs = write(task, facts, lg.names, n_texts="2 to 3", max_texts=3, writer=writer)
     if texts is None:
-        log.warning("saturday week %s skipped: %s", w, "; ".join(probs))
+        log.warning("saturday week %s writer fell back to the template: %s", w, "; ".join(probs))
+        texts = plain_saturday(games, card)
     return texts
+
+
+# Plain templates for when the writer (Anthropic) is down or every draft fails validation:
+# the computed facts, lightly worded, nothing invented.
+
+def plain_recap(w: int, facts: list[str]) -> list[str]:
+    def find(prefix):
+        return next((f for f in facts if f.startswith(prefix)), None)
+    head = " ".join(x for x in (f"Week {w} is in the books.", find(f"Best week {w} record"),
+                                find(f"Worst week {w} record")) if x)
+    awards = [f.replace(a, b, 1) for a, b in (("WORST PICK:", "Worst pick:"), ("CHALK OF THE WEEK:", "Chalk of the week:"),
+                                              ("BEST CALL:", "Best call:")) if (f := find(a))]
+    mine = find("YOUR OWN WEEK (Picky):")
+    if mine:
+        mine = (mine.replace("YOUR OWN WEEK (Picky): you made", "I made").replace("YOUR OWN WEEK (Picky): ", "Me: ")
+                .replace("Your season", "My season"))
+    return [t for t in (head, " ".join(awards), mine) if t]
+
+
+def _card_line(g: dict, c: dict | None) -> str:
+    return f"{matchup(g)} ({kick_text(kick(g))}): " + (
+        f"I'm on {c['label']}" + ("" if c["made"] else " (a lean, not locked in yet)") if c
+        else f"pool line {side_label(g, favorite(g))}")
+
+
+def plain_preview(w: int, games: list[dict], card: dict, lock, stakes: list[str]) -> list[str]:
+    out = [f"Week {w} slate is set. Picks lock at the first kickoff, {kick_text(lock)}.",
+           "My card: " + "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."]
+    return out + stakes[:1]
+
+
+def plain_saturday(games: list[dict], card: dict) -> list[str]:
+    return ["Pool games today. " + "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."]
 
 
 # -----------------------------------------------------------------------------

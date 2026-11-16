@@ -1,4 +1,4 @@
-"""Run claude -p (sonnet) over spec batches -> data/raw/<batch>.json. Resumable."""
+"""Run claude -p (Opus via server/picky_claude.py) over spec batches -> data/raw/<batch>.json. Resumable."""
 import json
 import os
 import subprocess
@@ -8,6 +8,8 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("PICKY_LORA_HOME", "/Users/Agent/picky-lora"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(1, str(Path(__file__).resolve().parents[2] / "server"))
+import picky_claude  # noqa: E402  (Opus, zero MCP, no API key, usage log)
 from make_specs import MEMBERS  # noqa: E402  (nicknames come from the private member map)
 
 PROMPT = (Path(__file__).resolve().parent / "gen_prompt.md").read_text().replace(
@@ -17,7 +19,6 @@ DATA = Path(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].isdigit() else
 SPECS = [json.loads(l) for l in (DATA / "specs.jsonl").read_text().splitlines()]
 RAW = DATA / "raw"
 RAW.mkdir(parents=True, exist_ok=True)
-EMPTY_MCP = "/Users/Agent/cfb-pickem-private/empty.mcp.json"
 BATCH = 10
 
 
@@ -29,10 +30,11 @@ def run(i):
     keep = ("id", "kind", "chat", "sender", "sender_nick", "target", "rider", "facts", "topic", "recent_lines", "message")
     body = PROMPT + "\n".join(json.dumps({k: s[k] for k in keep if k in s}) for s in batch)
     for attempt in range(2):
-        r = subprocess.run(
-            ["/usr/bin/perl", "-e", "alarm shift; exec @ARGV", "600", "/opt/homebrew/bin/claude", "-p",
-             "--model", "sonnet", "--strict-mcp-config", "--mcp-config", EMPTY_MCP, "--output-format", "text"],
-            input=body, capture_output=True, text=True, cwd="/Users/Agent/.imessage-claude/delegate-cwd")
+        try:
+            r = picky_claude.run(body, timeout=600, caller="lora-gen", output_format="text",
+                                 cwd="/Users/Agent/.imessage-claude/delegate-cwd")
+        except subprocess.TimeoutExpired as e:
+            r = subprocess.CompletedProcess(e.cmd, 124, "", "timed out")
         txt = r.stdout.strip()
         try:
             arr = json.loads(txt[txt.index("["):txt.rindex("]") + 1])

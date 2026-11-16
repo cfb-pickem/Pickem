@@ -4,7 +4,7 @@ Blind before/after quality judge for the analyst-take / league-material slices.
   ./.venv/bin/python3 -I eval/judge_quality.py eval/results/BEFORE.json eval/results/AFTER.json
 
 Pairs every item both runs answered, shuffles A/B, and asks one `claude -p`
-(sonnet, no tools, zero MCP, subscription only via dossier.run_claude) to
+(Opus, no tools, zero MCP, subscription only via picky_claude) to
 score each answer:
   breakdown 1-5  game items: sharp, sourced, beyond FPI/the line
   roast     1-5  member/league/Picky items: specific, funny, built on true numbers
@@ -121,7 +121,7 @@ def main(argv: list[str]) -> int:
             "quotes are from BEFORE that week. Don't judge league standings or records as invented; judge games, "
             "picks and stats only.\n") if replay else ""
     prompt = RUBRIC + note + "\n## FACT SHEET\n" + fact_sheet(runs) + "\n\n## PAIRS\n\n" + "\n".join(blocks)
-    raw = {x.get("tag"): x for x in dossier.run_claude(prompt, 900, SCHEMA, "").get("pairs") or []}
+    raw = {x.get("tag"): x for x in dossier.run_claude(prompt, 900, SCHEMA, "", caller="judge_quality").get("pairs") or []}
     out = [{}, {}]
     for tag, k in key.items():
         j = raw.get(tag) or {}

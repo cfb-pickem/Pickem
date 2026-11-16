@@ -21,7 +21,7 @@ Pipeline:
      service-key DB read (final games only: never an unstarted pick), plus
      standings gaps, last week, streaks, chalk vs dog rates, best and worst
      picks, Picky's own record. Each fact gets an id.
-  2. `claude -p` (sonnet, no tools, zero MCP, ANTHROPIC_API_KEY stripped)
+  2. `claude -p` (Opus via picky_claude, no tools, zero MCP, ANTHROPIC_API_KEY stripped)
      writes lines that cite fact ids, with the running bits as canon.
   3. validate(): every number in a line must appear in the facts it cites,
      every member named must be in those facts, nothing body/family/dark,
@@ -472,7 +472,7 @@ def run(force: bool = False, out: Path | None = None, data: dict | None = None, 
     if not reason:
         log.info("week %s: nothing due", fs.get("week"))
         return {"ok": True, "built": False, "week": fs.get("week")}
-    research = research or (lambda p: dossier.run_claude(p, TIMEOUT_S, SCHEMA, ""))
+    research = research or (lambda p: dossier.run_claude(p, TIMEOUT_S, SCHEMA, "", caller="league_material"))
     t0 = time.time()
     try:
         raw = research(build_prompt(fs, now.strftime("%A %Y-%m-%d")))
@@ -486,7 +486,7 @@ def run(force: bool = False, out: Path | None = None, data: dict | None = None, 
         raise RuntimeError(f"only {covered} of {len(fs['teams'])} members have valid lines; kept previous "
                            f"({len(dropped)} dropped: {'; '.join(dropped)[:300]})")
     doc = {"schema": 1, "season": fs["season"], "week": fs["week"], "generated_at": now.isoformat(timespec="seconds"),
-           "trigger": reason, "by": "claude -p sonnet (no tools)", "final_games": fs["final_games"],
+           "trigger": reason, "by": f"claude -p {dossier.picky_claude.MODEL} (no tools)", "final_games": fs["final_games"],
            "picky_record": fs["picky"], **sheet, "dropped": dropped, "facts": fs["facts"]}
     write_private(out, doc)
     fail.unlink(missing_ok=True)
