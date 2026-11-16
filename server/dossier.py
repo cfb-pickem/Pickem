@@ -341,11 +341,13 @@ def run_claude(prompt: str, timeout: int = GAME_TIMEOUT_S, schema: dict | None =
                tools: str = "WebSearch,WebFetch") -> dict:
     """structured_output from one `claude -p` run (web research by default;
     tools="" for the no-tools analyst take); raises on any failure."""
+    import picky_claude
+    picky_claude.guard()
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
     env.update({"DISABLE_AUTOUPDATER": "1", "TERM": "dumb",
                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"})
-    cmd = [CLAUDE, "-p", "--model", "sonnet", "--tools", tools,
+    cmd = [CLAUDE, "-p", "--model", picky_claude.MODEL, "--tools", tools,
            "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", str(EMPTY_MCP),
            "--output-format", "json", "--json-schema", json.dumps(schema or SCHEMA)]
     p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout,
