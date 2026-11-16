@@ -52,6 +52,7 @@ import matchup_guard
 import news
 import picky_claude
 import rare_bits
+import slate_cards
 
 CT = zoneinfo.ZoneInfo("America/Chicago")
 from fastapi import FastAPI, HTTPException, Request
@@ -75,6 +76,7 @@ REST = f"{SUPABASE_URL}/rest/v1"
 AUTH = f"{SUPABASE_URL}/auth/v1"
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
+SLATE_CARDS = os.environ.get("PICKY_SLATE_CARDS", "1") != "0"  # genius exam fix 2026-11-16; 0 = off
 MODEL = os.environ.get("PICKEM_CHAT_MODEL", "gemma4:12b-it-qat")
 CLAUDE_MODEL = picky_claude.MODEL  # dormant live path (below); every Anthropic call uses the one model
 CLAUDE_EFFORT = os.environ.get("PICKY_CLAUDE_EFFORT", "medium")
@@ -7245,6 +7247,21 @@ async def _chat(req: Request, test: bool, hold: int | None):
     if nn and convo[-1]["role"] == "user":
         body, q = convo[-1]["content"], last.get("content", "")
         body = (body[: -len(q)] + nn + "\n\n" + q) if q and body.endswith(q) else (nn + "\n\n" + body)
+        convo[-1] = {"role": "user", "content": body}
+
+    # any FBS game this week outside the pool, or a whole-slate question: a computed game card
+    # (slate_cards.py: market + move + key numbers, ATS splits, matchup, rest, last meeting, sourced
+    # availability). Latest turn only; a 'why?' follow-up keeps the card of the game just asked about.
+    sc = ""
+    if last.get("role") == "user" and not ctx.get("error") and SLATE_CARDS:
+        prior = [m.get("content", "") for m in messages[:-1] if m.get("role") == "user"][-2:]
+        try:
+            sc = await slate_cards.slate_note(last.get("content", ""), ctx, prior)
+        except Exception as e:  # noqa: BLE001 - a bad card never breaks chat
+            log.warning("slate card failed: %r", e)
+    if sc and convo[-1]["role"] == "user":
+        body, q = convo[-1]["content"], last.get("content", "")
+        body = (body[: -len(q)] + sc + "\n\n" + q) if q and body.endswith(q) else (sc + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
     # insider notes (realignment, NIL/cap, CFP format/committee, carousel, commissioners, governance):
