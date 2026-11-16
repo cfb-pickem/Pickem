@@ -64,8 +64,8 @@ def test_records_match_chat_grading():
 
 def test_upsets_blown_h2h():
     m = comp()["members"]
-    assert any("Utah +7 won outright 20-10" in u for u in m["Ann Smith"]["upsets"]), m["Ann Smith"]
-    assert any("Army -10.5 lost outright 13-14" in b for b in m["Bo"]["blown"]), m["Bo"]
+    assert any("Utah +7 covered by 17 and won outright 20-10" in u for u in m["Ann Smith"]["upsets"]), m["Ann Smith"]
+    assert any("Army -10.5 missed the cover by 11.5, lost outright 13-14" in b for b in m["Bo"]["blown"]), m["Bo"]
     assert m["Ann Smith"]["h2h_all"]["Bo"] == [4, 0]  # incl. 2025; a jackpot hit is still a hit for Bo
 
 

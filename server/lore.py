@@ -175,7 +175,7 @@ def oddities(team: str, mine: list[dict], seasons: list) -> list[str]:
         elif fw + fl >= 4 and fw / (fw + fl) <= 0.25:
             found.append((fl - fw, f"{team} has picked against {s} {fw + fl} times {span} and gone {fw}-{fl}."))
         elif pw + pl >= 3 and pw == 0:
-            found.append((pl, f"{team} has taken {s} {pl} times {span} and lost all {pl}."))
+            found.append((pl, f"{team} has taken {s} {pl} times {span} and missed the cover all {pl}."))
     cur = [r for r in mine if r["g"]["cfb_season"] == max(seasons)] if seasons else []
     for label, pick, other in (("road teams", lambda r: r["side"] == r["g"]["Away"], "home teams"),
                                ("underdogs", lambda r: _is_dog(r["g"], r["side"]), "favorites")):
@@ -223,6 +223,12 @@ def compute(data: dict) -> dict:
 
     def where(g):
         return f"{g['cfb_season']} week {g['week']}"
+
+    def cover_by(g, side, m):
+        """Points `side` beat (> 0) or missed (< 0) the league line by: the pick
+        result is the cover, the score is only context."""
+        ln = float(g.get("line") or 0)
+        return m + (ln if side == g["Home"] else -ln)
 
     # the site's "Season by season" table (js/seasonHistory.js): wins only, weeks 1-15, any picked game
     allg = {g["GameId"]: g for g in data["games"] if g.get("winner") and g.get("week") is not None
@@ -281,11 +287,11 @@ def compute(data: dict) -> dict:
             sp = abs(float(g.get("line") or 0))
             others = [x for x in by_game[g["GameId"]] if x["side"] == side and x["team"] != team]
             if r["hit"] and m is not None and m > 0 and not is_fav(g, side) and sp >= 3:
-                out["upsets"].append((sp, f"{_fmt_line(side, g)} won outright {_hi_lo(g)} "
-                                          f"({g['Away']} at {g['Home']}, {where(g)})"))
+                out["upsets"].append((sp, f"{_fmt_line(side, g)} covered by {cover_by(g, side, m):g} and won "
+                                          f"outright {_hi_lo(g)} ({g['Away']} at {g['Home']}, {where(g)})"))
             if not r["hit"] and m is not None and m < 0 and is_fav(g, side) and sp >= 7:
-                out["blown"].append((sp, f"{_fmt_line(side, g)} lost outright {_lo_hi(g)} "
-                                         f"({g['Away']} at {g['Home']}, {where(g)})"))
+                out["blown"].append((sp, f"{_fmt_line(side, g)} missed the cover by {-cover_by(g, side, m):g}, "
+                                         f"lost outright {_lo_hi(g)} ({g['Away']} at {g['Home']}, {where(g)})"))
             if not others and len(by_game[g["GameId"]]) >= 6:
                 (out["lone_hits"] if r["hit"] else out["lone_misses"]).append(
                     f"the only one on {_fmt_line(side, g)} ({g['Away']} at {g['Home']}, {where(g)}), and it "
@@ -410,7 +416,7 @@ def phrase(comp: dict, splash: dict, champs: list[dict], today: str) -> dict:
         if m["upsets"]:
             L.append("Best upset hits: " + "; ".join(m["upsets"]) + ".")
         if m["blown"]:
-            L.append("Worst blown picks (favorite that lost outright): " + "; ".join(m["blown"]) + ".")
+            L.append("Worst blown picks (a favorite that missed the cover by losing outright): " + "; ".join(m["blown"]) + ".")
         if m["lone_hits"]:
             L.append("Lone-wolf hits: " + "; ".join(m["lone_hits"]) + ".")
         if m["lone_misses"]:
