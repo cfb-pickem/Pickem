@@ -748,6 +748,11 @@ def _ampm(h: int, m: int) -> str:
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
+def _eastern(ll: dict) -> str:
+    h = ll["hour"] + 1
+    return " (noon Eastern)" if (h, ll["minute"]) == (12, 0) else f" ({_ampm(h % 24, ll['minute'])} Eastern)"
+
+
 def _pct(x: float) -> str:
     s = f"{x * 100:.4f}".rstrip("0").rstrip(".")
     return f"{s}%"
@@ -773,7 +778,7 @@ def render_sections(f: dict) -> dict[str, list[str]]:
         "- Every line is a half point (whole numbers get moved half a point), so a push can't happen."
         + (f" If a score ever landed exactly on the number, the grading gives it to the {cov['else'].lower()} team."
            if cov["else"] in ("Away", "Home") else ""),
-        f"- Lines lock {lock_time}. The line at that moment is what the week is scored against. A game with no line yet keeps the first one posted.",
+        f"- Lines lock {lock_time}{_eastern(ll)}. The line at that moment is what the week is scored against. A game with no line yet keeps the first one posted.",
         "- A game is graded when it goes final with a line on it: the side that covered is recorded as the winner, and the points land then.",
     ]
     S["DEADLINE AND PRIVACY"] = [
@@ -798,15 +803,37 @@ def render_sections(f: dict) -> dict[str, list[str]]:
         f"- Playoffs: the odds start at {_pct(j['base'])} a pull and climb after {j['quiet_pulls']} pulls without a pop, up to {_pct(j['max'])}.",
         "- The jackpot is rare; the current odds are shown on the football on the picks page.",
     ]
+    po = f.get("playoffs") or {}
     S["STANDINGS AND PLAYOFFS"] = [
-        f"- Season standings = total points from weeks {first}-{last}. The site lists no weekly prize.",
-        f"- Cut line: the top {spots} in season points after week {last} make the league playoffs; a tie at the cut goes to the regular-season tiebreakers."
+        f"- Season standings = total points from weeks {first}-{last}"
+        + (" (correct picks plus slots AUTO WINs)" if po.get("jackpot_counts") else "")
+        + ". Tiebreaker games and playoff games never count toward them. The site lists no weekly prize.",
+        f"- Who makes the playoffs: the top {spots} in season points after week {last}. A tie for {_ord(spots)} place "
+        "goes to the regular-season tiebreakers (see TIEBREAKERS)."
         + (f" The leaderboard draws the projected playoff line from week {f['projected_line_from_week']} on."
            if f.get("projected_line_from_week") else ""),
+        (f"- The switch: the site moves to the playoffs on its own (the playoff autopilot checks every "
+         f"{po['tick_minutes']} minutes) once week {last} has all kicked off, every picked regular-season game is graded "
+         f"and {po['settle_hours']} hours have passed since week {last}'s last kickoff."
+         + (" Seeds the commissioner enters by hand always win; the autopilot never touches a season that has them."
+            if po.get("hand_seeds_win") else "")
+         + (" A tie at the cut that survives every tiebreaker is a coin flip, and the commissioner sets the seeds by hand."
+            if po.get("coin_flip_held") else "")
+         if po.get("tick_minutes") and po.get("settle_hours") else ""),
+        (f"- Seeds 1-{spots} go by points, then the same tiebreakers. They're cosmetic: the rules never use seeds."
+         if po.get("cascade") else ""),
         f"- Playoffs: top {spots} advance, scores reset"
-        + (f" (playoff points are a separate tally from week {last + 1} on)" if f.get("playoff_tally_after_week") == last else "")
-        + ", and they pick all playoff games."
-        + (" The commissioner enters the playoff seeds." if pol["commish_sets_seeds"] else ""),
+        + (f" (only playoff games, week {last + 1} on, count)" if f.get("playoff_tally_after_week") == last else "")
+        + ", and they pick all playoff games. Each playoff game locks at its own kickoff.",
+        (f"- Who can pick in the playoffs: once the season has its {spots} seeds, only those {spots} teams can pick "
+         f"playoff games (week {po['field_only_after_week'] + 1} on, tiebreakers included). The site and the database "
+         f"both block everyone else (\"{po.get('field_only_message') or 'playoff teams only'}\")."
+         + (" Eliminated members can still see every game, and every pick once it locks (view only)."
+            if po.get("eliminated_view_only") else "")
+         + " Before the seeds exist, anyone can still pick."
+         + (" The commissioner can enter or fix anyone's pick." if po.get("field_only_commish_exempt") else "")
+         if po.get("field_only_after_week") is not None and po.get("field_only_once_seeded") else ""),
+        ("- Picky (the exhibition player) is never ranked and never takes a playoff spot." if po.get("excludes_exhibition") else ""),
         "- " + f["hand"]["championship_week_note"],
     ]
     pm = payout_math(10, f)  # shape only; chat.py adds the computed pot
@@ -821,7 +848,8 @@ def render_sections(f: dict) -> dict[str, list[str]]:
          "Regular season tiebreakers, in order:"]
         + [f"{i}) {_tb_words(x)}" for i, x in enumerate(tb["regular"], 1)]
         + ["Playoff tiebreakers, in order:"]
-        + [f"{i}) {_tb_words(x)}" for i, x in enumerate(tb["playoff"], 1)])
+        + [f"{i}) {_tb_words(x)}" for i, x in enumerate(tb["playoff"], 1)]
+        + _tb_details(f))
     a, b = pit["blackjack_pays"]
     S["THE PIT"] = [
         "- One shared dealer hand a week. The table opens when the week's picks open and settles at first kickoff.",
@@ -843,6 +871,7 @@ def render_sections(f: dict) -> dict[str, list[str]]:
     S["COMMISSIONER"] = [
         "- The commissioner " + ", ".join(powers[:-1]) + (", and " if len(powers) > 1 else "") + powers[-1] + "." if powers else "",
         "- Only the house (the site or the commissioner) can mark a jackpot AUTO WIN." if pol["jackpot_house_only"] else "",
+        _autopilot_words(po),
         "- Anything the written rules don't cover (postponed, canceled or suspended games, disputes): ask the commissioner; it's their call.",
     ]
     S["EDGE CASES"] = [
@@ -868,6 +897,46 @@ def _tb_words(item: str) -> str:
     t = re.sub(r"\s+—.*$", "", item)  # "Chips — the blackjack table..." -> "Chips"
     t = {"Chips": "chips from The Pit", "Win % last 8 games": "win % over the last 8 games"}.get(t, t)
     return t[0].lower() + t[1:] if not re.match(r"(Army|Navy|Celebration)", t) else t
+
+
+def _ord(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+_CRIT_WORDS = {
+    "conf": "conference championship tiebreaker picks (the tiebreaker games before the playoffs)",
+    "army_navy": "Army v Navy",
+    "chips": "chips in The Pit (no Pit row counts as {chips:,})",
+    "celebration": "the Celebration Bowl (the tiebreaker game between two MEAC/SWAC schools)",
+    "last8": "win % over each team's last {n} decided picks",
+}
+
+
+def _tb_details(f: dict) -> list[str]:
+    po = f.get("playoffs") or {}
+    if not po.get("cascade"):
+        return []
+    steps = [_CRIT_WORDS.get(c, po.get("labels", {}).get(c, c)).format(chips=po.get("missing_chips") or 1000,
+                                                                      n=po.get("last_n") or 8)
+             for c in po["cascade"]]
+    out = [f"- A tie for the last playoff spot is broken in that order: " + ", then ".join(steps) + "."]
+    if po.get("pending_only_if_split"):
+        out.append("- A tiebreaker game that isn't graded yet only holds things up if the tied teams picked it "
+                   "differently; if they all picked the same side it can't break the tie and is skipped.")
+    if po.get("coin_flip_held"):
+        out.append("- Still tied after all of that: coin flip. The site never automates it; the commissioner sets "
+                   "the seeds by hand.")
+    out.append("- Playoff tiebreakers: Army-Navy counts only if it wasn't already used to set the playoff field.")
+    return out
+
+
+def _autopilot_words(po: dict) -> str:
+    acts = set(po.get("admin_actions") or [])
+    if not {"pause", "resume", "force", "undo"} <= acts:
+        return ""
+    return ("- Playoff autopilot controls (commissioner page): preview the field, pause or resume the autopilot, "
+            "force the switch now (skips the waiting holds but never decides a coin flip), or undo (removes the "
+            "season's seeds" + (" and pauses the autopilot" if po.get("undo_pauses") else "") + ").")
 
 
 def section_text(name: str, lines: list[str]) -> str:
@@ -1103,8 +1172,7 @@ def live_page() -> str | None:
 # =============================================================================
 
 CONFORMANCE_JS = SERVER / "rules_conformance.mjs"
-JS_FILES = ["js/kickoff.js", "js/coverOdds.js", "js/utils.js", "js/seasonHistory.js", "js/leagueHistory.js",
-            "js/playoffOdds.js"]
+JS_FILES = ["js/kickoff.js", "js/coverOdds.js", "js/utils.js", "js/seasonHistory.js", "js/leagueHistory.js"]
 
 
 def conformance_fixtures(facts: dict) -> dict:
@@ -1121,16 +1189,12 @@ def conformance_fixtures(facts: dict) -> dict:
         ([{"start": None, "status": "final"}], dt.datetime(2026, 11, 1, 0, 0)),
         ([{"start": "2026-11-14T11:00:00", "winner": "Utah"}], dt.datetime(2026, 11, 1, 0, 0)),
     ]
-    standings = [{"a": 30, "b": 28, "c": 25, "d": 25, "e": 25, "f": 10}, {"a": 30, "b": 29, "c": 28, "d": 27, "e": 26},
-                 {"a": 20, "b": 20, "c": 20, "d": 20, "e": 19}]
     return {
         "covers": [{"home": h, "away": a, "line": ln, "py_margin": cover_margin(h, a, ln),
                     "py_winner": cover_winner("Home", "Away", h, a, ln)} for h, a, ln in covers],
         "score_cond": facts.get("score_cond"),
         "picks": [{"pick": p, "winner": w, "jackpot": jp, "py": is_point(p, w, jp)} for p, w, jp in picks],
         "weeks": [{"games": g, "now": now.isoformat(), "py": week_locked(g, now)} for g, now in weeks],
-        "standings": [{"points": s, "spots": facts["playoff_spots"], "py": playoff_status(s, facts["playoff_spots"])}
-                      for s in standings],
     }
 
 
@@ -1391,24 +1455,30 @@ def check(repo: Repo | None = None, use_live: bool = True, use_opus: bool = True
 # =============================================================================
 
 def _read_rules_file() -> str:
+    """The live copy (written by --check) when it is at least as new as the
+    committed digest; a freshly deployed league_rules.md wins over an older
+    live copy until the next check rewrites it."""
     lp = live_md_path()
-    if lp.exists():
-        try:
+    try:
+        if lp.exists() and (not MD.exists() or lp.stat().st_mtime >= MD.stat().st_mtime):
             return lp.read_text()
-        except OSError:
-            pass
-    return MD.read_text()
+    except OSError:
+        pass
+    return MD.read_text() if MD.exists() else ""
 
 
-_cache: dict = {"key": None, "text": "", "raw": ""}
+_cache: dict = {"key": None, "text": "", "raw": "", "facts": {}}
 
 
 def current_raw() -> str:
     lp = live_md_path()
-    key = (lp.stat().st_mtime if lp.exists() else None, MD.stat().st_mtime if MD.exists() else None)
+    key = (lp.stat().st_mtime if lp.exists() else None, MD.stat().st_mtime if MD.exists() else None, str(lp))
     if _cache["key"] != key:
-        _cache.update(key=key, raw=_read_rules_file())
-        _cache["text"] = strip_comments(_cache["raw"])
+        raw = _read_rules_file()
+        facts, _ = parse_md(raw)
+        if not facts and MD.exists():
+            facts, _ = parse_md(MD.read_text())
+        _cache.update(key=key, raw=raw, text=strip_comments(raw), facts=facts)
     return _cache["raw"]
 
 
@@ -1419,17 +1489,30 @@ def current_text() -> str:
     return _cache["text"]
 
 
+def current_facts() -> dict:
+    current_raw()
+    return _cache["facts"]
+
+
 def flagged_sections() -> list[str]:
     return [s for s in SECTIONS if re.search(rf"^{re.escape(s)}[^\n]*\n- {FLAG}", current_text(), re.M)]
 
 
+def section(name: str) -> str:
+    """One section of the current digest (header line included)."""
+    blocks, cur = {}, None
+    for ln in current_text().splitlines():
+        key = next((k for k in SECTIONS if ln.startswith(k)), None)
+        if key:
+            cur = key
+            blocks[cur] = [ln]
+        elif cur:
+            blocks[cur].append(ln)
+    return "\n".join(blocks.get(name, [])).strip()
+
+
 def _load_facts() -> dict:
-    facts, _ = parse_md(MD.read_text()) if MD.exists() else ({}, {})
-    try:
-        live, _ = parse_md(live_md_path().read_text()) if live_md_path().exists() else ({}, {})
-    except OSError:
-        live = {}
-    return live or facts
+    return current_facts() or {}
 
 
 FACTS: dict = _load_facts()
@@ -1438,6 +1521,151 @@ REGULAR_SEASON_LAST_WEEK: int = FACTS.get("last_regular_week", 15)
 FIRST_WEEK: int = FACTS.get("first_week", 0)
 PLAYOFF_SPOTS: int = FACTS.get("playoff_spots", 4)
 GAMES_PER_WEEK: int = FACTS.get("games_per_week", 4)
+
+
+# =============================================================================
+# answers: typical rules questions, answered from the facts in code. chat.py
+# puts the answer in front of the model ("give this"); a section the watcher
+# flagged gets a hedge instead, never the stale rule.
+# =============================================================================
+
+RULES_PAGE = "the League Rules on the site (cfb-genius page)"
+
+
+def hedge(topic: str) -> str:
+    return (f"RULES CHANGED, VERIFY: the site's code for {topic} changed recently and hasn't been re-checked. "
+            f"Don't state that rule; say it may have just changed and to check {RULES_PAGE} or ask the commissioner.")
+
+
+def _a_push(f):
+    c = f["cover"]
+    tail = (f" If a final ever landed exactly on the number, the grading gives it to the {c['else'].lower()} team."
+            if c.get("else") in ("Away", "Home") else "")
+    return ("No pushes in this league: every line is a half point (the site moves whole numbers half a point), "
+            "so a game can't land on the number." + tail)
+
+
+def _a_line_lock(f):
+    ll = f["line_lock"]
+    day = DAYS[(5 - ll["days_before_saturday"]) % 7]
+    return (f"Lines lock {day} {_ampm(ll['hour'], ll['minute'])} CT{_eastern(ll)}. Whatever the line says then is "
+            "what the week is scored against; a game with no line yet keeps the first one posted.")
+
+
+def _a_pick_lock(f):
+    pl = f["pick_lock"]
+    return ("Regular season: every pick for the week locks at once, at the scheduled kickoff of the week's first game"
+            + (" (tiebreaker games count)" if pl.get("tiebreakers_lock_week") else "")
+            + ". A weather or TV delay doesn't buy more time. "
+            + ("Playoffs: each game locks at its own kickoff. " if pl.get("playoff_per_game") else "")
+            + "Everyone's picks stay hidden until they lock. After the lock only the commissioner can change a pick.")
+
+
+def _a_playoff_pick(f):
+    po, spots = f.get("playoffs") or {}, f["playoff_spots"]
+    if not po.get("field_only_once_seeded"):
+        return None
+    return (f"Only if your team made the playoffs. Once the {spots} seeds are set, only those {spots} teams can pick "
+            f"playoff games (week {po['field_only_after_week'] + 1} on, tiebreakers too); the site and the database "
+            "both block everyone else."
+            + (" Everyone else can still watch every game and see every pick once it locks." if po.get("eliminated_view_only") else "")
+            + " Before the seeds exist, anyone can still pick week 16+ games.")
+
+
+def _a_who_makes(f):
+    po, spots, last = f.get("playoffs") or {}, f["playoff_spots"], f["last_regular_week"]
+    s = (f"The top {spots} in regular-season points (weeks {f['first_week']}-{last}) make the league playoffs. "
+         f"A tie for {_ord(spots)} goes to the tiebreakers: "
+         + ", ".join(_tb_words(x) for x in f["tiebreakers"]["regular"]) + ". ")
+    if po.get("settle_hours"):
+        s += (f"The site flips to the playoffs on its own about {po['settle_hours']} hours after week {last}'s last "
+              "kickoff once every game is graded (a coin flip waits for the commissioner). ")
+    return s + f"Then scores reset and only playoff games count."
+
+
+def _a_tiebreakers(f, q=""):
+    tb = f["tiebreakers"]
+    reg = ", ".join(f"{i}) {_tb_words(x)}" for i, x in enumerate(tb["regular"], 1))
+    po = ", ".join(f"{i}) {_tb_words(x)}" for i, x in enumerate(tb["playoff"], 1))
+    if re.search(r"\bplayoffs?\b", q, re.I) and not re.search(r"\b(make|spot|cut|field|get in|qualif)", q, re.I):
+        return f"Playoff ties: {po}. Army-Navy only counts if it wasn't already used to set the field."
+    s = f"Regular season, in order: {reg}. Tiebreaker picks never count as points."
+    if (f.get("playoffs") or {}).get("pending_only_if_split"):
+        s += " An ungraded tiebreaker only matters if the tied teams picked it differently."
+    return s + f" Playoffs: {po}."
+
+
+def _a_scoring(f):
+    return (f"{f['games_per_week']} games a week against the spread, 1 point per pick that covers. No pick, no point; "
+            "no bonuses or confidence weights. Tiebreaker games never count. A slots AUTO WIN is a point no matter who covers.")
+
+
+def _a_payouts(f, n_teams=None):
+    words = " ".join(f"{p}: {_payout_words(r)}." for p, r in f["payouts"].items())
+    s = f"Buy-in is ${f['hand']['buy_in']} a player. {words}"
+    if n_teams:
+        m = payout_math(n_teams, f)
+        s += (f" With {n_teams} paying teams: ${m['pot']:,} pot, 1st ${m['first']:,}, 2nd ${m['second']:,}, "
+              f"3rd ${m['third']:,}.")
+    return s + " Picky never pays in or gets paid."
+
+
+def _a_missed(f):
+    return ("Missed the lock = no pick and no point for that game. No late picks, no default pick; only the "
+            "commissioner can enter one after the lock.")
+
+
+def _a_uncovered(f):
+    return "The written rules don't cover postponed, canceled or suspended games. That's the commissioner's call."
+
+
+def _a_commish(f):
+    return section("COMMISSIONER").split("\n", 1)[-1].replace("- ", "").replace("\n", " ") or None
+
+
+# (topic, question pattern, section it comes from, answer). First match wins,
+# so the narrow ones go first ("when do the lines lock" isn't the pick lock).
+ANSWERS = [
+    ("pushes", r"\bpush(es|ed)?\b|lands? (exactly )?on the (number|line)|\btie (against|vs\.?) the spread", "FORMAT", _a_push),
+    ("line lock", r"\blines? (lock|locks|locked|get locked|set|freeze)\b|\bwhen (do|does) (the )?(lines?|spreads?) "
+                  r"(lock|get set|freeze)|\bline lock", "FORMAT", _a_line_lock),
+    ("postponed games", r"postpone|cancel+ed|suspend", "EDGE CASES", _a_uncovered),
+    ("missed picks", r"\b(forgot|forget|miss(ed)?)\b.{0,15}\b(pick|deadline|lock|week)|didn'?t (make|get) (my|a) pick", "EDGE CASES", _a_missed),
+    ("who can pick in the playoffs",
+     r"\b(can|could|do|does|am|are|who)\b.{0,40}\bpick\b.{0,40}\bplayoffs?\b|\bplayoffs? (games?|picks?)\b.{0,40}"
+     r"\b(pick|eliminated|everyone|anyone|non.?playoff|still)\b|\beliminated\b.{0,40}\bpick", "STANDINGS AND PLAYOFFS", _a_playoff_pick),
+    ("pick deadlines", r"\b(picks?|deadline)\b.{0,30}\block|\block\w*\b.{0,20}\bpicks?\b|\bdeadline\b|picks? due|"
+                       r"how late can i", "DEADLINE AND PRIVACY", _a_pick_lock),
+    ("tiebreakers", r"tie ?-?break|\bties?\b.{0,20}\bbroken|break(s|ing)? (a |the )?ties?\b|\btied\b", "TIEBREAKERS", _a_tiebreakers),
+    ("the playoff cut", r"\bwho (makes|gets in|gets into|qualifies|is in)\b.{0,20}\bplayoffs?|\bmake (the )?playoffs?\b|"
+                        r"\bhow (do|does) (you|i|we|a team|someone) (make|get into|qualify)|\bplayoff (format|cut|spots?)\b|"
+                        r"\bcut ?line\b|how many (teams )?make|how do (the )?(league )?playoffs work", "STANDINGS AND PLAYOFFS", _a_who_makes),
+    ("payouts", r"\bpayouts?\b|buy.?in|\bpot\b|\b(first|second|third|1st|2nd|3rd)( place)? (wins?|gets?|pays?)\b|"
+                r"\bwhat do(es)? (the )?(winner|first|second|third)", "PAYOUTS", _a_payouts),
+    ("scoring", r"\bhow (does|do) (the )?scoring|\bhow (are|do) (we|you|picks) (score|scored|graded)|\bpoints? (per|for (a|each)) "
+                r"(pick|win|cover)|\bhow many points\b", "FORMAT", _a_scoring),
+    ("commissioner powers", r"\bcommish|\bcommissioner\b.{0,30}\b(can|power|do|allowed|change|override)", "COMMISSIONER", _a_commish),
+]
+
+
+def answer(question: str, n_teams: int | None = None, facts: dict | None = None,
+           flagged: list[str] | None = None) -> str | None:
+    """A short, computed answer to a typical rules question, or None. A topic
+    whose section the watcher flagged gets hedge() instead of the rule."""
+    q = question or ""
+    f = facts or current_facts()
+    fl = flagged_sections() if flagged is None else flagged
+    for topic, rx, sec, fn in ANSWERS:
+        if not re.search(rx, q, re.I):
+            continue
+        if sec in fl:
+            return hedge(topic)
+        try:
+            out = (fn(f, q) if fn is _a_tiebreakers else fn(f, n_teams) if fn is _a_payouts else fn(f))
+        except (KeyError, TypeError, IndexError):
+            return None  # facts missing: the digest still rides along
+        return out or None
+    return None
 
 
 def write(repo: Repo | None = None) -> str:
