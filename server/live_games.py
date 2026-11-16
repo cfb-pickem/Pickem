@@ -1047,6 +1047,7 @@ def _main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cmd = argv[0] if argv else "status"
     if cmd == "run":
+        logging.getLogger("httpx").setLevel(logging.WARNING)  # a line per request would be ~100/min on Saturdays
         run()
         return 0
     if cmd == "once":
