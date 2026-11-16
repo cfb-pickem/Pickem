@@ -160,7 +160,7 @@ def test_hook_injects_brief_ammo_angle_and_temperature():
         got["temp"] = chat.OPTIONS_OVERRIDE.get()["temperature"]
         yield 'data: {"content": "hi"}\n\n'
 
-    async def fake_understand(prefix, q, sender, recent, last_reply="", timeout=60.0):
+    async def fake_understand(prefix, q, sender, recent, last_reply="", timeout=60.0, stance=""):
         return pb.Brief(asking="a shot at you", intent="insult", about="Picky", answer="Own it, jab back.")
 
     async def go():
@@ -266,6 +266,152 @@ def test_milk_gated_everywhere_and_opener_gone():
         assert chat.milk_allowed(blinky, "best cereal?") and chat.milk_allowed(other, "how's blinky doing")
         assert not chat.milk_allowed(other, "who's winning?")  # never in a reply that isn't about Blinky
         assert "NICE MILK FREAK" in chat.blinks_note(other, "what's the deal with blinky")
+
+
+# ---- stance computed in code (live 2026-11-15: 0-3 Picky told 4-0 Chuck P to "look in the mirror") ----
+
+STANDINGS_WK11 = [("Chuck P", 30, 18, 1), ("Ackbar", 28, 20, 2), ("Blinkstradamus", 27, 21, 3), ("DaddyFreeman", 27, 21, 3),
+                  ("Liam Bryson", 26, 22, 5), ("Rettino", 26, 22, 5), ("Breaking Horrendous", 25, 23, 7),
+                  ("Wedge Mulshine", 25, 23, 7), ("Clam", 24, 24, 9), ("Brian", 23, 25, 10), ("Steve Drolet", 23, 25, 10),
+                  ("Andrew Bub", 22, 26, 12), ("Kevin Culligan", 21, 23, 13), ("TG", 19, 29, 14)]
+
+
+def _stance_ctx(me: str, picky_wins: bool = False) -> dict:
+    """The real week 11 (2026-11-15): Chuck P 4-0 and 1st, Picky 0-3."""
+    g = lambda i, a, h, ln, w: {"id": i, "away": a, "home": h, "line": ln, "winner": w, "status": "final",
+                                 "tiebreaker": False}
+    games = [g(1, "Wake Forest", "SMU", 1.5, "Wake Forest"), g(2, "Oregon State", "Boise State", -13.5, "Oregon State"),
+             g(3, "North Texas", "UTSA", 2.5, "UTSA"), g(4, "North Dakota State", "Hawai'i", 6.5, "North Dakota State")]
+    live = [{"GameId": 1, "Away": "Wake Forest", "Home": "SMU", "AwayPts": 49, "HomePts": 7, "Status": "final"},
+            {"GameId": 2, "Away": "Oregon State", "Home": "Boise State", "AwayPts": 41, "HomePts": 46, "Status": "final"},
+            {"GameId": 3, "Away": "North Texas", "Home": "UTSA", "AwayPts": 16, "HomePts": 35, "Status": "final"},
+            {"GameId": 4, "Away": "North Dakota State", "Home": "Hawai'i", "AwayPts": 21, "HomePts": 13, "Status": "final"}]
+    pk = lambda *xs: [{"game_id": i + 1, "pick": x} for i, x in enumerate(xs) if x]
+    mine = [("Boise State", games[1]), ("North Texas", games[2]), ("Hawai'i", games[3])]
+    if picky_wins:  # a Picky who went 3-0: he took the side that covered
+        mine = [(gm["winner"], gm) for _, gm in mine]
+    this_week = [{"pick": p, "away": gm["away"], "home": gm["home"], "line": gm["line"], "winner": gm["winner"],
+                  "status": "final", "tiebreaker": False, "label": p, "game": f"{gm['away']} at {gm['home']}",
+                  "result": "covered" if p == gm["winner"] else "missed", "why": None, "blurb": None}
+                 for p, gm in mine]
+    w = sum(p["result"] == "covered" for p in this_week)
+    return {"current_week": 11, "games_this_week": games, "live_games": live,
+            "revealed_picks_this_week": {
+                "Chuck P": pk("Wake Forest", "Oregon State", "UTSA", "North Dakota State"),
+                "Ackbar": pk("Wake Forest", "Boise State", "UTSA", "North Dakota State"),
+                "Andrew Bub": pk("SMU", "Boise State", "North Texas", "Hawai'i"),
+                "TG": pk("SMU", "Oregon State", "North Texas", "Hawai'i")},
+            "weekly_records": {"Chuck P": {11: [4, 0]}, "Ackbar": {11: [3, 1]}, "Andrew Bub": {11: [0, 4]},
+                               "TG": {11: [1, 3]}},
+            "standings_ytd": [{"team": t, "w": a, "l": b, "rank": r} for t, a, b, r in STANDINGS_WK11],
+            "you": {"team_id": 1, "team_name": me}, "leader": {"team_id": 6, "team_name": "Chuck P"},
+            "picky_player": {"name": "Picky", "season": [w, 3 - w], "last_week": [0, 0], "this_week": this_week,
+                             "hidden_count": 0,
+                             "revealed": [{k: p[k] for k in ("pick", "away", "home", "line", "winner", "status",
+                                                             "tiebreaker")} | {"week": 11} for p in this_week]}}
+
+
+def _stance(me, q, **kw):
+    lore = {"members": {"Chuck P": ["Chuck P, 2026 so far (through 2026-11-15): takes the favorite 54% of the time."],
+                        "Ackbar": ["Ackbar, 2026 so far (through 2026-11-15): takes the favorite 75% of the time."]}}
+    with patch.object(chat, "load_lore", lambda: lore), patch.object(chat, "member_nicknames", lambda: {}):
+        return pb.compute_stance(_stance_ctx(me, **kw), q, me)
+
+
+def test_stance_4_0_asker_vs_0_3_picky_is_deflect():
+    s = _stance("Chuck P", "you suck at picks?")
+    assert s and s["kind"] == "picky" and s["stance"] in ("deflect", "own_it"), s
+    r = pb.stance_rider(s)
+    assert "Chuck P (the sender): 4-0 this week, 30-18 on the season, 1st place of 14." in r, r
+    assert "You (Picky): 0-3 this week, 0-3 on the season, not in the standings." in r, r
+    assert "your pick Boise State -13.5 = LOSS" in r and "missed the cover by 8.5" in r, r
+    assert "never mock them" in r and "Chuck P's 4-0 this week" in r and "Chuck P's 1st place" in r, r
+    assert "look in the mirror" in r.lower() and "takes the favorite 54%" in r, r
+    assert "Oregon State +13.5 = " not in r  # Oregon State was never Picky's pick
+
+
+def test_stance_own_it_brag_and_none():
+    assert _stance("TG", "you suck")["stance"] == "own_it"            # 1-3 / 19-29 still beats 0-3 / 0-3
+    assert _stance("Andrew Bub", "picky you're trash")["stance"] == "own_it"
+    assert _stance("Ackbar", "why don't you work better")["stance"] == "deflect"  # 3-1 and 2nd: crushing it
+    s = _stance("Andrew Bub", "you suck at picks", picky_wins=True)   # 3-0 Picky vs an 0-4 week
+    assert s["stance"] == "brag" and "Andrew Bub's 0-4 this week" in s["bad"], s
+    assert _stance("TG", "you suck at this", picky_wins=True)["stance"] == "brag"
+    for q in ("what's the best cereal?", "how are my picks doing?", "who's winning the league?", "why do you like Boise?"):
+        assert _stance("Chuck P", q) is None, q
+
+
+def test_stance_for_roast_requests():
+    s = _stance("TG", "roast Ackbar")
+    assert s["kind"] == "roast" and s["stance"] == "deflect", s
+    r = pb.stance_rider(s)
+    assert "Ackbar (who they want roasted): 3-1 this week, 28-20 on the season, 2nd place of 14." in r, r
+    assert "TG (the sender): 1-3 this week, 19-29 on the season, 14th place of 14." in r, r
+    assert "Between them, Ackbar is doing better." in r and "Ackbar's 3-1 this week" in r, r
+    assert "takes the favorite 75%" in r and "Boise State -13.5" in r, r  # his real miss, graded in code
+    assert _stance("Ackbar", "roast Charlie")["stance"] == "deflect"   # Dear Leader is never roasted by others
+    s = _stance("Ackbar", "roast Andrew Bub")                          # 0-4 week, Picky 0-3
+    assert s["stance"] == "own_it" and "Andrew Bub's 0-4 this week" in s["bad"], s
+    assert "Fair game (actually bad): Andrew Bub's 0-4 this week" in pb.stance_rider(s)
+    assert _stance("Ackbar", "roast Andrew Bub", picky_wins=True)["stance"] == "brag"
+    assert _stance("Chuck P", "roast me")["stance"] == "deflect"
+
+
+def test_stance_violations_cut_superior_lines():
+    s = _stance("Chuck P", "you suck at picks?")
+    reply = ("You suck at picks? Look in the mirror, Chuck P. You're 4-0 this week, but you're still last in the "
+             "league at being a Notre Dame homer. That 4-0 is a fluke. Fair, 4-0 is 4-0 and I'm 0-3.")
+    assert pb.stance_violations(reply, s) == ["Look in the mirror, Chuck P.", "That 4-0 is a fluke."]
+    assert pb.stance_violations("Look in the mirror.", _stance("Andrew Bub", "you suck", picky_wins=True)) == []
+
+
+def test_hook_carries_stance_and_drops_escalate():
+    got = {}
+
+    async def fake_orig(messages, prefix=None):
+        got["user"] = messages[-1]["content"]
+        yield 'data: {"content": "hi"}\n\n'
+
+    async def fake_understand(prefix, q, sender, recent, last_reply="", timeout=60.0, stance=""):
+        got["understand_stance"] = stance
+        return pb.Brief(asking="a shot at you", intent="insult", about="Picky", answer="Own it.")
+
+    ctx = _stance_ctx("Chuck P")
+    body = "ESCALATE: this user has come at you. Build the burns from their real record. top it.\n\nyou suck at picks?"
+
+    async def go():
+        st = {"q": "you suck at picks?", "team": "Chuck P", "ctx": ctx, "idx": 0, "brief": None,
+              "options": {"temperature": 0.2}}
+        t1, t2 = pb.STATE.set(st), chat.OPTIONS_OVERRIDE.set(st["options"])
+        try:
+            return [x async for x in pb._ollama_stream([{"role": "user", "content": body}], "PFX")], st
+        finally:
+            chat.OPTIONS_OVERRIDE.reset(t2)
+            pb.STATE.reset(t1)
+
+    with patch.object(pb, "_orig_ollama_stream", fake_orig), patch.object(pb, "understand", fake_understand), \
+            patch.object(chat, "load_lore", lambda: {}), patch.object(chat, "member_nicknames", lambda: {}):
+        _, st = asyncio.run(go())
+    u = got["user"]
+    assert st["stance"]["stance"] == "deflect" and "STANCE" in got["understand_stance"]
+    assert "STANCE" in u and u.index("STANCE") < u.rindex("you suck at picks?"), u
+    assert "ESCALATE" not in u and "Fire back at them first" not in u, u
+
+
+def test_pipeline_cuts_off_stance_sentence_and_rerolls():
+    texts = iter([("Look in the mirror, Chuck P. You're 4-0, I'm 0-3.", 0, None),
+                  ("Fair, 4-0 is 4-0. I went 0-3, so I'll sit down.", 0, None)])
+
+    async def draft():
+        st = pb.STATE.get()
+        st["stance"] = _stance("Chuck P", "you suck at picks?")
+        return next(texts)
+
+    async def fake_understand(*a, **k):
+        return pb.Brief()
+    with patch.object(pb, "understand", fake_understand):
+        out, _ = asyncio.run(pb.run(draft, q="you suck at picks?", team="Chuck P"))
+    assert out == "Fair, 4-0 is 4-0. I went 0-3, so I'll sit down.", out
 
 
 if __name__ == "__main__":

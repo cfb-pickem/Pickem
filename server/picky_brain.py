@@ -135,7 +135,7 @@ _INTENT_WORDS = {"question": "a real question", "banter": "banter", "insult": "a
                  "request": "a request", "reaction": "a reaction to the chat"}
 
 
-def brief_rider(b: Brief, core: bool = True) -> str:
+def brief_rider(b: Brief, core: bool = True, stance: bool = False) -> str:
     if not b.ok():
         return ""
     L = ["YOUR READ OF THIS TEXT (your own private notes: use them, never quote or mention them):",
@@ -146,7 +146,7 @@ def brief_rider(b: Brief, core: bool = True) -> str:
         L.append("- Facts it needs (take them only from LEAGUE DATA and the blocks above): " + "; ".join(b.facts_needed))
     if b.answer and core:
         L.append(f"- Core of the reply (say it your own way, don't copy this wording): {b.answer}")
-    if b.intent == "insult":
+    if b.intent == "insult" and not stance:  # with a STANCE, it decides fire back vs own it
         L.append("Fire back at them first: a quick, specific comeback, then answer anything real they asked.")
     else:
         L.append("Lead with that answer in plain words, like a buddy in the group text, then one line of personality.")
@@ -164,12 +164,14 @@ def insert_rider(messages: list[dict], rider: str, question: str) -> list[dict]:
     return messages[:-1] + [{**messages[-1], "content": body}]
 
 
-def understand_user(question: str, sender: str, recent: str, last_reply: str) -> str:
+def understand_user(question: str, sender: str, recent: str, last_reply: str, stance: str = "") -> str:
     L = [f"Sent by: {sender}" if sender else "Sent by: a league member"]
     if recent:
         L.append(recent.strip())
     if last_reply:
         L.append(f"Your last reply to them: {last_reply[:300]}")
+    if stance:
+        L.append(stance + "\nYour 'answer' note must follow this STANCE.")
     L.append(f"NEWEST TEXT: {question}")
     return "\n\n".join(L)
 
@@ -206,9 +208,9 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
 
 
 async def understand(prefix: str, question: str, sender: str, recent: str, last_reply: str = "",
-                     timeout: float = 60.0) -> Brief:
+                     timeout: float = 60.0, stance: str = "") -> Brief:
     try:
-        raw = await _json_call(prefix, UNDERSTAND_TAIL, understand_user(question, sender, recent, last_reply),
+        raw = await _json_call(prefix, UNDERSTAND_TAIL, understand_user(question, sender, recent, last_reply, stance),
                                UNDERSTAND_SCHEMA, 0.1, 260, timeout)
     except (httpx.HTTPError, ValueError) as e:
         log.warning("understand failed: %s", e)
@@ -314,6 +316,257 @@ def eligible(drafts: list[Draft], recent_picky: list[str]) -> list[Draft]:
 
 
 # -----------------------------------------------------------------------------
+# stance (code, before the brief): who's actually doing better in this exchange
+# -----------------------------------------------------------------------------
+# Live 2026-11-15: Chuck P (4-0 this week, 1st) texted "you suck at picks?" and
+# Picky (0-3) answered "Look in the mirror, Chuck P. You're 4-0 this week, but...".
+# The 9B can't weigh records on its own, so code picks the stance and hands it
+# the exact facts: own_it (Picky's worse), brag (Picky's better), deflect (the
+# other side is crushing it: concede, pivot to something true).
+
+@dataclass
+class Rec:
+    name: str
+    week: tuple | None = None     # (label, w, l): this week's decided games, else last week's
+    season: tuple | None = None   # (w, l)
+    place: int | None = None
+    n_teams: int = 0
+
+
+def _pct(wl) -> float | None:
+    return wl[-2] / (wl[-2] + wl[-1]) if wl and wl[-2] + wl[-1] else None
+
+
+def member_rec(ctx: dict, team: str) -> Rec:
+    st = ctx.get("standings_ytd") or []
+    row = next((r for r in st if r["team"] == team), None)
+    wk = (ctx.get("weekly_records") or {}).get(team) or {}
+    cw = ctx.get("current_week")
+    week = None
+    for w, label in ((cw, "this week"), ((cw or 0) - 1, "last week")):
+        v = wk.get(w) if wk.get(w) is not None else wk.get(str(w))
+        if v and sum(v):
+            week = (label, int(v[0]), int(v[1]))
+            break
+    return Rec(team, week, (row["w"], row["l"]) if row else None, row["rank"] if row else None, len(st))
+
+
+def picky_rec(ctx: dict) -> Rec | None:
+    pp = ctx.get("picky_player")
+    if not pp:
+        return None
+    w, l = chat.results_record(chat.picky_pick_results(ctx))
+    lw = pp.get("last_week") or [0, 0]
+    week = ("this week", w, l) if w + l else (("last week", lw[0], lw[1]) if sum(lw) else None)
+    s = pp.get("season") or [0, 0]
+    return Rec("Picky", week, tuple(s) if sum(s) else None)
+
+
+def better(a: Rec, b: Rec) -> int:
+    """+1 a is doing better, -1 b is, 0 even/unknown: one vote each for the
+    week, the season and the place (when both have one)."""
+    votes = 0
+    for x, y in ((_pct(a.week), _pct(b.week)), (_pct(a.season), _pct(b.season))):
+        if x is not None and y is not None and abs(x - y) > 1e-9:
+            votes += 1 if x > y else -1
+    if a.place and b.place and a.place != b.place:
+        votes += 1 if a.place < b.place else -1
+    return (votes > 0) - (votes < 0)
+
+
+def crushing(r: Rec) -> bool:
+    wk_n = r.week[1] + r.week[2] if r.week else 0
+    return bool((wk_n >= 3 and r.week[2] == 0) or r.place == 1
+                or (wk_n >= 3 and _pct(r.week) >= 0.75 and r.place and r.place <= 3))
+
+
+def good_numbers(r: Rec) -> list[str]:
+    out = []
+    if r.week and r.week[1] + r.week[2] >= 3 and _pct(r.week) >= 0.75:
+        out.append(f"{r.week[1]}-{r.week[2]} {r.week[0]}")
+    if r.place and r.place <= 3:
+        out.append(f"{chat._ordinal(r.place)} place")
+    if r.season and sum(r.season) >= 10 and _pct(r.season) >= 0.55:
+        out.append(f"{r.season[0]}-{r.season[1]} season")
+    return out
+
+
+def bad_numbers(r: Rec) -> list[str]:
+    out = []
+    if r.week and r.week[1] + r.week[2] >= 3 and _pct(r.week) <= 0.25:
+        out.append(f"{r.week[1]}-{r.week[2]} {r.week[0]}")
+    if r.place and r.n_teams and r.place >= r.n_teams - 2:
+        out.append(f"{chat._ordinal(r.place)} place")
+    if r.season and sum(r.season) >= 10 and _pct(r.season) < 0.47:
+        out.append(f"{r.season[0]}-{r.season[1]} season")
+    return out
+
+
+def rec_line(r: Rec, who: str) -> str:
+    bits = [f"{r.week[1]}-{r.week[2]} {r.week[0]}"] if r.week else []
+    if r.season:
+        bits.append(f"{r.season[0]}-{r.season[1]} on the season")
+    bits.append(f"{chat._ordinal(r.place)} place of {r.n_teams}" if r.place else
+                ("not in the standings" if r.name == "Picky" else "no place yet"))
+    return f"- {who}: " + ", ".join(bits) + "."
+
+
+def jab_material(ctx: dict, team: str) -> list[str]:
+    """True things to needle a member about that aren't their record: chalk
+    rate, and specific missed picks (graded in code)."""
+    out = []
+    for ln in (chat.load_lore() or {}).get("members", {}).get(team) or []:
+        m = re.search(r"takes the favorite (\d+)% of the time", ln)
+        if m and "so far" in ln:
+            out.append(f"{team} takes the favorite {m.group(1)}% of the time this season.")
+    out += [ln[2:] for ln in chat.roast_pick_lines(ctx, team).split("\n") if "MISSED" in ln][:2]
+    return out
+
+
+_AT_PICKY_TALK = re.compile(
+    r"\b(you|u|ur|ya|picky)\b[^.?!]{0,30}\b(suck|stink|bad|terrible|awful|trash|garbage|worst|clueless|losing|"
+    r"lost|bum|fraud|choke\w*|brick\w*|whiff\w*|winless|embarrass\w*|pathetic|joke|lame|0-\d)\b"
+    r"|\byour (own )?(picks?|record|week|season)\b|\b(roast|burn) (yourself|picky)\b"
+    r"|\bwhy (don'?t|can'?t|won'?t) (you|u)\b|\bwhy (are|r) (you|u) so\b|\bwork better\b|\byou (can'?t|don'?t) (even )?(pick|work)\b", re.I)
+_MEMBER_KNOCK = re.compile(r"\b(sucks?|stinks?|trash|garbage|fraud|overrated|bum|lucky|clown|chok\w+|bad at|"
+                           r"terrible|awful|washed)\b", re.I)
+
+
+def stance_target(ctx: dict, q: str, sender_team: str | None) -> tuple[str, str] | None:
+    """('roast', team) for 'roast X' / 'X sucks', ('picky', 'Picky') for a
+    shot or banter at Picky, else None."""
+    t = chat.guard_target(ctx, q)
+    if t is None:
+        for team, nick in chat.member_nicknames().items():
+            if nick and len(nick) > 2 and re.search(rf"(?<!\w){re.escape(nick)}(?!\w)", q, re.I):
+                t = team
+                break
+    if t and re.search(r"\b(me|my|myself)\b", q, re.I) and not chat._MOCK.search(q):
+        t = None  # 'my picks suck?' is about the sender, not a roast
+    at_picky = bool(chat._HOSTILE.search(q) or _AT_PICKY_TALK.search(q))
+    if t and (chat._MOCK.search(q) or (_MEMBER_KNOCK.search(q) and not at_picky)):
+        return "roast", t
+    if at_picky and ctx.get("picky_player"):
+        return "picky", "Picky"
+    return None
+
+
+STANCE_HOW = {
+    "own_it": ("You're doing worse than them here. Own it first with a quick, funny self-own about your real "
+               "record, then one jab at something true that ISN'T their record: their pick style, a specific "
+               "miss, their chalk rate."),
+    "brag": "You're ahead of them here. Brag with the exact numbers above, then needle their real record.",
+    "deflect": ("They're crushing it. Concede it in a few words (no sarcasm, no 'but'), then pivot to one true "
+                "thing that isn't their record: their pick style, a specific old miss, their chalk rate."),
+}
+
+
+def compute_stance(ctx: dict | None, q: str, sender_team: str | None) -> dict | None:
+    """{'stance', 'kind', 'facts': [...], 'good': [...], 'jabs': [...]} or None."""
+    if not ctx or ctx.get("error"):
+        return None
+    tgt = stance_target(ctx, q, sender_team)
+    if not tgt:
+        return None
+    me = member_rec(ctx, sender_team) if sender_team else None
+    if me and not (me.week or me.season):
+        me = None
+    pk = picky_rec(ctx)
+    kind, team = tgt
+    facts, good, bad, jabs = [], [], [], []
+    if pk:
+        prow = [r for r in chat.picky_pick_results(ctx) if r["result"] in ("WIN", "LOSS")]
+        facts.append(rec_line(pk, "You (Picky)"))
+        facts += [f"  your pick {r['label']} = {r['result']}" + (f" ({r['why']})" if r["why"] else "") for r in prow]
+    if kind == "picky":
+        if me:
+            facts.insert(0, rec_line(me, f"{sender_team} (the sender)"))
+            good = [f"{sender_team}'s {g}" for g in good_numbers(me)]
+            bad = [f"{sender_team}'s {g}" for g in bad_numbers(me)]
+            jabs = jab_material(ctx, sender_team)
+        c = better(me, pk) if me and pk else 0
+        if c > 0 and crushing(me):
+            stance = "deflect"
+        elif c > 0:
+            stance = "own_it"
+        elif c < 0:
+            stance = "brag"
+        else:  # even or no team: lean on how Picky is actually doing
+            stance = "own_it" if pk and (_pct(pk.season) or 0) < 0.5 else "brag"
+        who = f"a shot at you (Picky) from {sender_team}" if me else "a shot at you (Picky)"
+    else:
+        tr = member_rec(ctx, team)
+        self_roast = team == sender_team
+        facts.insert(0, rec_line(tr, f"{team} (who they want roasted{', the sender themself' if self_roast else ''})"))
+        if me and not self_roast:
+            facts.insert(1, rec_line(me, f"{sender_team} (the sender)"))
+            c = better(me, tr)
+            if c:
+                facts.append(f"- Between them, {sender_team if c > 0 else team} is doing better.")
+        good = [f"{team}'s {g}" for g in good_numbers(tr)]
+        if me and not self_roast:
+            good += [f"{sender_team}'s {g}" for g in good_numbers(me)]
+        bad = [f"{team}'s {g}" for g in bad_numbers(tr)]
+        jabs = jab_material(ctx, team)
+        leader = (ctx.get("leader") or {}).get("team_name")
+        if team == leader and not chat.leader_is_caller(ctx):
+            stance = "deflect"  # Dear Leader is never roasted by others; his rider turns it on the sender
+        elif crushing(tr):
+            stance = "deflect"
+        elif pk and better(pk, tr) < 0:
+            stance = "own_it"
+        else:
+            stance = "brag"
+        who = f"a request to roast {team}" + (f" from {sender_team}" if me and not self_roast else "")
+    return {"stance": stance, "kind": kind, "who": who, "facts": facts, "good": good, "bad": bad, "jabs": jabs[:3]}
+
+
+def stance_rider(s: dict | None) -> str:
+    if not s:
+        return ""
+    L = [f"STANCE (computed from the real numbers; follow it, never mention it). This is {s['who']}."]
+    L += s["facts"]
+    how = STANCE_HOW[s["stance"]]
+    if s["kind"] == "roast":
+        how = {"own_it": "Your own record is worse than theirs: never brag about yours or compare (a quick self-own "
+                         "is fine). Roast their weak spots: anything listed as fair game below, or something true "
+                         "that isn't a record (pick style, a specific miss, chalk rate).",
+               "brag": "Their record is fair game: roast it with the exact numbers above."}.get(s["stance"], how)
+    L.append(f"Stance: {s['stance'].upper().replace('_', ' ')}. {how}")
+    if s["good"]:
+        L.append("These numbers are GOOD, never mock them or call them bad: " + ", ".join(s["good"])
+                 + ". No 'look in the mirror' at someone doing better than you.")
+    if s.get("bad"):
+        L.append("Fair game (actually bad): " + ", ".join(s["bad"]) + ".")
+    if s["jabs"]:
+        L.append("True jab material (not their record): " + " / ".join(s["jabs"]))
+    L.append("Your own picks are only the ones listed above; never claim a pick you didn't make. "
+             "No made-up superlatives ('last in the league at being...').")
+    return "\n".join(L)
+
+
+# a sentence that fights the stance: Picky (worse, or facing someone crushing it) acting superior
+_SUPERIOR = re.compile(r"\blook in (the|a) mirror\b|\bpot (calling|meet\w*) the kettle\b|\btakes one to know\b|"
+                       r"\bat least i'?m not\b|\byou'?re (worse|no better|the one who sucks)\b", re.I)
+_MOCK_WORDS = re.compile(r"\b(suck\w*|bad|pathetic|embarrass\w*|weak|joke|garbage|trash|lucky|fluke|sad|mid|"
+                         r"terrible|awful)\b", re.I)
+
+
+def stance_violations(text: str, s: dict | None) -> list[str]:
+    """Sentences that act superior when the stance is own_it/deflect, or that
+    mock one of the good numbers."""
+    if not s or s["stance"] not in ("own_it", "deflect"):
+        return []
+    nums = [re.escape(g.split("'s ", 1)[1].split()[0]) for g in s["good"] if re.search(r"\d-\d", g)]
+    bad = []
+    for sent in re.split(r"(?<=[.!?])\s+", text or ""):
+        if _SUPERIOR.search(sent) or (nums and re.search(rf"\b({'|'.join(nums)})\b", sent)
+                                      and _MOCK_WORDS.search(sent)):
+            bad.append(sent)
+    return bad
+
+
+# -----------------------------------------------------------------------------
 # hooks into chat.py (installed by group_chat; inert unless STATE is set)
 # -----------------------------------------------------------------------------
 
@@ -340,8 +593,11 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         return
     if prefix and st.get("brief") is None:
         st["prefix"] = prefix
+        st["stance"] = compute_stance(st.get("ctx"), st["q"], st.get("team"))
+        if st["stance"]:
+            log.info("stance: %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
-                                       st.get("last_reply", ""))
+                                       st.get("last_reply", ""), stance=stance_rider(st["stance"]))
         st["ammo"] = banter.ammo_rider(st["q"], st["brief"].intent)
         if st["ammo"]:
             log.info("ammo: %s", st["ammo"].split("\n", 1)[1].replace("\n", " | ")[:300])
@@ -349,11 +605,25 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     # different inputs per draft, or the 9B writes the same reply three times: draft 1 the brief,
     # drafts 2-3 the brief plus the ammo and an angle, sampled hotter
     b = st.get("brief") or Brief()
-    rider = "\n\n".join(x for x in (brief_rider(b), st.get("ammo") or "" if i in (1, 2) else "", ANGLES[i]) if x)
+    sr = stance_rider(st.get("stance"))
+    if st.get("stance") and st["stance"]["stance"] in ("own_it", "deflect"):
+        messages = drop_escalate(messages)  # 'build the burns from their record' fights the stance
+    rider = "\n\n".join(x for x in (brief_rider(b, stance=bool(sr)), st.get("ammo") or "" if i in (1, 2) else "",
+                                     sr, ANGLES[i]) if x)
     st["options"].clear()
     st["options"].update(SAMPLING[i])  # read by chat._ollama_stream via OPTIONS_OVERRIDE
     async for x in _orig_ollama_stream(insert_rider(messages, rider, st["q"]), prefix):
         yield x
+
+
+def drop_escalate(messages: list[dict]) -> list[dict]:
+    """chat.escalate_note out of the latest user turn ('match and raise their
+    energy ... build the burns from their real record'): with an own_it or
+    deflect stance it pushed 0-3 Picky to mock a 4-0 week."""
+    if not messages or messages[-1].get("role") != "user" or "ESCALATE:" not in messages[-1]["content"]:
+        return messages
+    body = re.sub(r"ESCALATE: .*?top it\.\s*", "", messages[-1]["content"], count=1, flags=re.S)
+    return messages[:-1] + [{**messages[-1], "content": body}]
 
 
 def install() -> None:
@@ -393,7 +663,12 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
             stale = stale_records(text, st.get("ctx"), st.get("team"))
             if stale:
                 log.warning("draft %d: stale record %r", i + 1, stale[0][:160])
-            drafts.append(Draft(text, drops + len(stale), i))
+            off = stance_violations(text, st.get("stance"))
+            if off:  # 'look in the mirror' from 0-3 Picky at a 4-0 week: cut it, and count it so a reroll runs
+                log.warning("draft %d: off-stance %r", i + 1, off[0][:160])
+                kept = " ".join(x for x in re.split(r"(?<=[.!?])\s+", text) if x not in off).strip()
+                text = kept or text
+            drafts.append(Draft(text, drops + len(stale) + len(off), i))
             log.info("draft %d (%.0fs): drops=%d %r", i + 1, time.time() - t0, drops, text[:160])
         pool = eligible(drafts, recent_picky or [])
         if not pool:

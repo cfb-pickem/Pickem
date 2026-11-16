@@ -409,6 +409,62 @@ def test_recent_group_context_and_per_sender_history():
     assert gc.drop_echo("Who's winning? Chuck is.", "who's winning") == "Who's winning? Chuck is."
 
 
+def _with_picky(ctx: dict) -> dict:
+    """Picky's real week 11: Boise State -13.5, North Texas -2.5, Hawai'i +6.5, all LOSS (0-3)."""
+    games = {g["id"]: g for g in ctx["games_this_week"]}
+    mine = [(2, "Boise State"), (3, "North Texas"), (4, "Hawai'i")]
+    rows = [{"pick": p, "away": games[i]["away"], "home": games[i]["home"], "line": games[i]["line"],
+             "winner": games[i]["winner"], "status": "final", "tiebreaker": False, "label": p,
+             "game": f"{games[i]['away']} at {games[i]['home']}", "result": "missed", "why": None, "blurb": None}
+            for i, p in mine]
+    for g, lg in zip(ctx["games_this_week"], ctx["live_games"]):
+        lg.update({"Away": g["away"], "Home": g["home"]})
+    ctx["picky_player"] = {"name": "Picky", "season": [0, 3], "last_week": [0, 0], "this_week": rows, "hidden_count": 0,
+                           "revealed": [{**{k: r[k] for k in ("pick", "away", "home", "line", "winner", "status",
+                                                                  "tiebreaker")}, "week": 11} for r in rows]}
+    return ctx
+
+
+LIVE_FAIL = ("You suck at picks? Look in the mirror, Chuck P. You're 4-0 this week, but you're still last in the league "
+             "at being a Notre Dame homer. You're 1st place, but I'm the only one who knows how to pick a losing team "
+             "like Oregon State. Congrats on the perfect week, champ.")
+
+
+def test_picky_own_pick_claims_match_his_picks():
+    ok = chat.picky_claim_check(_with_picky(_wk11_ctx("Ackbar")))
+    # the live 2026-11-15 reply: he took Boise State -13.5 (won by 5, no cover), never Oregon State
+    assert not ok("You're 1st place, but I'm the only one who knows how to pick a losing team like Oregon State.")
+    for bad in ("I picked Oregon State.", "I took UTSA.", "I took Wake Forest.", "I faded Boise State.",
+                "I didn't take Boise State.", "My Boise State pick cashed.", "I'm 1-2 on the season.",
+                "I went 2-1 this week.", "I'm undefeated, baby.", "I'm 3-0 this week."):
+        assert not ok(bad), bad
+    for good in ("I took Boise State -13.5 and it won by 5 but didn't cover.", "I took Boise State over Oregon State.",
+                 "My pick was Boise State.", "I rode Hawai'i and they got smoked.", "I faded Oregon State.",
+                 "I didn't take Oregon State.", "I'd have taken Oregon State.", "I think you took Oregon State.",
+                 "I'm 0-3, but Ackbar took Wake Forest.", "I'm 0-3 this week.", "I'm 0-3 on the season.",
+                 "I'm not perfect.", "I'm winless.", "I'm taking Ohio State next week.",
+                 "I took Boise, you took Oregon State.", "You took Oregon State and it covered.",
+                 "Congrats on the perfect week, champ."):
+        assert ok(good), good
+    assert chat.picky_claim_check({"games_this_week": []}) is None  # Picky not loaded: nothing to hold him to
+
+
+def test_fake_league_superlatives_are_dropped():
+    assert chat.fake_superlative("You're 4-0 this week, but you're still last in the league at being a Notre Dame homer.")
+    assert chat.fake_superlative("You're the best in the league at whining.")
+    for ok in ("You're last in the league at picking dogs.", "He's last in the league in wins.",
+               "You're dead last in the standings.", "Best in the league at covering this year."):
+        assert not chat.fake_superlative(ok), ok
+    assert not chat.sentence_ok("You're first in the league at being a homer.", set())
+
+
+def test_live_failure_reply_loses_the_false_sentences():
+    ctx = _with_picky(_wk11_ctx("Ackbar"))
+    ok = chat.picky_claim_check(ctx)
+    kept = [s for s in chat._sentences(LIVE_FAIL) if chat.sentence_ok(s, set()) and ok(s)]
+    assert "Oregon State" not in " ".join(kept) and "last in the league" not in " ".join(kept), kept
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_") and callable(v)]
     failed = 0

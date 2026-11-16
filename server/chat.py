@@ -2050,9 +2050,12 @@ def summarize_picky_player(data: dict, current_week, now_ct: dt.datetime) -> dic
                           "pick": p.get("pick"), "away": p.get("away"), "home": p.get("home"),
                           "line": p.get("line"), "winner": p.get("winner"), "status": p.get("status")})
     hidden = [p for p in picks if p not in shown and p.get("week") == wk]
+    # every revealed pick, any week: picky_claim_check holds 'I took X' claims to these
+    revealed = [{k: p.get(k) for k in ("week", "pick", "away", "home", "line", "winner", "status", "tiebreaker")}
+                for p in shown]
     return {"name": data["team_name"], "season": rec(graded),
             "last_week": rec([p for p in graded if wk is not None and p.get("week") == wk - 1]),
-            "this_week": this_week, "hidden_count": len(hidden)}
+            "this_week": this_week, "hidden_count": len(hidden), "revealed": revealed}
 
 
 def picky_player_block(ctx: dict) -> str:
@@ -5322,7 +5325,7 @@ def record_check(ctx: dict, question: str):
     wk_recs = {t: [tuple(x) for x in (r or {}).values()] for t, r in (ctx.get("weekly_records") or {}).items()}
     pp = ctx.get("picky_player") or {}
     pres = [x.get("result") for x in pp.get("this_week") or []]
-    picky_recs = [(pres.count("hit"), pres.count("missed")), tuple(pp.get("last_week") or (0, 0))]
+    picky_recs = [(pres.count("covered"), pres.count("missed")), tuple(pp.get("last_week") or (0, 0))]
 
     wc = week_claim_check(ctx, question)
 
@@ -5424,6 +5427,131 @@ def record_check(ctx: dict, question: str):
                 return False
         return True
     return ok
+
+
+# Picky's own picks (live 2026-11-15): "I'm the only one who knows how to pick a losing team like Oregon
+# State", when he took Boise State -13.5 and Oregon State was the other side. Anything Picky says about
+# what he picked, his record or a pick's result must match his revealed, graded picks.
+_ME = r"(?<![\w'])(?:i|i'm|i've|i'd|i am|me|my|myself)(?![\w'])"
+_PICK_VERB_1P = re.compile(
+    r"\b(?:pick(?:ed|ing|s)?|took|tak(?:e|es|ing)|back(?:ed|ing)?|rode|rid(?:e|ing)|bet(?:ting)? on|went with|"
+    r"go(?:ing)? with|roll(?:ed)? with|hammer(?:ed)?|lock(?:ed)? in|grabb?(?:ed)?|was on|am on|'m on|"
+    r"fad(?:e|ed|ing))\b", re.I)
+_HYPO = re.compile(r"\b(would|could|should|might|will|gonna|going to|if|next week|wish)\b|'d\b|'ll\b", re.I)
+_NEG_1P = re.compile(r"\b(never|not|didn'?t|did not|don'?t|wouldn'?t|won'?t|no way)\b", re.I)
+_OTHER_SUBJ = re.compile(r"\b(you|your|you'?re|he|she|they|his|her|their|we|everyone|everybody|nobody|who else)\b"
+                         r"|[,;]|\b(but|while|and|whereas)\b", re.I)
+_AGAINST = re.compile(r"\b(over|against|vs\.?|versus|instead of|fad(?:e|ed|ing))\s+(?:the\s+)?$", re.I)
+_SELF_PERFECT = re.compile(_ME + r"[^.!?]{0,30}?\b(undefeated|unbeaten|perfect|spotless|haven'?t missed|can'?t miss|"
+                           r"never miss|haven'?t lost|hit (them|'?em) all|swept)\b", re.I)
+_SELF_WINLESS = re.compile(_ME + r"[^.!?]{0,30}?\b(winless|haven'?t (hit|won) (a|one|any)|0-for|zero wins|no wins)\b",
+                           re.I)
+
+
+def picky_claim_check(ctx: dict):
+    """Sentence test: anything Picky says about his own picks ('I took X', 'my
+    Boise pick hit', "I'm 2-1", 'undefeated') must match his revealed, graded
+    picks. None when Picky isn't loaded (nothing to hold him to)."""
+    pp = ctx.get("picky_player")
+    if not pp:
+        return None
+    picks = [p for p in (pp.get("revealed") or pp.get("this_week") or []) if p.get("pick")]
+    facts = results_facts(ctx, "how did your picks do, picky?")
+    if facts:
+        facts = {**facts, "subjects": [s for s in facts["subjects"] if s["kind"] == "picky"]}
+    # teams in decided games only: a line on an undecided game is a take, not his record
+    decided = [(g["away"], g["home"]) for g in ctx.get("games_this_week") or [] if g.get("winner")]
+    decided += [(g.get("away"), g.get("home")) for g in (ctx.get("last_week") or {}).get("games") or []]
+    decided += [(p["away"], p["home"]) for p in picks if p.get("winner")]
+    names = sorted({t for pair in decided for t in pair if t}, key=len, reverse=True)
+    rx = {t: re.compile(_team_re(t, False), re.I) for t in names}
+    graded = [p for p in picks if p.get("winner") and not p.get("tiebreaker")]
+    wins = sum(same_team(p["pick"], p["winner"]) for p in graded)
+    season = pp.get("season") or [0, 0]
+    has_w, has_l = bool(wins or season[0]), bool(len(graded) - wins or season[1])
+
+    def took(team: str) -> bool | None:
+        """Did Picky take `team`? None when he didn't pick that game at all."""
+        mine = [p for p in picks if same_team(team, p["away"]) or same_team(team, p["home"])]
+        return any(same_team(team, p["pick"]) for p in mine) if mine else None
+
+    def first_team(text: str):
+        best = None
+        for t in names:
+            m = rx[t].search(text)
+            if m and (best is None or (m.start(), -m.end()) < (best[1].start(), -best[1].end())):
+                best = (t, m)
+        return best
+
+    def claimed(rest: str, fade: bool) -> list[tuple[str, bool]]:
+        """[(team, against)] right after a pick verb: the first team (fillers
+        like 'a losing team like' allowed) and the run joined to it by 'and',
+        commas or 'over'. against = the claim is the other side of that game."""
+        hit = first_team(rest)
+        if not hit or re.search(r"[;:,.!?]|\b(but|and|you|he|she|they|ackbar|chuck)\b", rest[:hit[1].start()], re.I):
+            return []
+        out = [(hit[0], fade or bool(_AGAINST.search(rest[:hit[1].start()])))]
+        pos = hit[1].end()
+        while True:
+            sep = re.match(r"\s*(?:[-+]\d+(?:\.\d+)?)?\s*(?:(,\s*(?:and\s+)?|\s+and\s+|\s*&\s*)|"
+                           r"\s+(over|against|vs\.?|versus|instead of)\s+)(?:the\s+)?", rest[pos:], re.I)
+            nxt = first_team(rest[pos + sep.end():]) if sep else None
+            if not nxt or nxt[1].start() != 0:
+                break
+            after = rest[pos + sep.end() + nxt[1].end():]
+            if re.match(r"\s+(cover\w*|won|wins|lost|loses|beat|smoked|crushed|killed|did|didn'?t|was|were|is|got|"
+                        r"ran|blew|rolled|dominated|pulled|went|ended|finished)\b", after, re.I):
+                break  # 'I took North Texas -2.5 and UTSA covered': a new clause
+            out.append((nxt[0], (not fade) if sep.group(2) else fade))
+            pos += sep.end() + nxt[1].end()
+        return out
+
+    def ok(sent: str) -> bool:
+        s = sent.replace("’", "'").replace("‘", "'")
+        if not re.search(_ME, s, re.I):
+            return True
+        if facts and facts["subjects"] and check_answer(s, facts):
+            return False  # 'my Boise pick cashed', "I'm 3-0 this week"
+        m = _SELF_PERFECT.search(s)
+        if has_l and m and not re.search(r"\b(not|far from|never been)\b", m.group(0), re.I):
+            return False
+        m = _SELF_WINLESS.search(s)
+        if has_w and m and not re.search(r"\b(not|far from)\b", m.group(0), re.I):
+            return False
+        for me in re.finditer(_ME, s, re.I):
+            v = _PICK_VERB_1P.search(s, me.end(), min(len(s), me.end() + 45))
+            if not v:
+                continue
+            between = s[me.end():v.start()]
+            if _HYPO.search(between) or _OTHER_SUBJ.search(between):
+                continue  # 'I'd take', 'I think you took', "I'm 0-3, but Ackbar took"
+            neg = bool(_NEG_1P.search(between))
+            fade = v.group(0).lower().startswith("fad")
+            for t, against in claimed(s[v.end():v.end() + 80], fade):
+                got = took(t)
+                if got is None:
+                    if not neg:
+                        return False  # 'I took Ohio State': he never picked that game
+                    continue
+                if (got == (not against)) == neg:
+                    return False  # 'pick a losing team like Oregon State' when he took Boise State
+        return True
+    return ok
+
+
+# 'last in the league at being a Notre Dame homer': a league superlative only for a real stat
+_FAKE_SUPERLATIVE = re.compile(
+    r"\b(?:first|1st|last|dead last|worst|best|number one|no\. ?1|#1|top|bottom)\s+in\s+(?:the\s+)?"
+    r"(?:league|pool|group|chat)\s+(?:at|in|for)\s+(?P<what>[^.!?,;]{0,60})", re.I)
+_STAT_WORDS = re.compile(r"\b(picks?|picking|covers?|covering|wins?|winning|loss(?:es)?|losing|records?|points|chips|"
+                         r"standings|ats|spreads?|underdogs?|dogs|favorites?|chalk|upsets?|perfect weeks?|streaks?|"
+                         r"hit rate|blackjack|slots|bankroll|jackpot|misses|games?)\b", re.I)
+
+
+def fake_superlative(sent: str) -> bool:
+    m = _FAKE_SUPERLATIVE.search(sent)
+    return bool(m) and (re.match(r"\s*being\b", m.group("what"), re.I) is not None
+                        or not _STAT_WORDS.search(m.group("what")))
 
 
 # Sexual/anatomy vulgarity is out everywhere (R-rated yes, sexual no): m11 had "USC can suck my dick".
@@ -5636,6 +5764,8 @@ def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = Fals
     if _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent) or _ANATOMY.search(sent):
         return False
     if _MILK_SPILL.search(sent):  # Charlie: Blinkstradamus just held the milk; it never spilled
+        return False
+    if fake_superlative(sent):
         return False
     if rare_bits.mentions("milk", sent) and not MILK_OK.get():  # once a month, only about Blinky
         return False
@@ -6177,7 +6307,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
                 extra=_both(_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
                                   grounded_check(ctx, corpus, qtext)),
-                            pick_claim_check(ctx, qtext)) if not ctx.get("error") else None),
+                            _both(pick_claim_check(ctx, qtext), picky_claim_check(ctx))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),
