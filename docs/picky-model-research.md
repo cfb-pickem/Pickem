@@ -679,3 +679,47 @@ Text exam, same pipeline, blind judge run twice (means): helpful 3.70 -> 3.60, h
 | few-shot bank turns (PICKY_FEWSHOT=1) | 30/38 | 3.34 | 2.87 | 2.95 | 2.05 | 6 | 0 | 20 / 34 s |
 
 Nothing shipped: the warmer samplers tripled invented facts with no measurable gain in helpful/human/roast (all within judge noise), and few-shot turns didn't help on the items where they fired (helpful 2.5 vs 2.7, roast 2.0 vs 2.3). Knobs stay in code, off: `PICKY_DRAFT_OPTIONS` (JSON sampling for the one draft), `PICKY_FEWSHOT=1`. Fact slots (research item 2) are the prerequisite for warmer sampling. **Prompt trimming not run:** ~7k of the ~8k prompt tokens are the shared league prefix, cached (prime 0.1 s); the per-call tail is 0.4-1.5k tokens (2-9 s). Intent-specific prefixes would each need their own checkpoint and qwen keeps one, so every switch would cost ~35 s cold prefill. Ollama already runs flash attention + q8_0 KV cache (com.dcc.ollama.plist). Remaining invented flags worth a filter next: "dodged LSU" (sender pick, verb not covered), "You lost with Boise" on a member who didn't take Boise, "three of four missed" on a games recap.
+
+## Text Picky moves to gemma4:12b (QAT, llama.cpp) (2026-11-16, overnight)
+
+With LibreChat/Docker gone (~8 GB back), the bigger models were re-tested for text Picky. Same pipeline as live (understand, one draft, code fact checks, reroll; judge off), swapped by env only (`PICKEM_CHAT_MODEL` on a candidate sidecar, :8781), one model loaded at a time under the tuning lock, with a watchdog that unloads on free memory < 8% or swap growth > 2 GB.
+
+**Candidates.**
+- `gemma4:12b-it-qat`: GGUF (7.2 GB on disk), so it runs on the llama.cpp runner, not MLX. The installed `gemma4:12b` is the MLX build that ballooned to 12 GB on 11/15.
+- `qwen2.5:14b-instruct`: 9.0 GB.
+- No newer ~12-14B was clearly better for chat/persona. qwen3.6 has no small sizes; qwen3:14b and phi4 are a year old. `ministral-3:14b` is 9.1 GB, the same size class as qwen2.5:14b, which already hit the 8% free floor, so it wasn't pulled.
+- The LoRA merge wasn't re-run: it lost to base on this exam earlier in the night (helpful 3.70 -> 3.60, wit 2.32 -> 1.96).
+
+**Exam.** `eval/run.py --text` (17 group items incl. the 4 real failures + 25 main items; privacy items skip because every game has kicked off). Each qwen3.5 and gemma run was done twice. Blind `judge_text.py`, judged twice: judging 1 = base, gemma, q14; judging 2 = all five runs.
+
+| run | pass | helpful | human | not_bot | roast | invented | leaks | lat med / p90 | min free | swap growth | runner |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| qwen3.5:9b (live) | 26/38 | 3.47 / 3.45 | 2.92 / 2.92 | 2.82 / 2.92 | 2.03 / 2.18 | 8 / 7 | 0 | 22 / 41 s | 34% | 0 | 6.9 GB |
+| qwen3.5:9b, run 2 | 29/38 | 3.76 | 3.00 | 2.92 | 2.34 | 7 | 0 | 20 / 34 s | 34% | 0 | 6.9 GB |
+| **gemma4:12b-it-qat** | 33/38 | **3.89 / 3.95** | **3.08 / 3.08** | 2.89 / 2.82 | 2.21 / 2.29 | **3 / 0** | 0 | 32 / 69 s | 15% | +0.4 GB | 7.9 GB |
+| gemma4:12b-it-qat, run 2 | 31/38 | 3.92 | 3.11 | 2.76 | 2.37 | 0 | 0 | 31 / 54 s | 18% | 0 | 7.9 GB |
+| qwen2.5:14b-instruct | 29/38 | 3.71 / 3.61 | 2.92 / 2.97 | 2.87 / 2.89 | 1.66 / 1.74 | 5 / 7 | 0 | 35 / 78 s | **8%** | +1.2 GB | 9.7 GB |
+
+(a / b = judging 1 / judging 2.)
+- **gemma:** every helpful and human score beats every qwen3.5 score, and invented facts drop from 7-8 to 0-3. not_bot is slightly lower; its tell is repeated phrases ("participation trophy", "dismantled by 42"), opener distinct 0.82 vs 0.87.
+- **qwen2.5:14b:** sat at 8% free (the abort line) and was the least witty.
+
+**The SWA catch, and the fix.** The exam asks mostly as one persona in a row, which hides a cost.
+- gemma4 uses sliding-window attention (n_swa 1024). llama.cpp keeps checkpoints only near the end of each prompt. When two members' prompts share `prompt_prefix` (~6k tokens) but differ in the tail, nothing is reusable ("forcing full prompt re-processing ... SWA"), so every call re-prefills ~8k tokens at ~150 tok/s.
+- Replaying tonight's real texts across different members (Charlie's "you suck at picks?", the 6 variants, the 2 Chinese questions; `/tmp/picky-stance/replay.py`) took 133-164 s per reply.
+- Fix (`chat._prime`, gemma only): a system-only `/api/chat` call with the prefix, rendered by Ollama's own template, leaves a checkpoint inside the prefix ("restored context checkpoint ... n_past 6493"). qwen's raw prime is unchanged.
+- After the fix, the same 9 mixed-member texts ran p50 55 s, p90 69 s, max 115 s (the cold first one). qwen3.5 ran them in p50 34 s, max 84 s. A full exam with the fix gave median 33 s, max 89 s.
+- Every record and place in gemma's replay matched the DB, including the Chinese replies.
+
+**Pictures.** One image generation (z-image, ~6 GB) on top of a loaded LLM pushed swap past +2 GB with EITHER model: qwen3.5 +2.7 GB, gemma +2.3 GB; the watchdog aborted both. So this is a pre-existing limit of the 16 GB box, not a gemma regression. Pictures are rare (last one 11/14).
+
+**Shipped.** `PICKEM_CHAT_MODEL=gemma4:12b-it-qat` in `~/Library/LaunchAgents/com.pickem.chat.plist` (not tracked in git; backup `server/logs/com.pickem.chat.plist.pre-gemma-*`). The group sidecar inherits it from that file.
+- Reload with `launchctl bootout` + `bootstrap`. `kickstart -k` keeps launchd's cached env, so chat.py stayed on qwen until the reload. `tools/picky-lora/cycle.py ship()` has the same gap; the group sidecar still picks up the change because it reads the file.
+- The SELF-AWARE note now takes the parameter count from the model name (12).
+- Roll back: set it to `qwen3.5:9b-q4_K_M`, bootout/bootstrap com.pickem.chat, kickstart com.pickem.picky-group.
+
+**Left.**
+- The batch jobs (news-refresh, picky-dossier, picky-picks, group-posts plists) still pin qwen3.5. They call Ollama only on new content (a few times a day). With `OLLAMA_MAX_LOADED_MODELS=1`, each such call evicts gemma, and the next text pays a cold load + prime (~75-115 s). Moving them to gemma needs a check of their prompts first.
+- The nightly LoRA cycle fine-tunes qwen3.5 and now has to beat gemma to ship, which looks unlikely. It still takes Picky down 3-4 h per round (pause: `cfb-pickem-private/PICKY_LORA_PAUSE`).
+- `gemma4:12b` (the MLX build, 7.7 GB) is now unused and can be deleted. Disk: 15 GB free.
+- gemma still sometimes appends the robotic "For the record: ..." rider and repeats a few phrases.
