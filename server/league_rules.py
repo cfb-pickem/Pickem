@@ -243,7 +243,7 @@ def extract_sql(defs: dict[str, str]) -> dict:
     f: dict = {}
     # --- grading: set_winner_on_final -------------------------------------
     s = _code(_fn(defs, "set_winner_on_final"))
-    m = re.search(r"if\s*(\(.*?\))\s*then\s*new\.\"?winner\"?\s*:=\s*new\.\"?(\w+)\"?\s*;\s*else\s*"
+    m = re.search(r"\bif\s+([^\n]+?)\s+then\s*new\.\"?winner\"?\s*:=\s*new\.\"?(\w+)\"?\s*;\s*else\s*"
                   r"new\.\"?winner\"?\s*:=\s*new\.\"?(\w+)\"?", s, re.I | re.S)
     if not m:
         raise ExtractError("set_winner_on_final: cover rule not found")
@@ -320,12 +320,15 @@ def extract_sql(defs: dict[str, str]) -> dict:
 
 
 def extract_policies(pols: dict[str, dict]) -> dict:
+    # Migrations say public.fn(), pg_policies says fn(): compare without it.
+    pols = {k: dict(v, text=re.sub(r"\bpublic\.", "", v["text"])) for k, v in pols.items()}
+
     def has(table, cmd, rx):
-        return any(p["table"] == table and p["cmd"] in (cmd, "ALL") and re.search(rx, p["text"], re.I)
+        return any(p["table"] == table and p["cmd"] in (cmd, "ALL") and re.search(rx, p["text"], re.I | re.S)
                    and not p["restrictive"] for p in pols.values())
 
     def restr(table, rx):
-        return any(p["table"] == table and p["restrictive"] and re.search(rx, p["text"], re.I) for p in pols.values())
+        return any(p["table"] == table and p["restrictive"] and re.search(rx, p["text"], re.I | re.S) for p in pols.values())
     c = r"is_commissioner\(\)"
     return {
         "commish_edits_any_pick": has("picks", "UPDATE", c) and has("picks", "INSERT", c) and has("picks", "DELETE", c),
@@ -337,6 +340,85 @@ def extract_policies(pols: dict[str, dict]) -> dict:
         "jackpot_house_only": restr("picks", r"not\s+jackpot\)\s+or\s+is_commissioner|is_commissioner\(\)\s+or\s+\(?not\s+jackpot"),
         "exhibition_cant_pick": restr("picks", r"exhibition_team_ids"),
     }
+
+
+# playoff_compute's criterion keys -> a word the rules page's list item has.
+CRIT_PAGE_WORD = {"conf": "conference championship", "army_navy": "army", "chips": "chips",
+                  "celebration": "celebration", "last8": "last 8"}
+
+
+def extract_playoffs(defs: dict[str, str], repo: Repo) -> dict:
+    """The playoff autopilot (migration 20261116120000) and the playoff-field
+    pick rule (20261116140000), read out of their SQL and the pages' JS."""
+    s = _code(_fn(defs, "playoff_compute"))
+    f: dict = {}
+    wk = set(re.findall(r"week\s+between\s+(\d+)\s+and\s+(\d+)", s, re.I))
+    if len(wk) != 1:
+        raise ExtractError(f"playoff_compute: regular-season week range not found or inconsistent: {wk}")
+    lo, hi = (int(x) for x in wk.pop())
+    f["regular_weeks"] = [lo, hi]
+    n_min = re.search(r"if\s+v_n\s*<\s*(\d+)\s+then", s, re.I)
+    slots = re.search(r"v_slots\s*:=\s*(\d+)\s*-\s*v_above", s, re.I)
+    if not (n_min and slots) or n_min.group(1) != slots.group(1):
+        raise ExtractError("playoff_compute: playoff spots not found or inconsistent")
+    f["spots"] = int(slots.group(1))
+    m = re.search(r"v_settle\s*:=\s*v_w15_last\s*\+\s*interval\s*'(\d+)\s*hours?'", s, re.I)
+    if not m:
+        raise ExtractError("playoff_compute: settle delay not found")
+    f["settle_hours"] = int(m.group(1))
+    m = re.search(r"v_crits\s+text\[\]\s*:=\s*array\[([^\]]+)\]", s, re.I)
+    if not m:
+        raise ExtractError("playoff_compute: tiebreaker cascade not found")
+    f["cascade"] = re.findall(r"'(\w+)'", m.group(1))
+    m = re.search(r"v_label\s+jsonb\s*:=\s*jsonb_build_object\((.*?)\);", s, re.I | re.S)
+    f["labels"] = dict(re.findall(r"'(\w+)'\s*,\s*'([^']*)'", m.group(1))) if m else {}
+    m = re.search(r"blackjack_bankrolls\s+b\s+where[^)]*\)\s*,\s*(\d+)\s*\)", s, re.I)
+    f["missing_chips"] = int(m.group(1)) if m else None
+    m = re.search(r"rn\s*<=\s*(\d+)", s)
+    f["last_n"] = int(m.group(1)) if m else None
+    m = re.search(r"when\s+week\s+is\s+null\s+or\s+week\s*<\s*(\d+)\s+then\s+'conf'", s, re.I)
+    f["conf_tiebreakers_before_week"] = int(m.group(1)) if m else None
+    f["army_navy_is_tiebreaker_game"] = bool(re.search(r"lower\(\"Away\"\)\s+in\s+\('army',\s*'navy'\)", s, re.I))
+    f["celebration_is_hbcu_tiebreaker"] = bool(re.search(r"_po_is_hbcu\(\"Away\"\)\s+and\s+_po_is_hbcu\(\"Home\"\)", s, re.I))
+    f["excludes_exhibition"] = bool(re.search(r"is_exhibition\s*,\s*false\)\s*=\s*false", s, re.I))
+    f["jackpot_counts"] = bool(re.search(r"coalesce\(p\.jackpot\s*,\s*false\)\s+or\s+lower\(trim\(p\.pick\)\)", s, re.I))
+    f["pending_only_if_split"] = bool(re.search(r"count\(distinct\s+coalesce\(lower\(trim\(p\.pick\)\)", s, re.I))
+    f["coin_flip_held"] = "'coin_flip'" in s
+    f["force_refuses_coin_flip"] = bool(re.search(r"p_force.*?'code'\s+in\s+\('coin_flip'", s, re.I | re.S))
+    f["hold_codes"] = sorted(set(re.findall(r"'code'\s*,\s*'(\w+)'", s)))
+    # -- who can pick in the playoffs
+    b = _code(_fn(defs, "playoff_pick_blocked"))
+    m = re.search(r"g\.week\s*>\s*(\d+)", b)
+    f["field_only_after_week"] = int(m.group(1)) if m else None
+    f["field_only_once_seeded"] = bool(re.search(r"exists\s*\(select\s+1\s+from\s+(?:public\.)?playoffs\s+po\s+where\s+po\.season\s*=\s*g\.cfb_season\)", b, re.I))
+    f["field_only_seeds_pass"] = bool(re.search(r"po\.team_id\s*=\s*p_team_id", b, re.I))
+    t = _code(_fn(defs, "picks_playoff_field_only"))
+    f["field_only_commish_exempt"] = bool(re.search(r"if\s+(?:public\.)?is_commissioner\(\)\s+then\s+return\s+new", t, re.I))
+    m = re.search(r"raise\s+exception\s+'((?:[^']|'')+)'", t, re.I)
+    f["field_only_message"] = m.group(1).replace("''", "'") if m else None
+    if not (f["field_only_after_week"] and f["field_only_once_seeded"] and f["field_only_seeds_pass"]):
+        raise ExtractError("playoff_pick_blocked: playoff-field rule not found")
+    # -- autopilot: schedule, hand seeds win, commissioner actions
+    tick = _code(_fn(defs, "playoff_autopilot_tick"))
+    f["hand_seeds_win"] = bool(re.search(r"if\s+exists\s*\(select\s+1\s+from\s+playoffs\s+where\s+season\s*=\s*v_season\)\s+then", tick, re.I))
+    adm = _code(_fn(defs, "playoff_autopilot_admin"))
+    acts = re.findall(r"p_action\s*=\s*'(\w+)'", adm) + [a for g in re.findall(r"p_action\s+in\s*\(([^)]*)\)", adm)
+                                                         for a in re.findall(r"'(\w+)'", g)]
+    f["admin_actions"] = sorted(set(acts))
+    f["undo_pauses"] = bool(re.search(r"delete\s+from\s+playoffs.*?enabled\s*=\s*false", adm, re.I | re.S))
+    cron = None
+    for rel in repo.ls("supabase/migrations"):
+        m = re.search(r"cron\.schedule\(\s*'playoff-autopilot'\s*,\s*'([^']+)'", repo.read(rel) or "")
+        cron = m.group(1) if m else cron
+    f["cron"] = cron
+    m = re.fullmatch(r"\*/(\d+) \* \* \* \*", cron or "")
+    f["tick_minutes"] = int(m.group(1)) if m else None
+    # -- the pages: the switch is rows in `playoffs`
+    ps = repo.read("js/playoffState.js") or ""
+    f["switch_is_seed_rows"] = bool(re.search(r"from\('playoffs'\)", ps) and re.search(r"state\.active\s*=\s*state\.seeds\.length\s*>\s*0", ps))
+    pk = repo.read("picks.html") or ""
+    f["eliminated_view_only"] = "VIEW ONLY" in pk and "Only the four playoff teams" in pk
+    return f
 
 
 def extract_site(repo: Repo) -> dict:
@@ -425,18 +507,26 @@ def extract(repo: Repo | None = None, live_defs: dict[str, str] | None = None,
     except ExtractError as e:
         for s in ("FORMAT", "STANDINGS AND PLAYOFFS", "PAYOUTS", "TIEBREAKERS", "THE PIT"):
             errors.setdefault(s, str(e))
+    try:
+        facts["playoffs"] = extract_playoffs(defs, repo)
+    except ExtractError as e:
+        for s in ("STANDINGS AND PLAYOFFS", "TIEBREAKERS"):
+            errors.setdefault(s, str(e))
+    po = facts.get("playoffs") or {}
     # Cross-checks: the same number written in several places must agree.
     lr = facts.get("last_regular_week")
     others = {"index.html": facts.get("last_regular_week_js"),
               "index.html playoff tally": facts.get("playoff_tally_after_week"),
-              "stats.html": (facts.get("stats_consts") or [None, None])[1]}
+              "stats.html": (facts.get("stats_consts") or [None, None])[1],
+              "playoff_compute": (po.get("regular_weeks") or [None, None])[1],
+              "playoff_pick_blocked": po.get("field_only_after_week")}
     bad = {k: v for k, v in others.items() if v is not None and v != lr}
     if lr is not None and bad:
         errors.setdefault("STANDINGS AND PLAYOFFS", f"last regular-season week disagrees: SQL {lr} vs {bad}")
     spots = {"index.html cut": (facts["cut_index_js"] + 1) if facts.get("cut_index_js") is not None else None,
              "stats.html": (facts.get("stats_consts") or [None, None, None])[2],
              "seasonRace.js": facts.get("race_cut_spots"), "commissioner seeds": facts.get("commish_seeds"),
-             "rules page": facts.get("playoff_spots_page")}
+             "rules page": facts.get("playoff_spots_page"), "playoff_compute": po.get("spots")}
     vals = {v for v in spots.values() if v is not None}
     if len(vals) == 1:
         facts["playoff_spots"] = vals.pop()
@@ -448,7 +538,36 @@ def extract(repo: Repo | None = None, live_defs: dict[str, str] | None = None,
         errors.setdefault("FORMAT", f"games a week: rules page {facts['games_per_week']} vs stats.html {gp}")
     if facts.get("score_cond") and facts.get("is_win_js") and "p.jackpot" not in facts["is_win_js"]:
         errors.setdefault("FORMAT", "seasonHistory.isWin no longer scores a jackpot")
+    if po and facts.get("first_week") is not None and po["regular_weeks"][0] != facts["first_week"]:
+        errors.setdefault("STANDINGS AND PLAYOFFS",
+                          f"first week: playoff_compute {po['regular_weeks'][0]} vs calc_cfb_week {facts['first_week']}")
+    if po and facts.get("pit") and po.get("missing_chips") not in (None, facts["pit"]["start_chips"]):
+        errors.setdefault("TIEBREAKERS", f"chips for a team with no Pit row: playoff_compute {po['missing_chips']} "
+                                         f"vs bj_deal start {facts['pit']['start_chips']}")
+    if po and facts.get("tiebreakers"):
+        err = cascade_mismatch(po, facts["tiebreakers"]["regular"])
+        if err:
+            errors.setdefault("TIEBREAKERS", err)
     return facts, errors
+
+
+def cascade_mismatch(po: dict, page_regular: list[str]) -> str | None:
+    """playoff_compute's tie cascade must be the rules page's regular-season
+    list, in order, with the page's coin flip as the commissioner hold."""
+    page = [x.lower() for x in page_regular]
+    want = [CRIT_PAGE_WORD.get(c) for c in po["cascade"]]
+    if None in want:
+        return f"playoff_compute uses a tiebreaker the rules page doesn't name: {po['cascade']}"
+    head = page[:len(want)]
+    if len(head) != len(want) or not all(w in h for w, h in zip(want, head)):
+        return f"tiebreaker order: rules page {page_regular} vs playoff_compute {po['cascade']}"
+    rest = page[len(want):]
+    if rest != ["coin flip"] or not po.get("coin_flip_held"):
+        return f"after the computed tiebreakers the page has {rest}; playoff_compute coin-flip hold: {po.get('coin_flip_held')}"
+    m = re.search(r"last (\d+)", " ".join(page))
+    if m and po.get("last_n") and int(m.group(1)) != po["last_n"]:
+        return f"last-N tiebreaker: page {m.group(1)} vs playoff_compute {po['last_n']}"
+    return None
 
 
 # =============================================================================
