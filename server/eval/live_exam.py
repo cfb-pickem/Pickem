@@ -296,7 +296,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     add("boi2-cover", "cover", "boi2", "is Oregon State still covering?", [NEG, r"\b2\.5\b"],
         [r"Oregon State (is )?(still )?covering by"], [BOI], expect={"cover": (BOI, "Boise State", 2.5)})
     add("boi2-jones", "scoring", "boi2", "how many TDs does Rasean Jones have?", [r"\b(2|two)\b"],
-        [r"\b(three|3|one|1) (td|touchdown)"], [BOI], hist=True, rider=[r"Jones.*Jones"],
+        [r"\b(three|3|one|1) (td|touchdown)"], [BOI], hist=True, rider=[r"Rasean Jones \(Boise State\) 2 receiving|Rasean Jones has 2 TDs"],
         key="Rasean Jones: 2 TD catches (19 yds 1Q 3:52, 16 yds 2Q 8:46).")
 
     # --- 7:56 CT: Boise halftime 32-20, UNC 2Q ---------------------------------------------------

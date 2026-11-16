@@ -438,7 +438,20 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
         if k0 and pub >= k0 and any(re.search(rf"\b{re.escape(t['name'])}\b", h)
                                     for t in (g["away"], g["home"]) if len(t["name"]) > 3):
             news.append({"headline": h[:160], "published": a.get("published"), "source": "ESPN"})
-    g.update({"scoring": scoring[-KEEP_SCORING:], "scoring_n": len(scoring), "key": key[-KEEP_KEY:],
+    tds = {}  # every TD so far, by player: 'how many TDs does Rasean Jones have' (scoring keeps the last 6)
+    for x in scoring:
+        if "Touchdown" not in x["type"] and not re.search(r"\d+ Yd (pass|run|.*return)", x["text"], re.I):
+            continue
+        m = re.match(r"([A-Z][A-Za-z.'\- ]+?(?: Jr\.| Sr\.| II| III| IV)?) \d+ Yd (pass from ([A-Z][A-Za-z.'\- ]+?"
+                     r"(?: Jr\.| Sr\.| II| III| IV)?) \(|[Rr]un\b|\w)", x["text"])
+        if not m:
+            continue
+        kind = "rec" if m.group(3) else "rush" if m.group(2).lower() == "run" else "return"
+        t = tds.setdefault(m.group(1), {"team": x["team"], "rec": 0, "rush": 0, "return": 0, "pass": 0})
+        t[kind] += 1
+        if m.group(3):
+            tds.setdefault(m.group(3), {"team": x["team"], "rec": 0, "rush": 0, "return": 0, "pass": 0})["pass"] += 1
+    g.update({"scoring": scoring[-KEEP_SCORING:], "scoring_n": len(scoring), "key": key[-KEEP_KEY:], "tds": tds,
               "turnovers": turnovers, "latest_wallclock": next((p.get("wallclock") for p in reversed(plays)
                                                                 if p.get("wallclock")), None),
               "injuries": inj_out[-8:], "qb": qb, "news": news[:3], "detail": True,
@@ -935,7 +948,12 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
         ago = since(sc[0], g, now) if st == "in" else None
         lines.append("  Last score: " + _play_desc(sc[0], g) + (f", {ago}" if ago else "") + ".")
         if len(sc) > 1:
-            lines.append("  Earlier scores (newest first): " + " | ".join(_play_desc(x, g) for x in sc[1:4]) + ".")
+            lines.append("  Earlier scores (newest first): " + " | ".join(_play_desc(x, g) for x in sc[1:]) + ".")
+    if g.get("tds"):
+        lines.append("  TDs so far, whole game (by player): " + "; ".join(
+            f"{n} ({v['team']}) " + ", ".join(f"{v[k]} {lab}" for k, lab in (("rush", "rushing"), ("rec", "receiving"),
+                                                                              ("return", "return"), ("pass", "passing"))
+                                              if v.get(k)) for n, v in g["tds"].items()) + ".")
     elif st == "in" and g.get("detail"):
         lines.append("  No points yet.")
     if g.get("detail") and st in ("in", "post"):
@@ -1275,6 +1293,18 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
             why = (f" (took over from {ch[0]['from']} at {period_label(ch[0]['period'])} {ch[0]['clock']}"
                    + (f", after {ch[0]['from']} was reported injured" if inj else "") + ")")
         return (lambda t, last=last: last.lower() in t.lower(), f" {team} QB right now: {cur}{why}.")
+    m_td = re.search(r"\bhow many (tds?|touchdowns?|scores)\b", q, re.I)
+    if m_td and g.get("tds") is not None:
+        words = {w.lower() for w in re.findall(r"[A-Za-z][a-z'\-]{2,}", q)}
+        who = [n for n in g["tds"] if re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", n).split(" ")[-1].lower() in words]
+        if len(who) == 1:
+            v = g["tds"][who[0]]
+            n = v["rush"] + v["rec"] + v["return"]
+            parts = ", ".join(f"{v[k]} {lab}" for k, lab in (("rush", "rushing"), ("rec", "receiving"), ("return", "return"),
+                                                            ("pass", "passing")) if v.get(k))
+            nums = {0: "zero", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
+            return (lambda t, n=n: bool(re.search(rf"\b({n}|{nums.get(n, n)})\b", t, re.I)),
+                    f" {who[0]} has {n} TD{'s' * (n != 1)} so far ({parts}, as of {when}).")
     m_int = re.search(r"\bwho (threw|tossed)\b.{0,25}\b(pick|int|interception)\b|\bwho fumbled\b", q, re.I)
     if m_int and g.get("turnovers"):
         want = "fumble" if "fumbl" in m_int.group(0).lower() else "INT"
