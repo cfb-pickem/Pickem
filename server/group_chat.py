@@ -925,6 +925,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:],
                 route=route, chat_id=key or chat_id)
             if not image:
+                reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
+                                     group=mode == "group", recall=callbacks.is_recall(q))
                 reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
             log.info("lane: %s", route.label())

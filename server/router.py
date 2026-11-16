@@ -397,3 +397,46 @@ def shape_banter(text: str, q: str = "", nicks: dict[str, str] | None = None, ma
         k = cut.rfind(",")
         res = (cut[:k] if k > len(cut) // 2 else cut).rstrip(" ,;:-") + "."
     return res.strip()
+
+
+# -----------------------------------------------------------------------------
+# de-bot filters at the send point (W5), every lane
+# -----------------------------------------------------------------------------
+
+_FOR_RECORD_LEAD = re.compile(r"(^|(?<=[.!?]\s))\s*for the record[:,]?\s*", re.I)
+# a DM-private callback can't be confirmed in the group, so a denial there may be false: deflect instead
+DENIAL = re.compile(r"\bi (never|haven'?t|have not|didn'?t|did not)\b[^.!?]{0,20}\b(said|say|told|tell|mention\w*|"
+                    r"talk\w*|said anything|called|call\w*|had you|picked|gave you)\b|\bno idea what you'?re talking about\b"
+                    r"|\bi don'?t remember (saying|telling|that)\b", re.I)
+DEFLECT = "Not reopening old calls in front of the whole group. Scoreboard's right there."
+
+
+def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False, group: bool = False,
+          recall: bool = False) -> str:
+    """W5 on any reply: preachy and stock-phrase sentences out, no 5+ word echo of the sender (not on
+    code-written facts), Picky's own record only when asked or as the last line, required facts in voice
+    ('For the record:' dropped), and in the group no false 'I never said that' on a recall ask (a DM
+    lean can't be confirmed there): deflect instead. Never empties a reply."""
+    import no_repeat
+    t = (text or "").strip()
+    if not t:
+        return t
+    if recall and group and DENIAL.search(t):
+        kept = [s for s in sentences(t) if not DENIAL.search(s)]
+        t = " ".join(kept + [DEFLECT]) if kept else DEFLECT
+    t = _FOR_RECORD_LEAD.sub(lambda m: m.group(1), t).strip()
+    t = re.sub(r"(^|(?<=[.!?]\s))([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
+    sents = sentences(t)
+
+    def drop(pred):
+        nonlocal sents
+        kept = [s for s in sents if not pred(s)]
+        if kept:
+            sents = kept
+    drop(lambda s: bool(PREACHY.search(s) or no_repeat.banned_tic(s)))
+    if q and lane != "fact":
+        drop(lambda s: echo_runs(s, q))
+    if not picky_asked and len(sents) > 1:
+        last = sents[-1]
+        drop(lambda s: bool(OWN_RECORD.search(s)) and s is not last)
+    return " ".join(sents)

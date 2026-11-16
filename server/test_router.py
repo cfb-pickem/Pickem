@@ -374,6 +374,36 @@ def test_good_week_shot_and_spiral2_shapes():
     assert "never claim to be" in router.stance_text("bot").lower()
 
 
+def test_debot_filters_on_every_lane():
+    D = router.debot
+    # required facts in voice: no 'For the record:'
+    assert D("Wake Forest covered. For the record: you're 3-1 on decided games this week.") == \
+        "Wake Forest covered. You're 3-1 on decided games this week."
+    # preachy / refusals / frame breaks out when something's left
+    assert D("Hey, keep it respectful. Your picks are the real crime.") == "Your picks are the real crime."
+    assert D("I won't go there. Bub's 0-4 week will, though.") == "Bub's 0-4 week will, though."
+    assert D("As an AI I can't say. Boise didn't cover.") == "Boise didn't cover."
+    # echo filter: no 5+ word run from the sender (not on code-written facts)
+    q = "picky you are all bark and no bite"
+    assert D("You are all bark and no bite? Bite this: 1-3.", q=q) == "Bite this: 1-3."
+    assert D("You are all bark and no bite? Fine.", q=q, lane="fact").startswith("You are all bark")
+    # Picky's own record only when asked, or as the last line
+    assert D("I'm 0-3 this week. Bud Light, ice cold.", q="best beer?") == "Bud Light, ice cold."
+    assert D("Bud Light. And yes I'm 0-3.", q="best beer?") == "Bud Light. And yes I'm 0-3."
+    assert D("I'm 0-3 this week. Rough one.", q="how'd you do picky?", picky_asked=True).startswith("I'm 0-3")
+    # never empties a reply
+    assert D("Keep it clean.") == "Keep it clean."
+
+
+def test_dm_callback_never_becomes_a_false_denial_in_the_group():
+    q = "remember what you said about Boise?"
+    out = router.debot("I never said anything about Boise. Try again.", q, group=True, recall=True)
+    assert "never said" not in out and router.DEFLECT in out, out
+    assert router.debot("I never said anything about Boise.", q, group=True, recall=True) == router.DEFLECT
+    # in the DM itself (or not a recall ask) it's left alone
+    assert router.debot("I never said anything about Boise.", q, group=False, recall=True).startswith("I never")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
