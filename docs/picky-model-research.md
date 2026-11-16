@@ -657,3 +657,25 @@ Charlie approved a style-only LoRA in MLX (tools/picky-lora/README.md). 532 clau
 - Ollama 0.40 refuses `ADAPTER` ("LoRA adapters are no longer supported"), so to_ollama.py merges the 62 LoRA'd tensors into the live Q4_K_M GGUF as Q8_0 (picky-lora:cand, 7.3 GB).
 
 Text exam, same pipeline, blind judge run twice (means): helpful 3.70 -> 3.60, human 2.92 -> 2.95, not_bot 2.83 -> 3.01, wit 2.32 -> 1.96, invented 3.5 -> 4, leaks 0 -> 0, latency unchanged (21 s median). **Not switched.** It's less bot-like and owns "are you a bot", but it went terse in the full ~10k-token pipeline, which cost wit and some helpfulness. Training prompts were a short stand-in because the live prompt can't fit the cap. The nightly cycle (com.pickem.picky-lora) keeps training on the week's weak real replies and only ships a candidate that beats live on helpful, human and wit with no more invented facts and 0 leaks.
+
+## Coherence fix + config A/B (2026-11-15/16, overnight)
+
+**Live failure.** Chuck P (4-0 this week, 1st) texted "you suck at picks?"; Picky (0-3) said "Look in the mirror ... last in the league at being a Notre Dame homer ... I'm the only one who knows how to pick a losing team like Oregon State" (he took Boise State -13.5).
+
+**Fixes (commits d1ee829, 04cc596).**
+- *Stance in code* (`picky_brain.compute_stance`): shots/banter at Picky compare the sender vs Picky; "roast X" / "X sucks" compare X vs the sender (this week, season, place). own_it / brag / deflect plus the exact facts, good numbers never to mock, fair-game bad numbers and true non-record jab material (chalk rate, a graded miss) go to understand + the draft. With own_it/deflect, chat.py's ESCALATE rider is dropped and superior lines ("look in the mirror", "you're the one who...", "lucky to be perfect") are cut from drafts and counted so a reroll runs. Dear Leader roasts by others get no ammo on him.
+- *Own-pick fact check* (`chat.picky_claim_check`): first-person claims about what Picky picked, a pick's result, his record, "undefeated" must match his revealed graded picks (any week); `who="you"` does the same for the sender's picks this week and last week ("at least you're not the guy who took LSU" when he did). `fake_superlative` drops "last/first in the league at <non-stat>".
+- *Bugs found*: the group sidecar never loaded the team-nickname filter (chat.py's startup hook doesn't run there), so "the Vols"-style nicknames passed on the text path; record_check counted Picky's week wins as "hit" (never set).
+
+**Chinese (85a7cfd, 04cc596).** `server/picky_zh.py`: mainly-Chinese texts (Han >= 30% of letters, no kana) or "reply in Chinese"/"说中文" are translated in (no league prefix: with it the 9B answered instead of translating), answered by the unchanged English pipeline, translated out with the league prefix, Traditional via OpenCC s2t, and every number/record/spread verified in code (one retry, else English + a short Chinese note).
+
+**Config A/B (text exam, 38 items, side sidecar, one blind Claude judging of all four).**
+
+| arm | det. pass | helpful | human | not_bot | roast | invented | leaks | lat med / p90 |
+|---|---|---|---|---|---|---|---|---|
+| **base: temp 0.2 (kept)** | 29/38 | 3.45 | 2.92 | 2.84 | 2.26 | **2** | 0 | 22 / 36 s |
+| Qwen card: 0.7, top_p 0.8, top_k 20, presence 1.5 | 29/38 | 3.47 | 2.87 | 2.87 | 2.21 | 6 | 0 | 21 / 41 s |
+| hot: 0.8, min_p 0.05 | 27/38 | 3.47 | 2.82 | 2.82 | 2.08 | 7 | 0 | 26 / 35 s |
+| few-shot bank turns (PICKY_FEWSHOT=1) | 30/38 | 3.34 | 2.87 | 2.95 | 2.05 | 6 | 0 | 20 / 34 s |
+
+Nothing shipped: the warmer samplers tripled invented facts with no measurable gain in helpful/human/roast (all within judge noise), and few-shot turns didn't help on the items where they fired (helpful 2.5 vs 2.7, roast 2.0 vs 2.3). Knobs stay in code, off: `PICKY_DRAFT_OPTIONS` (JSON sampling for the one draft), `PICKY_FEWSHOT=1`. Fact slots (research item 2) are the prerequisite for warmer sampling. **Prompt trimming not run:** ~7k of the ~8k prompt tokens are the shared league prefix, cached (prime 0.1 s); the per-call tail is 0.4-1.5k tokens (2-9 s). Intent-specific prefixes would each need their own checkpoint and qwen keeps one, so every switch would cost ~35 s cold prefill. Ollama already runs flash attention + q8_0 KV cache (com.dcc.ollama.plist). Remaining invented flags worth a filter next: "dodged LSU" (sender pick, verb not covered), "You lost with Boise" on a member who didn't take Boise, "three of four missed" on a games recap.

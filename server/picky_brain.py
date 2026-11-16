@@ -615,7 +615,10 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             log.info("stance: %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
                                        st.get("last_reply", ""), stance=stance_rider(st["stance"]))
-        st["ammo"] = banter.ammo_rider(st["q"], st["brief"].intent)
+        st["shots"] = few_shot_turns(st["q"], st["brief"].intent, st.get("stance")) if FEW_SHOT else []
+        st["ammo"] = "" if st["shots"] else banter.ammo_rider(st["q"], st["brief"].intent)  # shots replace the AMMO text
+        if st["shots"]:
+            log.info("few-shot: %s", " | ".join(m["content"][:60] for m in st["shots"] if m["role"] == "assistant"))
         if st["ammo"]:
             log.info("ammo: %s", st["ammo"].split("\n", 1)[1].replace("\n", " | ")[:300])
     i = min(st.get("idx", 0), len(SAMPLING) - 1)
@@ -629,8 +632,40 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
                                      sr, ANGLES[i]) if x)
     st["options"].clear()
     st["options"].update(SAMPLING[i])  # read by chat._ollama_stream via OPTIONS_OVERRIDE
+    if st.get("shots") and messages and messages[0].get("role") == "system":
+        messages = messages[:1] + st["shots"] + messages[1:]  # example exchanges as real turns, before the history
     async for x in _orig_ollama_stream(insert_rider(messages, rider, st["q"]), prefix):
         yield x
+
+
+# Few-shot over rules (coordinator A/B, 2026-11-16; PICKY_FEWSHOT=1): 2-3 banter-bank lines as real
+# user/assistant turns for a matching heckle or off-topic text, instead of the AMMO rider. Heckle shots are
+# smug comebacks, so they only ride when the stance isn't own_it/deflect.
+FEW_SHOT = os.environ.get("PICKY_FEWSHOT") == "1"
+SHOT_ASKS = {
+    "suck": ["you suck", "picky you're trash"], "bark": ["all bark no bite", "all talk picky"],
+    "bad": ["why are you so bad", "why don't you work better"], "bot": ["are you a bot", "who programmed you"],
+    "coward": ["you're a coward", "you're soft"], "shutup": ["shut up picky", "nobody asked"],
+    "unfunny": ["you're not funny", "that was cringe"], "cereal": ["best cereal?", "favorite cereal?"],
+    "beer": ["best beer?", "what are you drinking"], "liquor": ["bourbon or tequila?", "drink of choice?"],
+    "food": ["best tailgate food?", "pizza or wings?"], "nfl": ["who wins the super bowl?", "nfl thoughts?"],
+    "nba": ["nba thoughts?", "lebron or jordan?"], "baseball": ["who wins the world series?", "baseball fan?"],
+    "golf": ["you golf?", "best golfer?"], "life": ["how are you?", "what's up picky"],
+}
+
+
+def few_shot_turns(q: str, intent: str, stance: dict | None, n: int = 3) -> list[dict]:
+    cat = banter.match(q) or ("suck" if intent == "insult" else None)
+    if not cat or cat not in SHOT_ASKS:
+        return []
+    if banter.KIND.get(cat) == "heckle" and stance and stance["stance"] in ("own_it", "deflect"):
+        return []
+    lines = banter.options(cat, n)
+    out = []
+    for i, line in enumerate(lines):
+        out += [{"role": "user", "content": SHOT_ASKS[cat][i % len(SHOT_ASKS[cat])]},
+                {"role": "assistant", "content": line}]
+    return out
 
 
 def drop_escalate(messages: list[dict]) -> list[dict]:

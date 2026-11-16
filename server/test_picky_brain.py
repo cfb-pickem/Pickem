@@ -420,6 +420,17 @@ def test_pipeline_cuts_off_stance_sentence_and_rerolls():
     assert out == "Fair, 4-0 is 4-0. I went 0-3, so I'll sit down.", out
 
 
+def test_few_shot_turns_match_and_respect_stance():
+    bank = {"cereal": ["Cinnamon Toast Crunch, no debate.", "Frosted Flakes, grown man cereal.", "Cap'n Crunch."],
+            "suck": ["Bold talk from the guy asking a bot for help.", "Noted. Filed under jealousy.", "Cry more."]}
+    with patch.object(banter, "load", lambda: bank):
+        t = pb.few_shot_turns("best cereal?", "question", None)
+        assert [m["role"] for m in t] == ["user", "assistant"] * 3 and t[0]["content"] == "best cereal?", t
+        assert pb.few_shot_turns("you suck", "insult", {"stance": "brag"})
+        assert pb.few_shot_turns("you suck", "insult", {"stance": "own_it"}) == []   # smug shots fight own_it
+        assert pb.few_shot_turns("who's winning?", "question", None) == []
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
