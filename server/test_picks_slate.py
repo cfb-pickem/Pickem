@@ -119,6 +119,7 @@ def test_hedged_qb_report_is_questionable_not_out():
     assert pick_brief.injury_status(t) == "questionable"
     assert pick_brief.injury_status("Houser is out for the season after surgery") == "out"
     assert pick_brief.injury_status("anything", "out") == "out"  # an explicit status wins
+    assert pick_brief._QB_RANK["out"] > pick_brief._QB_RANK["questionable"]
 
 
 # ---- 2. pre-lock vs post-lock ---------------------------------------------------------------------

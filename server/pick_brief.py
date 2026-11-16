@@ -539,6 +539,9 @@ def _qbs(t: dict | None, idx: dict) -> list[tuple[str, int]]:
     return sorted(rows, key=lambda r: -r[1])
 
 
+_QB_RANK = {"out": 3, "doubtful": 2, "questionable": 1}
+
+
 def f_personnel(g: dict, side: str, t: dict | None, idx: dict, notes_side: dict | None,
                 items: list[dict]) -> list[dict]:
     """8-13 for one team, from its intel items."""
@@ -558,8 +561,9 @@ def f_personnel(g: dict, side: str, t: dict | None, idx: dict, notes_side: dict 
         named = bool(qb and (qb.lower() in txt.lower() or (qb_last and it.get("team") is not None
                                                            and re.search(rf"\b{re.escape(qb_last)}\b", txt.lower()))))
         is_qb = named and (bool(re.search(r"\bQB\b|quarterback", txt)) or kind == "injury")
-        if is_qb and st and (qb_hit is None or st in ("out", "doubtful")):
-            qb_hit = (st, it)
+        if is_qb and st and (qb_hit is None or _QB_RANK.get(st, 0) > _QB_RANK.get(qb_hit[0], 0) or (
+                _QB_RANK.get(st, 0) == _QB_RANK.get(qb_hit[0], 0) and str(it.get("date") or "") > str(qb_hit[1].get("date") or ""))):
+            qb_hit = (st, it)  # the worst status, and the newest report of it (Chiles: Nov 16, not Nov 6)
         elif ours and st in ("out", "doubtful") and not is_qb and (kind in (None, "injury")):
             inj.append(it)
         low = txt.lower()
