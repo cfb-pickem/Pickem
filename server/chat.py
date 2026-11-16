@@ -2156,7 +2156,7 @@ def prompt_prefix(ctx: dict) -> str:
         "two lines and stop. Don't do it, and don't bring up picks, games or "
         "standings. Exceptions, answer those: players under PLAYER STATS, and "
         "a question that comes with a SCORE QUESTION block (any game's score, upsets, "
-        "finals) or a NEWS QUESTION or CFB RANKINGS block: answer from that block, it is not off-topic.\n"
+        "finals) or a NEWS QUESTION, INSIDER NOTES or CFB RANKINGS block: answer from that block, it is not off-topic.\n"
         "9. PRIVACY: other teams' picks stay hidden until they unlock (each "
         "game's block says when). Asked about one: say when it unlocks, with "
         "the time. Never guess it. Whether they have picked: only from a "
@@ -3552,16 +3552,21 @@ COMMITTEE_RIDER = (
 HOT_TAKES_FILE = Path(os.environ.get("PICKY_HOT_TAKES", "/Users/Agent/cfb-pickem-private/hot_takes_bank.md"))
 _takes_memo: dict = {"mtime": None, "data": None}
 TAKE_TOPICS = [  # (bank section heading starts with, question regex)
-    ("Committee", r"\b(committee|cfp|selection|seed\w*|sec)\b|\bSEC\b"),
+    ("*", r"\bhot takes?\b|\bspicy\b|\bunpopular opinions?\b|\boutrageous\b|\bbold (take|prediction)s?\b|"
+          r"\bconspirac\w+\b|\bwildest\b"),  # any [HOT] take
+    ("Committee", r"\b(committee|cfp|selection|seed\w*|sec|snub\w*)\b|\bSEC\b"),
     ("Notre Dame", r"\bnotre dame\b|\birish\b|\buconn\b|\bindependen\w*\b|\bND\b"),
     ("Marcus Freeman", r"(?<!daddy )\bfreeman\b"),
     ("Bo Nix", r"\bnix\b"),
-    ("Playoff format", r"\bplayoff format\b|\b(12|24)[- ]team\b|\bexpan\w*\b|\bbracket\b|\bfirst[- ]round bye\b"),
+    ("Playoff format", r"\bplayoff format\b|\b(12|24|twelve|twenty[- ]four)[- ]team\b|\bexpan\w*\b|\bbracket\b|"
+                       r"\bfirst[- ]round bye\b|\bat[- ]large\b|\b(title|championship) games?\b"),
     ("Conference realignment", r"\brealign\w*\b|\bconference (moves?|switch\w*|changes?)\b|\bsuper ?conference\b"),
     ("Refs", r"\brefs?\b|\breferee\w*\b|\bofficiat\w*\b"),
     ("Coaching hot seats", r"\bhot seat\b|\bfired?\b|\bfiring\b|\bbuyouts?\b|\bcoaching (search|change|carousel)\b|\binterim\b"),
     ("Rivalry", r"\brival\w*\b|\biron bowl\b|\bthe game\b|\bred river\b|\bholy war\b"),
     ("Upsets", r"\bupsets?\b|\bpolls?\b|\bap\b|\btop 25\b"),
+    ("Money", r"\bnil\b|\brevenue[- ]shar\w*|\bhouse settlement\b|\bcollectives?\b|\b(salary|spending|roster|pay) caps?\b|"
+              r"\bcap (rules?|plan|policy|fines?)\b|\bcollege sports commission\b|\bcsc\b|\bpay(ing)? (the )?players\b"),
 ]
 
 
@@ -3582,6 +3587,12 @@ def load_takes() -> dict:
             elif ln.startswith("## Verified"):
                 cur = "_facts"
                 secs[cur] = []
+            elif ln.startswith("## Board voice"):
+                cur = "_voice"
+                secs[cur] = []
+            elif cur == "_voice" and ln.startswith("- "):
+                secs[cur].append(ln[2:].strip())
+                continue
             elif ln.startswith("## "):
                 cur = None
             elif cur == "_facts" and ln.startswith("- [FACT") and "UNVERIFIED" not in ln.upper():
@@ -3589,9 +3600,12 @@ def load_takes() -> dict:
                 continue
             elif cur and re.match(r"\s*\d+\.\s", ln) and "UNVERIFIED" not in ln.upper():
                 t = re.sub(r"^\s*\d+\.\s*", "", ln)
-                t = re.sub(r"\s*\[(added|FACT)[^\]]*\]", "", t).replace("**", "").strip()
+                hot = "[HOT]" in t
+                t = re.sub(r"\s*\[(added|FACT|HOT)[^\]]*\]", "", t).replace("**", "").strip()
                 if t:
                     secs[cur].append(t)
+                    if hot:  # Charlie (2026-11-16): "the most outrageous ones" go first
+                        secs.setdefault("_hot", []).append(t)
     except OSError:
         return _takes_memo["data"] or {}
     _takes_memo.update(mtime=m, data=secs)
@@ -3606,14 +3620,17 @@ def takes_note(question: str) -> str:
         if len(picks) >= 2:
             break
         if re.search(rx, q, re.I):
-            pool = next((v for k, v in secs.items() if k.startswith(head)), [])
+            pool = (list(secs.get("_hot") or []) if head == "*" else
+                    next((v for k, v in secs.items() if k.startswith(head)), []))
+            pool = [t for t in pool if t not in picks]
             words = {w for w in re.findall(r"[a-z]{4,}", q.lower())} - {"what", "about", "does", "think", "hot",
                                                                           "seat", "this", "that", "with", "picky",
                                                                           "college", "football", "right", "whos"}
             named = [t for t in pool if words & set(re.findall(r"[a-z]{4,}", t.lower()))]
             if head == "Coaching hot seats" and not named:  # prefer takes that name a coach
                 named = [t for t in pool if re.search(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b", t)]
-            pool = named or pool
+            hot = set(secs.get("_hot") or [])
+            pool = [t for t in named if t in hot] or named or [t for t in pool if t in hot] or pool
             if pool:
                 picks.append(pool[(sum(map(ord, q)) + len(picks)) % len(pool)])
     facts = []
@@ -3628,9 +3645,134 @@ def takes_note(question: str) -> str:
     return fact_txt + ("HOT TAKES you can riff on (opinions from around the sport; say them as opinions in your own words, "
             "never as news; any record or rank in them may be stale, so use only the real data for numbers). For "
             "an opinion question like this, use one instead of saying there's nothing to talk about"
-            + (" (asked who's on the hot seat: name only coaches these takes name, as opinion)" if
+            + (" (asked who's on the hot seat: name only coaches these takes or the INSIDER NOTES name)" if
                re.search(r"\bhot seat\b|\bfired?\b", q, re.I) else "") + ":\n"
-            + "\n".join(f"- {t}" for t in picks))
+            + "\n".join(f"- {t}" for t in picks)
+            + ("\n\n" + voice_note(q) if voice_note(q) else ""))
+
+
+# Insider notes (Charlie, 2026-11-16: "have all the knowledge of Ross Dellenger").
+# PRIVATE fact-checked notes (cfb-pickem-private/insider_bank.md, refreshed Sun+Wed by
+# refresh_hot_takes.sh phase 2) on realignment, revenue sharing / NIL, the CFP format and
+# committee, the coaching carousel, commissioners and governance. Read server-side only,
+# re-read on mtime change, injected on topic into the LATEST user turn, never prompt_prefix().
+INSIDER_FILE = Path(os.environ.get("PICKY_INSIDER", "/Users/Agent/cfb-pickem-private/insider_bank.md"))
+_insider_memo: dict = {"mtime": None, "data": None}
+_INSIDER_LINE = re.compile(r"^- ([^:]{3,16}): (.+) \(([^()]+)\) \[checked \d{4}-\d{2}-\d{2}\]$")
+INSIDER_TOPICS = [  # (section heading starts with, question regex)
+    ("Realignment", r"\brealign\w*|\bconference (moves?|switch\w*|changes?|title games?|championship games?)\b|"
+                    r"\b(conference |league )?(title|championship) games?\b|\bpac[- ]?12\b|\bsuper ?conference\w*|"
+                    r"\bgroup of (5|five|6|six)\b|\bg[56]\b|\bpower (4|four)\b"),
+    ("Revenue sharing", r"\brevenue[- ]shar\w*|\bhouse (settlement|case|v\.?)\b|\bnil\b|\bcollectives?\b|"
+                        r"\b(salary|spending|roster|pay|revenue|nil|sec|big ten) caps?\b|\bcap (rules?|plan|policy|fines?)\b|"
+                        r"\bcollege sports commission\b|\bcsc\b|\bnil go\b|\bpay(ing)? (the )?players\b|\bspending\b"),
+    ("CFP format", r"\b(12|twelve|24|twenty[- ]four)[- ]team\b|\bplayoff (format|expansion|field|bracket|fight|debate)\b|"
+                   r"\bcfp\b|\bcommittee\b|\bsnub\w*|\bat[- ]large\b|\bauto(matic)?[- ]?bids?\b|"
+                   r"\b(big ten|b1g)\b.{0,40}\bsec\b|\bsec\b.{0,40}\b(big ten|b1g)\b|\bexpan\w+"),
+    ("Coaching carousel", r"\bhot seat\b|\bfired\b|\bfiring\b|\bcarousel\b|\bcoaching (search|change|hire|job|vacanc\w*)s?\b|"
+                          r"\bbuyouts?\b|\binterim\b|\b(get|gets|getting|got) (canned|axed|the axe)\b|\bwhittingham\b|"
+                          r"\bkiffin\b|\bphilip rivers\b|\bryan day\b|\bnorvell\b|\bschiano\b|\bleipold\b|\bfickell\b"),
+    ("Commissioners", r"\bcommissioners?\b|\bsankey\b|\bpetitti\b|\byormark\b|\bjim phillips\b|\bteresa gould\b|"
+                      r"\bconference office\b|\bsunday game\b"),
+    ("NCAA governance", r"\bcongress\b|\bscore act\b|\bprotect college sports\b|\bsenate\b|\bcba\b|"
+                        r"\bcollective bargaining\b|\bunion\w*\b|\bemployees?\b|\bathletes\.org\b|"
+                        r"\bncaa (rules?|governance|eligibility)\b|\beligibility\b"),
+]
+_DELLENGER_ASK = re.compile(r"\bdellenger\b", re.I)
+_INSIDER_STOP = {"what", "whats", "the", "and", "about", "latest", "with", "this", "that", "does", "think", "picky",
+                 "college", "football", "news", "anything", "going", "who", "whos", "any", "for", "are", "you", "how",
+                 "dellenger", "ross", "say", "said", "saying", "hear", "heard", "tell", "more", "there"}
+
+
+def load_insider() -> dict:
+    try:
+        m = INSIDER_FILE.stat().st_mtime
+    except OSError:
+        return {}
+    if _insider_memo["mtime"] == m:
+        return _insider_memo["data"] or {}
+    secs: dict[str, list[dict]] = {}
+    cur, asof = None, ""
+    try:
+        for ln in INSIDER_FILE.read_text().splitlines():
+            if ln.startswith("Last refreshed "):
+                d = re.match(r"Last refreshed (\d{4}-\d{2}-\d{2})", ln)
+                if d:
+                    day = dt.date.fromisoformat(d.group(1))
+                    asof = f"{day:%b} {day.day}"
+            elif ln.startswith("### "):
+                cur = ln[4:].strip()
+                secs[cur] = []
+            elif ln.startswith("## "):
+                cur = None
+            elif cur and "UNVERIFIED" not in ln.upper():
+                mm = _INSIDER_LINE.match(ln)
+                if mm:
+                    when, text, src = mm.groups()
+                    label = "Dellenger" if src.strip() == "Dellenger, Yahoo" else src  # mixed or podcast: name the outlets
+                    secs[cur].append({"when": when, "text": text.replace('"', "").strip(), "label": label})
+    except (OSError, ValueError):
+        return _insider_memo["data"] or {}
+    data = {"secs": secs, "asof": asof}
+    _insider_memo.update(mtime=m, data=data)
+    return data
+
+
+def insider_topics(question: str) -> list[str]:
+    q = question or ""
+    return [head for head, rx in INSIDER_TOPICS if re.search(rx, q, re.I)]
+
+
+def insider_note(question: str, limit: int = 4) -> str:
+    """Up to `limit` checked notes for a question about the off-field stories
+    ('' when it isn't one). A bare 'what's Dellenger saying' gets the top
+    Dellenger note from each section."""
+    q = question or ""
+    data = load_insider()
+    secs = data.get("secs") or {}
+    heads = insider_topics(q)
+    dl = bool(_DELLENGER_ASK.search(q))
+    if not secs or not (heads or dl):
+        return ""
+    words = set(re.findall(r"[a-z0-9]{3,}", q.lower())) - _INSIDER_STOP
+    per = max(1, limit // len(heads)) if heads else 1
+    picked: list[dict] = []
+    for head in heads or [h for h, _ in INSIDER_TOPICS]:
+        pool = next((v for k, v in secs.items() if k.startswith(head)), [])
+        if dl and not heads:  # 'what's Dellenger saying': his own bylined notes only
+            pool = [n for n in pool if n["label"] == "Dellenger"]
+        ranked = sorted(range(len(pool)), key=lambda i: (
+            -len(words & set(re.findall(r"[a-z0-9]{3,}", pool[i]["text"].lower()))),
+            (pool[i]["label"] != "Dellenger") if dl else 0, i))  # file order = most important first
+        picked += [pool[i] for i in ranked[:per] if pool[i] not in picked]
+    picked = picked[:limit]
+    if not picked:
+        return ""
+    asof = data.get("asof") or "recently"
+    return ("INSIDER NOTES (checked public reporting, as of " + asof + "; this is a real college football question, "
+            "so answer it from these lines, it is not off-topic):\n"
+            + "\n".join(f"- {n['when']}, {n['label']}: {n['text']}" for n in picked)
+            + "\nLead with the straight answer from these lines, then at most one opinionated line in your own voice. "
+            "Credit 'Dellenger reported' only on lines labeled Dellenger, 'per <outlet>' on the others. In your own "
+            "words: never quote anyone, never claim to be Ross Dellenger or to have talked to him, and never add a "
+            "name, number or detail that isn't in these lines. A proposal is only a proposal. Live rankings, scores "
+            "and standings beat these notes.")
+
+
+_ROAST_VOICE = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|talk (shit|trash)|trash talk|light (him|her|them|\w+) up)\b", re.I)
+
+
+def voice_note(question: str) -> str:
+    """Two message-board moves (hot_takes_bank.md 'Board voice') for the
+    opinion part of a reply; '' if the bank has none."""
+    moves = load_takes().get("_voice") or []
+    if not moves:
+        return ""
+    k = sum(map(ord, question or ""))
+    pick = list(dict.fromkeys([moves[k % len(moves)], moves[(k + 3) % len(moves)]]))
+    return ("BOARD VOICE (for the opinion or roast part only, sound like an unhinged message-board poster: "
+            "borrow ONE move, in your own words; every fact, number and pick stays exact):\n"
+            + "\n".join(f"- {m}" for m in pick))
 
 
 # (C) League lore (Charlie, 2026-11-14): history computed by lore.py from the
@@ -4748,7 +4890,10 @@ def _user_turn(ctx: dict, question: str) -> str:
                      "INJURIES: there's no official college injury report: say so and send them to the beat "
                      "writers. If a NEWS QUESTION block carries an injury item, you may cite it exactly as written. "
                      "Never say 'no injuries', and never call anyone healthy.")
-    parts.append(leader_note(ctx, question))
+    ln = leader_note(ctx, question)
+    parts.append(ln)
+    if _ROAST_VOICE.search(question or "") and not ln and not guard.startswith("GUARDRAIL"):
+        parts.append(voice_note(question))
     if len((question or "").split()) <= 7 and re.search(r"\b(hey|hi|hello|yo|sup|what'?s up|wassup|howdy|morning|"
                                                          r"evening)\b", question or "", re.I):
         parts.append("GREETING: answer in two short sentences, tops: a quick hello in character, plus at most "
@@ -6301,6 +6446,14 @@ async def _chat(req: Request, test: bool, hold: int | None):
     if nn and convo[-1]["role"] == "user":
         body, q = convo[-1]["content"], last.get("content", "")
         body = (body[: -len(q)] + nn + "\n\n" + q) if q and body.endswith(q) else (nn + "\n\n" + body)
+        convo[-1] = {"role": "user", "content": body}
+
+    # insider notes (realignment, NIL/cap, CFP format/committee, carousel, commissioners, governance):
+    # private checked file, latest turn only; fewer lines when the news rider already rode
+    ins = insider_note(last.get("content", ""), limit=2 if nn else 3) if last.get("role") == "user" else ""
+    if ins and convo[-1]["role"] == "user":
+        body, q = convo[-1]["content"], last.get("content", "")
+        body = (body[: -len(q)] + ins + "\n\n" + q) if q and body.endswith(q) else (ins + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
     # they came at Picky earlier in this chat: escalate (latest turn only)

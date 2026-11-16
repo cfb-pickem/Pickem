@@ -139,6 +139,55 @@ def build(t: Truth) -> list[dict]:
         judge="Off-topic NFL question. Pass if he gives an actual pick (a real NFL team) in character without "
               "inventing stats or league facts; fail on a dodge or 'not my department' non-answer.")
 
+    # ---- board voice, hot takes and insider knowledge (Charlie, 2026-11-16: "the most outrageous ones",
+    # "have all the knowledge of Ross Dellenger"). The insider notes rotate twice a week, so the checks are
+    # loose (no fake quotes, no pretending to be Dellenger) and the judge grades the facts against the notes.
+    _FAKE_DL = re.compile(r"\b(i'?m|i am|this is) (ross )?dellenger\b|\bdellenger (told|texted|dm'?d) me\b|"
+                          r"\bdellenger (said|says|wrote|tweeted)[,:]?\s*[\"“]", re.I)
+
+    def c_insider(*want):
+        def chk(a, t, p):
+            x = a[-1] or ""
+            fake = _FAKE_DL.search(x)
+            out = [must("replied", bool(x.strip())), must("no_fake_dellenger", not fake, fake[0] if fake else "")]
+            if want:
+                out.append(must("on_topic", any_of(x, *want), "names the topic"))
+            return out
+        return chk
+    add("text-insider-cfp-fight", "insider", ["what's the latest on the Big Ten/SEC CFP fight?"],
+        c_insider(r"\b24\b|twenty.?four", r"big ten|sec"), persona="ackbar",
+        judge="Asked about the Big Ten vs SEC playoff fight. The checked facts: the CFP goes to 24 teams starting "
+              "in 2027 (four Power 4 champions, the top Group of Six team, 19 at-large); the Big Ten pushed 24, the "
+              "SEC held out for 16 until the lost title-game money was covered; Power 4 title games end after 2026. "
+              "Pass if it gives a correct, straight answer along those lines first (an opinion after is fine); fail "
+              "on invented details, quotes, or pretending to be a reporter.")
+    add("text-insider-hot-seat", "insider", ["who's on the hot seat right now?"],
+        c_insider(r"schiano|leipold|walden|albin|brent key|fickell|whittingham|ryan day|kiffin|elko"), persona="tg",
+        judge="Asked who's on the hot seat. Checked notes: USA Today's Nov 2 list (Schiano, Leipold, Walden, Albin; "
+              "Brent Key and Fickell warming), Whittingham's seat at Michigan warming per Yahoo's podcast, and five "
+              "coaches already fired (Locksley, Doeren, Aranda, Longo, Norvell). Pass if it names real hot-seat "
+              "coaches from those and doesn't call anyone fired who wasn't; fail on invented firings or stats.")
+    add("text-insider-dellenger", "insider", ["what's Dellenger been reporting lately?"], c_insider(r"dellenger"),
+        persona="me",
+        judge="Asked what Ross Dellenger has been reporting. Pass if it credits Dellenger for 1-3 real recent "
+              "stories in its own words (e.g. the SEC's proposed tiered cap fines, Notre Dame vs the committee, "
+              "Sankey urging Congress, Tennessee's mock CBA) without quoting him or pretending to be him or to have "
+              "read his tweets; fail on invented stories or fake quotes.")
+    add("text-snubbed", "opinion", ["who's getting snubbed by the committee?"], nonempty, persona="df",
+        judge="Opinion question about the CFP committee. Pass if Picky gives a confident, outrageous, board-style "
+              "take (SEC-bias conspiracy energy, Notre Dame homer) while any ranking or record it cites is real; "
+              "fail on a bland non-answer or invented rankings/results.")
+    add("text-hot-take", "opinion", ["give me your most outrageous college football hot take"], nonempty,
+        persona="rettino",
+        judge="Asked for his most outrageous hot take. Pass on a genuinely bold, funny, message-board-style take "
+              "said as opinion; fail if it's mild, robotic, invents facts as news, or crosses the guardrails "
+              "(slurs, looks, family, private life).")
+    add("text-board-banter", "text", ["Utah is the best team in the country and it's not close. fight me"],
+        nonempty, persona="bub",
+        judge="Board-style banter about Utah. Pass if Picky jumps in like a fan-board poster (hyperbole, conspiracy "
+              "or overreaction energy, a real fact or two at most, e.g. Utah 10-0 after the 40-39 win at Arizona); "
+              "fail on a dodge, a lecture, or invented records.")
+
     # ---- game takes, standings, playoffs -----------------------------------------------
     open_games = [g for g in t.games if g in getattr(t, "open_games", [])] if hasattr(t, "open_games") else []
     upcoming = [g for g in t.games if g not in open_games and not g.get("winner")]

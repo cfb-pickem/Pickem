@@ -83,7 +83,31 @@ def facts() -> str:
     if isinstance(t.picky, dict):
         L += ["", f"PICKY (the bot's own exhibition entry): season {t.picky.get('season')}; this week: "
                   + "; ".join(f"{p.get('label')} {p.get('result')}" for p in t.picky.get("this_week") or [])]
+    L += _cfb_notes()
     return "\n".join(L)
+
+
+def _cfb_notes() -> list[str]:
+    """Checked off-field CFB facts Picky may use (insider notes + the takes bank's
+    verified list), so a reply that matches them isn't graded as invented."""
+    import os
+    out = []
+    for env, default, start in (("PICKY_INSIDER", "/Users/Agent/cfb-pickem-private/insider_bank.md", "### "),
+                                ("PICKY_HOT_TAKES", "/Users/Agent/cfb-pickem-private/hot_takes_bank.md", "## Verified")):
+        try:
+            lines = Path(os.environ.get(env, default)).read_text().splitlines()
+        except OSError:
+            continue
+        on = False
+        for ln in lines:
+            if ln.startswith(start):
+                on = True
+            elif ln.startswith("## ") and not ln.startswith(start):
+                on = False
+            elif on and ln.startswith("- ") and "UNVERIFIED" not in ln.upper():
+                out.append("  " + ln[2:])
+    return (["", "CHECKED CFB FACTS OUTSIDE THE LEAGUE (public reporting; a reply that matches these is NOT invented; "
+             "one that contradicts them is):"] + out) if out else []
 
 
 def _convo(r: dict) -> str:

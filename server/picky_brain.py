@@ -171,7 +171,17 @@ def insert_rider(messages: list[dict], rider: str, question: str) -> list[dict]:
     return messages[:-1] + [{**messages[-1], "content": body}]
 
 
-def understand_user(question: str, sender: str, recent: str, last_reply: str, stance: str = "") -> str:
+def brief_notes(question: str) -> str:
+    """The insider notes and picked hot takes for the understand pass (the
+    drafts get them as riders); '' when neither rides."""
+    ins = chat.insider_note(question, limit=3).split("\nLead with")[0]
+    tk = chat.takes_note(question).split("\n\nBOARD VOICE")[0]
+    tk = tk[tk.find("HOT TAKES"):] if "HOT TAKES" in tk else ""
+    return "\n\n".join(x for x in (ins, tk) if x)
+
+
+def understand_user(question: str, sender: str, recent: str, last_reply: str, stance: str = "",
+                    notes: str = "") -> str:
     L = [f"Sent by: {sender}" if sender else "Sent by: a league member"]
     if recent:
         L.append(recent.strip())
@@ -179,6 +189,9 @@ def understand_user(question: str, sender: str, recent: str, last_reply: str, st
         L.append(f"Your last reply to them: {last_reply[:300]}")
     if stance:
         L.append(stance + "\nYour 'answer' note must follow this STANCE.")
+    if notes:  # insider notes / hot takes: without them the core answer said 'no data' or made up a take
+        L.append(notes + "\nYour 'answer' note builds on these lines: a fact only from them, a take reworded "
+                 "from one of them.")
     L.append(f"NEWEST TEXT: {question}")
     return "\n\n".join(L)
 
@@ -215,9 +228,9 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
 
 
 async def understand(prefix: str, question: str, sender: str, recent: str, last_reply: str = "",
-                     timeout: float = 60.0, stance: str = "") -> Brief:
+                     timeout: float = 60.0, stance: str = "", notes: str = "") -> Brief:
     try:
-        raw = await _json_call(prefix, UNDERSTAND_TAIL, understand_user(question, sender, recent, last_reply, stance),
+        raw = await _json_call(prefix, UNDERSTAND_TAIL, understand_user(question, sender, recent, last_reply, stance, notes),
                                UNDERSTAND_SCHEMA, 0.1, 260, timeout)
     except (httpx.HTTPError, ValueError) as e:
         log.warning("understand failed: %s", e)
@@ -659,7 +672,8 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         if st["stance"]:
             log.info("stance: %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
-                                       st.get("last_reply", ""), stance=stance_rider(st["stance"]))
+                                       st.get("last_reply", ""), stance=stance_rider(st["stance"]),
+                                       **({"notes": nb} if (nb := brief_notes(st["q"])) else {}))
         if not st["stance"] and st["brief"].intent == "insult" and re.search(r"\bpicky\b|^(you|me)?$", st["brief"].about, re.I):
             # a bare insult ('Pussy', live 2026-11-16) slips past the regexes; without a stance the brief said
             # "fire back first" and 0-3 Picky mocked the 4-0 leader
@@ -681,8 +695,11 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         messages = drop_escalate(messages)  # 'build the burns from their record' fights the stance
     if st.get("stance"):
         messages = drop_hook(messages)  # 'you're in first place, 2 ahead' tacked onto a comeback reads like a bot
+    # board voice for plain banter (Charlie, 2026-11-16: message-board personality); shots at Picky keep the stance
+    vo = (chat.voice_note(st["q"]) if b.intent == "banter" and not st.get("stance")
+          and "BOARD VOICE" not in ((messages[-1].get("content") or "") if messages else "") else "")
     rider = "\n\n".join(x for x in (brief_rider(b, stance=bool(sr)), st.get("ammo") or "" if i in (1, 2) else "",
-                                     sr, ANGLES[i]) if x)
+                                     sr, vo, ANGLES[i]) if x)
     st["options"].clear()
     st["options"].update(SAMPLING[i])  # read by chat._ollama_stream via OPTIONS_OVERRIDE
     if st.get("shots") and messages and messages[0].get("role") == "system":
