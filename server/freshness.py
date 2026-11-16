@@ -19,7 +19,10 @@ hedge, as_of). fresh -> use as is; stale -> use only with "as of <time>"
 and kick the refresher if cheap; dead/missing -> drop the rider.
 
 Interface (BUILD-COMMON): max_age(source), fresh(source, fetched_at),
-as_of(source). CLI: `freshness.py status` prints every source's age.
+as_of(source). register(Source(...)) adds a feed later (game-day live mode,
+a lane's artifact). CLI: `freshness.py status` prints every source's age.
+feed_monitor.py (LaunchAgent com.pickem.feed-monitor) kicks and, past that,
+has Claude repair a broken refresher inside the feed's `files` allowlist.
 """
 
 from __future__ import annotations
@@ -91,19 +94,28 @@ def _sources() -> dict[str, Source]:
         Source("league_material", (8 * D, 8 * D), (8 * D, 8 * D), "json:generated_at",
                _p("PICKY_LEAGUE_MATERIAL", PRIVATE / "league_material.json"), "com.pickem.league-material",
                False, "exit", ("server/league_material.py", "server/banter.py",
-                               "server/com.pickem.league-material.plist"), ("test_league_material.py",)),
+                               "server/com.pickem.league-material.plist"), ("test_analyst.py",)),
         Source("banter", (5 * D, 5 * D), (14 * D, 14 * D), "json:generated_at",
                _p("PICKY_BANTER_BANK", PRIVATE / "banter_bank.json"), "com.pickem.league-material"),
         # curated by offline claude -p runs (Sun + Wed); opinions / slow facts
-        Source("hot_takes", (4 * D, 4 * D), (10 * D, 10 * D), "mtime",
+        Source("hot_takes", (4.5 * D, 4.5 * D), (10 * D, 10 * D), "mtime",   # Wed -> Sun is 4 days
                _p("PICKY_HOT_TAKES", PRIVATE / "hot_takes_bank.md"), "com.charlie.picky-hottakes", False, "age"),
-        Source("insider", (4 * D, 4 * D), (10 * D, 10 * D), "mtime",
+        # same limits as the voice lane's INSIDER_STALE_DAYS / INSIDER_MAX_AGE_DAYS
+        Source("insider", (8 * D, 8 * D), (21 * D, 21 * D), "mtime",
                _p("PICKY_INSIDER", PRIVATE / "insider_bank.md"), "com.charlie.picky-hottakes", False, "age"),
         # other lanes' artifacts (registered here so they share the rules)
         Source("burn_book", (5 * D, 5 * D), (14 * D, 14 * D), "json:generated_at",
                _p("PICKY_BURN_BOOK", PRIVATE / "burn_book.json")),
         Source("game_cards", (6 * H, H), (2 * D, 12 * H), "json:generated_at",
                _p("PICKY_GAME_CARDS", CACHE / "game_cards.json")),
+        # game-day live mode (job 113039-8f5174, branch picky-gameday-live; not on main yet).
+        # live_games: the poller's board file (written every <= 5 min, every 20 s while games
+        # are live); the monitor only watches it once com.pickem.live-games is loaded.
+        # live_game: one game's data, ts passed by the caller; matches live_games.MAX_AGE.
+        Source("live_games", (6 * M, 3 * M), (30 * M, 15 * M), "json:updated_ts",
+               _p("PICKY_LIVE_CACHE", CACHE / "live_games.json"), "com.pickem.live-games", False, "age",
+               ("server/live_games.py", "server/com.pickem.live-games.plist"), ("test_live_games.py",)),
+        Source("live_game", (90, 90), (10 * M, 10 * M)),
     ]
     return {s.name: s for s in S}
 
@@ -111,6 +123,16 @@ def _sources() -> dict[str, Source]:
 SOURCES = _sources()
 CFBD_CORE = ("player_stats", "team_stats", "advanced", "sp", "records", "ats", "lines")
 NEVER_REPAIR = ("server/chat.py", "server/picky_brain.py", "server/group_chat.py")
+
+
+def register(src: Source) -> Source:
+    """Hook for feeds added later (a new cache, a lane's artifact): same rules,
+    reply-time check and monitor/repair as the built-ins. Re-registering a
+    name replaces it."""
+    if any(f in NEVER_REPAIR for f in src.files):
+        raise ValueError(f"{src.name}: repair allowlist can't include {NEVER_REPAIR}")
+    SOURCES[src.name] = src
+    return src
 
 
 def source(name: str) -> Source:

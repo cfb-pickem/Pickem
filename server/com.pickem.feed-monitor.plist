@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Self-healing feed monitor for Picky (feed_monitor.py): every 15 min, checks
+  each feed in freshness.py whose refresher LaunchAgent is loaded. Broken twice
+  in a row: kickstart the refresher. Still broken: a background Claude repair
+  run (claude -p, Opus, empty MCP config) on a throwaway branch that
+  auto-merges only inside the feed's file allowlist with its tests passing;
+  3 runs/day total. Charlie gets one text a day at most, only for a feed down
+  24h+ with repairs used up. No model, a few file stats + launchctl reads per pass.
+  Install: cp to ~/Library/LaunchAgents and
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pickem.feed-monitor.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.feed-monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/feed_monitor.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/feed_monitor.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/feed_monitor.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

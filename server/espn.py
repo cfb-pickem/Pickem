@@ -182,7 +182,7 @@ def _spread(v) -> float | None:
 
 async def _fetch_one(client: httpx.AsyncClient, event_id: int) -> dict:
     hit = _cache.get(event_id)
-    if hit and time.time() - hit[0] < TTL_S:
+    if hit and time.time() - hit[0] < min(TTL_S, freshness.max_age("lines") / 2):  # 5 min on game days
         return hit[1]
     try:
         r = await client.get(f"{SUMMARY}{event_id}", headers=HEADERS, timeout=6.0)

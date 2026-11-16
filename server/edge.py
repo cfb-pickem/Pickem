@@ -249,7 +249,7 @@ async def fetch_splits(client: httpx.AsyncClient, want: list[tuple[str, str]], i
     """Splits rows from every page (fetched together, ~1-2 s). Cached 20 min;
     on failure the last good copy is kept."""
     global _splits_cache
-    if _splits_cache and time.time() - _splits_cache[0] < SPLITS_TTL:
+    if _splits_cache and time.time() - _splits_cache[0] < min(SPLITS_TTL, freshness.max_age("splits") / 2):
         return _splits_cache[1]
 
     async def page(n: int) -> list[dict]:
