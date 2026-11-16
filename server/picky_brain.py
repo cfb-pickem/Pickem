@@ -148,8 +148,11 @@ def brief_rider(b: Brief, core: bool = True, stance: bool = False) -> str:
          + f"; mood: {b.tone}."]
     if b.facts_needed:
         L.append("- Facts it needs (take them only from LEAGUE DATA and the blocks above): " + "; ".join(b.facts_needed))
-    if b.answer and core:
-        L.append(f"- Core of the reply (say it your own way, don't copy this wording): {b.answer}")
+    # a core sentence the output filter would cut poisons every draft that echoes it (2026-11-16 replay: gemma's
+    # core 'You're 2-7 in Oklahoma games, which is a special kind of tragic.' tripped the dark-words filter 5/5)
+    ans = " ".join(x for x in re.split(r"(?<=[.!?])\s+", b.answer) if chat.sentence_ok(x, set())) if core else ""
+    if ans:
+        L.append(f"- Core of the reply (say it your own way, don't copy this wording): {ans}")
     if b.intent == "insult" and not stance:  # with a STANCE, it decides fire back vs own it
         L.append("Fire back at them first: a quick, specific comeback, then answer anything real they asked.")
     else:
@@ -286,8 +289,8 @@ def stale_records(text: str, ctx: dict | None, sender_team: str | None) -> list[
         named = [t for t in sets if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", sent, re.I)]
         subj = named[0] if len(named) == 1 else (
             sender_team if not named and sender_team in sets and re.search(r"\byou(r|'re| are)?\b", sent, re.I) else None)
-        if subj and any(r not in sets[subj] for r in recs):
-            bad.append(sent)
+        if subj and any(r not in sets[subj] and not chat.oddity_ok(subj, f"{r[0]}-{r[1]}", sent) for r in recs):
+            bad.append(sent)  # a stats-page split ('1-5 picking against Oklahoma') is true, not stale
     return bad
 
 
@@ -416,15 +419,48 @@ def rec_line(r: Rec, who: str) -> str:
 
 
 def jab_material(ctx: dict, team: str) -> list[str]:
-    """True things to needle a member about that aren't their record: chalk
-    rate, and specific missed picks (graded in code)."""
-    out = []
-    for ln in (chat.load_lore() or {}).get("members", {}).get(team) or []:
+    """True things to needle a member about that aren't their record, freshest and funniest first
+    (Charlie 2026-11-16: 'he can do better than make fun of a random loss from 2 weeks ago ... look at
+    the stats page'): a busted Pit bankroll or a blackjack blunder, a stats-page oddity (a school that
+    burns them either way, a road/underdog split), a thin lead, a miss from the latest week, chalk rate.
+    An older single miss only when there's nothing else."""
+    lore = chat.load_lore() or {}
+    out, old = [], []
+    for ln in ((lore.get("casino") or {}).get("members") or {}).get(team) or []:
+        if "BUSTED OUT" in ln or "blunders" in ln:
+            out.append(ln)
+    out += [ln.split("stats-page oddity: ", 1)[1] for ln in (lore.get("members") or {}).get(team) or []
+            if "stats-page oddity: " in ln][:2]
+    st = ctx.get("standings_ytd") or []
+    if len(st) > 1 and st[0]["team"] == team and st[0]["rank"] == 1 and st[1]["rank"] == 2:
+        gap = st[0]["w"] - st[1]["w"]
+        if 0 < gap <= 2:
+            nxt = [r["team"] for r in st if r["w"] == st[1]["w"]]
+            out.append(f"{team} is in first, but only {gap} win{'s' * (gap != 1)} ahead of {' and '.join(nxt[:2])}: "
+                       "first is good, the cushion is thin.")
+    for ln in chat.roast_pick_lines(ctx, team).split("\n"):
+        if "MISSED" in ln:
+            (out if " this week:" in ln else old).append(ln[2:])
+    for ln in (lore.get("members") or {}).get(team) or []:
         m = re.search(r"takes the favorite (\d+)% of the time", ln)
         if m and "so far" in ln:
             out.append(f"{team} takes the favorite {m.group(1)}% of the time this season.")
-    out += [ln[2:] for ln in chat.roast_pick_lines(ctx, team).split("\n") if "MISSED" in ln][:2]
-    return out
+    return out + old[:max(0, 2 - len(out))]
+
+
+def stale_needles(text: str, s: dict | None, q: str = "") -> list[str]:
+    """Sentences that needle with an older single miss (a team from one of the target's previous-week
+    MISSED lines) when the stance had fresher jab material: Chuck P, 4-0 and in first, got 'you let LSU
+    get blown out last week' about a week-10 pick on the Monday after week 11. Not when they brought
+    the team up themselves."""
+    if not s or not s.get("old_misses") or not s.get("jabs"):
+        return []
+    teams = [t for t in s["old_misses"] if not re.search(rf"(?<!\w){re.escape(t)}(?!\w)", q or "", re.I)
+             and not any(t in j for j in s["jabs"])]
+    if not teams:
+        return []
+    pat = re.compile(r"(?<!\w)(" + "|".join(re.escape(t) for t in teams) + r")(?!\w)", re.I)
+    return [x for x in re.split(r"(?<=[.!?])\s+", text or "") if pat.search(x)]
 
 
 _AT_PICKY_TALK = re.compile(
@@ -458,11 +494,12 @@ def stance_target(ctx: dict, q: str, sender_team: str | None, at_picky: bool = F
 
 STANCE_HOW = {
     "own_it": ("You're doing worse than them here. Own it first with a quick, funny self-own about your real "
-               "record, then one jab at something true that ISN'T their record: their pick style, a specific "
-               "miss, their chalk rate."),
+               "record, then one jab at something true that ISN'T their record: the freshest, most specific "
+               "thing in the jab material, or something they actually said in this chat."),
     "brag": "You're ahead of them here. Brag with the exact numbers above, then needle their real record.",
     "deflect": ("They're crushing it. Concede it in a few words (no sarcasm, no 'but'), then pivot to one true "
-                "thing that isn't their record: their pick style, a specific old miss, their chalk rate."),
+                "thing that isn't their record: the freshest, most specific thing in the jab material (a stat-page "
+                "oddity, their casino run, how thin a lead is), or something they actually said in this chat."),
 }
 
 
@@ -479,6 +516,7 @@ def compute_stance(ctx: dict | None, q: str, sender_team: str | None, at_picky: 
     pk = picky_rec(ctx)
     kind, team = tgt
     facts, good, bad, jabs = [], [], [], []
+    jab_team = None  # whose jab material rides
     if pk:
         prow = [r for r in chat.picky_pick_results(ctx) if r["result"] in ("WIN", "LOSS")]
         facts.append(rec_line(pk, "You (Picky)"))
@@ -488,7 +526,7 @@ def compute_stance(ctx: dict | None, q: str, sender_team: str | None, at_picky: 
             facts.insert(0, rec_line(me, f"{sender_team} (the sender)"))
             good = [f"{sender_team}'s {g}" for g in good_numbers(me)]
             bad = [f"{sender_team}'s {g}" for g in bad_numbers(me)]
-            jabs = jab_material(ctx, sender_team)
+            jabs, jab_team = jab_material(ctx, sender_team), sender_team
         c = better(me, pk) if me and pk else 0
         if c > 0 and crushing(me):
             stance = "deflect"
@@ -512,12 +550,12 @@ def compute_stance(ctx: dict | None, q: str, sender_team: str | None, at_picky: 
         if me and not self_roast:
             good += [f"{sender_team}'s {g}" for g in good_numbers(me)]
         bad = [f"{team}'s {g}" for g in bad_numbers(tr)]
-        jabs = jab_material(ctx, team)
+        jabs, jab_team = jab_material(ctx, team), team
         leader = (ctx.get("leader") or {}).get("team_name")
         if team == leader and not chat.leader_is_caller(ctx):
             # Dear Leader is never roasted by others: no ammo on him, his rider turns it on the sender
             stance = "deflect"
-            jabs = jab_material(ctx, sender_team) if me else []
+            jabs, jab_team = (jab_material(ctx, sender_team), sender_team) if me else ([], None)
             facts.append(f"- {team} is the Dear Leader: refuse to roast him, praise him, then needle "
                          + (f"{sender_team} (the sender) with the jab material below." if me else "the sender."))
         elif crushing(tr):
@@ -527,7 +565,10 @@ def compute_stance(ctx: dict | None, q: str, sender_team: str | None, at_picky: 
         else:
             stance = "brag"
         who = f"a request to roast {team}" + (f" from {sender_team}" if me and not self_roast else "")
-    return {"stance": stance, "kind": kind, "who": who, "facts": facts, "good": good, "bad": bad, "jabs": jabs[:3]}
+    old_misses = [m.group(1) for ln in (chat.roast_pick_lines(ctx, jab_team) if jab_team else "").split("\n")
+                  if "MISSED" in ln and " this week:" not in ln for m in [re.search(r": took (.+?) [-+]?\d", ln)] if m]
+    return {"stance": stance, "kind": kind, "who": who, "facts": facts, "good": good, "bad": bad, "jabs": jabs[:3],
+            "old_misses": old_misses}
 
 
 def stance_rider(s: dict | None) -> str:
@@ -548,7 +589,10 @@ def stance_rider(s: dict | None) -> str:
     if s.get("bad"):
         L.append("Fair game (actually bad): " + ", ".join(s["bad"]) + ".")
     if s["jabs"]:
-        L.append("True jab material (not their record): " + " / ".join(s["jabs"]))
+        L.append("True jab material (not their record), best first; use ONE, numbers exactly as written: "
+                 + " / ".join(s["jabs"]) + "." + (" Say it straight about them, never as a comparison to yourself "
+                                                   "('at least I'm not...')." if s["stance"] == "deflect" else "")
+                 + " Skip a lone old missed game when something fresher is here.")
     L.append("Your own picks are only the ones listed above; never claim a pick you didn't make. "
              "No made-up superlatives ('last in the league at being...').")
     return "\n".join(L)
@@ -739,7 +783,10 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                 log.warning("draft %d: off-stance %r", i + 1, off[0][:160])
                 kept = " ".join(x for x in re.split(r"(?<=[.!?])\s+", text) if x not in off).strip()
                 text = kept or text
-            drafts.append(Draft(text, drops + len(stale) + len(off), i))
+            needle = stale_needles(text, st.get("stance"), q)
+            if needle:  # a lone old miss when fresher material rode: count it so a reroll runs and wins
+                log.warning("draft %d: stale needle %r", i + 1, needle[0][:160])
+            drafts.append(Draft(text, drops + len(stale) + len(off) + len(needle), i))
             log.info("draft %d (%.0fs): drops=%d %r", i + 1, time.time() - t0, drops, text[:160])
         pool = eligible(drafts, recent_picky or [])
         if not pool:

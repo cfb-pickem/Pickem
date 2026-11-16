@@ -185,7 +185,12 @@ def roast_pick_lines(ctx: dict, team: str, chalk: bool = False) -> str:
     rows = [(g, picks[g["id"]], live.get(g["id"], {}).get("AwayPts"), live.get(g["id"], {}).get("HomePts"),
              g.get("winner"), "this week") for g in ctx.get("games_this_week") or []
             if g["id"] in picks and g.get("winner") and not g.get("tiebreaker")]
-    rows += [(g, g["picks"][team], g.get("away_pts"), g.get("home_pts"), g.get("covered"), "last week")
+    # the Monday after a fully final week, 'last week' (the pool's) is two weeks ago on the calendar
+    # (live 2026-11-16: 'you let LSU get blown out last week' about week 10, the day after week 11)
+    _w, done, n = _week_state(ctx)
+    prev = (f"week {(ctx.get('last_week') or {}).get('week')}, two weeks ago" if n and done == n
+            else "last week")
+    rows += [(g, g["picks"][team], g.get("away_pts"), g.get("home_pts"), g.get("covered"), prev)
              for g in (ctx.get("last_week") or {}).get("games") or [] if (g.get("picks") or {}).get(team)]
     out = []
     for g, pk, ap, hp, cov, when in rows:
@@ -2950,7 +2955,8 @@ def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = No
                 who = "you" if m.group(1).lower().startswith(("you", "your")) else "picky"
                 ok = (facts["records"] if other_span else facts.get("records_now") or facts["records"]).get(who)
                 rec = (int(m.group(2)), int(m.group(3)))
-                if ok and rec not in ok:
+                if ok and rec not in ok and not (who == "you" and oddity_ok((by_kind.get("you") or {}).get("team"),
+                                                                            f"{rec[0]}-{rec[1]}", sent)):
                     want = by_kind.get(who)
                     probs.append(f"says {'the user is' if who == 'you' else 'Picky is'} {rec[0]}-{rec[1]}"
                                  + (f", but the record this week is {want['record'][0]}-{want['record'][1]}"
@@ -2981,7 +2987,9 @@ def check_answer(text: str, facts: dict | None, allowed_numbers: set | None = No
             for m in re.finditer(r"\byou(?:'re| are|r)?\b(?:\W+\w+){0,5}?\W+(\d{1,2})-(\d{1,2})\b", sent, re.I):
                 rec = (int(m.group(1)), int(m.group(2)))
                 if rec not in okr and max(rec) <= 15 and not re.search(r"\b(won|lost|beat|score|scored)\b",
-                                                                         sent[m.start():m.end()], re.I):
+                                                                         sent[m.start():m.end()], re.I) \
+                        and not oddity_ok(next((s_["team"] for s_ in facts["subjects"] if s_["kind"] == "you"), None),
+                                          f"{rec[0]}-{rec[1]}", sent):
                     probs.append(f"says the user has a {rec[0]}-{rec[1]} record, which isn't theirs")
     # 5) a pick pinned on the wrong person: 'I took North Dakota State' when
     #    that was the caller's pick, not Picky's (live run9/m1)
@@ -4150,6 +4158,21 @@ def material_records(ctx: dict) -> dict[str, set]:
                   if x.startswith(t + " ") or x.startswith(t + ":") or x.startswith(t + "'")
                   for r in re.findall(r"\b\d{1,2}-\d{1,2}\b", x)}
     return out
+
+
+def oddity_ok(team: str | None, rec: str, sent: str) -> bool:
+    """A W-L that's one of `team`'s lore 'stats-page oddity' splits ('2-7 in Oklahoma games', '1-5 picking
+    against them', '9-20 on road teams'), in a sentence that names the same school or split: a true split,
+    not a fake season or week record."""
+    for ln in ((load_lore() or {}).get("members") or {}).get(team or "") or []:
+        if "stats-page oddity: " not in ln or not re.search(rf"(?<![\d-]){re.escape(rec)}(?![\d-])", ln):
+            continue
+        keys = re.findall(r"\b(?:in|taken|against) ([A-Z][\w&'. ]+?) (?:games|\d+ times)", ln) + \
+            re.findall(r"\bon (road teams|home teams|underdogs|favorites)\b", ln)
+        if any(re.search(rf"(?<!\w){re.escape(k)}(?!\w)", sent, re.I) for k in keys) or \
+                re.search(r"\b(road|underdogs?|dogs?)\b", sent, re.I) and re.search(r"road|underdogs", ln):
+            return True
+    return False
 
 
 def material_note(ctx: dict, question: str) -> str:
@@ -5432,7 +5455,7 @@ def record_check(ctx: dict, question: str):
                 who = "Blinkstradamus"  # 'Blinky's 19-25' / "he's 19-25" in the running bit
             if who is None and _ACKBAR_ASK.search(before):
                 who = "Ackbar"  # 'Admiral Akbar is 19-25'
-            mat_ok = m.group(0) in mat_recs.get(who, ()) and not re.search(
+            mat_ok = (m.group(0) in mat_recs.get(who, ()) or oddity_ok(who, m.group(0), sent)) and not re.search(
                 r"\b(this season|overall|on the (season|year)|season record|for the season|all season|so far)\b",
                 sent, re.I)  # a true split ('favorites went 22-14'), never passed off as the season record
             if who in st and rec != st[who] and not mat_ok:

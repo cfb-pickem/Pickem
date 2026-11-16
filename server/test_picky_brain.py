@@ -473,6 +473,60 @@ def test_few_shot_turns_match_and_respect_stance():
         assert pb.few_shot_turns("who's winning?", "question", None) == []
 
 
+def test_jabs_prefer_fresh_stats_page_material_over_an_old_miss():
+    """Live 2026-11-16 07:37 DM: Chuck P (4-0, 1st by 2) texted 'You suck picky' and got 'even if you did let
+    LSU get blown out by 18 points last week': a week-10 miss, on the Monday after week 11 was all final.
+    Charlie: 'he can do better than make fun of a random loss from 2 weeks ago ... look at the stats page'."""
+    c = _stance_ctx("Chuck P")
+    c["last_week"] = {"week": 10, "games": [{"id": 9, "away": "Alabama", "home": "LSU", "line": -5.5,
+                                            "away_pts": 31, "home_pts": 13, "covered": "Alabama",
+                                            "picks": {"Chuck P": "LSU"}}]}
+    lore = {"members": {"Chuck P": [
+        "Chuck P, 2026 so far (through 2026-11-16): takes the favorite 54% of the time.",
+        "Chuck P, stats-page oddity: Chuck P is 2-7 in Oklahoma games (2025-2026), whichever side: 1-2 taking "
+        "Oklahoma, 1-5 picking against them."]},
+        "casino": {"members": {"Chuck P": ["Chuck P, The Pit 2026: 0 chips after 6 hands (BUSTED OUT, done for the season).",
+                                           "Chuck P's 'let the slots decide' picks this season: 0-1."]}}}
+    with patch.object(chat, "load_lore", lambda: lore), patch.object(chat, "member_nicknames", lambda: {}):
+        lines = chat.roast_pick_lines(c, "Chuck P")
+        assert "Chuck P week 10, two weeks ago: took LSU -5.5" in lines and "last week" not in lines, lines
+        jabs = pb.jab_material(c, "Chuck P")
+        s = pb.compute_stance(c, "You suck picky", "Chuck P")
+    assert jabs[0].startswith("Chuck P, The Pit 2026: 0 chips") and "2-7 in Oklahoma games" in jabs[1], jabs
+    assert any("only 2 wins ahead of Ackbar" in j for j in jabs), jabs
+    assert not any("LSU" in j for j in jabs), jabs  # the lone old miss only when nothing fresher exists
+    assert s["stance"] == "deflect" and s["old_misses"] == ["LSU"], s
+    r = pb.stance_rider(s)
+    assert "BUSTED OUT" in r and "Skip a lone old missed game" in r and "specific old miss" not in r, r
+    bad = "You're 4-0, I'll give you that. Even if you did let LSU get blown out by 18 points last week."
+    assert pb.stale_needles(bad, s, "You suck picky") == ["Even if you did let LSU get blown out by 18 points last week."]
+    assert pb.stale_needles("4-0, fine. You also busted out of The Pit with 0 chips.", s, "You suck picky") == []
+    assert pb.stale_needles(bad, s, "what about my LSU pick?") == []  # they brought it up
+    with patch.object(chat, "load_lore", lambda: lore):  # the split is true, not a stale record
+        assert pb.stale_records("You're 1-5 picking against Oklahoma, rough for a guy in first.", c, "Chuck P") == []
+        assert pb.stale_records("You're 1-5, rough for a guy in first.", c, "Chuck P")
+    with patch.object(chat, "load_lore", lambda: {"members": {}}):  # nothing fresher: the old miss is the jab
+        c2 = dict(c, standings_ytd=[dict(x, w=x["w"] - 5) if x["team"] == "Chuck P" else x for x in c["standings_ytd"]])
+        assert any("LSU" in j for j in pb.jab_material(c2, "Chuck P"))
+
+
+def test_record_check_lets_stats_page_oddities_through():
+    lore = {"members": {"Chuck P": ["Chuck P, stats-page oddity: Chuck P is 2-7 in Oklahoma games (2025-2026), "
+                                    "whichever side: 1-2 taking Oklahoma, 1-5 picking against them."]}}
+    c = _stance_ctx("Chuck P")
+    with patch.object(chat, "load_lore", lambda: lore), patch.object(chat, "material_records", lambda ctx: {}):
+        ok = chat.record_check(c, "You suck picky")
+        assert ok("Chuck P is 2-7 in Oklahoma games, whichever side he takes.")
+        assert not ok("Chuck P is 22-26 on the season.")
+
+
+def test_brief_core_drops_a_sentence_the_filter_would_cut():
+    b = pb.Brief(asking="A shot at me.", intent="insult", about="Picky", tone="hostile",
+                 answer="Own the 0-3. You're 2-7 in Oklahoma games, which is a special kind of tragic.")
+    r = pb.brief_rider(b, stance=True)
+    assert "Own the 0-3." in r and "tragic" not in r, r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

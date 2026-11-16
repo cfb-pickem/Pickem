@@ -284,6 +284,21 @@ def test_prefix_untouched_by_results():
     assert "results_block" not in inspect.getsource(chat.prompt_prefix)
 
 
+def test_guard_lets_the_users_stats_page_oddity_through():
+    """2026-11-16 replay: 'you're 1-5 picking against Oklahoma' (Chuck P's real split, lore) was dropped as a
+    fake record and the answer fell back to a 'For the record' facts dump."""
+    from unittest.mock import patch
+    f = facts("you suck picky")
+    me = next(s_["team"] for s_ in f["subjects"] if s_["kind"] == "you")
+    lore = {"members": {me: [f"{me}, stats-page oddity: {me} is 2-7 in Oklahoma games (2025-2026), whichever side: "
+                             "1-2 taking Oklahoma, 1-5 picking against them."]}}
+    with patch.object(chat, "load_lore", lambda: lore):
+        assert chat.check_answer("Fair. But you're 1-5 picking against Oklahoma, so maybe stop.", f) == []
+        assert chat.check_answer("You're 2-7 in Oklahoma games.", f) == []
+        assert chat.check_answer("You're 1-5 this week.", f)            # no split named: still a fake record
+        assert chat.check_answer("You're 1-5 picking against Texas.", f)  # wrong school
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

@@ -156,6 +156,28 @@ def test_casino_note_gating():
             chat.LORE_FILE = real
 
 
+def test_stats_page_oddities():
+    """Charlie 2026-11-16: roast material from the stats page, computed, only bad numbers, 0-fers first."""
+    def r(season, away, home, side, hit, line=-3):
+        return {"team": "Ann Smith", "side": side, "hit": hit,
+                "g": {"cfb_season": season, "Away": away, "Home": home, "line": line}}
+    mine = ([r(2026, "Indiana", f"X{i}", "Indiana", False) for i in range(3)]          # 0-3 taking Indiana
+            + [r(2025, "Indiana", f"Y{i}", f"Y{i}", False) for i in range(3)]          # 0-3 against Indiana
+            + [r(2026, "Oklahoma", f"Z{i}", f"Z{i}", i == 0) for i in range(5)]        # 1-4 fading Oklahoma
+            + [r(2026, "Georgia", f"W{i}", "Georgia", True) for i in range(6)])        # 6-0 on Georgia: good
+    out = lore.oddities("Ann Smith", mine, [2025, 2026])
+    assert out[0] == ("Ann Smith is 0-6 in Indiana games over the last two seasons (2025-2026), whichever side: 0-3 taking Indiana, "
+                      "0-3 picking against them."), out
+    assert "Ann Smith has picked against Oklahoma 5 times over the last two seasons (2025-2026) and gone 1-4." in out, out
+    assert not any("Georgia" in x for x in out), out
+    road = [r(2026, f"A{i}", f"H{i}", f"A{i}", i < 3, line=3) for i in range(12)]          # 3-9 on road dogs
+    road += [r(2026, f"B{i}", f"C{i}", f"C{i}", i < 6, line=-3) for i in range(8)]          # 6-2 at home
+    out = lore.oddities("Ann Smith", road, [2026])
+    assert "Ann Smith 2026: 3-9 on road teams, 6-2 on home teams." in out, out
+    c = comp()
+    assert all("oddities" in m for m in c["members"].values())
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

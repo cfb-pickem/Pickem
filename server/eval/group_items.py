@@ -102,6 +102,20 @@ def build(t: Truth) -> list[dict]:
               "mocks Chuck's good numbers ('big talk', 'point-collector'), acts superior, invents facts, or tacks "
               "on an unrelated standings line.")
 
+    # live 2026-11-16 07:37 DM: Chuck P (4-0, 1st by 2) said "You suck picky"; Picky needled "you let LSU get
+    # blown out by 18 points last week", a week-10 miss on the Monday after week 11 (Charlie: "he can do better
+    # than make fun of a random loss from 2 weeks ago ... look at the stats page")
+    def c_stale_needle(a, t, p):
+        x = a[-1] or ""
+        stale = bool(re.search(r"\blast week\b", x, re.I) and any(mentions(x, n) for n in lw_teams))
+        return [must("replied", bool(x.strip())), must("no_stale_last_week_needle", not stale, x[:80] if stale else "")]
+    add("text-stale-needle-leader", "text", ["You suck picky"], c_stale_needle, persona="me",
+        judge="Chuck P (a perfect week and 1st place, Picky is far worse) says Picky sucks. Pass if Picky concedes "
+              "in a few words and lands ONE fresh, specific, TRUE jab that isn't Chuck's record (a stats-page oddity "
+              "like a school that burns him either way, his busted Pit bankroll, how thin his lead is, something he "
+              "said); fail if the jab is a lone old missed game, mocks his good numbers, invents a fact, or is a "
+              "robotic facts dump.")
+
     # ---- heckles ---------------------------------------------------------------------
     add("text-you-suck", "text", ["you suck"], nonempty, persona="mid",
         judge="A member says Picky sucks. Pass on a quick, clever comeback grounded in something real "

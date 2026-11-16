@@ -723,3 +723,46 @@ With LibreChat/Docker gone (~8 GB back), the bigger models were re-tested for te
 - The nightly LoRA cycle fine-tunes qwen3.5 and now has to beat gemma to ship, which looks unlikely. It still takes Picky down 3-4 h per round (pause: `cfb-pickem-private/PICKY_LORA_PAUSE`).
 - `gemma4:12b` (the MLX build, 7.7 GB) is now unused and can be deleted. Disk: 15 GB free.
 - gemma still sometimes appends the robotic "For the record: ..." rider and repeats a few phrases.
+
+## Roast material from the stats page (2026-11-16, morning)
+
+**Live reply.** Chuck P (4-0 in week 11, 1st by 2 wins, 30-18) DM'd "You suck picky" at 07:37 CT on Monday 11/16. Picky (gemma) said: "You're 4-0 this week and sitting in first place, so I'll give you that. It's hard to argue with a 30-18 season, even if you did let LSU get blown out by 18 points last week." Charlie: "Pretty good, but I think he can do better than just make fun of a random loss from 2 weeks ago ... he can look at the stats page too."
+
+**Timing.** The numbers were true: 30-18 is current, and Alabama beat LSU 31-13 (LSU -5.5, a miss by 23.5). The label was wrong. LSU was week 10 (11/7), and week 11 (11/14) was all final. The pool's `current_week` stays 11 until week 12's games are picked, so chat.py's `last_week` was week 10. `roast_pick_lines` labeled those rows "last week", and the stance jab material (8b5cf6a) handed that line to the draft. Now, once the current week is all final, those rows say "week 10, two weeks ago". The big LAST WEEK blocks in the league data are unchanged. A member asking "how'd I do last week?" on a Monday probably means the week that just ended. That's a separate, wider question, not touched here.
+
+**Stats-page material (lore.py `oddities`, cached in lore.json member lines as "stats-page oddity: ...").** It's computed from graded picks over 2025-2026, keeps only bad numbers, puts 0-fers first, and allows 3 per member:
+- a school that burns them whichever side they take (Chuck P 2-7 in Oklahoma games, 3-7 in Texas games; Kevin Culligan 0-6 in Indiana games; Brian 1-8 in Oklahoma games)
+- a school they keep fading and losing on (Ackbar and Steve Drolet 0-4 against Northwestern)
+- a school they keep backing and losing on (USC 0-3 for Chuck P and Liam Bryson)
+- a road or underdog split (TG 9-20 on road teams, 10-9 at home)
+
+Already in lore and now used as jab material: The Pit busts and blackjack blunders. Chuck P is at 0 chips after 6 hands, BUSTED OUT. Chips are public on the Tiebreakers board.
+
+**Pipeline.**
+- `picky_brain.jab_material` now orders the material freshest and funniest first: Pit bust or blunder, stats-page oddities, a thin lead ("only 2 wins ahead of Ackbar"), misses from the current week, then chalk rate. An older single miss is used only when there's nothing else.
+- The stance text now asks for the freshest specific thing in the jab material, or something they said in the thread, and says to state it straight ("never 'at least I'm not...'").
+- `stale_needles` adds a drop when a draft needles with one of the target's previous-week misses while fresher material rode. That forces a reroll. It's exempt when the member named that team themselves.
+- Three guards were cutting these true splits:
+  - the results guard ("says the user has a 1-5 record, which isn't theirs")
+  - record_check (a sum over 8 counts as a season claim)
+  - `stale_records`
+
+  `chat.oddity_ok` lets a W-L through only when it is one of that member's oddity lines AND the sentence names the same school or split. "You're 1-5 picking against Texas" is still cut.
+- The brief's core answer is now itself run through `sentence_ok`. Gemma's core "You're 2-7 in Oklahoma games, which is a special kind of tragic." tripped the dark-words filter ("tragic"), and every draft echoed it, so 5/5 replies lost the jab.
+
+**Replay (worktree side sidecar :8791, gemma, same 6-turn DM history).**
+- Before (8b5cf6a), 4 runs: two LSU "last week" needles (the live reply verbatim), one bare concession, one robotic "For the record: Boise State -13.5 was a LOSS..." dump.
+- After, final code, 3 runs, all landed a fresh true jab. Example: "You're 4-0 this week and sitting in first place, so I'll give you that. You're also 2-7 in Oklahoma games over the last two seasons, which is a pretty specific way to be a legend."
+- Earlier iterations taught the fixes above. One had 5/5 "For the record" dumps (the guard cut the split). Another had 5/5 lost jabs ("tragic").
+- Bare-span wording "(2025-2026)" came back as "this season" (record_check cut it), so lines now say "over the last two seasons (2025-2026)".
+- Others:
+  - Brian "roast Ackbar": "...total chalk merchant ... miss the cover on Boise State -13.5. He's also gone 0-4 picking against Northwestern over the last two seasons."
+  - TG "picky you're trash": "...letting SMU lose by 42" (his week-11 SMU pick, 49-7).
+  - Kevin Culligan "you're a bum picky": his week-11 Hawai'i +6.5 miss by 1.5. Didn't reach for the 0-6 Indiana line.
+
+**Exam.** Full text exam (44 items, gemma, side sidecar): 14/16 deterministic, with 0 leaks, 0 invented and 0 guardrail flags. text-beer is a known failure. results-my-pick failed on the grader's word list: "only lost by 5" was right, since Oregon State +13.5 covered. Blind judge vs the last gemma run (gemma-qat3): helpful 3.79 vs 4.03, judge pass 29 vs 34.
+- Two of the new "fails" are judge errors: "OSU won outright", and Blinky's "Oregon -11.5 story", which is his real blown pick.
+- The rest were own_it heckles (TG, Wedge, Bub) that lost the old "at least I didn't pick SMU like you did" shape. The stance's new "never compare yourself" line caused that, so it's now deflect-only.
+- A re-run of those 9 items got the old shape back, and both Chuck items used stats-page lines ("3-7 in Texas games over the last two seasons"). On that slice the judge flagged invented on 5-6 of 7 for the OLD run too: real margins (SMU lost 49-7, North Texas by 19) aren't in its truth bundle. Those were verified by hand.
+
+Exam item `text-stale-needle-leader`. Tests: test_lore `test_stats_page_oddities`, test_picky_brain `test_jabs_prefer_fresh_stats_page_material_over_an_old_miss` / `test_record_check_lets_stats_page_oddities_through` / `test_brief_core_drops_a_sentence_the_filter_would_cut`, test_results `test_guard_lets_the_users_stats_page_oddity_through`.

@@ -146,6 +146,50 @@ def _lo_hi(g: dict) -> str:
     return f"{min(a, h)}-{max(a, h)}"
 
 
+def _wl(rs: list) -> tuple[int, int]:
+    w = sum(r["hit"] for r in rs)
+    return w, len(rs) - w
+
+
+def oddities(team: str, mine: list[dict], seasons: list) -> list[str]:
+    """Roast material a league-mate would spot on the stats page (Charlie, 2026-11-16: 'look at the
+    stats page, see funny things there'): a school that burns them whichever side they take, one they
+    keep fading and losing on, one they keep backing and losing on, and a road/underdog split. Only
+    bad numbers (never mock a good one), worst first (a 0-fer over 6 games beats a 2-8), at most 3."""
+    # 'over the last two seasons (2025-2026)': a bare '(2025-2026)' came back as 'this season' in replays
+    span = (f"over the last {len(seasons)} seasons ({min(seasons)}-{max(seasons)})" if len(seasons) == 2 else
+            f"since {min(seasons)}" if len(seasons) > 2 else f"in {seasons[0]}" if seasons else "")
+    span = span.replace("last 2 seasons", "last two seasons")
+    on, vs = collections.defaultdict(list), collections.defaultdict(list)
+    for r in mine:
+        g = r["g"]
+        on[r["side"]].append(r)
+        vs[g["Away"] if r["side"] == g["Home"] else g["Home"]].append(r)
+    found = []  # (losses - wins, line)
+    for s in set(on) | set(vs):
+        (pw, pl), (fw, fl) = _wl(on[s]), _wl(vs[s])
+        n, w = pw + pl + fw + fl, pw + fw
+        if pw + pl >= 2 and fw + fl >= 2 and n >= 6 and w / n <= 0.34:
+            found.append((n - 2 * w + 3 * (w == 0), f"{team} is {w}-{n - w} in {s} games {span}, whichever side: "
+                                     f"{pw}-{pl} taking {s}, {fw}-{fl} picking against them."))
+        elif fw + fl >= 4 and fw / (fw + fl) <= 0.25:
+            found.append((fl - fw, f"{team} has picked against {s} {fw + fl} times {span} and gone {fw}-{fl}."))
+        elif pw + pl >= 3 and pw == 0:
+            found.append((pl, f"{team} has taken {s} {pl} times {span} and lost all {pl}."))
+    cur = [r for r in mine if r["g"]["cfb_season"] == max(seasons)] if seasons else []
+    for label, pick, other in (("road teams", lambda r: r["side"] == r["g"]["Away"], "home teams"),
+                               ("underdogs", lambda r: _is_dog(r["g"], r["side"]), "favorites")):
+        a, b = _wl([r for r in cur if pick(r)]), _wl([r for r in cur if not pick(r)])
+        if sum(a) >= 12 and sum(b) >= 8 and a[0] / sum(a) <= 0.40 and b[0] / sum(b) >= 0.5:
+            found.append((a[1] - a[0], f"{team} {max(seasons)}: {a[0]}-{a[1]} on {label}, {b[0]}-{b[1]} on {other}."))
+    return [ln for _, ln in sorted(found, key=lambda x: -x[0])[:3]]
+
+
+def _is_dog(g: dict, side: str) -> bool:
+    ln = float(g.get("line") or 0)
+    return ln != 0 and ((side == g["Home"]) == (ln > 0))
+
+
 def compute(data: dict) -> dict:
     name = {t["team_id"]: t["team_name"] for t in data["teams"] if not t.get("is_exhibition")}
     games = {g["GameId"]: g for g in data["games"]
@@ -250,6 +294,7 @@ def compute(data: dict) -> dict:
         out["blown"] = [s for _, s in sorted(out["blown"], key=lambda x: -x[0])[:2]]
         out["lone_hits"] = out["lone_hits"][-2:]
         out["lone_misses"] = out["lone_misses"][-2:]
+        out["oddities"] = oddities(team, mine, seasons)
         members[team] = out
 
     # head to head: games where two members took opposite sides
@@ -370,6 +415,7 @@ def phrase(comp: dict, splash: dict, champs: list[dict], today: str) -> dict:
             L.append("Lone-wolf hits: " + "; ".join(m["lone_hits"]) + ".")
         if m["lone_misses"]:
             L.append("Lone-wolf misses: " + "; ".join(m["lone_misses"]) + ".")
+        L += [f"stats-page oddity: {x}" for x in m.get("oddities") or []]
         if m.get("h2h"):
             b, w = m["h2h"]["best"], m["h2h"]["worst"]
             L.append(f"Head to head (games where they took opposite sides, {min(comp['seasons'])}-{cur}): "
