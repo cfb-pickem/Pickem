@@ -373,6 +373,13 @@ class Truth:
 
     # ---- rules -----------------------------------------------------------------
     def _rules_source(self) -> str | None:
+        try:  # the single source: what Picky is actually shown right now
+            import league_rules
+            txt = league_rules.current_text()
+            if txt:
+                return txt
+        except Exception:
+            pass
         for name in ("league_rules.md", "rules.md", "league_rules.txt"):
             p = SERVER / name
             if p.exists():

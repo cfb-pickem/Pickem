@@ -44,6 +44,7 @@ import espn
 import board_voice
 import freshness
 import game_cards
+import league_rules
 import live_flag
 import live_games
 import news
@@ -782,10 +783,10 @@ def _game_is_locked(game: dict, now_ct_naive: dt.datetime) -> bool:
     return start_naive <= now_ct_naive
 
 
-# League rules (league_rules.md, js/kickoff.js isWeekLocked): in the regular
+# League rules (league_rules.py, js/kickoff.js isWeekLocked): in the regular
 # season every pick for the week locks, and is revealed, at the week's first
 # kickoff; in the playoffs each game locks at its own kickoff.
-REGULAR_SEASON_LAST_WEEK = 15
+REGULAR_SEASON_LAST_WEEK = league_rules.REGULAR_SEASON_LAST_WEEK
 
 
 def week_locks_together(week) -> bool:
@@ -974,6 +975,30 @@ def compute_standings(teams: list[dict], season_games: list[dict], picks: list[d
     return [{"rank": r["rank"], "team": r["team"], "w": r["w"], "l": r["l"]} for r in rows]
 
 
+def compute_playoff_board(teams: list[dict], season_games: list[dict], picks: list[dict],
+                          seeds: list[dict]) -> list[dict]:
+    """The leaderboard's Playoff board (index.html computePlayoffWins): the
+    seeded teams only (`playoffs` rows), scores reset, so only graded
+    non-tiebreaker games after the regular season (week 16+) count."""
+    if not seeds:
+        return []
+    name_by_team = {t["team_id"]: t["team_name"] for t in teams}
+    seed_by_team = {r["team_id"]: r["seed"] for r in seeds}
+    by_id = {g["GameId"]: g for g in season_games
+             if g.get("winner") and not g.get("tiebreaker")
+             and g.get("week") is not None and int(g["week"]) > REGULAR_SEASON_LAST_WEEK}
+    rec = {tid: [0, 0] for tid in seed_by_team}
+    for p in picks:
+        g = by_id.get(p["game_id"])
+        if g is not None and p["team_id"] in rec:
+            rec[p["team_id"]][0 if (p.get("jackpot") or same_team(p["pick"], g["winner"])) else 1] += 1
+    rows = sorted(({"seed": seed_by_team[t], "team": name_by_team.get(t, f"team#{t}"), "w": w, "l": l}
+                   for t, (w, l) in rec.items()), key=lambda r: (-r["w"], r["seed"]))
+    for i, r in enumerate(rows):
+        r["rank"] = rows[i - 1]["rank"] if i and rows[i - 1]["w"] == r["w"] else i + 1
+    return rows
+
+
 async def _build_context(
     client: httpx.AsyncClient,
     jwt: str,
@@ -1047,7 +1072,17 @@ async def _build_context(
         f"&picked=eq.true&Status=eq.final",
         jwt,
     )
-    week_games, season_games = await asyncio.gather(week_games_t, season_games_t)
+    # Playoff state (public reads): seed rows = playoff mode; the autopilot's
+    # last playoff_compute = "who's in if it ended today".
+    seeds_t = _rest_get(client, f"playoffs?select=seed,team_id&season=eq.{season}&order=seed.asc", jwt)
+    autopilot_t = _rest_get(client, f"playoff_autopilot?select=state,holds,preview&season=eq.{season}", jwt)
+    week_games, season_games, seeds, autopilot = await asyncio.gather(
+        week_games_t, season_games_t, seeds_t, autopilot_t, return_exceptions=True)
+    for x in (week_games, season_games):
+        if isinstance(x, BaseException):
+            raise x
+    seeds = [] if isinstance(seeds, BaseException) else seeds or []
+    autopilot = None if isinstance(autopilot, BaseException) or not autopilot else autopilot[0]
 
     # `picks` has no season column, so scope by game id: `week=eq.N` alone
     # also returns last season's week N. Season picks run past PostgREST's
@@ -1152,6 +1187,8 @@ async def _build_context(
                         if whole_week else None),
         "jackpot": jackpot,
         "weekly_records": compute_weekly(teams, season_games, picks_all),
+        "playoff_board": compute_playoff_board(teams, season_games, picks_all, seeds),
+        "playoff_preview": _preview(autopilot, name_by_team),
         "last_week": _last_week(current_week, season_games, picks_all, name_by_team, me_team_id),
         "mode": mode,
     }
@@ -1161,6 +1198,19 @@ async def _build_context(
         result["standings_ytd"], teams, me_name, rival_predictions, name_by_team
     )
     return result
+
+
+def _preview(autopilot: dict | None, name_by_team: dict) -> dict | None:
+    """The autopilot's last playoff_compute, trimmed to what Picky says."""
+    pv = (autopilot or {}).get("preview") or {}
+    if not pv.get("qualifiers"):
+        return None
+    humans = set(name_by_team.values())
+    quals = [q for q in pv["qualifiers"] if q.get("team_name") in humans]
+    return {"computed_at": pv.get("computed_at"), "phase": pv.get("phase"), "state": autopilot.get("state"),
+            "qualifiers": [{"seed": q["seed"], "team": q["team_name"], "points": q["points"],
+                            "decided_by": q.get("decided_by_label")} for q in quals],
+            "cut_tie": pv.get("cut_tie"), "holds": [h.get("message") for h in pv.get("holds") or []]}
 
 
 def _last_week(current_week, season_games, picks_all, name_by_team, me_team_id) -> dict:
@@ -1243,16 +1293,12 @@ Q: Who do you like in Texas vs Oklahoma?
 A: Not in the pool, so not my problem. You've already got four games to screw up."""
 
 
-# League rules, from one file (server/league_rules.md, kept in step with the
-# "League Rules" block on cfb-genius.html; test_rules.py checks the two agree).
+# League rules: server/league_rules.py is the single source (it reads them out
+# of the site's code and SQL; league_rules.md is generated from it, and the
+# rules watcher's re-verified/flagged live copy wins when present).
 # Injected into the user turn only for rules-type questions, so the system
 # prompt stays byte-identical and short for everything else.
-def _load_rules() -> str:
-    p = Path(__file__).with_name("league_rules.md")
-    return "\n".join(ln for ln in p.read_text().splitlines() if not ln.startswith("#")).strip()
-
-
-LEAGUE_RULES = _load_rules()
+LEAGUE_RULES = league_rules.current_text()
 
 _RULES_ASK = re.compile(
     r"\brules?\b|\bscor(e|ed|es|ing)\b|\bpoints?\b|tie ?-?break|\btie[ds]?\b|\bjackpot|\bslots?\b|"
@@ -1267,20 +1313,21 @@ _RULES_ASK = re.compile(
 
 
 # Buy-in (Charlie, 2026-11-14): $75 a player. The pot and payouts are computed
-# here from the payout rules and the active human teams (never the exhibition
-# Picky), so the model only copies numbers.
-BUY_IN = 75
+# by league_rules from the payout rules and the active human teams (never the
+# exhibition Picky), so the model only copies numbers.
+BUY_IN = league_rules.BUY_IN
 _MONEY_ASK = re.compile(r"\b(buy.?in|pot|payouts?|pays?|paid|prize|money|cash|dollars?|\$|win(s|ning)? (the )?(pot|money)|"
                         r"how much|(first|second|third|1st|2nd|3rd) place (gets?|wins?)|second place|third place|"
                         r"what do(es)? (the )?(winner|champion|first|second|third)\b.{0,20}\b(win|get))\b", re.I)
 
 
 def payout_math(n_teams: int) -> dict:
-    pot = BUY_IN * n_teams
-    return {"n": n_teams, "pot": pot, "first": pot - (BUY_IN + 25) - BUY_IN, "second": BUY_IN + 25, "third": BUY_IN}
+    return league_rules.payout_math(n_teams, league_rules.current_facts() or None)
 
 
 def payout_text(n_teams: int) -> str:
+    if "PAYOUTS" in league_rules.flagged_sections():
+        return league_rules.hedge("payouts")  # never the stale numbers
     m = payout_math(n_teams)
     return (f"PAYOUT MATH (computed from the rules and the {m['n']} active human teams; Picky the exhibition "
             f"player isn't in the pot): ${BUY_IN} buy-in x {m['n']} = ${m['pot']:,} pot. 1st: ${m['first']:,} "
@@ -1291,21 +1338,14 @@ def payout_text(n_teams: int) -> str:
 # Rules questions get only the sections they need (each ~100 tokens instead of
 # ~700 for the whole digest: every token after the cached prefix costs ~7 ms of
 # first-token time). No section matched: the whole digest.
-RULE_SECTION_ASK = {
-    "FORMAT": r"\bscor|\bpoints?\b|\bline|\bspread|\bpush|half.?point|\bformat\b|how many (games|picks)|\bweeks?\b|bonus",
-    "DEADLINE AND PRIVACY": r"\block|deadline|\blate\b|\bhidden\b|\bhide\b|\bsee (other|their)|change|forg[eo]t|\bsave|\bdelay|reveal",
-    "LET THE SLOTS DECIDE": r"\bslots?\b|jackpot|auto ?win|\bpop|\bcoin\b|football meter",
-    "STANDINGS AND PLAYOFFS": r"\bstandings\b|\bplayoffs?\b|\btop (4|four)\b|\bweekly prize|\bseason\b",
-    "PAYOUTS": r"\bpay|buy.?in|\bpot\b|\bprize|\bmoney|\bwin (any|anything|money)|place (win|get)|\b(first|second|third|1st|2nd|3rd)\b.*\b(win|get)|winner get|cash|\$",
-    "TIEBREAKERS": r"\btie|tiebreak|army|navy|celebration bowl|coin flip|last 8",
-    "THE PIT": r"\bpit\b|blackjack|\bchips?\b|\bdealer\b|\bdouble|\bbust",
-}
+RULE_SECTION_ASK = league_rules.SECTION_ASK
 
 
 def rules_for(question: str) -> str:
     q = question or ""
+    text = league_rules.current_text()
     blocks, cur = {}, None
-    for ln in LEAGUE_RULES.splitlines():
+    for ln in text.splitlines():
         head = ln.strip()
         key = next((k for k in RULE_SECTION_ASK if head.startswith(k)), None)
         if key:
@@ -1315,15 +1355,17 @@ def rules_for(question: str) -> str:
             blocks[cur].append(ln)
     hit = [k for k, rx in RULE_SECTION_ASK.items() if re.search(rx, q, re.I) and k in blocks]
     if not hit or len(blocks) < len(RULE_SECTION_ASK):
-        return LEAGUE_RULES
+        return text
     if re.search(r"\blines? (lock|locked|get locked|set)\b", q, re.I):
         hit = [k for k in hit if k != "DEADLINE AND PRIVACY"] or hit  # line lock (Tuesday) isn't the pick deadline
     out = []
     for k in hit:
         b = blocks[k]
-        if k == "TIEBREAKERS":  # only the order asked about: the 9B mixed the two lists
+        if k == "TIEBREAKERS" and not any(league_rules.FLAG in ln for ln in b):
+            # only the order asked about: the 9B mixed the two lists
             i = next((n for n, ln in enumerate(b) if ln.startswith("Playoff tiebreakers")), len(b))
-            b = ([b[0]] + b[i:]) if re.search(r"\bplayoffs?\b", q, re.I) else b[:i]
+            j = next((n for n, ln in enumerate(b) if ln.startswith("- ")), len(b))
+            b = ([b[0]] + b[i:j]) if re.search(r"\bplayoffs?\b", q, re.I) else b[:i] + b[j:]
         out.append("\n".join(b).strip())
     return "\n".join(out)
 
@@ -4533,9 +4575,47 @@ def material_note(ctx: dict, question: str) -> str:
 # League playoff race (site audit #2, stats.html Playoff Race): top 4 after
 # week 15 make the playoffs. Cut line, gaps, bubble and points still
 # available are computed here.
-PLAYOFF_SPOTS = 4
+PLAYOFF_SPOTS = league_rules.PLAYOFF_SPOTS
 _RACE_ASK = re.compile(r"\b(bubble|cut ?line|top (4|four)|make (the )?playoffs?|playoff (spot|race|chances?|line|picture|hopes?)|"
                        r"in the playoffs|eliminated|clinch\w*|still alive|mathematically)\b", re.I)
+
+
+_PLAYOFF_BOARD_ASK = re.compile(
+    r"\b(ended today|if the season ended|ends today|who'?s in\b|who would (make|get in)|projected (field|seeds?)|"
+    r"(current|playoff) (seeds?|field|board|standings)|seeds?|seeded|playoff (race|picture|spots?)|make (the )?playoffs?|"
+    r"in the playoffs|cut ?line|bubble)\b", re.I)
+_STANDINGS_WORD = re.compile(r"\b(standings|leader ?board|who'?s (winning|leading|in first|on top)|in first)\b", re.I)
+
+
+def playoff_note(ctx: dict, question: str) -> str:
+    """Site audit #7. Playoff mode (seed rows exist): the Playoff board, scores
+    reset, playoff games only. Before that: the site's own playoff_compute
+    (the autopilot's last preview) for "who's in if it ended today"."""
+    q = question or ""
+    if re.search(r"\b(cfp|committee|college football playoff|ranked|rankings?)\b", q, re.I):
+        return ""
+    board = ctx.get("playoff_board") or []
+    if board:
+        if not (_PLAYOFF_BOARD_ASK.search(q) or _STANDINGS_WORD.search(q) or re.search(r"\bplayoffs?\b", q, re.I)):
+            return ""
+        rows = "\n".join(f"- {r['rank']}. {r['team']} (seed {r['seed']}) {r['w']}-{r['l']}" for r in board)
+        return ("PLAYOFF BOARD (the league is in the playoffs: only these 4 seeded teams are alive, scores reset, "
+                f"only playoff games count; regular-season points no longer matter except as a playoff tiebreaker):\n{rows}")
+    pv = ctx.get("playoff_preview")
+    if not pv or not _PLAYOFF_BOARD_ASK.search(q):
+        return ""
+    quals = "\n".join(f"- seed {x['seed']}: {x['team']}, {x['points']} pts"
+                       + (f" (ahead of the next team on {x['decided_by']})" if x.get("decided_by") not in (None, "regular season points") else "")
+                       for x in pv["qualifiers"])
+    cut = pv.get("cut_tie") or {}
+    tie = (f"\nTie at the cut: {', '.join(cut.get('teams') or [])} at {cut.get('points')} pts; "
+           + (f"settled by {cut['decided_by']}." if cut.get("decided_by") else
+              f"waiting on {cut['waiting_on']} (not graded yet)." if cut.get("waiting_on") else "coin flip, the commissioner decides.")
+           if cut else "")
+    when = str(pv.get("computed_at") or "")[:16].replace("T", " ")
+    return ("IF IT ENDED TODAY (the site's own playoff math, playoff_compute"
+            + (f", as of {when} UTC" if when else "") + "; the regular season isn't over, so this is a projection, "
+            f"not the field):\n{quals}{tie}")
 
 
 def race_note(ctx: dict, question: str) -> str:
@@ -5041,6 +5121,10 @@ def _user_turn(ctx: dict, question: str) -> str:
                     f"week's picks {'are already locked' if done else 'lock then'}.")
         money = ("\n" + payout_text(len(ctx.get("teams") or [])) if _MONEY_ASK.search(question or "")
                  and ctx.get("teams") else "")
+        ans = league_rules.answer(question, n_teams=len(ctx.get("teams") or []) or None)
+        if ans:
+            parts.append(("RULES ANSWER (computed from the site's code; say this in your own words, keep every "
+                          "number):\n" if not ans.startswith(league_rules.FLAG) else "") + ans)
         parts.append("LEAGUE RULES (the written rules on this topic; anything not in the rules is not a rule):\n"
                      + rules_for(question) + lock + money
                      + "\nIf this question is about the rules: the answer is almost always "
@@ -5088,6 +5172,7 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append("" if card else take_note(ctx, question))
         parts.append(material_note(ctx, question))
         parts.append(race_note(ctx, question))
+        parts.append(playoff_note(ctx, question))
         parts.append(howto_note(question))
         parts.append(tie_note(ctx, question))
         parts.append(blinks_note(ctx, question))
@@ -5653,7 +5738,7 @@ def record_check(ctx: dict, question: str):
     real = " ".join(f"{g.get('away')} {g.get('home')} {_kickoff(g.get('start')) if g.get('start') else ''}"
                     for g in ctx.get("games_this_week") or []) + " " + " ".join(r["team"] for r in ctx.get("standings_ytd") or [])
     fakes = [f for f in ("2:30 PM", "Gus", "Rita") if f not in real]
-    money_ok = {x.replace(",", "") for x in re.findall(r"\$\s?([\d,]*\d)", LEAGUE_RULES)}
+    money_ok = {x.replace(",", "") for x in re.findall(r"\$\s?([\d,]*\d)", league_rules.current_text())}
     n_teams = len(ctx.get("teams") or [])
     if n_teams:
         money_ok |= {str(v) for v in payout_math(n_teams).values()}

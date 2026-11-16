@@ -538,6 +538,13 @@ def extract(repo: Repo | None = None, live_defs: dict[str, str] | None = None,
         errors.setdefault("FORMAT", f"games a week: rules page {facts['games_per_week']} vs stats.html {gp}")
     if facts.get("score_cond") and facts.get("is_win_js") and "p.jackpot" not in facts["is_win_js"]:
         errors.setdefault("FORMAT", "seasonHistory.isWin no longer scores a jackpot")
+    ll, lp = facts.get("line_lock"), facts.get("line_lock_page")
+    if ll and lp:
+        m = re.fullmatch(r"(\w+day) (\d{1,2}):(\d{2}) (AM|PM) CT", lp.strip())
+        page = (DAYS.index(m.group(1)), int(m.group(2)) % 12 + (12 if m.group(4) == "PM" else 0), int(m.group(3))) if m and m.group(1) in DAYS else None
+        code = ((5 - ll["days_before_saturday"]) % 7, ll["hour"], ll["minute"])
+        if page != code:
+            errors.setdefault("FORMAT", f"line lock: rules page says '{lp}', line_lock_at() says {code}")
     if po and facts.get("first_week") is not None and po["regular_weeks"][0] != facts["first_week"]:
         errors.setdefault("STANDINGS AND PLAYOFFS",
                           f"first week: playoff_compute {po['regular_weeks'][0]} vs calc_cfb_week {facts['first_week']}")
@@ -1102,7 +1109,7 @@ def repo_sources(repo: Repo) -> dict[str, tuple[str | None, list[str]]]:
             if route(m.group(2)) and m.group(2) not in ("picks", "all_games", "teams"):
                 ddl.append(f"{Path(rel).name}:{m.group(2)}")
     for sec in {s for d in ddl for s in route(d.split(":")[1])}:
-        out[f"sql:tables:{sec}"] = ("\n".join(d for d in ddl if sec in route(d.split(":")[1])), [sec])
+        out[f"sql:tables:{sec.replace(' ', '_')}"] = ("\n".join(d for d in ddl if sec in route(d.split(":")[1])), [sec])
     for rel in repo.ls("supabase/functions"):
         nm = Path(rel).name
         if secs := (route(nm) or (["FORMAT"] if nm == "update-final-scores" else [])):

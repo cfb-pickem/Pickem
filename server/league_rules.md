@@ -57,9 +57,9 @@
 # fp sql:slots_jackpot_odds_for 5b7f333c63d3
 # fp sql:slots_jackpot_pull 76dfc7edd25d
 # fp sql:sync_espn_lines 74da31783057
-# fp sql:tables:LET THE SLOTS DECIDE a856832ba197
-# fp sql:tables:STANDINGS AND PLAYOFFS 21e8e18ab2bf
-# fp sql:tables:THE PIT b19cc0bed752
+# fp sql:tables:LET_THE_SLOTS_DECIDE a856832ba197
+# fp sql:tables:STANDINGS_AND_PLAYOFFS 21e8e18ab2bf
+# fp sql:tables:THE_PIT b19cc0bed752
 
 FORMAT
 - Regular season is weeks 0-15. Every week the commissioner picks 4 games; you pick each one against the spread.
