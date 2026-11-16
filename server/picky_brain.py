@@ -182,8 +182,10 @@ def brief_notes(question: str) -> str:
 
 
 def understand_user(question: str, sender: str, recent: str, last_reply: str, stance: str = "",
-                    notes: str = "") -> str:
+                    notes: str = "", live: str = "") -> str:
     L = [f"Sent by: {sender}" if sender else "Sent by: a league member"]
+    if live:  # game-day live feed (live_games.py): scores/plays/QB news happening now, any game, pool or not
+        L.append(live + "\nYour 'answer' note must use these live facts (exact score, scorer, clock) for a live-game ask.")
     if recent:
         L.append(recent.strip())
     if last_reply:
@@ -229,9 +231,10 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
 
 
 async def understand(prefix: str, question: str, sender: str, recent: str, last_reply: str = "",
-                     timeout: float = 60.0, stance: str = "", notes: str = "") -> Brief:
+                     timeout: float = 60.0, stance: str = "", notes: str = "", live: str = "") -> Brief:
     try:
-        raw = await _json_call(prefix, UNDERSTAND_TAIL, understand_user(question, sender, recent, last_reply, stance, notes),
+        raw = await _json_call(prefix, UNDERSTAND_TAIL,
+                               understand_user(question, sender, recent, last_reply, stance, notes, live),
                                UNDERSTAND_SCHEMA, 0.1, 260, timeout)
     except (httpx.HTTPError, ValueError) as e:
         log.warning("understand failed: %s", e)
@@ -674,7 +677,8 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             log.info("stance: %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
                                        st.get("last_reply", ""), stance=stance_rider(st["stance"]),
-                                       **({"notes": nb} if (nb := brief_notes(st["q"])) else {}))
+                                       **({"notes": nb} if (nb := brief_notes(st["q"])) else {}),
+                                       **({"live": lv} if (lv := (st.get("ctx") or {}).get("live_rider")) else {}))
         if not st["stance"] and st["brief"].intent == "insult" and re.search(r"\bpicky\b|^(you|me)?$", st["brief"].about, re.I):
             # a bare insult ('Pussy', live 2026-11-16) slips past the regexes; without a stance the brief said
             # "fire back first" and 0-3 Picky mocked the 4-0 leader

@@ -283,6 +283,18 @@ class Poller(unittest.TestCase):
         self.assertGreater(p.hold["sb"] - clock["t"], held)  # doubled
 
 
+class Brain(unittest.TestCase):
+    def test_understand_pass_sees_the_live_feed(self):
+        try:
+            import picky_brain
+        except Exception:  # noqa: BLE001
+            return
+        u = picky_brain.understand_user("UNC score?", "x", "", "", live="LIVE GAME FEED ...\n- Louisville 13")
+        self.assertIn("LIVE GAME FEED", u)
+        self.assertLess(u.index("LIVE GAME FEED"), u.index("NEWEST TEXT"))
+        self.assertNotIn("LIVE GAME FEED", picky_brain.understand_user("UNC score?", "x", "", ""))
+
+
 class GroupPings(unittest.TestCase):
     def test_off_by_default_and_qb_news_only(self):
         import group_posts as gp
