@@ -354,6 +354,8 @@ try:
     check("rider: 'any news on Arch Manning' -> his newest status", "[status: out]" in n and "questionable" not in n, n[:400])
     n = chat.news_note("is Texas's QB playing this week")
     check("rider: 'is Texas's QB playing' triggers", n.startswith("NEWS QUESTION"), n[:200])
+    check("rider: status lines carry the rule-7 exception",
+          "exception to rule 7" in chat.news_note("any news on Arch Manning"))
     for quiet in ("who's winning the pool?", "lol you suck picky", "what's my record", "take Iowa or Rice?"):
         check(f"rider quiet on non-news: {quiet!r}", chat.news_note(quiet) == "", chat.news_note(quiet)[:120])
 except ImportError as e:

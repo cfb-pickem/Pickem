@@ -3583,7 +3583,10 @@ def news_note(question: str) -> str:
             "[REPORTED, not confirmed] = say 'reportedly'. [status: X] = that player's latest status. Only call "
             "something breaking if its time is in minutes or hours; 'older, not breaking' lines are background. "
             "Never add a detail, score, quote or claim beyond these lines. Live scores and standings beat "
-            "anything here. Injury news: report only what a line says; never call anyone healthy.")
+            "anything here. Injury news: report only what a line says; never call anyone healthy."
+            + (" These lines ARE published injury/availability reports (an exception to rule 7): answer with the "
+               "status and who reported it, and don't say no injury report exists or send them to beat writers."
+               if any("[status: " in ln for ln in lines) else ""))
 
 
 # Present-day CFB (Charlie, 2026-11-14): current CFP / AP rankings from ESPN's
