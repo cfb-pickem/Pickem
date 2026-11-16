@@ -4843,7 +4843,7 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         payload["think"] = OLLAMA_THINK == "true"
     # read covers the wait in Ollama's queue before the first token; the
     # client is kept alive by _keepalive pings meanwhile
-    timeout = httpx.Timeout(connect=5.0, read=240.0, write=10.0, pool=5.0)
+    timeout = httpx.Timeout(connect=5.0, read=420.0, write=10.0, pool=5.0)
     text = ""
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:

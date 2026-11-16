@@ -51,7 +51,7 @@ DEFAULT_STEPS = 9           # mflux's own default for z-image-turbo
 DEFAULT_WIDTH = 1024
 DEFAULT_HEIGHT = 1024
 QUANTIZE_BITS = 4           # 4-bit quant to leave headroom for Qwen 7B
-MAX_GEN_SECONDS = 240.0     # includes lock wait + a cold model load
+MAX_GEN_SECONDS = 420.0     # includes lock wait + a cold model load
 RATE_LIMIT_PER_HOUR = 20
 
 log = logging.getLogger("picky.image")
