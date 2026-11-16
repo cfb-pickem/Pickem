@@ -800,6 +800,9 @@ class Threads:
 
 
 THREADS = Threads()
+# exam/drill knob only: eval/no_repeat_drill.py fires 30 heckles from one member, which the spiral rule
+# (correctly) mutes after three; PICKY_THREAD_RULES=0 lets it measure repeats across all 30
+THREAD_RULES = os.environ.get("PICKY_THREAD_RULES", "1") != "0"
 
 
 def _shot_key(text: str) -> str:
@@ -880,7 +883,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         key = history_key(chat_id, handle, dm)
         who = s.handle if mode == "group" else None
         route = router.classify(q)
-        route = THREADS.route(route, key, s.team or s.handle, dm, recent, text=q)
+        if THREAD_RULES:
+            route = THREADS.route(route, key, s.team or s.handle, dm, recent, text=q)
         log.info("route: %s (%s)%s", route.label(), route.why, " mixed" if route.mixed else "")
         if route.lane == "ignore":  # pile-on cap / spiral mute: a real member doesn't answer every jab
             return {"reply": None, "image": None, "mode": mode, "lane": route.label()}
