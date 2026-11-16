@@ -4747,6 +4747,8 @@ def proactive_fact(ctx: dict) -> str:
 
 
 def proactive_note(ctx: dict, messages: list, question: str) -> str:
+    if os.environ.get("PICKY_HOOK") != "1":  # off 2026-11-16: Charlie flagged the tacked-on "You're 4-0 this week" line
+        return ""
     q = question or ""
     n_user = sum(1 for m in messages if isinstance(m, dict) and m.get("role") == "user")
     if (n_user % 2 == 0 or ctx.get("error") or wants_rules(q) or _PICKS_ASK.search(q) or RESULTS_ASK.search(q)

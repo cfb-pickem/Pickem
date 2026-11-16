@@ -8,6 +8,7 @@ Run:  ./.venv/bin/python3 -I test_persona.py
 
 from __future__ import annotations
 
+import os
 import sys
 
 sys.path.insert(0, ".")
@@ -57,6 +58,9 @@ def test_hostility_detects_insults_at_picky_only():
 def test_proactive_hook_gating():
     c = ctx(you=("Clam", 7))
     one = [{"role": "user", "content": "Hey Picky, what's up?"}]
+    os.environ.pop("PICKY_HOOK", None)
+    assert chat.proactive_note(c, one, one[-1]["content"]) == "", "hook is off unless PICKY_HOOK=1"
+    os.environ["PICKY_HOOK"] = "1"
     n = chat.proactive_note(c, one, one[-1]["content"])
     assert n.startswith("OPTIONAL HOOK") and "last place, 3 points behind Ackbar" in n, n
     n = chat.proactive_note(ctx(you=("Ackbar", 11)), one, one[-1]["content"])
