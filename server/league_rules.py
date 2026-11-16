@@ -1293,9 +1293,16 @@ def opus_verify(sections: list[str], generated: dict[str, str], sources: dict[st
         "understands, only facts the code or page states, no em dashes) if anything is wrong, stale or missing; "
         "'unsure' if the code doesn't settle it. Keep the TIEBREAKERS layout exactly ('Regular season "
         "tiebreakers, in order:' / 'Playoff tiebreakers, in order:' then '1) ...').\n\n"
+        "Key the 'sections' object by these exact names: " + ", ".join(sections) + ".\n\n"
         "SECTIONS TO VERIFY:\n\n" + "\n\n".join(generated[s] for s in sections) +
         "\n\nCODE:\n\n" + "\n\n".join(parts)[:150000])
-    return _run_claude(prompt, OPUS_SCHEMA)
+    out = _run_claude(prompt, OPUS_SCHEMA)
+    # "THE PIT (blackjack, tiebreaker only)" -> "THE PIT": key by section name
+    secs = {}
+    for k, v in (out.get("sections") or {}).items():
+        name = next((n for n in sorted(SECTIONS, key=len, reverse=True) if str(k).strip().upper().startswith(n)), k)
+        secs[name] = v
+    return dict(out, sections=secs)
 
 
 def _run_claude(prompt: str, schema: dict, timeout: int = 900) -> dict:
@@ -1417,8 +1424,8 @@ def check(repo: Repo | None = None, use_live: bool = True, use_opus: bool = True
     to_verify = sorted((pending | set(errors)) - set(overrides))
     flags: dict[str, str] = {}
     opus_note = ""
+    result = None
     if to_verify:
-        result = None
         if use_opus and generated:
             try:
                 result = (verifier or opus_verify)(to_verify, generated, sources, changed)
@@ -1455,8 +1462,11 @@ def check(repo: Repo | None = None, use_live: bool = True, use_opus: bool = True
         except Exception:
             text = generate_md(committed_facts, committed_fps, "", {s: f"changed {stamp}" for s in SECTIONS})
         _write_live(text)
+    verdicts = {s: {"verdict": v.get("verdict"), "why": (v.get("why") or "")[:300]}
+                for s, v in (((result or {}).get("sections") or {}) if to_verify else {}).items() if isinstance(v, dict)}
     report = {"at": stamp, "changed": changed, "pending": sorted(pending), "errors": errors, "flagged": flags,
-              "overrides": sorted(overrides), "live": live_errs, "opus": opus_note or ("ran" if to_verify and use_opus else "")}
+              "overrides": sorted(overrides), "live": live_errs, "opus": opus_note or ("ran" if to_verify and use_opus else ""),
+              "opus_verdicts": verdicts}
     st.update({"verified": verified, "last": report})
     st["overrides"] = {s: o for s, o in (st.get("overrides") or {}).items() if s in overrides}
     _save_state(st)
