@@ -404,6 +404,48 @@ def test_hook_carries_stance_and_drops_escalate():
     assert "ESCALATE" not in u and "Fire back at them first" not in u, u
 
 
+def test_bare_insult_gets_stance_from_brief_and_drops_hook():
+    """Live 2026-11-16 DM: Chuck P (4-0, 1st) texted 'Pussy' after a hostile turn. No regex caught it, so no
+    stance: the brief said "fire back first" and 0-3 Picky answered "That's a lot of big talk from a guy who's
+    basically just a professional point-collector ... You're currently in first place, 2 points ahead of second."
+    (the last sentence was chat.py's OPTIONAL HOOK)."""
+    assert _stance("Chuck P", "Pussy") is None  # the regexes alone miss it
+    got = {}
+
+    async def fake_orig(messages, prefix=None):
+        got["user"] = messages[-1]["content"]
+        yield 'data: {"content": "hi"}\n\n'
+
+    async def fake_understand(prefix, q, sender, recent, last_reply="", timeout=60.0, stance=""):
+        return pb.Brief(asking="The user is calling me a pussy.", intent="insult", about="Picky", tone="hostile",
+                        answer="Chuck P is 4-0 this week while I'm 0-3.")
+
+    ctx = _stance_ctx("Chuck P")
+    body = ("OPTIONAL HOOK: after answering, you may add ONE short sentence, in your own words and voice, with this "
+            "fact about the user (say 'you'): the user is in first place, 2 points ahead of second. Copy its numbers "
+            "exactly. Skip it if it would feel forced.\n\nPussy")
+
+    async def go(q):
+        st = {"q": q, "team": "Chuck P", "ctx": ctx, "idx": 0, "brief": None, "options": {"temperature": 0.2}}
+        t1, t2 = pb.STATE.set(st), chat.OPTIONS_OVERRIDE.set(st["options"])
+        try:
+            return [x async for x in pb._ollama_stream([{"role": "user", "content": body}], "PFX")], st
+        finally:
+            chat.OPTIONS_OVERRIDE.reset(t2)
+            pb.STATE.reset(t1)
+
+    with patch.object(pb, "_orig_ollama_stream", fake_orig), patch.object(pb, "understand", fake_understand), \
+            patch.object(chat, "load_lore", lambda: {}), patch.object(chat, "member_nicknames", lambda: {}):
+        _, st = asyncio.run(go("Pussy"))
+    u = got["user"]
+    assert st["stance"] and st["stance"]["kind"] == "picky" and st["stance"]["stance"] == "deflect", st["stance"]
+    assert "STANCE" in u and "Chuck P's 1st place" in u and u.endswith("Pussy"), u
+    assert "Fire back at them first" not in u and "OPTIONAL HOOK" not in u, u
+    live = ("That's a lot of big talk from a guy who's basically just a professional point-collector. "
+            "I'm sitting at 0-3 this week while you're out here being 4-0.")
+    assert pb.stance_violations(live, st["stance"]) == [live.split(" I'm", 1)[0]]
+
+
 def test_pipeline_cuts_off_stance_sentence_and_rerolls():
     texts = iter([("Look in the mirror, Chuck P. You're 4-0, I'm 0-3.", 0, None),
                   ("Fair, 4-0 is 4-0. I went 0-3, so I'll sit down.", 0, None)])

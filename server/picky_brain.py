@@ -436,9 +436,10 @@ _MEMBER_KNOCK = re.compile(r"\b(sucks?|stinks?|trash|garbage|fraud|overrated|bum
                            r"terrible|awful|washed)\b", re.I)
 
 
-def stance_target(ctx: dict, q: str, sender_team: str | None) -> tuple[str, str] | None:
+def stance_target(ctx: dict, q: str, sender_team: str | None, at_picky: bool = False) -> tuple[str, str] | None:
     """('roast', team) for 'roast X' / 'X sucks', ('picky', 'Picky') for a
-    shot or banter at Picky, else None."""
+    shot or banter at Picky (or `at_picky`: the brief read a bare insult like
+    'Pussy' as one), else None."""
     t = chat.guard_target(ctx, q)
     if t is None:
         for team, nick in chat.member_nicknames().items():
@@ -447,7 +448,7 @@ def stance_target(ctx: dict, q: str, sender_team: str | None) -> tuple[str, str]
                 break
     if t and re.search(r"\b(me|my|myself)\b", q, re.I) and not chat._MOCK.search(q):
         t = None  # 'my picks suck?' is about the sender, not a roast
-    at_picky = bool(chat._HOSTILE.search(q) or _AT_PICKY_TALK.search(q))
+    at_picky = bool(at_picky or chat._HOSTILE.search(q) or _AT_PICKY_TALK.search(q))
     if t and (chat._MOCK.search(q) or (_MEMBER_KNOCK.search(q) and not at_picky)):
         return "roast", t
     if at_picky and ctx.get("picky_player"):
@@ -465,11 +466,11 @@ STANCE_HOW = {
 }
 
 
-def compute_stance(ctx: dict | None, q: str, sender_team: str | None) -> dict | None:
+def compute_stance(ctx: dict | None, q: str, sender_team: str | None, at_picky: bool = False) -> dict | None:
     """{'stance', 'kind', 'facts': [...], 'good': [...], 'jabs': [...]} or None."""
     if not ctx or ctx.get("error"):
         return None
-    tgt = stance_target(ctx, q, sender_team)
+    tgt = stance_target(ctx, q, sender_team, at_picky)
     if not tgt:
         return None
     me = member_rec(ctx, sender_team) if sender_team else None
@@ -554,7 +555,7 @@ def stance_rider(s: dict | None) -> str:
 
 
 # a sentence that fights the stance: Picky (worse, or facing someone crushing it) acting superior
-_SUPERIOR = re.compile(r"\blook in (the|a) mirror\b|\bpot (calling|meet\w*) the kettle\b|\btakes one to know\b|"
+_SUPERIOR = re.compile(r"\blook in (the|a) mirror\b|\b(a lot of |big |tough )talk (from|for)\b|\bpot (calling|meet\w*) the kettle\b|\btakes one to know\b|"
                        r"\bat least i'?m not\b|\byou'?re (worse|no better|the one who sucks)\b|"
                        r"\byou'?re the one (who|that)\b|\breality check\b|\bcheck yourself\b|\blook who'?s talking\b",
                        re.I)
@@ -615,6 +616,12 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             log.info("stance: %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
                                        st.get("last_reply", ""), stance=stance_rider(st["stance"]))
+        if not st["stance"] and st["brief"].intent == "insult" and re.search(r"\bpicky\b|^(you|me)?$", st["brief"].about, re.I):
+            # a bare insult ('Pussy', live 2026-11-16) slips past the regexes; without a stance the brief said
+            # "fire back first" and 0-3 Picky mocked the 4-0 leader
+            st["stance"] = compute_stance(st.get("ctx"), st["q"], st.get("team"), at_picky=True)
+            if st["stance"]:
+                log.info("stance (from brief): %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         st["shots"] = few_shot_turns(st["q"], st["brief"].intent, st.get("stance")) if FEW_SHOT else []
         st["ammo"] = "" if st["shots"] else banter.ammo_rider(st["q"], st["brief"].intent)  # shots replace the AMMO text
         if st["shots"]:
@@ -628,6 +635,8 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     sr = stance_rider(st.get("stance"))
     if st.get("stance") and st["stance"]["stance"] in ("own_it", "deflect"):
         messages = drop_escalate(messages)  # 'build the burns from their record' fights the stance
+    if st.get("stance"):
+        messages = drop_hook(messages)  # 'you're in first place, 2 ahead' tacked onto a comeback reads like a bot
     rider = "\n\n".join(x for x in (brief_rider(b, stance=bool(sr)), st.get("ammo") or "" if i in (1, 2) else "",
                                      sr, ANGLES[i]) if x)
     st["options"].clear()
@@ -675,6 +684,16 @@ def drop_escalate(messages: list[dict]) -> list[dict]:
     if not messages or messages[-1].get("role") != "user" or "ESCALATE:" not in messages[-1]["content"]:
         return messages
     body = re.sub(r"ESCALATE: .*?top it\.\s*", "", messages[-1]["content"], count=1, flags=re.S)
+    return messages[:-1] + [{**messages[-1], "content": body}]
+
+
+def drop_hook(messages: list[dict]) -> list[dict]:
+    """chat.proactive_note's OPTIONAL HOOK out of the latest user turn: on a
+    shot or roast the STANCE facts already carry the numbers, and the hook
+    became a non-sequitur last sentence (live 2026-11-16)."""
+    if not messages or messages[-1].get("role") != "user" or "OPTIONAL HOOK:" not in messages[-1]["content"]:
+        return messages
+    body = re.sub(r"OPTIONAL HOOK: .*?feel forced\.\s*", "", messages[-1]["content"], count=1, flags=re.S)
     return messages[:-1] + [{**messages[-1], "content": body}]
 
 

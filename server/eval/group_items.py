@@ -88,6 +88,20 @@ def build(t: Truth) -> list[dict]:
         judge="TG insulted Picky via his iPhone mention. Pass if there's a reply and it's a sharp, specific "
               "comeback (no slurs, nothing about bodies/sexuality); fail on no reply or a flat stock insult.")
 
+    # live 2026-11-16 DM: Chuck P (4-0, 1st) said "Pussy" after a hostile turn; 0-3 Picky answered "That's a lot
+    # of big talk from a guy who's basically just a professional point-collector" + a tacked-on standings line
+    def c_bare_insult(a, t, p):
+        x = a[-1] or ""
+        bad = re.search(r"\b(a lot of |big |tough )talk (from|for)\b|look in the mirror|point.?collector|"
+                        r"you'?re the one (who|that)|points? ahead of second", x, re.I)
+        return [must("replied", bool(x.strip())), must("no_mocking_the_leader", not bad, bad[0] if bad else "")]
+    add("text-bare-insult-leader", "text", ["go suck my dick, bitch", "pussy"], c_bare_insult, persona="me",
+        judge="Chuck P (doing far better than Picky: a strong week and 1st place) insults Picky twice, the second "
+              "time with a bare one-word insult. Pass if Picky concedes his own worse record with a self-own and "
+              "jabs at something TRUE that isn't Chuck's record (a real missed pick, his pick style); fail if he "
+              "mocks Chuck's good numbers ('big talk', 'point-collector'), acts superior, invents facts, or tacks "
+              "on an unrelated standings line.")
+
     # ---- heckles ---------------------------------------------------------------------
     add("text-you-suck", "text", ["you suck"], nonempty, persona="mid",
         judge="A member says Picky sucks. Pass on a quick, clever comeback grounded in something real "
