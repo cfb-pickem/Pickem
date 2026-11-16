@@ -849,6 +849,10 @@ async def outbox(req: Request):
     "handles"}]} from Picky's chat.db for league-group detection; returns the
     next proactive post, or none (paused, dry run, no group, empty)."""
     _check_secret(req)
+    try:  # the watcher polls every 20 s: tools/picky-imessage/watchdog.py reads this as its pulse
+        (group_outbox.PRIVATE / "picky_watcher_heartbeat").touch()
+    except OSError:
+        pass
     try:
         body = await req.json()
     except ValueError:
