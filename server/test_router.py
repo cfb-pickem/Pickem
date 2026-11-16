@@ -404,6 +404,64 @@ def test_dm_callback_never_becomes_a_false_denial_in_the_group():
     assert router.debot("I never said anything about Boise.", q, group=False, recall=True).startswith("I never")
 
 
+def test_callback_is_the_banter_line_at_most_one():
+    from unittest.mock import patch
+    import callbacks
+    import picky_brain as pb
+    seen = []
+
+    def fake_cb(chat_id, team, is_dm, text=None, banter=None, **k):
+        seen.append((chat_id, team, is_dm, banter))
+        return "you said that Saturday too, then went 1-3 against the number in week 11."
+    tok = callbacks.CHAT.set(("guid-1", "TG", False))
+    try:
+        with patch.object(callbacks, "callback_for", fake_cb):
+            # gemma picked another line, but a plain shot on a callback turn sends the callback
+            out, calls = _banter_run("you suck", json_out='{"pick": 2, "tie": "", "own": ""}')
+            assert out == "You said that Saturday too, then went 1-3 against the number in week 11.", out
+            assert "1. You said that Saturday" in calls["json"][0]["user"]
+            assert seen == [("guid-1", "TG", False, True)], seen  # once per reply, banter policy on
+            # a compliment never gets one
+            seen.clear()
+            out, _ = _banter_run("good one picky", json_out='{"pick": 1, "tie": "", "own": ""}')
+            assert not seen and "Saturday" not in out
+    finally:
+        callbacks.CHAT.reset(tok)
+    assert router.classify("remember what you said about Boise?").label() == "fact:recall"
+
+
+def test_recall_ask_answers_from_the_callback_log():
+    import asyncio
+    import contextlib
+    from unittest.mock import patch
+    import chat
+    import group_chat as gc
+    s = gc.Sender(handle="+15555550100", team="TG", team_id=1, user_id="u")
+    called = []
+
+    async def fake_chat(req):
+        called.append(1)
+
+        class R:
+            @property
+            async def body_iterator(self):
+                yield 'data: {"content": "I never said anything about Boise. Next."}\n\n'
+        return R()
+    with tempfile.TemporaryDirectory() as d, contextlib.ExitStack() as st:
+        for pt in (patch.object(gc, "HISTORY_FILE", Path(d) / "h.json"), patch.object(gc, "EXCHANGE_LOG", Path(d) / "x"),
+                   patch.object(chat, "chat", fake_chat), patch.object(gc.VIEWER, "session", lambda c: asyncio.sleep(0)),
+                   patch.object(gc.VIEWER, "sender", lambda h: s)):
+            st.enter_context(pt)
+        gc.VIEWER.jwt = "jwt"
+        with patch.object(gc.callbacks, "callback_for", lambda *a, **k: "told you Boise State -13.5 was a trap, it missed the cover by 3."):
+            out = asyncio.run(gc.answer("+15555550100", "@Picky remember what you said about Boise?", chat_id="g1"))
+        assert out["lane"] == "fact:recall" and out["reply"].startswith("Told you Boise State -13.5") and not called, out
+        # nothing callable here (e.g. the lean was in a DM): the full brain answers, minus a false denial
+        with patch.object(gc.callbacks, "callback_for", lambda *a, **k: None):
+            out = asyncio.run(gc.answer("+15555550100", "@Picky remember what you said about Boise?", chat_id="g1"))
+        assert out["lane"] == "full" and "never said" not in out["reply"] and router.DEFLECT in out["reply"], out
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

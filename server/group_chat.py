@@ -897,6 +897,13 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 route.lane, route.kind = "fact", "playoff"
                 await save_turn(key, q_hist, exact, who, lane=route.label())
                 return {"reply": exact, "image": None, "mode": mode, "lane": route.label()}
+        if route.lane == "fact" and route.kind == "recall":  # his own logged call (W6), code-written
+            line = callbacks.callback_for(chat_id, s.team, dm, text=q) if s.team else None
+            if line:
+                reply = line[:1].upper() + line[1:]
+                await save_turn(key, q_hist, reply, who, lane=route.label())
+                return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
+            route.lane, route.kind, route.why = "full", "", "recall: nothing callable in this chat"
         messages = load_history(key, sender=who) + [{"role": "user", "content": q}]
         body = json.dumps({"messages": messages, "supabase_jwt": jwt, "mode": "leaderboard"}).encode()
 

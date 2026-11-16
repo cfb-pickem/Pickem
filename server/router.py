@@ -32,6 +32,7 @@ import re
 from dataclasses import dataclass, field
 
 import burn_book
+import callbacks
 import chat
 import playoff_race
 
@@ -158,6 +159,8 @@ def classify(q: str) -> Route:
     p = provocation(t)
     if p == "jailbreak":
         return Route("jailbreak", why="burn_book._JAILBREAK")
+    if callbacks.is_recall(t):  # 'remember what you said about Boise?': his own logged call, code-written
+        return Route("fact", "recall", why="callbacks.is_recall")
     fi = fact_intent(t)
     if fi:
         kind, why = fi

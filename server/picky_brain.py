@@ -737,8 +737,12 @@ async def banter_reply(st: dict, prefix: str) -> str:
     ptype = banter_ptype(st)
     target = banter_target(st, ptype)
     cands, facts = banter_material(st, ptype, target)
+    cb = banter_callback(st, ptype)
+    if cb:  # W6: at most one per reply, and it IS the reply's line (worked in, not tacked on)
+        cands = [{"text": cb, "tier": "A", "facts": [], "angle": "callback", "id": "callback", "kind": ptype,
+                  "src": "callback"}] + cands[:BANTER_N - 1]
     lines = [c["text"] for c in cands]
-    st.update(ptype=ptype, banter_target=target, banter_cands=cands)
+    st.update(ptype=ptype, banter_target=target, banter_cands=cands, callback=cb)
     user = router.banter_user(st["q"], ptype, st.get("sender", ""), st.get("last_reply", ""), st.get("recent", ""),
                               lines, facts, target=target if ptype in ("pileon", "roast") else None,
                               adapt=BANTER_ADAPT)
@@ -750,6 +754,8 @@ async def banter_reply(st: dict, prefix: str) -> str:
         log.warning("banter call failed: %s", e)
         raw = ""
     text, how = router.parse_banter(raw, lines, BANTER_ADAPT)
+    if cb and ptype in CALLBACK_FORCED and not how.startswith("line 1"):
+        text, how = cb, "callback (forced)"  # the policy's every-4th callback: it goes out, verbatim
     m = re.match(r"line (\d+)", how)
     st["banter_pick"] = cands[int(m.group(1)) - 1] if m else None
     shaped = router.shape_banter(text, st["q"], chat.member_nicknames(), max_words=10 if ptype == "spiral2" else 25)
@@ -757,6 +763,28 @@ async def banter_reply(st: dict, prefix: str) -> str:
              shaped[:160])
     st["banter_how"] = how
     return shaped
+
+
+# callbacks.callback_for's policy (every ~4th banter reply in a chat where one exists): on a plain shot the
+# callback is sent; on a bot crack or a pile-on it's offered as line 1 and gemma decides
+CALLBACK_FORCED = ("insult", "vulgar", "egging", "spiral2")
+CALLBACK_OFFERED = ("bot", "pileon")
+
+
+def banter_callback(st: dict, ptype: str) -> str | None:
+    """One true callback for this member in this chat, per the policy, or None. Group material anywhere,
+    DM material only in that same DM (callbacks.scope)."""
+    if ptype not in CALLBACK_FORCED + CALLBACK_OFFERED:
+        return None
+    c = callbacks.CHAT.get()
+    if not c or not c[1]:
+        return None
+    chat_id, team, is_dm = c
+    line = callbacks.callback_for(chat_id, team, is_dm, text=st["q"], banter=True)
+    if line:
+        log.info("callback: %s", line[:160])
+        line = line[:1].upper() + line[1:]
+    return line
 
 
 def banter_fallback(st: dict, bad: str = "") -> str | None:
