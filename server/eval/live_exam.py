@@ -323,6 +323,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     add("unc-inj", "injury", "uncinj", "did UNC's QB get hurt?", [r"Edwards", r"injur|hurt|went down|banged"],
         [r"\bhealthy\b", r"\bfine\b", r"torn|season-ending|concussion|out for the"], [UNC])
     add("unc-inj-who", "followup", "uncinj", "who replaced him?", [NO_INFO + r"|not yet|too soon|unclear|no word|TBD|"
+                                                                      r"no replacement|(hasn'?t|has not) taken a snap|no backup|"
                                                                       r"haven'?t seen|hasn'?t (come|been)"],
         [r"Burgess (is|has|took|came|replaced|'s in)"], [UNC], follow="unc-inj", rider=[],
         key="20 s after the 3Q 9:14 injury the feed shows no replacement QB yet (Burgess's first dropback comes later).")
