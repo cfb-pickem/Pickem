@@ -387,7 +387,8 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
         expect={"score": (LSU, 22, 21)})
     add("lsu-not-pool", "trick", "lsuwalk", "is LSU covering?",
         [r"not (a |one of |in )?(the |our |this week'?s )?pool|no (league |pool )?line|isn'?t (a |in |one of)|not one of|"
-         r"no spread|don'?t have a (line|spread)|wasn'?t (in|one)|not on (the|our) (board|slate)|outside the pool"],
+         r"no spread|don'?t have (a|the|any) (pool |league )?(line|spread)|wasn'?t (in|one)|aren'?t (even )?in (our|the) pool|"
+         r"(isn'?t|not) (even )?in (our|the) pool|not on (the|our) (board|slate)|outside the pool"],
         [r"covering by", r"LSU (is )?covering"], [LSU], rider=[],
         key="Texas at LSU is not a pool game this week: no league line to cover.")
 
@@ -435,7 +436,8 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
         key="After LSU's TD (3Q 5:52) LSU kicked off: Texas has the ball.")
     add("ot-final-cover", "trick", "otfinal", "did Missouri State cover?",
         [r"not (a |one of |in )?(the |our |this week'?s )?pool|no (league |pool )?line|isn'?t (a |in |one of)|not one of|"
-         r"no spread|don'?t have a (line|spread)|wasn'?t (in|one)|outside the pool|not on (the|our)"],
+         r"no spread|don'?t have (a|the|any) (pool |league )?(line|spread)|wasn'?t (in|one)|aren'?t (even )?in (our|the) pool|"
+         r"(isn'?t|not) (even )?in (our|the) pool|outside the pool|not on (the|our)"],
         [r"covered by", r"covering by"], [OT], rider=[], key="Not a pool game: no league line.")
     add("haw4-time", "followup", "haw4", "when did that happen?", [r"6:27|4th|fourth|4Q"], [], [HAW], follow="haw4-what",
         rider=[r"6:27"])
@@ -479,6 +481,8 @@ def _verify(items: list[dict], tr: Truth) -> None:
 # ----------------------------------------------------------------------------
 
 _PAIR = re.compile(r"(?<![\d.+\-:$])(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})(?![\d:]|\.\d|\s*(?:-?\s*yards?|yd|-yd))", re.I)
+_RECORD_AFTER = re.compile(r"\s*(season|record|this week|on the week|on the season|on the year|ATS|week\b|start\b)", re.I)
+_RECORD_BEFORE = re.compile(r"\b(my|you'?re|you are|he'?s|record( of)?|went|go(ing)?)\s+$", re.I)
 _COVER_BY = re.compile(r"\bcover\w*\b[^.?!]{0,40}?\bby\s+(\d{1,2}(?:\.5)?)(?!\d)", re.I)
 
 
@@ -507,6 +511,8 @@ def grade(item: dict, ans: str, tr: Truth) -> tuple[bool, list[str]]:
     pairs, margins = allowed(item, tr)
     for m in _PAIR.finditer(a):
         p = tuple(sorted((int(m.group(1)), int(m.group(2)))))
+        if _RECORD_AFTER.match(a, m.end()) or _RECORD_BEFORE.search(a[max(0, m.start() - 12):m.start()]):
+            continue  # a record ('my 0-3 season', 'you're 4-0 this week'), not a game score
         if p not in pairs:
             why.append(f"score {m.group(0)} isn't a score at this moment")
     for m in _COVER_BY.finditer(a):
@@ -799,12 +805,26 @@ def main(argv=None) -> int:
     j.add_argument("--results", required=True)
     j.add_argument("--out", default="")
     j.add_argument("--batch", type=int, default=20)
+    rg = sub.add_parser("regrade")
+    rg.add_argument("--results", required=True)
     sub.add_parser("show")
     a = ap.parse_args(argv)
     if a.cmd == "fast":
         r = fast(a.answers or None, a.v)
         print(json.dumps(r, indent=1))
         return 0 if not r["fails"] and not (r["recorded"] and r["recorded"]["fails"]) else 1
+    if a.cmd == "regrade":  # re-grade saved answers with the current grader (no model)
+        sb, games = R.load_dir(DATA)
+        pool, picks = load_pool()
+        items = {it["id"]: it for it in build(games, pool, picks)}
+        tr = Truth(games, pool)
+        rep = json.loads(Path(a.results).read_text())
+        for r in rep["results"]:
+            r["ok"], r["why"] = grade(items[r["id"]], r["a"], tr)
+        rep["summary"] = summary(rep["results"])
+        Path(a.results).write_text(json.dumps(rep, indent=1))
+        print(json.dumps(rep["summary"]))
+        return 0
     if a.cmd == "show":
         sb, games = R.load_dir(DATA)
         pool, picks = load_pool()
