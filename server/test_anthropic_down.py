@@ -100,7 +100,7 @@ check("usage log: one call by caller 'unit'", u and u[0]["calls"] == 1 and "unit
 SPAWN_RX = re.compile(r"""bin/claude|(?:CLAUDE|claude)["']?\s*,\s*["']-p["']|["']-p["']\s*,\s*["']--model""")
 offenders = []
 for f in sorted(list(HERE.glob("*.py")) + list(HERE.glob("eval/*.py")) + list((HERE.parent / "tools" / "picky-lora").glob("*.py"))
-                + list((HERE.parent / "tools" / "picky-lora").glob("*.sh"))):
+                + list((HERE.parent / "tools" / "picky-lora").glob("*.sh")) + list((HERE.parent / "tools").glob("*.py"))):
     if f.name in ("picky_claude.py", "test_anthropic_down.py"):
         continue
     for i, line in enumerate(f.read_text().splitlines(), 1):
