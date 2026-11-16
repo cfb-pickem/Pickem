@@ -356,6 +356,11 @@ try:
     check("rider: 'is Texas's QB playing' triggers", n.startswith("NEWS QUESTION"), n[:200])
     check("rider: status lines carry the rule-7 exception",
           "exception to rule 7" in chat.news_note("any news on Arch Manning"))
+    import picky_brain
+    bn = picky_brain.brief_notes("any news on Arch Manning")
+    check("brain's understand pass sees the news lines (else its brief said 'no injury report')",
+          "NEWS QUESTION" in bn and "[status: out]" in bn and "Lead with the newest" not in bn, bn[:300])
+    check("brain notes quiet on non-news", "NEWS QUESTION" not in picky_brain.brief_notes("lol you suck picky"))
     for quiet in ("who's winning the pool?", "lol you suck picky", "what's my record", "take Iowa or Rice?"):
         check(f"rider quiet on non-news: {quiet!r}", chat.news_note(quiet) == "", chat.news_note(quiet)[:120])
 except ImportError as e:

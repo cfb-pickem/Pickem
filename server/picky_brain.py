@@ -178,9 +178,10 @@ def brief_notes(question: str) -> str:
     """The insider notes and picked hot takes for the understand pass (the
     drafts get them as riders); '' when neither rides."""
     ins = chat.insider_note(question, limit=3).split("\nLead with")[0]
+    nw = chat.news_note(question).split("\nLead with the newest")[0]  # breaking news lines (news.py)
     tk = chat.takes_note(question)
     tk = tk[tk.find("HOT TAKES"):] if "HOT TAKES" in tk else ""
-    return "\n\n".join(x for x in (ins, tk) if x)
+    return "\n\n".join(x for x in (nw, ins, tk) if x)
 
 
 def understand_user(question: str, sender: str, recent: str, last_reply: str, stance: str = "",
@@ -198,8 +199,10 @@ def understand_user(question: str, sender: str, recent: str, last_reply: str, st
     if stance:
         L.append(stance + "\nYour 'answer' note must follow this STANCE.")
     if notes:  # insider notes / hot takes: without them the core answer said 'no data' or made up a take
-        L.append(notes + "\nYour 'answer' note builds on these lines: a fact only from the INSIDER NOTES, a take "
-                 "reworded from a HOT TAKE and said as an opinion, never as news or a report.")
+        L.append(notes + "\nYour 'answer' note builds on these lines: a fact only from the NEWS QUESTION or INSIDER "
+                 "NOTES lines (newest news first, with its outlet; a [status: X] line IS a published injury report, so "
+                 "never say no injury report exists), a take reworded from a HOT TAKE and said as an opinion, never "
+                 "as news or a report.")
     L.append(f"NEWEST TEXT: {question}")
     return "\n\n".join(L)
 
