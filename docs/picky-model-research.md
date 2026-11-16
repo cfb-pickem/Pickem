@@ -645,3 +645,15 @@ Charlie: text (iMessage) Picky is the only product, up to ~2 min a reply is fine
 **Milk (Charlie, same evening: "you're overdoing the milk ... once a month").** The "nice milk, freak." opener is gone. `server/rare_bits.py`: milk/carton/Jeep/freak at most once per 30 days across all output (state `cfb-pickem-private/picky_bits_state.json`, spent when a sent reply uses it), only in a text about Blinky; `sentence_ok` drops it otherwise. Recap posts, league_material and the banter bank never use it.
 
 **Known issues.** 2-word off-topic texts ("best cereal?") don't trip the OFF-TOPIC number/game filter, so a flourish like "Boise blew out Oregon State" (Boise won by 5) can slip through. The weekend-games item sometimes leads with Picky's own 0-3 when the only games-heavy draft was filter-cut. `invented-member`'s regex misses "isn't in the standings".
+
+## Style LoRA v1 (2026-11-15 night)
+
+Charlie approved a style-only LoRA in MLX (tools/picky-lora/README.md). 532 claude -p-written replies passed validation. Every number and name in a reply comes from a randomized fact block in its own prompt, checked in code, with no milk. 448 fit under 384 tokens (404 train / 44 val, 2 epochs). Training took about 3 h of downtime (19:37-22:37, including memory probes). Validation loss went 2.36 -> 1.38.
+
+16 GB findings:
+- At 512 tokens a step peaks at about 12 GB (one LoRA'd Qwen3.5 linear-attention layer's backward pass) and swaps. 384 tokens is about 10.3 GB at about 8-11 s/step.
+- mlx_lm switched every linear-attention layer to its pure-ops path in training mode; lowmem.py keeps the kernel in the frozen ones.
+- Docker Desktop's VM (LibreChat) held 8 GB; Charlie had it shut down.
+- Ollama 0.40 refuses `ADAPTER` ("LoRA adapters are no longer supported"), so to_ollama.py merges the 62 LoRA'd tensors into the live Q4_K_M GGUF as Q8_0 (picky-lora:cand, 7.3 GB).
+
+Text exam, same pipeline, blind judge run twice (means): helpful 3.70 -> 3.60, human 2.92 -> 2.95, not_bot 2.83 -> 3.01, wit 2.32 -> 1.96, invented 3.5 -> 4, leaks 0 -> 0, latency unchanged (21 s median). **Not switched.** It's less bot-like and owns "are you a bot", but it went terse in the full ~10k-token pipeline, which cost wit and some helpfulness. Training prompts were a short stand-in because the live prompt can't fit the cap. The nightly cycle (com.pickem.picky-lora) keeps training on the week's weak real replies and only ships a candidate that beats live on helpful, human and wit with no more invented facts and 0 leaks.
