@@ -784,6 +784,7 @@ async def run_side(runner: Runner, side: str, wt: Path, env: dict, phases: list,
             continue
         print(f"[{side}] {phase}: starting sidecar on :{PORTS[side]}" + (f" (clock {at})" if at else ""), flush=True)
         proc = await start_side(side, wt, env, at, replay, phase)
+        runner.swap0 = None  # swap never shrinks on macOS: the +2 GB watchdog counts from this sidecar's start
         try:
             async with httpx.AsyncClient() as c:
                 warm, ws = await runner.post(c, side, runner.hmap["TG"], "@Picky hey", f"exam-sc-warm-{phase}", False)
