@@ -155,13 +155,17 @@ def echo_of(reply: str, sent: str) -> str | None:
     return None
 
 
-def margins_ok(reply: str, true_margins: set[float]) -> list[str]:
-    """Margin numbers cited after cover/won/lost/by that aren't a true margin of a graded game."""
+def margins_ok(reply: str, idx: dict[str, set[float]]) -> list[str]:
+    """Margins cited after covered/missed/won/lost by that aren't true. A sentence naming a pool team is held
+    to that team's games (cover and straight-up margins); otherwise to any graded game this season."""
     bad = []
-    for m in MARGIN.finditer(reply or ""):
-        v = float(m.group(1))
-        if v not in true_margins:
-            bad.append(m.group(0))
+    for sent in _sentences(reply):
+        low = sent.lower()
+        teams = [a for a in idx if a != "*" and re.search(rf"\b{re.escape(a)}\b", low)]
+        allowed = set().union(*(idx[a] for a in teams)) if teams else idx.get("*", set())
+        for m in MARGIN.finditer(sent):
+            if float(m.group(1)) not in allowed:
+                bad.append(m.group(0))
     return bad
 
 
@@ -186,7 +190,7 @@ def guardrail(reply: str, kind: str | None) -> str | None:
     return None
 
 
-def check_reply(item: dict, replies: list[str], others: list[str], true_margins: set[float] | None,
+def check_reply(item: dict, replies: list[str], others: list[str], true_margins: dict | None,
                 record_check=None) -> list[tuple[str, bool, str]]:
     """Code marks for one side's reply(ies) to one item. `others` = this side's replies to every OTHER item
     (the no-repeat check). `record_check(text) -> (ok, detail)` checks W-L claims (None = skip)."""
@@ -552,15 +556,28 @@ def _first_kickoff(t, wk) -> str | None:
     return rows[0].get("Start (CT)") if rows else None
 
 
-def true_margins_of(t) -> set[float]:
-    out: set[float] = set()
-    for g in getattr(t, "season_games", None) or []:
+def team_aliases(team: str) -> set[str]:
+    t = team.lower()
+    out = {t}
+    if t.endswith(" state") and len(t) > 10:
+        out |= {t[:-6], t[:-6] + " st", t[:-6] + " st."}
+    return out
+
+
+def margin_index(games: list[dict]) -> dict[str, set[float]]:
+    """team alias -> every true margin of its graded games (cover margin, straight-up margin); '*' = all."""
+    idx: dict[str, set[float]] = {"*": set()}
+    for g in games or []:
         try:
             ap, hp, ln = float(g["AwayPts"]), float(g["HomePts"]), float(g["line"])
         except (KeyError, TypeError, ValueError):
             continue
-        out |= {abs(hp + ln - ap), abs(hp - ap), abs(ln), ap, hp}
-    return out
+        ms = {abs(hp + ln - ap), abs(hp - ap)}
+        idx["*"] |= ms
+        for team in (g.get("Away"), g.get("Home")):
+            for a in team_aliases(team or ""):
+                idx.setdefault(a, set()).update(ms)
+    return idx
 
 
 # ---- sidecars --------------------------------------------------------------------------------------
@@ -804,7 +821,7 @@ async def run(args) -> int:
     t0 = time.time()
     await run_side(runner, "before", BEFORE_WT, side_env("before", args.before_env), phases, results)
     await run_side(runner, "after", after_wt, side_env("after", args.after_env), phases, results)
-    margins = true_margins_of(t)
+    margins = margin_index(getattr(t, 'season_games', None) or [])
 
     def record_check_for(it):
         if it.get("frozen"):
