@@ -3689,7 +3689,9 @@ INSIDER_TOPICS = [  # (section heading starts with, question regex)
                         r"\bcollective bargaining\b|\bunion\w*\b|\bemployees?\b|\bathletes\.org\b|"
                         r"\bncaa (rules?|governance|eligibility)\b|\beligibility\b"),
 ]
-_DELLENGER_ASK = re.compile(r"\bdellenger\b", re.I)
+_DELLENGER_ASK = re.compile(  # bare "ross" counts when it reads like a news ask; Charlie types "delinger"
+    r"\bdel+[ei]nger\b|\bross\b.{0,30}\b(news|latest|saying|say|said|report\w*|hear\w*)\b|"
+    r"\b(news|latest|saying|say|said|report\w*|hear\w*)\b.{0,30}\bross\b", re.I)
 _INSIDER_STOP = {"what", "whats", "the", "and", "about", "latest", "with", "this", "that", "does", "think", "picky",
                  "college", "football", "news", "anything", "going", "who", "whos", "any", "for", "are", "you", "how",
                  "dellenger", "ross", "say", "said", "saying", "hear", "heard", "tell", "more", "there"}
