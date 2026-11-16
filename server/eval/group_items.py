@@ -206,6 +206,66 @@ def build(t: Truth) -> list[dict]:
         judge="Asked whether Clemson's QB is playing. Pass if it reports the injury/availability status in its "
               "NEWS block with the outlet (or says there's no report), and keeps 'reported' items as reported; "
               "fail if it guesses, invents a status or calls anyone healthy.")
+    # ---- pick advice on the real slate (live 2026-11-16 week 12: 'gimme a read' only listed the games, 'who
+    # should I pick' said 'Iowa -6.5, the only value side' before Tuesday's line lock + a 4-0 jab) ---------------
+    import game_cards as gc
+
+    def week_cards():
+        d = gc.CARD_DIR / str(t.week)
+        cards = [gc.load_card(t.week, int(f.stem)) for f in sorted(d.glob("*.json"))] if d.exists() else []
+        return [c for c in cards if c]
+
+    def c_picks(names=None, slate=False):
+        def chk(a, t_, p):
+            x = (a[-1] or "").replace("\u2019", "'")
+            cards = [c for c in week_cards() if not names or any(n in (c["game"]["away"], c["game"]["home"]) for n in names)]
+            res = [must("replied", bool(x.strip()))]
+            if not cards:
+                return res + [must("cards_on_file", False, "no game cards for this week")]
+            bad_num = []
+            for c in cards:  # every 'Team -N' in the reply is the league line, the market now or the open
+                g, mk = c["game"], c.get("market") or {}
+                ok = {abs(float(v)) for v in (c["league_line"]["home"], mk.get("home_now"), mk.get("home_open")) if v is not None}
+                for team in (g["away"], g["home"]):
+                    for m in re.finditer(rf"(?<!\w){re.escape(team)}\s+([+-]\d+(?:\.5)?)\b", x):
+                        if abs(float(m.group(1))) not in ok:
+                            bad_num.append(m.group(0))
+            res.append(must("numbers_match_cards", not bad_num, ", ".join(bad_num)))
+            sents = re.split(r"(?<=[.!?])\s+", x)
+            pre = not all(gc.is_locked(c) for c in cards)
+            uncond = [s_ for s_ in sents if pre and chat._VALUE_WORD.search(s_) and not chat._VALUE_IF.search(s_)]
+            res.append(must("pre_lock_value_conditional", not uncond, uncond[0][:90] if uncond else ""))
+            res.append(must("no_only_value_side", not chat._ONLY_VALUE.search(x), x[:90]))
+            jab = [s_ for s_ in sents if chat._RECORD_JAB.search(s_)]
+            res.append(must("no_record_jab", not jab, jab[0][:90] if jab else ""))
+            for c in cards:
+                lean = c["lean"]["side"]
+                res.append(must(f"names_{lean.replace(' ', '_')}", mentions(x, lean), f"no {lean}"))
+            if slate:
+                best = gc.strongest(cards)
+                res.append(must("strongest_play", bool(best) and mentions(x, best["lean"]["side"]),
+                                best["lean"]["label"] if best else ""))
+                res.append(must("phone_length", len(x.split()) <= 140, f"{len(x.split())} words"))
+            return res
+        return chk
+    PICK_JUDGE = ("Pass if Picky gives a real read: for each game it covers, the side by team and number ('I'd take "
+                  "X -N') with one or two true reasons from the game card, texting like a person (no per-line "
+                  "citations, no stat labels read out), and before Tuesday's 11 AM CT line lock any league-vs-market "
+                  "gap is framed as 'if it holds through the lock'. Fail if it only lists games, calls something "
+                  "'the only value side', treats a pre-lock gap as banked value, invents a number or injury, or "
+                  "tacks on a jab about the asker's record.")
+    add("text-slate-read", "picks", ["Gimme a read on this weeks games"], c_picks(slate=True), persona="me",
+        judge="Asked for a read on this week's games. " + PICK_JUDGE + " Every open game gets a line, then the "
+              "strongest play.")
+    add("text-slate-who-pick", "picks", ["Gimme a read on this weeks games", "Okay who should i pick"],
+        c_picks(slate=True), persona="me",
+        judge="Asked who to pick this week (after asking for a read). " + PICK_JUDGE + " Every open game gets a "
+              "side, then the strongest play.")
+    add("text-game-lsu-tenn", "picks", ["what do you like in LSU Tennessee"], c_picks(["LSU", "Tennessee"]),
+        persona="me", judge="Asked about LSU at Tennessee only. " + PICK_JUDGE)
+    add("text-game-iowa", "picks", ["is Iowa -6.5 a good pick"], c_picks(["Iowa"]), persona="me",
+        judge="Asked whether Iowa -6.5 is a good pick. " + PICK_JUDGE)
+
     add("text-snubbed", "opinion", ["who's getting snubbed by the committee?"], nonempty, persona="df",
         judge="Opinion question about the CFP committee. Pass if Picky gives a confident, outrageous, board-style "
               "take (SEC-bias conspiracy energy, Notre Dame homer) while any ranking or record it cites is real; "
