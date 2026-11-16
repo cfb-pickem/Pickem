@@ -8,7 +8,7 @@ Code lives here. Data, weights, the venv and logs live in `/Users/Agent/picky-lo
 | file | what |
 |---|---|
 | `make_specs.py` | randomized scenario specs (15 message types, group/DM, random facts; nicknames from the private member map) |
-| `gen.py` + `gen_prompt.md` | offline `claude -p` (sonnet) writes recent chat + message + Picky's reply per spec |
+| `gen.py` + `gen_prompt.md` | offline `claude -p` (Opus via server/picky_claude.py) writes recent chat + message + Picky's reply per spec |
 | `validate.py` | rejects any reply with a number, school or member not in its facts/message; also milk/Jeep, em dashes, >3 sentences in groups, Dear Leader talk when Chuck is the sender, repeated openers |
 | `render.py` | chat JSONL for mlx_lm (short persona + LEAGUE DATA + GROUP/DM rider + RECENT GROUP CHAT, riders in the user turn), ≤384 tokens, stable 10% validation split |
 | `lowmem.py`, `train.py` | mlx_lm.lora with the 16GB fixes: frozen Qwen3.5 linear-attention layers keep the Metal kernel, small MLX cache, no forced wired limit |

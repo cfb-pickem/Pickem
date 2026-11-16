@@ -12,8 +12,8 @@ tunnel at `pickem-chat.dunecreek.ai`.
   caller's JWT**, so row-level security applies to everything.
 - Builds a system prompt in Picky's voice (a savage, trash-talking heel
   who still answers with real facts) and streams the local Ollama model
-  (`qwen3.5:9b-q4_K_M`) back as SSE. No API calls, no API cost. The Claude
-  Haiku path is still in the code but off unless `PICKY_USE_CLAUDE=1`.
+  (`qwen3.5:9b-q4_K_M`) back as SSE. No API calls, no API cost. Live replies never
+  call Anthropic (the old hosted path is dormant, see "Anthropic (offline only)").
 - Rate-limits 10 req/min per user, in-memory.
 - Warms Ollama on startup; the model unloads after `PICKY_OLLAMA_KEEP_ALIVE`
   (30m) idle. A cold message takes ~35-45 s, a warm one ~5-10 s.
@@ -36,7 +36,8 @@ Env vars (set in the plist):
 | `PICKY_OLLAMA_THINK` | (unset) | `false` for qwen3.5: thinking took minutes per answer. Leave unset for models without thinking. |
 | `PICKY_OLLAMA_KEEP_ALIVE` | `30m` | How long the model stays loaded after the last message. |
 | `PICKY_USE_CLAUDE` | (unset) | `1` turns the Claude path back on (paid API, Ollama becomes the fallback). Unset, the key is never read. |
-| `PICKY_CLAUDE_MODEL` | `claude-haiku-5-5` | Only with `PICKY_USE_CLAUDE=1`. |
+| `PICKY_CLAUDE_MODEL` | `claude-opus-5-5` | The one model for every `claude -p` call (`picky_claude.py`). |
+| `PICKY_NO_ANTHROPIC` | (unset) | `1` = Anthropic kill switch: every `claude -p` call fails fast, fallbacks run. |
 | `PICKY_CLAUDE_EFFORT` | `medium` | `low` is faster but sloppier on multi-step facts. |
 | `ANTHROPIC_API_KEY` | (unset) | If unset, read from the login keychain: account `drake`, service `PICKY_ANTHROPIC_KEYCHAIN` (default `DCC__ANTHROPIC_API_KEY`). Never commit it. |
 | `PORT` | `8766` | Next free after metra's 8765. |
@@ -103,14 +104,37 @@ skipped). All in `edge.py`, weights documented at its top, tests in
 `test_edge.py`. Splits and Open-Meteo are fetched per breakdown question
 (20 / 60 minute caches, fail soft) and never touch the shared system prompt.
 
+## Anthropic (offline only)
+
+Anthropic trains, grades and spoon-feeds data; Picky never needs it at runtime.
+Every `claude -p` call goes through `picky_claude.run()` (shell scripts: `picky_claude.py run`):
+model `claude-opus-5-5`, `--strict-mcp-config` + `empty.mcp.json`, `ANTHROPIC_API_KEY` stripped,
+and one line per call in the private daily usage log (`cfb-pickem-private/claude_usage/<date>.jsonl`;
+`picky_claude.py usage` sums calls and minutes per day and caller). `PICKY_NO_ANTHROPIC=1` makes
+every call fail fast; `test_anthropic_down.py` (GPU-free suite) proves the paths below still work.
+
+| Path | Primary | Anthropic down |
+|---|---|---|
+| live replies (DM + group), in-reply judge | local model | same (never calls Anthropic) |
+| lock reminders, final-score pings | Opus writer | plain fact line |
+| recap / Thursday preview / Saturday post | Opus writer | plain fact-only template |
+| Picky's weekly picks | code (market / SP+ / FPI) | same |
+| news digest (`news.py`) | feeds + local model | same (no Anthropic in it) |
+| dossiers | Opus web research | local model over news-cache leads |
+| analyst takes, game-card cases | Opus | previous take/case (marked stale), else code factors |
+| league material, banter bank, burn book, hot takes, insider notes | Opus (Sun/Wed) | last good copy under freshness.py's age limits |
+| exam judges, LoRA harvest/gen, wit loop (paused), feed repairs | Opus | skipped |
+
 ## Game dossiers (`dossier.py`)
 
 Per-game injury / availability / insider notes for the open pool week,
 fully automatic. LaunchAgent `com.pickem.picky-dossier` fires every 30
 minutes; `dossier.py` builds a game's dossier when it first appears in the
 slate, again after Friday 5 PM and Saturday 7 AM CT, never after kickoff.
-Leads come from the news cache and r/CFB's public RSS; `claude -p` (sonnet,
-subscription, web tools only, no MCP) researches; a validator enforces the
+Leads come from the news cache and r/CFB's public RSS; `claude -p` (Opus via
+`picky_claude.py`, subscription, web tools only, no MCP) researches (Anthropic
+down: Picky's local model turns the news-cache leads into claims, each kept
+only if its names and numbers are in its lead); a validator enforces the
 schema (text, kind fact|injury|insider_opinion|rumor, source_url, date,
 confidence), drops claims with no URL / dead URLs / paid sites, keeps forum
 posts as rumors, and the previous good file stays on any failure. Picky's
@@ -131,7 +155,7 @@ number (yards, TDs, %, sacks...) found nowhere in the prompt.
 ## Analyst takes and league material (Claude thinks ahead, Picky delivers)
 
 Picky's live model is a 9B, so the heavy thinking happens ahead of time on
-Charlie's subscription (`claude -p` sonnet, no tools, no MCP, API key
+Charlie's subscription (`claude -p` Opus via `picky_claude.py`, no tools, no MCP, API key
 stripped) and Picky only delivers it.
 
 - **Analyst take** (`analyst.py`, rides on the dossier job and schedule, one
