@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.pickem.picky-watchdog</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/python3</string>
+		<string>-I</string>
+		<string>/Users/Agent/cfb-pickem/tools/picky-imessage/watchdog.py</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>600</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/Agent/Library/Logs/picky-watchdog.stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/Agent/Library/Logs/picky-watchdog.stderr.log</string>
+</dict>
+</plist>

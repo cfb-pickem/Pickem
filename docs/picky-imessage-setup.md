@@ -65,8 +65,13 @@ How it works:
    If it doesn't, check the log as Picky: `tail -20 ~/Library/Logs/picky-imessage.log`.
 8. **Leave Picky logged in behind Agent.** Apple menu > Lock Screen > log back into **Agent**.
    Don't choose "Log Out" for Picky; switching users leaves him running in the background.
-9. **After any reboot**, Picky is logged out. macOS only auto-logs-in one user, and that's
-   Agent. Do step 2 (log in as Picky), then step 8 (switch back to Agent). Nothing else.
+9. **After any reboot**, Picky is logged out. macOS only auto-logs-in one user (Agent), and
+   there's no supported way to open a second user's session unattended. Do step 2 (log in
+   as Picky; works over Chrome Remote Desktop too), then step 8. Nothing else: his watcher
+   starts at his login, and the Agent-side watchdog (`install-watchdog.sh`, LaunchAgent
+   com.pickem.picky-watchdog, every 10 min) restarts the sidecar/chat or his watcher if
+   they go quiet and logs to `~/Library/Logs/picky-watchdog.log`. If Picky stays logged
+   out for 24 h it texts Charlie once.
 10. **Add Picky to the league group.** From an iPhone in the group: open the group >
     tap the group name at the top > **Add Contacts** > type Picky's email.
     - Every member has to be on iMessage (all blue bubbles). If anyone is green (SMS/RCS),
