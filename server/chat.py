@@ -4665,7 +4665,8 @@ def self_knock_note(ctx: dict, question: str) -> str:
     me = (ctx.get("you") or {}).get("team_name")
     facts = member_facts(ctx, me) if me else ""
     return ("SELF-AWARE: this knocks how well YOU (Picky) work. Read it exactly: they said \"" + q.strip()[:160]
-            + "\". Own it with self-aware humor about what you actually are: a small local model (about 9 billion "
+            + "\". Own it with self-aware humor about what you actually are: a small local model (about "
+            + ((re.search(r"(\d+)b", MODEL.lower()) or [None, "9"])[1]) + " billion "
             "parameters) running on a 16 GB Mac mini at the commissioner's place, no cloud, no budget. Make up "
             "your own joke from that, a new one each time, never a stock line. Then turn it around with one "
             "jab at them" + (f", using ONLY these facts about {me}:\n{facts}" if facts else ".")
@@ -4782,15 +4783,26 @@ def looping(text: str) -> bool:
 # already there (the usual case) the prime costs ~0.1 s; after a data change
 # (kickoff, final, ESPN refresh) or a model reload it rebuilds it once.
 async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
-    # the raw prime uses qwen's chat template; other models (gemma A/B) reuse
-    # prompt prefixes natively and a wrong-template prime would wipe the cache
-    if "qwen" not in MODEL.lower():
-        return
-    payload = {"model": MODEL, "prompt": "<|im_start|>system\n" + prefix, "raw": True,
-               "stream": False, "options": {**OLLAMA_OPTIONS, "num_predict": 1},
+    # the raw prime uses qwen's chat template. gemma4 is sliding-window: llama.cpp
+    # only keeps checkpoints near the END of each prompt, so two members' prompts
+    # (same prefix, different tail) re-prefill all ~8k tokens (~55 s) unless a
+    # checkpoint sits inside the prefix. A system-only chat call, rendered by
+    # Ollama's own template, leaves one ~512 tokens before the prefix end.
+    # Other models reuse prompt prefixes natively.
+    payload = {"model": MODEL, "stream": False, "options": {**OLLAMA_OPTIONS, "num_predict": 1},
                "keep_alive": OLLAMA_KEEP_ALIVE}
+    if "gemma" in MODEL.lower():
+        endpoint = "chat"
+        payload["messages"] = [{"role": "system", "content": prefix}]
+        if OLLAMA_THINK is not None:
+            payload["think"] = OLLAMA_THINK == "true"
+    elif "qwen" in MODEL.lower():
+        endpoint = "generate"
+        payload.update(prompt="<|im_start|>system\n" + prefix, raw=True)
+    else:
+        return
     try:
-        r = await c.post(f"{OLLAMA}/api/generate", json=payload)
+        r = await c.post(f"{OLLAMA}/api/{endpoint}", json=payload)
         if r.status_code == 200:
             d = r.json()
             log.info("prime: %.1fs (prefix %s)", (d.get("prompt_eval_duration") or 0) / 1e9,
