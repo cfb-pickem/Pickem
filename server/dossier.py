@@ -87,7 +87,7 @@ MAX_CLAIMS = 14
 MAX_AGE_DAYS = 30
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 CHAT_HEALTH = os.environ.get("PICKY_CHAT_HEALTH", "http://127.0.0.1:8766/health")
-LOCAL_MODEL = os.environ.get("PICKEM_CHAT_MODEL", "qwen3.5:9b-q4_K_M")
+LOCAL_MODEL = os.environ.get("PICKEM_CHAT_MODEL", "gemma4:12b-it-qat")
 REDDIT_RSS = ["https://www.reddit.com/r/CFB/.rss", "https://www.reddit.com/r/CFB/new/.rss"]
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")

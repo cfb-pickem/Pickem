@@ -53,7 +53,7 @@ OLLAMA_MAX_PER_RUN = 2
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 CHAT_HEALTH = os.environ.get("PICKY_CHAT_HEALTH", "http://127.0.0.1:8766/health")
 # same model + num_ctx as chat.py, so Ollama never reloads or swaps models
-MODEL = os.environ.get("PICKEM_CHAT_MODEL", "qwen3.5:9b-q4_K_M")
+MODEL = os.environ.get("PICKEM_CHAT_MODEL", "gemma4:12b-it-qat")
 NUM_CTX = 16384
 
 DELLENGER_AUTHOR = "https://sports.yahoo.com/author/ross-dellenger/"

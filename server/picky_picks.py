@@ -50,7 +50,7 @@ log = logging.getLogger("picky-picks")
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://vopdioszofwdkwnujtiq.supabase.co")
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-MODEL = os.environ.get("PICKEM_CHAT_MODEL", "qwen3.5:9b-q4_K_M")
+MODEL = os.environ.get("PICKEM_CHAT_MODEL", "gemma4:12b-it-qat")
 PICKY_TEAM_NAME = "Picky"
 BOT_EMAIL = "picky-bot@example.com"  # reserved domain: no mail can ever go out
 # Catch-up picks made outside the DB (week 11, 2026); inserted once the

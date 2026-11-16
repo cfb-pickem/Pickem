@@ -34,7 +34,7 @@
         <key>PATH</key>
         <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
         <key>PICKEM_CHAT_MODEL</key>
-        <string>qwen3.5:9b-q4_K_M</string>
+        <string>gemma4:12b-it-qat</string>
     </dict>
 </dict>
 </plist>
