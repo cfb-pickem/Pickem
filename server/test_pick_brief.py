@@ -52,10 +52,15 @@ def facs(b, n):
 # -- labels and locks -----------------------------------------------------------------
 check("side label favorite", pb.side_label("Oklahoma", G) == "Oklahoma -7.5")
 check("side label dog", pb.side_label("Texas A&M", G) == "Texas A&M +7.5")
-check("lock is Tuesday noon before a Saturday game",
-      pb.line_lock(dt.datetime(2026, 11, 21, 11)) == dt.datetime(2026, 11, 17, 12))
+check("lock is Tuesday 11 AM CT before a Saturday game (site line_lock_at)",
+      pb.line_lock(dt.datetime(2026, 11, 21, 11)) == dt.datetime(2026, 11, 17, 11))
 check("Thursday game still locks that Tuesday",
-      pb.line_lock(dt.datetime(2026, 11, 19, 19)) == dt.datetime(2026, 11, 17, 12))
+      pb.line_lock(dt.datetime(2026, 11, 19, 19)) == dt.datetime(2026, 11, 17, 11))
+check("Tuesday MACtion locks 11 AM that same day",
+      pb.line_lock(dt.datetime(2026, 11, 17, 19)) == dt.datetime(2026, 11, 17, 11))
+check("Sunday and Monday games belong to the Saturday before",
+      pb.line_lock(dt.datetime(2026, 11, 22, 12)) == dt.datetime(2026, 11, 17, 11)
+      and pb.line_lock(dt.datetime(2026, 11, 23, 19)) == dt.datetime(2026, 11, 17, 11))
 
 # -- line value against the league line ------------------------------------------------
 idx = idx_of(team("Texas A&M"), team("Oklahoma"))
@@ -76,7 +81,7 @@ same = pb.build(G, {"market": {"home_now": -7.5, "home_open": -2.5}}, idx, now_c
 check("no gap: no value lean", facs(same, 1)[0]["side"] is None)
 mv = facs(same, 2)[0]
 check("5-point move toward Oklahoma, flagged", mv["side"] == "Oklahoma" and mv["w"] == pb.W_MED and mv["flag"], mv)
-check("Monday: not locked, says when it locks", not same["locked"] and "locks Tue noon" in pb.brief_note(same))
+check("Monday: not locked, says when it locks", not same["locked"] and "locks Tue 11 AM CT" in pb.brief_note(same))
 
 # -- QB status from a dossier fact -------------------------------------------------------
 by_team = {"texas a&m": [{"name": "Marcel Reed", "stats": {"passing": {"ATT": 287}}},

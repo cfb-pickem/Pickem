@@ -8,15 +8,15 @@ The league is graded only against the spread, so each factor counts for how it m
 
 Each line below ends with **live** (computed for every game that has the data), **partial** (computed only when a source has something, or an approximation; the source says which) or **no source** (skipped, never guessed). Totals: 39 live, 18 partial, 3 no source. `pick_brief.STATUS` is the single source of truth; `test_pick_brief.py` fails if this column drifts from it.
 
-How a pick is scored: every factor puts its weight on the side it helps COVER the league line (never who wins). Heavy: line value vs the market (3 for a 0.5-1.4 pt gap, 6 for 1.5+, +1 across a key number) and starting QB status (out 4, doubtful 2, questionable 1). Medium (1-2): SP+ projection 2, FPI 1, a 1.5+ pt line move, bye, short week, lookahead, letdown, revenge, travel/body clock, altitude, other key injuries (0.5 each, max 1.5), and league game theory 1. Light (0.5): every matchup stat, team ATS splits, recent ATS form, head-to-head, splits, weather and the rest. Context (0): explains or flags without moving the lean. The side with more weight is the lean; "strong" needs 4+ with the other side at most a third of that. A hand-set heuristic, not a trained model. Picky's prompt gets only the recommendation, the 3-5 heaviest edges and up to 3 red flags; "why?" or "give me everything" gets the full table.
+How a pick is scored: every factor puts its weight on the side it helps COVER the league line (never who wins). Heavy: line value vs the market (3 for a 0.5-1.4 pt gap, 6 for 1.5+, +1 across a key number) and starting QB status (out 4, doubtful 2, questionable 1). Medium (1-2): SP+ projection 2, FPI 1, a 1.5+ pt line move, bye, short week, lookahead, letdown, revenge, travel/body clock, altitude, other key injuries (0.5 each, max 1.5), and league game theory 1. Light (0.5): every matchup stat, team ATS splits, recent ATS form, head-to-head, splits, weather and the rest. Context (0): explains or flags without moving the lean. The side with more weight is the lean; "strong" needs 4+ with the other side at most a third of that. A hand-set heuristic, not a trained model. None of this runs at reply time: `server/game_cards.py` computes it OFFLINE into one cached card per slate game (built at slate-set, after the Tue 11 AM CT line lock, Fri 5 PM and Sat 7 AM; LaunchAgent com.pickem.game-cards), adds per-member game theory from graded picks only and a written case / counter-case from Opus, and live Picky only reads the card (a rider in the latest user turn) and phrases it.
 
 ## Line and market
-1. League locked line (Tue noon) vs current market line: the value gap → **live**: all_games.line (league) vs ESPN pickcenter market, CFBD lines fallback
+1. League locked line (Tue 11 AM CT, per the site's line_lock_at) vs current market line: the value gap → **live**: all_games.line (league) vs ESPN pickcenter market, CFBD lines fallback
 2. Opening line vs current line, size and direction of the move → **live**: ESPN pickcenter open/now, CFBD spreadOpen fallback
 3. Cause of the move (injury, weather, news) when the news shows one → **partial**: news.json + game dossier items for either team dated within 7 days of a move
 4. Key numbers (3, 7, 10, 14): does the league line sit on the good side of one the market crossed → **live**: league line vs market line (computed)
 5. Total (O/U) and implied team totals: big spread + low total = harder cover → **live**: ESPN / CFBD over-under
-6. Late or steam moves near kickoff (after the league locks) → **partial**: league line (frozen at Tue noon lock) vs current market; no tick history
+6. Late or steam moves near kickoff (after the league locks) → **partial**: league line (frozen at the Tue 11 AM CT lock) vs current market; no tick history
 7. Public vs sharp split (only if a public source exists) → **live**: DraftKings Network public betting splits page (edge.py)
 
 ## Personnel
@@ -69,7 +69,7 @@ How a pick is scored: every factor puts its weight on the side it helps COVER th
 48. Tempo: plays per game (more plays = more variance in big spreads) → **live**: CFBD advanced plays per game
 49. Opponent-adjusted ratings (SP+, FPI, or CFBD SRS) and the line those ratings imply → **live**: CFBD SP+ and SRS, ESPN FPI (all_games.fpi_margin)
 50. Recent form (last 3-4) vs full season: regression signals → **live**: CFBD lines: last 4 games ATS
-51. Head-to-head history, straight up and ATS → **live**: CFBD lines this season + last season
+51. Head-to-head history, straight up and ATS → **live**: CFBD lines this season + last season, team level (no QB-vs-opponent split: no player game logs cached)
 52. Style clash: option or service-academy offense vs a defense that hasn't seen it → **live**: CFBD advanced run rate (offense) vs run rate faced (defense)
 53. Backdoor and garbage-time risk: does the favorite pull starters; does the dog score late → **partial**: spread size + underdog passing explosiveness (no garbage-time split)
 
@@ -83,3 +83,17 @@ How a pick is scored: every factor puts its weight on the side it helps COVER th
 58. Key rivals' past tendencies (favorites/dogs, home teams, their own fan team, following the crowd) → **live**: Supabase graded picks (both seasons): each rival's tendencies
 59. League consensus on the game (from past patterns): fade it or follow it → **live**: Supabase graded picks: predicted league lean from past tendencies
 60. The asker's standings need: chasing = take variance and contrarian picks; leading = match the field → **live**: Supabase standings: asker's gap to the leader / playoff cut line
+
+## Backtest (2026-11-16, `game_cards.py backtest`, honest numbers)
+
+Every graded 2025-26 pool game, weeks 1-15, no tiebreakers (107 games), each side scored against the LEAGUE line (pushes go to the away side, as the site grades them), market = CFBD's closing line (DraftKings first). 95% intervals in brackets.
+
+- Line value 1.5+ points (take the side the league line is stale toward): **20-13, 61%** [44-75%]
+- Line value 0.5-1 point: 20-23, 47% [33-61%]
+- Line value that crosses a key number: 25-19, 57% [42-70%]
+- Follow a 1.5+ point market move (open to close): 27-29, 48%
+- The whole weighted lean, 2026 only: 23-19, 55% [40-69%]; "strong" leans 8-5. In-sample (it uses this season's ratings, so it flatters itself)
+- Baselines: home team 64-43 (60%), underdog 43-64 (40%)
+
+Read it straight: only the big line-value gap looks better than a coin flip, and even that sample is small enough that 50% is inside the interval. The card words confidence from these buckets (coin flip / slight lean / lean / "I like it" only for a strong lean with 1.5+ points of value) and never calls anything a lock.
+

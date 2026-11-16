@@ -74,7 +74,7 @@ STATUS = {
     3: ("partial", "news.json + game dossier items for either team dated within 7 days of a move"),
     4: ("live", "league line vs market line (computed)"),
     5: ("live", "ESPN / CFBD over-under"),
-    6: ("partial", "league line (frozen at Tue noon lock) vs current market; no tick history"),
+    6: ("partial", "league line (frozen at the Tue 11 AM CT lock) vs current market; no tick history"),
     7: ("live", "DraftKings Network public betting splits page (edge.py)"),
     8: ("partial", "game dossier injury facts + news.json (only games with a dossier or a story)"),
     9: ("partial", "CFBD player season passing stats (only when the starter is out)"),
@@ -119,7 +119,7 @@ STATUS = {
     48: ("live", "CFBD advanced plays per game"),
     49: ("live", "CFBD SP+ and SRS, ESPN FPI (all_games.fpi_margin)"),
     50: ("live", "CFBD lines: last 4 games ATS"),
-    51: ("live", "CFBD lines this season + last season"),
+    51: ("live", "CFBD lines this season + last season, team level (no QB-vs-opponent split: no player game logs cached)"),
     52: ("live", "CFBD advanced run rate (offense) vs run rate faced (defense)"),
     53: ("partial", "spread size + underdog passing explosiveness (no garbage-time split)"),
     54: ("partial", "news.json + insider notes (realignment) naming the team"),
@@ -470,7 +470,7 @@ def f_move(g: dict, mk: dict | None) -> dict | None:
     side = g["home"] if d < 0 else g["away"]
     w = W_MED if abs(d) >= MOVE_MIN else 0
     return F(2, side, w, f"line move: opened {o.split(' / ')[0]}, now {n.split(' / ')[0]}, the market moved "
-                         f"{_n(abs(d))} points toward {side}", flag=abs(d) >= MOVE_FLAG)
+                         f"{_n(abs(d))} point{'' if abs(d) == 1 else 's'} toward {side}", flag=abs(d) >= MOVE_FLAG)
 
 
 def f_total(g: dict, mk: dict | None) -> dict | None:
@@ -616,8 +616,11 @@ def f_cause(g: dict, move: dict | None, items_by_side: dict, teams: dict, idx: d
                 continue
             if it.get("kind") == "injury" or injury_status(_intel_text(it), it.get("status")) in ("out", "doubtful",
                                                                                                "questionable"):
+                src = _intel_src(it)
+                src = "" if "." in src or "/" in src else f" ({src})"  # members never get domains or links
+                first = re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", _intel_text(it)).strip())[0]
                 return F(3, None, 0, f"cause of the move: lines up with {side} news: "
-                                     f"{_short(_intel_text(it), 110)} ({_intel_src(it)})")
+                                     f"{_short(first, 200)}{src}")  # a whole sentence, never a cut-off one
     return F(3, None, 0, "cause of the move: no injury or news item in the cache explains it")
 
 
@@ -953,9 +956,13 @@ def f_h2h(g: dict, ta, th, prev_lines: list | None) -> list[dict]:
     if not ta or not th:
         return out
     pair = {cfbd.norm(ta["name"]), cfbd.norm(th["name"])}
+    kick = _kick_ct(g)
+    cut = kick.replace(tzinfo=dt.timezone(dt.timedelta(hours=-6))) if kick else None
     meets = [x for x in (prev_lines or []) + list(ta.get("games") or [])
              if {cfbd.norm(x.get("homeTeam")), cfbd.norm(x.get("awayTeam"))} == pair
-             and x.get("homeScore") is not None and x.get("awayScore") is not None]
+             and x.get("homeScore") is not None and x.get("awayScore") is not None
+             and str(x.get("id")) != str(g.get("id"))
+             and not (cut and _start(x) and _start(x) >= cut - dt.timedelta(hours=12))]
     if not meets:
         return out
     meets.sort(key=lambda x: x.get("startDate") or "")
@@ -964,11 +971,14 @@ def f_h2h(g: dict, ta, th, prev_lines: list | None) -> list[dict]:
         sp, _, _ = _line(x)
         hm = x["homeScore"] - x["awayScore"]
         winner = x["homeTeam"] if hm > 0 else x["awayTeam"]
-        s = f"{x.get('season')}: {winner} won {max(x['homeScore'], x['awayScore'])}-{min(x['homeScore'], x['awayScore'])}"
-        if sp is not None:
+        score = f"{winner} won {max(x['homeScore'], x['awayScore'])}-{min(x['homeScore'], x['awayScore'])}"
+        if sp is not None:  # ATS first: who covered that day's market line, the score as context
             cm = hm + sp
             cov = x["homeTeam"] if cm > 0 else x["awayTeam"] if cm < 0 else None
-            s += f", {cov} covered" if cov else ", a push"
+            s = (f"{x.get('season')}: {cov} covered the market line by {_n(abs(cm))} ({score})" if cov else
+                 f"{x.get('season')}: landed on the market line ({score})")
+        else:
+            s = f"{x.get('season')}: {score} (no line on record)"
         bits.append(s)
     out.append(F(51, None, 0, "head-to-head: " + "; ".join(bits)))
     last = meets[-1]
@@ -1145,12 +1155,16 @@ def game_theory(g: dict, asker: str | None, standings: list[dict], tend: dict, c
 # -----------------------------------------------------------------------------
 
 def line_lock(game_start: dt.datetime | None) -> dt.datetime | None:
-    """League lines lock at noon CT on the Tuesday before the week's games."""
+    """When the league line freezes: Tuesday 11:00 AM CT of the game's week, a port of the site's
+    public.line_lock_at() (supabase/migrations/20260822010000_line_locks_tuesday.sql): the week's
+    Saturday (Sun/Mon belong to the Saturday before) minus 4 days, at 11:00."""
     if not game_start:
         return None
     d = game_start.date()
-    tue = d - dt.timedelta(days=(d.weekday() - 1) % 7)
-    return dt.datetime.combine(tue, dt.time(12, 0))
+    dow = (d.weekday() + 1) % 7                     # Postgres dow: Sun 0 .. Sat 6
+    sat = d - dt.timedelta(days=1) if dow == 0 else d - dt.timedelta(days=2) if dow == 1 else \
+        d + dt.timedelta(days=6 - dow)
+    return dt.datetime.combine(sat - dt.timedelta(days=4), dt.time(11, 0))
 
 
 def _kick_ct(g: dict) -> dt.datetime | None:
@@ -1254,7 +1268,7 @@ def _lock_text(b: dict) -> str:
     if b["locked"]:
         return "locked"
     la = b.get("lock_at")
-    return f"not locked yet, locks {la:%a} noon CT" if la else "lock time unknown"
+    return f"not locked yet, locks {la:%a} 11 AM CT" if la else "lock time unknown"
 
 
 def brief_note(b: dict) -> str:

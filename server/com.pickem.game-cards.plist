@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Picky's offline game cards (game_cards.py): pick advice per pool game,
+  cached in server/cache/game_cards/<week>/. Fires every 30 minutes;
+  game_cards.py decides if anything is due (slate set / new game, the Tue
+  11:00 AM CT line lock, Fri 5 PM, Sat 7 AM CT, or the game's dossier was
+  rebuilt) and exits after two Supabase GETs when not. The written case is
+  one no-tools claude -p call per due game (picky_claude.MODEL = Opus,
+  --strict-mcp-config + empty MCP config, ANTHROPIC_API_KEY stripped); if
+  Anthropic is down the card is still built from code. Never after kickoff.
+  Install: cp to ~/Library/LaunchAgents and launchctl bootstrap gui/$(id -u) it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.game-cards</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/game_cards.py</string>
+        <string>run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartInterval</key>
+    <integer>1800</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/game-cards.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/game-cards.launchd.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/Agent</string>
+        <key>TERM</key>
+        <string>dumb</string>
+        <key>DISABLE_AUTOUPDATER</key>
+        <string>1</string>
+        <key>PICKEM_CHAT_MODEL</key>
+        <string>gemma4:12b-it-qat</string>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

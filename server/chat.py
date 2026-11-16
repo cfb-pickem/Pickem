@@ -42,6 +42,7 @@ import dossier
 import edge
 import espn
 import board_voice
+import game_cards
 import news
 import rare_bits
 
@@ -5029,9 +5030,10 @@ def _user_turn(ctx: dict, question: str) -> str:
     if not guard.startswith("GUARDRAIL"):
         parts.append(lore_note(ctx, question))
         parts.append(casino_note(ctx, question))
-        parts.append(analysis_note(ctx, question))
+        card = game_cards.card_note(ctx, question)  # offline game card (code factors + Opus case), else live
+        parts.append(card or analysis_note(ctx, question))
         parts.append(intel)
-        parts.append(take_note(ctx, question))
+        parts.append("" if card else take_note(ctx, question))
         parts.append(material_note(ctx, question))
         parts.append(race_note(ctx, question))
         parts.append(howto_note(question))
@@ -6555,7 +6557,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
     await asyncio.to_thread(_cfbd_index)
     # breakdown questions only: public splits + kickoff weather (cached, fail soft)
     ag = analysis_games(ctx, last.get("content", "")) if last.get("role") == "user" else []
-    if ag:
+    if ag and not all(game_cards.load_card(ctx.get("current_week"), g["id"]) for g in ag[:4]):  # cards have it
         ctx["edge"] = await edge.load(ag[:4], ctx.get("espn"), _cfbd_index())
     ctx["daddyfreeman"] = user_id == DADDYFREEMAN_USER_ID
 
