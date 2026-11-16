@@ -33,9 +33,10 @@ async def fake_ollama(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     try:
         head = await reader.readuntil(b"\r\n\r\n")
         n = int([ln.split(b":")[1] for ln in head.split(b"\r\n") if ln.lower().startswith(b"content-length")][0])
-        await reader.readexactly(n)
+        body_in = json.loads(await reader.readexactly(n) or b"{}")
         path = head.split(b" ")[1]
-        if path == b"/api/generate":  # _prime: slow-ish, non-streaming
+        # _prime: slow-ish, non-streaming (qwen: raw /api/generate; gemma: /api/chat with stream false)
+        if path == b"/api/generate" or body_in.get("stream") is False:
             await asyncio.sleep(random.uniform(0, 0.15))
             body = json.dumps({"response": "", "prompt_eval_duration": 1}).encode()
             writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "

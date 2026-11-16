@@ -5244,7 +5244,7 @@ async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
             d = r.json()
             log.info("prime: %.1fs (prefix %s)", (d.get("prompt_eval_duration") or 0) / 1e9,
                      format(hash(prefix) & 0xffffff, "06x"))
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, ValueError) as e:  # ValueError: a non-JSON body
         log.warning("prime failed: %s", e)
 
 
