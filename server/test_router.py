@@ -567,7 +567,8 @@ def test_fact_lane_wraps_with_one_voice_line_and_keeps_facts_verbatim():
     assert out.startswith("Boise State -13.5 missed the cover by 8.5.") and "3" not in out.split("46.")[1], out
     # mixed shit talk: answer first, then the jab
     out, calls = run("you suck, who's even winning this thing?", "Not you, that's for sure.")
-    assert out == "Chuck P is in first at 30-18, 2 points up on Ackbar. Not you, that's for sure.", out
+    assert out == ("Chuck P is in first at 30-18, 2 points up on Ackbar. Long live the Supreme Commissioner. "
+                   "Not you, that's for sure."), out
     assert "shot at you" in calls[0]
     # no code answer: the full brain takes it (understand runs)
     try:

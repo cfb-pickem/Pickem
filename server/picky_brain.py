@@ -818,7 +818,8 @@ async def fact_reply(st: dict, prefix: str, answer: str) -> str:
     line = router.shape_banter(str(line or ""), st["q"], chat.member_nicknames(), max_words=14, max_sents=1)
     ok = router.voice_line_ok(line, answer, ctx, leader=leader)
     if not ok and leader:  # Dear Leader scope: another member asked about his place, so he's hailed, always
-        line, ok = router.LEADER_HAIL, True
+        jab = rt.mixed and router.voice_line_ok(line, answer, ctx)  # a mixed text keeps its jab after the hail
+        line, ok = (f"{router.LEADER_HAIL} {line}" if jab else router.LEADER_HAIL), True
     out = f"{answer} {line}" if ok else answer
     log.info("fact (%s, %.1fs, line %s): %r", rt.kind, time.time() - t0, "kept" if ok else f"dropped {line!r}",
              out[:200])
