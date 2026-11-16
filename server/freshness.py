@@ -102,7 +102,9 @@ def _sources() -> dict[str, Source]:
                _p("PICKY_HOT_TAKES", PRIVATE / "hot_takes_bank.md"), "com.charlie.picky-hottakes", False, "age"),
         # same limits as the voice lane's INSIDER_STALE_DAYS / INSIDER_MAX_AGE_DAYS
         Source("insider", (8 * D, 8 * D), (21 * D, 21 * D), "mtime",
-               _p("PICKY_INSIDER", PRIVATE / "insider_bank.md"), "com.charlie.picky-hottakes", False, "age"),
+               _p("PICKY_INSIDER", PRIVATE / "insider_bank.md"), "com.pickem.insider-refresh", False, "age",
+               ("server/insider_refresh.py", "server/insider_refresh_prompt.md",
+                "server/com.pickem.insider-refresh.plist"), ("test_insider.py",)),
         # other lanes' artifacts (registered here so they share the rules)
         Source("burn_book", (5 * D, 5 * D), (14 * D, 14 * D), "json:generated_at",
                _p("PICKY_BURN_BOOK", PRIVATE / "burn_book.json")),
