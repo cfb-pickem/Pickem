@@ -815,6 +815,9 @@ async def group(req: Request):
     chat_id, dm = str(body.get("chat") or ""), bool(body.get("dm"))
     if not dm and not TRIGGER.search(text):  # groups need @Picky; DMs always get a reply
         return {"reply": None}
+    if not dm and chat_id != (group_outbox.config().get("group_guid") or ""):
+        log.info("group skipped: not the league group")  # Charlie 2026-11-16: league group only
+        return {"reply": None}
     if maintenance.active():  # brain in the shop (flag file or Ollama down): canned line, no model
         m = load_members().get(norm_handle(handle)) or {}
         if dm and not (m or body.get("allowlisted")):
