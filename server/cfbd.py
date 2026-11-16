@@ -56,11 +56,16 @@ DATASETS = {
     "ats": ("/teams/ats", {"year": "{year}"}),
     "lines": ("/lines", {"year": "{year}"}),
     "venues": ("/venues", {}),  # stadium lat/lon + dome flag for weather; see STATIC_MAX_AGE
+    # pick brief (pick_brief.py): venues/neutral sites/schedule, SRS, last season's
+    # scores + lines (revenge, head-to-head). Weekly or slower: see STATIC_MAX_AGE.
+    "games": ("/games", {"year": "{year}", "seasonType": "regular"}),
+    "srs": ("/ratings/srs", {"year": "{year}"}),
+    "lines_prev": ("/lines", {"year": "{prev}"}),
 }
 
 # Datasets that barely change: refreshed only when the cached copy is older
 # than this (seconds), so venues cost ~1 call a month, not 30.
-STATIC_MAX_AGE = {"venues": 30 * 86400}
+STATIC_MAX_AGE = {"venues": 30 * 86400, "games": 6 * 86400, "srs": 6 * 86400, "lines_prev": 120 * 86400}
 
 
 def season_year(today: dt.date | None = None) -> int:
@@ -164,7 +169,7 @@ def refresh(db=None, client=None, year: int | None = None, only: list[str] | Non
             path, params = DATASETS[name]
             # re-check per call so nothing can run past the cap mid-refresh
             check_budget(db, 1)
-            q = {k: v.format(year=year) for k, v in params.items()}
+            q = {k: v.format(year=year, prev=year - 1) for k, v in params.items()}
             try:
                 r = client.get(path, params=q)
             except Exception as e:  # noqa: BLE001 - network: count it, move on
