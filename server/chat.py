@@ -3626,8 +3626,10 @@ def news_note(question: str) -> str:
                 "nothing new on that as of then. Don't make anything up and don't fill with other topics.")
     return ("NEWS QUESTION (free public feeds: " + news.sources_line() + "; these lines are all the news you "
             f"know, newest first, as of {asof}):\n{tweet}" + "\n".join(f"- {ln}" for ln in lines)
-            + "\nLead with the newest line. Credit each line the way it's labeled ('per ESPN's Pete Thamel', "
-            "'per Action Network'; 'also' outlets mean several outlets have it) and keep its time ('2h ago'). "
+            + "\nText it like a friend who follows college football, not a wire service (Charlie 11-16: citing "
+            "every line made it unreadable): pick the 2-3 biggest items, plain sentences, no outlet and no "
+            "timestamp on most of them. Name a source at most once, only for a big scoop or a rumor ('Thamel's "
+            "reporting...'), and say 'just now'/'this morning' only when timing is the point. "
             "[REPORTED, not confirmed] = say 'reportedly'. [status: X] = that player's latest status. Only call "
             "something breaking if its time is in minutes or hours; 'older, not breaking' lines are background. "
             "Never add a detail, score, quote or claim beyond these lines. Live scores and standings beat "
