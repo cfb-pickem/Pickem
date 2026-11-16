@@ -721,7 +721,10 @@ yardage, play type, time, injury or QB claim that contradicts FACTS or isn't sup
 a guessed injury severity, a future result, a made-up line). Jokes, opinions, trash talk and awkward wording are NOT
 wrong facts. Saying "reported"/"per ESPN" is fine; full first names matching the initials in FACTS are fine. A game the
 FACTS say isn't started must get no score. If the question names a team not in FACTS, the bot must not give another
-team's numbers as that team's. Then say whether it answers what was asked (true/false). Be strict on facts, lenient on style.
+team's numbers as that team's. League facts that aren't about these games (the asker's season record, standings,
+"first place", past weeks) are out of scope: don't flag them, EXCEPT a claim that this week's picks/games already
+won, lost or covered when FACTS show those games unfinished or not started. Then say whether it answers what was
+asked (true/false). Be strict on facts, lenient on style.
 
 Return JSON {"items": [{"id", "wrong_facts": [...], "answers_question": bool, "note": "<10 words"}]}.
 
