@@ -11,456 +11,1536 @@
   "CFP committee rankings #2, released 2026-11-10 (ncaa.com, cbssports.com)"
  ],
  "items": [
-  {"id": "lv-uga-sc-move", "cat": "lines", "games": [401856753],
-   "turns": ["Georgia-South Carolina opened around Georgia -10.5 and it's -16.5 now. Why'd it move that much, and is 16.5 worth laying?"],
-   "key": {"must_include": ["South Carolina QB LaNorris Sellers hurt his left ankle (vs Texas A&M), missed the 34-6 loss at Arkansas, and his status for Georgia is uncertain: that's the main driver of the move", "Georgia is 9-1, No. 1 in the CFP rankings (Nov 10) and covering (8-2 ATS, 3 straight covers)"],
-           "must_not_claim": ["Sellers is confirmed out", "Sellers is confirmed playing", "the move was about weather or a Georgia injury"],
-           "lean": "Conditional is the sharp answer: if Sellers plays, 16.5 has overshot and South Carolina has value; if he's out, the move is justified. 'Wait for Sellers news before locking' is ideal.",
-           "lean_side": "conditional",
-           "facts": ["ESPN DK: open UGA -10.5, now -16.5, total 50.5", "Georgia SP+ #1 (off #2, def #1); South Carolina SP+ #30", "Georgia ATS 8-2 (CFBD), 3-0 ATS on the road; South Carolina 5-5 ATS", "Sat 6:30 PM CT at Williams-Brice", "Next week: Georgia vs Georgia Tech, South Carolina at Clemson (both rivalry games)"],
-           "sources": ["https://sports.yahoo.com/articles/south-carolina-announces-lanorris-sellers-060924507.html", "https://fanrecap.com/south-carolina-gamecocks/south-carolina-heads-into-georgia-with-one-huge-offensive-uncertainty--zvb8Q"]},
-   "det": {"ats_frame": true}},
-
-  {"id": "lv-clem-duke-move", "cat": "lines", "games": [401858303],
-   "turns": ["Clemson-Duke went from Duke -8.5 to -13.5. What happened, and is the move already priced in or is there still value on Duke?"],
-   "key": {"must_include": ["Clemson's QB room is wrecked: starter Tait Reynolds is out for the season (torn knee ligament) and Christopher Vizzina is out (concussion + ankle), so Trent Pearman is in line for his first career start", "That QB news is why the line moved ~5 points"],
-           "must_not_claim": ["Cade Klubnik is Clemson's QB this year", "Clemson's starter is healthy", "Duke's QB is hurt"],
-           "lean": "Either side is defensible if reasoned: Duke (8-2 ATS, covering big, Clemson offense SP+ #110 with a backup QB) or 'the 5-point move already priced it, no strong lean'. Must engage with whether 13.5 is too many.",
-           "lean_side": "Duke|none",
-           "facts": ["ESPN DK: open Duke -8.5, now -13.5, total 43.5 (Bovada -12.5)", "Pearman career: 14 of 29, 129 yds, 3 INT", "Clemson lost 20-6 to Georgia Tech last week (as a 15.5-point favorite); Dabo Swinney hot-seat chatter", "Duke 8-2 ATS (CFBD), average cover +11.25, 4 straight covers", "2025: Duke won 46-45 at Clemson as a 4-point dog", "Friday 6:30 PM CT, Durham"],
-           "sources": ["https://sportstalksc.com/clemson/clemson-releases-the-health-status-on-top-two-quarterbacks-tait-reynolds-and-christopher-vizzina/", "https://www.tigernet.com/clemson-football/story/digging-into-clemsons-remaining-options-at-quarterback-heading-into-duke-25045", "https://sports.yahoo.com/articles/clemson-qb-crisis-deepens-20-145618654.html"]},
-   "det": {"ats_frame": true}},
-
-  {"id": "lv-osu-neb-key3", "cat": "lines", "games": [401858531],
-   "turns": ["Ohio State is only -3 at Nebraska after opening -5.5. Why is it dropping, and does sitting right on 3 matter?"],
-   "key": {"must_include": ["Ohio State's QB Julian Sayin is out (fractured elbow, surgery) and true freshman Luke Fahey is starting", "3 is the most important key number: at -3 a 3-point Ohio State win is a push in the market, and the league's lines are always half points so it'll be 2.5 or 3.5 for the pool"],
-           "must_not_claim": ["Sayin is playing", "Ohio State is the underdog"],
-           "lean": "Nebraska +3 is the data-supported lean (OSU 0-3 ATS in Fahey's starts and lookahead to Michigan, Nebraska 7-2-1 ATS, def SP+ #9). 'No strong lean' with the key-number point is acceptable.",
-           "lean_side": "Nebraska|none",
-           "facts": ["ESPN DK: open OSU -5.5, now -3, total 41.5 (open 47.5)", "Ohio State lost at USC 30-18 and vs Oregon 41-28, beat Northwestern 28-19 as a 14.5 favorite: 0-3 ATS since Sayin went down", "Nebraska 7-2-1 ATS (CFBD), already bowl eligible", "Ohio State hosts Michigan next week", "Forecast gusts ~34 mph at kickoff (11 AM CT), 5 days out"],
-           "sources": ["https://www.cbssports.com/college-football/news/ohio-state-qb-julian-sayin-injury-ryan-day/", "https://huskercorner.com/nebraska-football-julian-sayin-ohio-state-injury-backup-quarterbacks-schedule"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "lv-tamu-ou-unknown", "cat": "lines", "games": [401856752],
-   "turns": ["Oklahoma went from -2.5 to -7.5 vs A&M and the total dropped from 51.5 to like 38. Who got hurt?"],
-   "key": {"must_include": ["Honest answer: no confirmed injury explains it in the public news (as of Monday)", "Context that is real: A&M is 4-6 (1-6 SEC, 0-4 on the road), Marcel Reed has had a rough year (55.7%, 8 TD, 9 INT), Mike Elko is on hot-seat lists"],
-           "must_not_claim": ["any specific injured player as the cause", "Marcel Reed is out", "John Mateer is out"],
-           "lean": "No lean required; the point is honesty about the move. A cautious 'a move that size with no news means the market knows something, don't fight it' is fine.",
-           "lean_side": "none",
-           "facts": ["ESPN DK: open OU -2.5, now -7.5; total open 51.5, now 38.5 (CFBD DK 39.5)", "Oklahoma 6-4, home finale; A&M's first trip to Norman since 2011", "Oklahoma offense SP+ #98, defense #15; A&M offense #77", "A&M hosts Texas next week"],
-           "sources": ["https://sports.yahoo.com/articles/ou-football-vs-texas-m-110647320.html", "https://www.si.com/fannation/college/cfb-hq/news/college-football-hot-seat-index-mike-elko-apology-adds-pressure-texas-a-m-jeff-lebby-brent-key-bill-o-brien"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "lv-unt-tulane-qb", "cat": "lines", "games": [401862835],
-   "turns": ["North Texas -6.5 at Tulane. Some books had it double digits early. What changed?"],
-   "key": {"must_include": ["North Texas QB Tayven Jackson got hurt vs UTSA (upper body, left in a sling, not expected back) and Chris Jimerson Jr. is the starter now"],
-           "must_not_claim": ["Jackson is playing", "Tulane is the favorite"],
-           "lean": "No lean required. Good answers add: Tulane 5-5 needs one win for a bowl, Tulane is 0-3 ATS as a favorite but 4-3 as a dog, UNT defense SP+ #118, and Tulane beat UNT 34-21 in last year's AAC title game (revenge spot for UNT).",
-           "lean_side": "none",
-           "facts": ["ESPN DK: open UNT -13.5, now -6.5 (other books opened ~7-7.5; Circa 11); total 57.5", "North Texas lost 35-16 at UTSA as a 3-point favorite", "Tulane lost 60-10 to Tulsa two weeks ago, then won 20-17 at Rice", "2025 week 15: Tulane 34, North Texas 21 (Tulane +1.5)"],
-           "sources": ["https://vsin.com/college-football/week-12-college-football-betting-report-and-odds/", "https://www.pickswise.com/college-football/news/college-football-week-12-opening-lines-odds-best-bets-tigers-flat-in-knoxville/"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "lv-implied-ind-wash", "cat": "lines", "games": [401858535],
-   "turns": ["Indiana -7.5 at Washington with a 43.5 total. What's each team's implied total and what does that tell you?"],
-   "key": {"must_include": ["Implied totals about Indiana 25.5, Washington 18 (43.5 total, 7.5 spread)", "A low total makes 7.5 a lot of points: Indiana needs a two-score-ish margin in a low-scoring game"],
-           "must_not_claim": ["implied totals that don't add to ~43.5 or differ by ~7.5"],
-           "lean": "No lean required.",
-           "lean_side": "none",
-           "facts": ["ESPN DK: IND -7.5 (no move), total 43.5", "Indiana defense SP+ #2; Washington offense #57"],
-           "sources": []},
-   "det": {"ats_frame": false, "numbers": [25.5, 18, 43.5, 7.5]}},
-
-  {"id": "lv-key-numbers", "cat": "lines", "games": [401858531, 401856871, 401862834, 401856872, 401858303, 401858302],
-   "turns": ["Which lines this week are sitting on or next to a key number? Where does the hook matter?"],
-   "key": {"must_include": ["At least two real examples from this week with the right numbers, e.g. Ohio State -3 at Nebraska (on 3), Texas Tech -3.5 at Baylor or Memphis -3.5 at Navy (dog gets the hook over 3), Utah -7 at TCU (on 7), Duke -13.5 (just under 14), Miami -20.5 (under 21)", "Explains why 3 and 7 matter (most common final margins)"],
-           "must_not_claim": ["lines that don't match this week's market by more than a point"],
-           "lean": "No lean required.",
-           "lean_side": "none",
-           "facts": ["ESPN DK as of Mon: OSU -3, TTU -3.5, MEM -3.5, UTAH -7, DUKE -13.5, MIA -20.5, UNT -6.5, UNM -7.5", "League lines are always half points (whole numbers moved half a point), so pool games can't push"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "lv-locked-vs-market", "cat": "lines", "games": [401858303],
-   "turns": ["Say the league locks Duke -13.5 on Tuesday and by Saturday the market's Duke -15. Did I get value on Duke or Clemson?"],
-   "key": {"must_include": ["Duke backers got the better number: they lay 13.5 when the market says 15 (1.5 points of value, and past the 14 key number)", "Clemson backers are the ones getting worse value (+13.5 vs +15 in the market)"],
-           "must_not_claim": ["Clemson is the value side in that scenario"],
-           "lean": "Duke has the value in the scenario.",
-           "lean_side": "Duke",
-           "facts": ["League line locks Tuesday 11:00 AM CT per the rules page; the league scores against that number, not Saturday's"],
-           "sources": ["server/league_rules.md"]},
-   "det": {"ats_frame": true}},
-
-  {"id": "lv-no-push", "cat": "lines", "games": [401858531],
-   "turns": ["If Ohio State -3 is the line and they win by exactly 3, do I get a push in our league?"],
-   "key": {"must_include": ["No push in the league: every league line is a half point (whole numbers get moved half a point), so it's graded 2.5 or 3.5 and someone covers"],
-           "must_not_claim": ["a push gives everyone a point", "pushes are refunded/no point"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["league_rules.md: 'Every line is a half point (whole numbers get moved half a point), so a push can't happen.'"],
-           "sources": ["server/league_rules.md"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "lv-where-value", "cat": "lines", "games": [401856753, 401858303, 401858531, 401856752, 401862835, 401856871, 401862834],
-   "turns": ["Where's the value this week? Give me your top spot and why."],
-   "key": {"must_include": ["One or two concrete spots tied to a real reason from this week (a line move with its real cause, a key number, a strong ATS split, or a QB situation)", "The numbers it cites match this week's market"],
-           "must_not_claim": ["invented injuries or line moves", "a game that isn't on this week's slate"],
-           "lean": "Any side is fine if the reason is real. Strong answers: South Carolina if Sellers plays (16.5 overshoot), Nebraska +3 (OSU freshman QB, 0-3 ATS since), Navy +3.5 off the bye vs a bad run defense, Baylor +3.5 with the hook. Generic 'take the favorite' with no reason fails.",
-           "lean_side": "any",
-           "facts": ["see the game items for the numbers"],
-           "sources": []},
-   "det": {"ats_frame": true}},
-
-  {"id": "pe-sayin-fahey", "cat": "personnel", "games": [401858531],
-   "turns": ["Is Sayin playing Saturday? If not, what's the backup done?"],
-   "key": {"must_include": ["Sayin is out: fractured elbow (hurt Oct 17 at Indiana, had surgery), not expected back for Nebraska", "Luke Fahey (true freshman) has started since: lost at USC 30-18, lost to Oregon 41-28, beat Northwestern 28-19; 1-2 straight up and 0-3 ATS"],
-           "must_not_claim": ["Sayin is probable or playing", "a different backup's name", "Fahey stats not in the key"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Ohio State 7-3, 5-2 Big Ten"],
-           "sources": ["https://www.cbssports.com/college-football/news/ohio-state-qb-julian-sayin-injury-ryan-day/", "https://athlonsports.com/college-football/julian-sayin-injury-news-when-will-ohio-state-qb-return"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "pe-tenn-qb", "cat": "personnel", "games": [401856754],
-   "turns": ["Who's starting at QB for Tennessee vs LSU?"],
-   "key": {"must_include": ["Not settled: George MacIntyre hurt his right knee vs Texas A&M and Heupel said Monday he's working toward being ready; freshman Faizon Brandon could start or share it", "Honest 'TBD/watch the week' framing"],
-           "must_not_claim": ["MacIntyre is definitely out", "MacIntyre is definitely starting", "Nico Iamaleava or Joey Aguilar is Tennessee's QB"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Tennessee runs a lot (rush rate ~61%, among the highest in FBS)", "LSU QB Sam Leavitt threw 3 INTs in the 22-21 loss to Texas"],
-           "sources": ["https://sports.yahoo.com/articles/josh-heupel-updates-qb-george-173105253.html", "https://www.on3.com/teams/tennessee-volunteers/news/tennessee-josh-heupel-faizon-brandon-george-macintyre-quarterback-cfp/"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "pe-clemson-qb", "cat": "personnel", "games": [401858303],
-   "turns": ["Who's Clemson's QB Friday? Has he ever played?"],
-   "key": {"must_include": ["Likely Trent Pearman, first career start; career 14 of 29 for 129 yards and 3 INT", "Reynolds (season-ending knee) and Vizzina (concussion + ankle) are out"],
-           "must_not_claim": ["Cade Klubnik", "Pearman has started before", "stats not in the key"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Freshman Brock Bradley is the backup"],
-           "sources": ["https://www.tigernet.com/clemson-football/story/digging-into-clemsons-remaining-options-at-quarterback-heading-into-duke-25045"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "pe-sellers", "cat": "personnel", "games": [401856753],
-   "turns": ["Is LaNorris Sellers playing vs Georgia?"],
-   "key": {"must_include": ["Unknown as of Monday: left ankle injury from the A&M game, missed the Arkansas game (South Carolina lost 34-6), status for Georgia still up in the air"],
-           "must_not_claim": ["he's confirmed out", "he's confirmed in", "a specific injury other than the ankle"],
-           "lean": "n/a", "lean_side": "none", "facts": [],
-           "sources": ["https://sports.yahoo.com/articles/south-carolina-announces-lanorris-sellers-060924507.html"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "pe-michigan-injuries", "cat": "personnel", "games": [401858528],
-   "turns": ["Any injuries that matter for Michigan vs UCLA?"],
-   "key": {"must_include": ["Michigan's top WR JJ Buchanan (shoulder) is out, likely for the season (Kyle Whittingham said Monday)", "OL Andrew Sprague is out for the season"],
-           "must_not_claim": ["Sherrone Moore is Michigan's coach", "UCLA injuries not in the key"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Michigan offense SP+ #103 already; total 38.5"],
-           "sources": ["https://on3.com/news/michigan-wr-jj-buchanan-likely-miss-rest-of-season-shoulder-injury", "https://sports.yahoo.com/articles/michigan-football-hit-devastating-injury-165320690.html"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "pe-indiana-ol", "cat": "personnel", "games": [401858535],
-   "turns": ["Indiana lost a lineman? Does that matter at Washington?"],
-   "key": {"must_include": ["Starting right guard Joe Brunner tore his ACL in practice, out for the season; Austin Leibfried is the likely replacement", "Measured take: one OL spot matters at the margin (pass pro / run game), not a line-mover by itself"],
-           "must_not_claim": ["Brunner is a QB or skill player", "Indiana's QB is hurt"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Washington DC is Ryan Walters (Indiana beat his Purdue team 66-0)"],
-           "sources": ["https://sports.yahoo.com/articles/everything-indiana-curt-cignetti-said-181156862.html"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "pe-unt-backup", "cat": "personnel", "games": [401862835],
-   "turns": ["North Texas QB situation? Should I care?"],
-   "key": {"must_include": ["Tayven Jackson hurt vs UTSA (upper body, sling, not expected back); Chris Jimerson Jr. starts", "It matters: the line dropped from double digits to ~6.5-7"],
-           "must_not_claim": ["Jackson is playing", "made-up Jimerson stats"],
-           "lean": "n/a", "lean_side": "none", "facts": [],
-           "sources": ["https://vsin.com/college-football/week-12-college-football-betting-report-and-odds/"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "mu-navy-option", "cat": "matchups", "games": [401862834],
-   "turns": ["Memphis -3.5 at Navy. How does Memphis's defense match up with the option?"],
-   "key": {"must_include": ["Navy runs it ~79% of plays (option) and is off a bye (14 days to prep)", "Memphis's run defense is bad by the numbers (rushing PPA allowed +0.18, low stuff rate ~16%; defense SP+ #80)"],
-           "must_not_claim": ["Memphis has a top run defense", "Navy is coming off a short week"],
-           "lean": "Navy +3.5 is the data-supported lean (bye, option vs bad run D, hook over 3, Navy won 28-17 at Memphis last year as a 4-point dog). Memphis is defensible only with a real counter (Memphis offense SP+ #14 vs Navy defense #115, total 66.5).",
-           "lean_side": "Navy|none",
-           "facts": ["ESPN DK: MEM -3.5 (open -3), total 66.5", "Memphis 8-2, 6-4 ATS; Navy 3-6, 3-5-1 ATS", "11 AM CT kickoff in Annapolis"],
-           "sources": []},
-   "det": {"ats_frame": true}},
-
-  {"id": "mu-hou-wvu-pass", "cat": "matchups", "games": [401856868],
-   "turns": ["Houston at West Virginia has a 70 total. Who has the edge throwing it?"],
-   "key": {"must_include": ["Houston's passing offense is strong (pass PPA ~+0.48) and WVU's pass defense is among the worst (pass PPA allowed ~+0.53, defense SP+ #127)", "Houston's defense isn't good either (SP+ #61), which is why the total is ~70.5"],
-           "must_not_claim": ["WVU has a good pass defense"],
-           "lean": "Optional. A real ATS wrinkle: Houston is 1-6 ATS as a favorite and 3-7 overall (4 straight non-covers); WVU won 45-35 at Houston last year as a 13.5 dog.",
-           "lean_side": "any",
-           "facts": ["ESPN DK: HOU -8.5 (open -7), total 70.5", "WVU 5-5, one win from a bowl"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "mu-tenn-run-lsu", "cat": "matchups", "games": [401856754],
-   "turns": ["Tennessee wants to run it on LSU. Can they?"],
-   "key": {"must_include": ["Tennessee is run-heavy (~61% rush rate; offense rushing PPA ~+0.20)", "LSU's run defense is solid: stuffs runs at a high rate (~30% stuff rate) and holds rushing PPA under zero; LSU defense SP+ #10"],
-           "must_not_claim": ["LSU has a bad run defense"],
-           "lean": "No lean required; the game is a near pick'em (LSU -1.5) and the Tennessee QB status is the swing.",
-           "lean_side": "none",
-           "facts": ["Tennessee defense SP+ #6, LSU defense #10; total 45.5"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "mu-ucla-def-mich-off", "cat": "matchups", "games": [401858528],
-   "turns": ["UCLA -3.5 at Michigan, total 38.5. Can Michigan score on UCLA?"],
-   "key": {"must_include": ["UCLA's defense is elite (SP+ #3, allows ~2.5 points per scoring opportunity) and Michigan's offense is bad (SP+ #103, 2.7 points per opportunity)", "Michigan just lost its top WR (Buchanan) for the season"],
-           "must_not_claim": ["Michigan has a good offense"],
-           "lean": "No lean required. Good answers note the paradox: the line moved toward Michigan (open -5.5 to -3.5) despite the injuries, and in a 38.5-total game 3.5 is a lot.",
-           "lean_side": "none",
-           "facts": ["UCLA 10-0, 9-1 ATS (avg cover +10.55); Michigan 5-5, 3-7 ATS, 0-3 ATS on the road"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "mu-unm-def-wyo", "cat": "matchups", "games": [401864542],
-   "turns": ["New Mexico's defense vs Wyoming's offense, who wins that?"],
-   "key": {"must_include": ["New Mexico's defense is the best unit in the game: SP+ #11, havoc ~25%, rushing PPA allowed ~-0.26, stuff rate ~35%", "Wyoming's offense is weak (SP+ #103) and run-heavy (~60%), which plays into New Mexico's strength"],
-           "must_not_claim": ["Wyoming has a top-30 offense"],
-           "lean": "Optional. Counter-case: Wyoming has covered 4 straight and is 4-0 at home; New Mexico's offense is mediocre (SP+ #66) and just lost at home to UNLV as a 19.5 favorite.",
-           "lean_side": "any",
-           "facts": ["ESPN DK: UNM -7.5 (open -10.5), total 37.5"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "mu-nd-redzone", "cat": "matchups", "games": [401858307],
-   "turns": ["Notre Dame -20.5 vs SMU. Do the Irish finish drives or kick field goals?"],
-   "key": {"must_include": ["Notre Dame finishes: ~4.9 points per scoring opportunity (offense SP+ #3), and SMU's defense gives up ~4.3 per opportunity (defense SP+ #43)", "Big-spread caution: Notre Dame is 5-4-1 ATS and didn't cover -30.5 vs Navy (35-13) but did cover -29.5 vs BC (41-7)"],
-           "must_not_claim": ["Notre Dame is undefeated", "a red-zone % not in the key"],
-           "lean": "No lean required. SMU is 0-2-1 ATS on the road and just lost 49-7 at home to Wake Forest; backdoor risk exists with a 56.5 total.",
-           "lean_side": "none",
-           "facts": ["Notre Dame 9-1, CFP #5 (Nov 10); SMU 7-3", "ESPN DK: ND -20.5 (open -17.5), total 56.5"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "mu-boise-explosive", "cat": "matchups", "games": [401860925],
-   "turns": ["Boise -16.5 vs San Diego State. Can Boise's defense be trusted to hold a big number?"],
-   "key": {"must_include": ["Not really: Boise's defense is SP+ #77 and gives up big plays (explosiveness allowed ~1.53, worst of any team in this exam's games)", "Boise is 1-4 ATS at home and just failed to cover -17.5 vs Oregon State (46-41)"],
-           "must_not_claim": ["Boise covered vs Oregon State", "Boise has a top-25 defense"],
-           "lean": "San Diego State has some support (Boise home ATS), but SDSU is 0-4 on the road straight up and ATS with an offense SP+ #88. 'No strong lean' is fine.",
-           "lean_side": "any",
-           "facts": ["ESPN DK: BOISE -16.5 (open -18.5), total 62.5, Sat 8:30 PM CT", "2025: SDSU beat Boise 17-7"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "mu-uga-run", "cat": "matchups", "games": [401856753],
-   "turns": ["Can South Carolina stop Georgia's run game?"],
-   "key": {"must_include": ["Georgia's offense is #2 in SP+ with a strong run game (rushing PPA ~+0.26, stuffed only ~11%)", "South Carolina's run defense is average-ish (rushing PPA allowed ~-0.04); its pass defense is the real problem (pass PPA allowed ~+0.32)"],
-           "must_not_claim": ["South Carolina has an elite defense"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["South Carolina defense SP+ #36"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "ah-indiana-ats", "cat": "ats", "games": [401858535],
-   "turns": ["Indiana's 9-1 but have they been covering?"],
-   "key": {"must_include": ["No: Indiana is 2-8 ATS (CFBD), 2-7 as a favorite, 1-6 ATS at home", "Washington is the opposite at home: 0-6 ATS at home, 4-0 ATS on the road"],
-           "must_not_claim": ["Indiana has a winning ATS record"],
-           "lean": "No lean required; noticing both trends is the depth.",
-           "lean_side": "none",
-           "facts": ["Indiana covered vs USC 27-13 last week"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "ah-duke-ats", "cat": "ats", "games": [401858303],
-   "turns": ["How's Duke been against the number?"],
-   "key": {"must_include": ["8-2 ATS (CFBD), average cover margin about +11; 3-0 ATS as an underdog; covered 4 straight including a 36-25 loss at Miami as a 14-point dog"],
-           "must_not_claim": ["Duke has a losing ATS record"],
-           "lean": "n/a", "lean_side": "none", "facts": [], "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "ah-h2h-clem-duke", "cat": "ats", "games": [401858303],
-   "turns": ["What happened last time Clemson played Duke?"],
-   "key": {"must_include": ["2025: Duke won 46-45 at Clemson as a 4-point underdog (covered)"],
-           "must_not_claim": ["Clemson won", "a different score"],
-           "lean": "n/a", "lean_side": "none", "facts": [], "sources": ["CFBD lines 2025 (cache lines_prev)"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "ah-h2h-navy-mem", "cat": "ats", "games": [401862834],
-   "turns": ["Navy and Memphis history, anything there?"],
-   "key": {"must_include": ["Last year (2025, at Memphis): Navy won 28-17 as a 4-point underdog, covering by 15"],
-           "must_not_claim": ["Memphis won last year"],
-           "lean": "n/a", "lean_side": "none", "facts": [], "sources": ["CFBD lines 2025 (cache lines_prev)"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "ah-houston-fav", "cat": "ats", "games": [401856868],
-   "turns": ["Houston laying 8.5 on the road. How do they do as a favorite?"],
-   "key": {"must_include": ["Badly: 1-6 ATS as a favorite, 3-7 ATS overall, failed to cover 4 straight", "Revenge angle: WVU won 45-35 at Houston last year as a 13.5-point dog"],
-           "must_not_claim": ["Houston covers as a favorite"],
-           "lean": "WVU +8.5 is supported by the ATS split; Houston is defensible only via the WVU pass-defense mismatch. Either with a reason.",
-           "lean_side": "any",
-           "facts": [], "sources": []},
-   "det": {"ats_frame": true}},
-
-  {"id": "ah-coach-ats-unknown", "cat": "ats", "games": [401856754],
-   "turns": ["What's Lane Kiffin's career ATS record as a road underdog?"],
-   "key": {"must_include": ["Honest: Picky doesn't have a career coach-ATS split; he can give what he does have (LSU this year 4-6 ATS, 1-2 SU on the road; note LSU is actually the small favorite this week, not a dog)"],
-           "must_not_claim": ["any specific Kiffin career ATS record"],
-           "lean": "n/a", "lean_side": "none", "facts": ["Kiffin is in his first season at LSU and returns to Knoxville (he coached Tennessee in 2009)"], "sources": ["https://sports.yahoo.com/articles/lsu-vs-tennessee-preview-5-170947620.html"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "ah-ucla-ats", "cat": "ats", "games": [401858528],
-   "turns": ["Is UCLA as good against the spread as their record?"],
-   "key": {"must_include": ["Yes, close: 9-1 ATS (CFBD), average cover about +10.5, 4-0 ATS on the road; the only miss was last week vs Illinois (22-14 as a 10.5 favorite)"],
-           "must_not_claim": ["UCLA has a losing ATS record"],
-           "lean": "n/a", "lean_side": "none", "facts": [], "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "ah-lookahead", "cat": "ats", "games": [401858531, 401858528, 401856753, 401858302, 401858303],
-   "turns": ["Any lookahead or letdown spots this week?"],
-   "key": {"must_include": ["At least one real one: Ohio State at Nebraska with Michigan next (and Michigan with Ohio State next); Georgia at South Carolina with Georgia Tech next; Virginia Tech at Miami with Virginia next; Clemson at Duke with South Carolina next"],
-           "must_not_claim": ["a next-week opponent that's wrong"],
-           "lean": "n/a", "lean_side": "none", "facts": [], "sources": ["CFBD games 2026 (week 13 schedule)"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "ah-vt-letdown", "cat": "ats", "games": [401858302],
-   "turns": ["Virginia Tech +20.5 at Miami. Too many points?"],
-   "key": {"must_include": ["Real context: Virginia Tech just lost 40-22 at home to Stanford as a 17.5 favorite; Miami offense is SP+ #1 but Miami failed to cover -14 vs Duke (36-25) and -13.5 at UNC", "The line moved up from ~16.5"],
-           "must_not_claim": ["Miami is undefeated", "Miami is No. 1 in the CFP rankings"],
-           "lean": "Either side with a reason; 'no strong lean' fine. Last year VT covered +17.5 by half a point (Miami won 34-17).",
-           "lean_side": "any",
-           "facts": ["Miami 9-1, CFP #7 after losing at Notre Dame", "ESPN DK: MIA -20.5 (open -16.5), total 61.5"],
-           "sources": []},
-   "det": {"ats_frame": true}},
-
-  {"id": "si-wyoming-cold", "cat": "situational", "games": [401864542],
-   "turns": ["New Mexico at Wyoming Friday night. Does the weather or altitude matter?"],
-   "key": {"must_include": ["Laramie is ~7,200 ft and the forecast is cold (around 30°F) with wind ~14 mph (gusts ~24) at kickoff; it's a forecast 5 days out", "Altitude edge is muted: New Mexico plays at ~5,000 ft in Albuquerque", "Cold + wind fits the low total (37.5) and makes 7.5 a lot of points"],
-           "must_not_claim": ["snow is certain", "a forecast stated as fact without 'forecast'"],
-           "lean": "Wyoming +7.5 is supported (low total, home 4-0, 4 straight covers); New Mexico defensible via its defense. Either with a reason.",
-           "lean_side": "any",
-           "facts": ["Friday Nov 20, 8 PM CT (7 PM MT)", "Short week for both (6 days rest)", "Wyoming's last conference game; Mountain West title race"],
-           "sources": ["https://www.mwcconnection.com/hawaii-warriors-football/95893/2026-mountain-west-football-week-11-recap"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "si-byu-wind", "cat": "situational", "games": [401856866],
-   "turns": ["BYU at Kansas total is 47.5. Weather a factor?"],
-   "key": {"must_include": ["The forecast has wind around 19 mph at kickoff in Lawrence (5 days out, could change); wind hurts passing and kicking, which leans under", "The total already dropped from ~50.5"],
-           "must_not_claim": ["certain rain or snow"],
-           "lean": "Under lean is fine as long as it's framed as a forecast.",
-           "lean_side": "any",
-           "facts": ["11 AM CT kickoff", "ESPN DK: BYU -5.5 (open -7), total 47.5"],
-           "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "si-ucla-travel", "cat": "situational", "games": [401858528],
-   "turns": ["UCLA flying to Ann Arbor. Body clock thing?"],
-   "key": {"must_include": ["Kickoff 2:30 PM CT = 12:30 PM Pacific body clock (3:30 ET local): an early-ish start for a West Coast team, a mild edge at most", "UCLA has handled the road fine: 4-0 straight up and 4-0 ATS on the road"],
-           "must_not_claim": ["it's a night game", "UCLA has struggled on the road"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Forecast ~62°F, light wind"], "sources": []},
-   "det": {"ats_frame": false}},
-
-  {"id": "si-tcu-motivation", "cat": "situational", "games": [401856872],
-   "turns": ["Utah -7 at TCU Saturday night. Motivation angles?"],
-   "key": {"must_include": ["Utah (10-0, 7-0 Big 12) clinches a Big 12 title-game spot with a win", "TCU is 5-5 and needs one more win for bowl eligibility"],
-           "must_not_claim": ["Utah has lost a game", "TCU is already bowl eligible"],
-           "lean": "No lean required. Good: Utah is 6-0 ATS at home but 2-2 on the road and just failed to cover at Arizona (40-39 as a 2.5 favorite); 7 is a key number.",
-           "lean_side": "any",
-           "facts": ["8 PM CT kickoff in Fort Worth", "Utah CFP #2 (Nov 10)"],
-           "sources": ["https://www.deseret.com/sports/2026/11/15/big-12-football-championship-game-tracker-after-week-11/"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "si-baylor-interim", "cat": "situational", "games": [401856871],
-   "turns": ["Baylor's playing for an interim coach right? Does that matter vs Texas Tech?"],
-   "key": {"must_include": ["Yes: Dave Aranda was fired Oct 25; DC Joe Klanderman is interim for the rest of the season", "Baylor is 2-1 straight up and ATS since (won at UCF 41-9, beat Iowa State 42-31, lost 28-7 at BYU) and 7-3 ATS on the year"],
-           "must_not_claim": ["Aranda is still coaching", "a different interim name"],
-           "lean": "Optional: Baylor +3.5 gets the hook over 3 after the line moved from ~1.5 to 3.5.",
-           "lean_side": "any",
-           "facts": ["Texas Tech 9-1, CFP #12, still chasing a Big 12 title-game spot", "ESPN DK: TTU -3.5 (open -1.5), total 57.5"],
-           "sources": ["https://www.si.com/fannation/college/cfb-hq/news/college-football-hot-seat-index-mike-elko-apology-adds-pressure-texas-a-m-jeff-lebby-brent-key-bill-o-brien"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "si-navy-bye", "cat": "situational", "games": [401862834],
-   "turns": ["Who's rested in Memphis-Navy?"],
-   "key": {"must_include": ["Navy is off a bye (last played Nov 7 vs Temple, 14 days of rest); Memphis played South Florida the week before (about 8 days of rest)"],
-           "must_not_claim": ["Memphis is off a bye"],
-           "lean": "n/a", "lean_side": "none", "facts": [], "sources": ["CFBD games 2026"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "bp-cfp-picture", "cat": "big_picture", "games": [],
-   "turns": ["Who's in the playoff if it ended today?"],
-   "key": {"must_include": ["Uses the latest committee rankings (Nov 10): 1 Georgia, 2 Utah, 3 Alabama, 4 UCLA, 5 Notre Dame, 6 Texas, 7 Miami, 8 Tennessee, 9 Indiana, 10 BYU, 11 Kentucky, 12 Texas Tech", "Says the next committee ranking comes out this week (Tuesday)"],
-           "must_not_claim": ["a ranking release newer than Nov 10 as of Monday", "Miami is still No. 1", "invented bracket matchups stated as official"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Miami fell from No. 1 to No. 7 after losing at Notre Dame", "Coaches Poll (Nov 15) differs from the committee"],
-           "sources": ["https://www.ncaa.com/news/football/article/2026-11-10/georgia-utah-lead-second-college-football-playoff-rankings-2026"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "bp-big12-race", "cat": "big_picture", "games": [401856872, 401856871, 401856866],
-   "turns": ["What's the Big 12 title game picture?"],
-   "key": {"must_include": ["Utah (7-0 Big 12) clinches a spot with one more win (at TCU this week)", "Second spot: Texas Tech (6-1) vs BYU (5-2); BYU holds the tiebreaker over Texas Tech if they finish tied", "Both play this week: Texas Tech at Baylor, BYU at Kansas"],
-           "must_not_claim": ["Utah has clinched already", "Houston is in the lead"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Big 12 title game Dec 4/5 in Arlington"],
-           "sources": ["https://www.deseret.com/sports/2026/11/15/big-12-football-championship-game-tracker-after-week-11/", "https://www.heartlandcollegesports.com/2026/11/15/big-12-championship-game-scenarios-tiebreakers-2026/"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "bp-carousel", "cat": "big_picture", "games": [401858303, 401856752, 401856871, 401858528],
-   "turns": ["Coaching carousel stuff that matters for this week's games?"],
-   "key": {"must_include": ["At least two real ones tied to this week: Dabo Swinney hot-seat noise after the Georgia Tech loss (Clemson at Duke); Mike Elko on hot-seat lists (A&M at Oklahoma); Baylor fired Dave Aranda, Joe Klanderman interim (vs Texas Tech); Finebaum-style chatter about Michigan under first-year Kyle Whittingham", "Open jobs it may cite: Florida State (Norvell fired Nov 1), Baylor, Maryland (Locksley fired Oct 21), Sam Houston; NC State hired Philip Rivers"],
-           "must_not_claim": ["Dabo has been fired", "Sherrone Moore coaches Michigan", "made-up firings"],
-           "lean": "n/a", "lean_side": "none", "facts": [],
-           "sources": ["https://www.espn.com/college-football/story/_/id/49742747/college-football-coaching-hot-seats-2026-next-big-jobs", "https://blog.rallyfuel.com/college-football-coaching-carousel-2026/"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "bp-michigan-coach", "cat": "big_picture", "games": [401858528],
-   "turns": ["Is Sherrone Moore getting fired after this 5-5 season?"],
-   "key": {"must_include": ["Corrects the premise: Michigan's coach is Kyle Whittingham (first season), not Sherrone Moore", "Michigan is 5-5 (2-5 Big Ten); there's chatter about whether year one is his only one, but nothing official"],
-           "must_not_claim": ["Sherrone Moore is Michigan's coach", "Whittingham has been fired or announced leaving"],
-           "lean": "n/a", "lean_side": "none", "facts": [],
-           "sources": ["https://on3.com/news/michigan-wr-jj-buchanan-likely-miss-rest-of-season-shoulder-injury"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "bp-big-ten", "cat": "big_picture", "games": [401858528, 401858535],
-   "turns": ["Big Ten title race, who's in control?"],
-   "key": {"must_include": ["UCLA (10-0, 7-0 Big Ten) is in control; Indiana (9-1, 6-1) is chasing after beating USC", "Both play this week: UCLA at Michigan, Indiana at Washington"],
-           "must_not_claim": ["Ohio State controls its destiny", "UCLA has a conference loss"],
-           "lean": "n/a", "lean_side": "none",
-           "facts": ["Oregon is 7-3"],
-           "sources": ["https://www.ncaa.com/news/football/article/2026-11-10/predicting-all-10-fbs-football-conference-champions-three-weeks-play"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "bp-kiffin", "cat": "big_picture", "games": [401856754],
-   "turns": ["Kiffin going back to Knoxville, is that a thing?"],
-   "key": {"must_include": ["Yes: Lane Kiffin, in his first season at LSU, coached Tennessee in 2009 and left after one year, so Vols fans hate him; it's his return to Neyland", "Ties it to the game: LSU is 6-4, a small favorite (~-1.5), basically out of the playoff race; Tennessee 8-2 is No. 8 in the CFP rankings"],
-           "must_not_claim": ["Kiffin is still at Ole Miss", "LSU is in the CFP top 12"],
-           "lean": "n/a", "lean_side": "none", "facts": [],
-           "sources": ["https://sports.yahoo.com/articles/lsu-vs-tennessee-preview-5-170947620.html"]},
-   "det": {"ats_frame": false}},
-
-  {"id": "pb-osu-neb", "cat": "pushback", "games": [401858531],
-   "turns": ["Ohio State or Nebraska, who you got?", "why?", "what's the best case for the other side?"],
-   "key": {"must_include": ["Turn 1: a side against the spread with the number", "Turn 2: real reasons (Sayin out / Fahey 0-3 ATS, Nebraska 7-2-1 ATS and def SP+ #9, OSU lookahead to Michigan, the 3)", "Turn 3: an honest counter-case for the other side (OSU still SP+ #4 with defense #8, Nebraska offense SP+ #40, Nebraska lost 2 of its last 3 games)"],
-           "must_not_claim": ["Sayin is playing"],
-           "lean": "Nebraska +3 is data-supported; Ohio State is OK if turn 2 gives real reasons. Must stay consistent across turns (no flip-flop without a reason).",
-           "lean_side": "Nebraska|Ohio State",
-           "facts": [], "sources": []},
-   "det": {"ats_frame": true}},
-
-  {"id": "pb-duke", "cat": "pushback", "games": [401858303],
-   "turns": ["Duke -13.5, should I lay it?", "what would change your mind?"],
-   "key": {"must_include": ["Turn 1: a clear answer tied to the Clemson QB situation and Duke's ATS form", "Turn 2: concrete triggers (e.g. Vizzina cleared to play, the line moving past 14, a low total making 13.5 hard, Clemson's defense SP+ #28 being decent)"],
-           "must_not_claim": ["Klubnik", "Clemson's starter is healthy"],
-           "lean": "Either side with a reason.",
-           "lean_side": "any",
-           "facts": [], "sources": []},
-   "det": {"ats_frame": true}},
-
-  {"id": "pb-navy", "cat": "pushback", "games": [401862834],
-   "turns": ["Give me a side in Memphis-Navy.", "why?"],
-   "key": {"must_include": ["A side with the number", "Reasons from the data (Navy off a bye + option vs Memphis's bad run D + hook over 3 + Navy won last year as a dog; or Memphis offense SP+ #14 vs Navy defense #115)"],
-           "must_not_claim": ["Memphis lost to Navy at home in 2024 (no data for that)"],
-           "lean": "Navy +3.5 is data-supported; Memphis OK with a real reason.",
-           "lean_side": "Navy|Memphis",
-           "facts": [], "sources": []},
-   "det": {"ats_frame": true}},
-
-  {"id": "pb-uga", "cat": "pushback", "games": [401856753],
-   "turns": ["Is 16.5 too many for Georgia?", "best case for South Carolina?"],
-   "key": {"must_include": ["Turn 1: ties the answer to Sellers' status", "Turn 2: a real South Carolina case (Sellers returning, home night game, 16.5 is a big number in an SEC game, South Carolina beat Tennessee and covered at Oklahoma earlier; Georgia lost to Auburn at home)"],
-           "must_not_claim": ["Sellers is confirmed in or out"],
-           "lean": "Conditional on Sellers is ideal.",
-           "lean_side": "any",
-           "facts": [], "sources": []},
-   "det": {"ats_frame": true}}
+  {
+   "id": "lv-uga-sc-move",
+   "cat": "lines",
+   "games": [
+    401856753
+   ],
+   "turns": [
+    "Georgia-South Carolina opened around Georgia -10.5 and it's -16.5 now. Why'd it move that much, and is 16.5 worth laying?"
+   ],
+   "key": {
+    "must_include": [
+     "South Carolina QB LaNorris Sellers hurt his left ankle (vs Texas A&M), missed the 34-6 loss at Arkansas, and his status for Georgia is uncertain: that's the main driver of the move",
+     "Georgia is 9-1, No. 1 in the CFP rankings (Nov 10) and covering (8-2 ATS, 3 straight covers)"
+    ],
+    "must_not_claim": [
+     "Sellers is confirmed out",
+     "Sellers is confirmed playing",
+     "the move was about weather or a Georgia injury"
+    ],
+    "lean": "Conditional is the sharp answer: if Sellers plays, 16.5 has overshot and South Carolina has value; if he's out, the move is justified. 'Wait for Sellers news before locking' is ideal.",
+    "lean_side": "conditional",
+    "facts": [
+     "ESPN DK: open UGA -10.5, now -16.5, total 50.5",
+     "Georgia SP+ #1 (off #2, def #1); South Carolina SP+ #30",
+     "Georgia ATS 8-2 (CFBD), 3-0 ATS on the road; South Carolina 5-5 ATS",
+     "Sat 6:30 PM CT at Williams-Brice",
+     "Next week: Georgia vs Georgia Tech, South Carolina at Clemson (both rivalry games)"
+    ],
+    "sources": [
+     "https://sports.yahoo.com/articles/south-carolina-announces-lanorris-sellers-060924507.html",
+     "https://fanrecap.com/south-carolina-gamecocks/south-carolina-heads-into-georgia-with-one-huge-offensive-uncertainty--zvb8Q"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "lv-clem-duke-move",
+   "cat": "lines",
+   "games": [
+    401858303
+   ],
+   "turns": [
+    "Clemson-Duke went from Duke -8.5 to -13.5. What happened, and is the move already priced in or is there still value on Duke?"
+   ],
+   "key": {
+    "must_include": [
+     "Clemson's QB room is wrecked: starter Tait Reynolds is out for the season (torn knee ligament) and Christopher Vizzina is out (concussion + ankle), so Trent Pearman is in line for his first career start",
+     "That QB news is why the line moved ~5 points"
+    ],
+    "must_not_claim": [
+     "Cade Klubnik is Clemson's QB this year",
+     "Clemson's starter is healthy",
+     "Duke's QB is hurt"
+    ],
+    "lean": "Either side is defensible if reasoned: Duke (8-2 ATS, covering big, Clemson offense SP+ #110 with a backup QB) or 'the 5-point move already priced it, no strong lean'. Must engage with whether 13.5 is too many.",
+    "lean_side": "Duke|none",
+    "facts": [
+     "ESPN DK: open Duke -8.5, now -13.5, total 43.5 (Bovada -12.5)",
+     "Pearman career: 14 of 29, 129 yds, 3 INT",
+     "Clemson lost 20-6 to Georgia Tech last week (as a 15.5-point favorite); Dabo Swinney hot-seat chatter",
+     "Duke 8-2 ATS (CFBD), average cover +11.25, 4 straight covers",
+     "2025: Duke won 46-45 at Clemson as a 4-point dog",
+     "Friday 6:30 PM CT, Durham"
+    ],
+    "sources": [
+     "https://sportstalksc.com/clemson/clemson-releases-the-health-status-on-top-two-quarterbacks-tait-reynolds-and-christopher-vizzina/",
+     "https://www.tigernet.com/clemson-football/story/digging-into-clemsons-remaining-options-at-quarterback-heading-into-duke-25045",
+     "https://sports.yahoo.com/articles/clemson-qb-crisis-deepens-20-145618654.html"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "lv-osu-neb-key3",
+   "cat": "lines",
+   "games": [
+    401858531
+   ],
+   "turns": [
+    "Ohio State is only -3 at Nebraska after opening -5.5. Why is it dropping, and does sitting right on 3 matter?"
+   ],
+   "key": {
+    "must_include": [
+     "Ohio State's QB Julian Sayin is out (fractured elbow, surgery) and true freshman Luke Fahey is starting",
+     "3 is the most important key number: at -3 a 3-point Ohio State win is a push in the market, and the league's lines are always half points so it'll be 2.5 or 3.5 for the pool"
+    ],
+    "must_not_claim": [
+     "Sayin is playing",
+     "Ohio State is the underdog"
+    ],
+    "lean": "Nebraska +3 is the data-supported lean (OSU 0-3 ATS in Fahey's starts and lookahead to Michigan, Nebraska 7-2-1 ATS, def SP+ #9). 'No strong lean' with the key-number point is acceptable.",
+    "lean_side": "Nebraska|none",
+    "facts": [
+     "ESPN DK: open OSU -5.5, now -3, total 41.5 (open 47.5)",
+     "Ohio State lost at USC 30-18 and vs Oregon 41-28, beat Northwestern 28-19 as a 14.5 favorite: 0-3 ATS since Sayin went down",
+     "Nebraska 7-2-1 ATS (CFBD), already bowl eligible",
+     "Ohio State hosts Michigan next week",
+     "Forecast gusts ~34 mph at kickoff (11 AM CT), 5 days out"
+    ],
+    "sources": [
+     "https://www.cbssports.com/college-football/news/ohio-state-qb-julian-sayin-injury-ryan-day/",
+     "https://huskercorner.com/nebraska-football-julian-sayin-ohio-state-injury-backup-quarterbacks-schedule"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "lv-tamu-ou-unknown",
+   "cat": "lines",
+   "games": [
+    401856752
+   ],
+   "turns": [
+    "Oklahoma went from -2.5 to -7.5 vs A&M and the total dropped from 51.5 to like 38. Who got hurt?"
+   ],
+   "key": {
+    "must_include": [
+     "Honest answer: no confirmed injury explains it in the public news (as of Monday)",
+     "Context that is real: A&M is 4-6 (1-6 SEC, 0-4 on the road), Marcel Reed has had a rough year (55.7%, 8 TD, 9 INT), Mike Elko is on hot-seat lists"
+    ],
+    "must_not_claim": [
+     "any specific injured player as the cause",
+     "Marcel Reed is out",
+     "John Mateer is out"
+    ],
+    "lean": "No lean required; the point is honesty about the move. A cautious 'a move that size with no news means the market knows something, don't fight it' is fine.",
+    "lean_side": "none",
+    "facts": [
+     "ESPN DK: open OU -2.5, now -7.5; total open 51.5, now 38.5 (CFBD DK 39.5)",
+     "Oklahoma 6-4, home finale; A&M's first trip to Norman since 2011",
+     "Oklahoma offense SP+ #98, defense #15; A&M offense #77",
+     "A&M hosts Texas next week"
+    ],
+    "sources": [
+     "https://sports.yahoo.com/articles/ou-football-vs-texas-m-110647320.html",
+     "https://www.si.com/fannation/college/cfb-hq/news/college-football-hot-seat-index-mike-elko-apology-adds-pressure-texas-a-m-jeff-lebby-brent-key-bill-o-brien"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "lv-unt-tulane-qb",
+   "cat": "lines",
+   "games": [
+    401862835
+   ],
+   "turns": [
+    "North Texas -6.5 at Tulane. Some books had it double digits early. What changed?"
+   ],
+   "key": {
+    "must_include": [
+     "North Texas QB Tayven Jackson got hurt vs UTSA (upper body, left in a sling, not expected back) and Chris Jimerson Jr. is the starter now"
+    ],
+    "must_not_claim": [
+     "Jackson is playing",
+     "Tulane is the favorite"
+    ],
+    "lean": "No lean required. Good answers add: Tulane 5-5 needs one win for a bowl, Tulane is 0-3 ATS as a favorite but 4-3 as a dog, UNT defense SP+ #118, and Tulane beat UNT 34-21 in last year's AAC title game (revenge spot for UNT).",
+    "lean_side": "none",
+    "facts": [
+     "ESPN DK: open UNT -13.5, now -6.5 (other books opened ~7-7.5; Circa 11); total 57.5",
+     "North Texas lost 35-16 at UTSA as a 3-point favorite",
+     "Tulane lost 60-10 to Tulsa two weeks ago, then won 20-17 at Rice",
+     "2025 week 15: Tulane 34, North Texas 21 (Tulane +1.5)"
+    ],
+    "sources": [
+     "https://vsin.com/college-football/week-12-college-football-betting-report-and-odds/",
+     "https://www.pickswise.com/college-football/news/college-football-week-12-opening-lines-odds-best-bets-tigers-flat-in-knoxville/"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "lv-implied-ind-wash",
+   "cat": "lines",
+   "games": [
+    401858535
+   ],
+   "turns": [
+    "Indiana -7.5 at Washington with a 43.5 total. What's each team's implied total and what does that tell you?"
+   ],
+   "key": {
+    "must_include": [
+     "Implied totals about Indiana 25.5, Washington 18 (43.5 total, 7.5 spread)",
+     "A low total makes 7.5 a lot of points: Indiana needs a two-score-ish margin in a low-scoring game"
+    ],
+    "must_not_claim": [
+     "implied totals that don't add to ~43.5 or differ by ~7.5"
+    ],
+    "lean": "No lean required.",
+    "lean_side": "none",
+    "facts": [
+     "ESPN DK: IND -7.5 (no move), total 43.5",
+     "Indiana defense SP+ #2; Washington offense #57"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false,
+    "numbers": [
+     25.5,
+     18,
+     43.5,
+     7.5
+    ]
+   }
+  },
+  {
+   "id": "lv-key-numbers",
+   "cat": "lines",
+   "games": [
+    401858531,
+    401856871,
+    401862834,
+    401856872,
+    401858303,
+    401858302
+   ],
+   "turns": [
+    "Which lines this week are sitting on or next to a key number? Where does the hook matter?"
+   ],
+   "key": {
+    "must_include": [
+     "At least two real examples from this week with the right numbers, e.g. Ohio State -3 at Nebraska (on 3), Texas Tech -3.5 at Baylor or Memphis -3.5 at Navy (dog gets the hook over 3), Utah -7 at TCU (on 7), Duke -13.5 (just under 14), Miami -20.5 (under 21)",
+     "Explains why 3 and 7 matter (most common final margins)"
+    ],
+    "must_not_claim": [
+     "lines that don't match this week's market by more than a point"
+    ],
+    "lean": "No lean required.",
+    "lean_side": "none",
+    "facts": [
+     "ESPN DK as of Mon: OSU -3, TTU -3.5, MEM -3.5, UTAH -7, DUKE -13.5, MIA -20.5, UNT -6.5, UNM -7.5",
+     "League lines are always half points (whole numbers moved half a point), so pool games can't push"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "lv-locked-vs-market",
+   "cat": "lines",
+   "games": [
+    401858303
+   ],
+   "turns": [
+    "Say the league locks Duke -13.5 on Tuesday and by Saturday the market's Duke -15. Did I get value on Duke or Clemson?"
+   ],
+   "key": {
+    "must_include": [
+     "Duke backers got the better number: they lay 13.5 when the market says 15 (1.5 points of value, and past the 14 key number)",
+     "Clemson backers are the ones getting worse value (+13.5 vs +15 in the market)"
+    ],
+    "must_not_claim": [
+     "Clemson is the value side in that scenario"
+    ],
+    "lean": "Duke has the value in the scenario.",
+    "lean_side": "Duke",
+    "facts": [
+     "League line locks Tuesday 11:00 AM CT per the rules page; the league scores against that number, not Saturday's"
+    ],
+    "sources": [
+     "server/league_rules.md"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "lv-no-push",
+   "cat": "lines",
+   "games": [
+    401858531
+   ],
+   "turns": [
+    "If Ohio State -3 is the line and they win by exactly 3, do I get a push in our league?"
+   ],
+   "key": {
+    "must_include": [
+     "No push in the league: every league line is a half point (whole numbers get moved half a point), so it's graded 2.5 or 3.5 and someone covers"
+    ],
+    "must_not_claim": [
+     "a push gives everyone a point",
+     "pushes are refunded/no point"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "league_rules.md: 'Every line is a half point (whole numbers get moved half a point), so a push can't happen.'"
+    ],
+    "sources": [
+     "server/league_rules.md"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "lv-where-value",
+   "cat": "lines",
+   "games": [
+    401856753,
+    401858303,
+    401858531,
+    401856752,
+    401862835,
+    401856871,
+    401862834
+   ],
+   "turns": [
+    "Where's the value this week? Give me your top spot and why."
+   ],
+   "key": {
+    "must_include": [
+     "One or two concrete spots tied to a real reason from this week (a line move with its real cause, a key number, a strong ATS split, or a QB situation)",
+     "The numbers it cites match this week's market"
+    ],
+    "must_not_claim": [
+     "invented injuries or line moves",
+     "a game that isn't on this week's slate"
+    ],
+    "lean": "Any side is fine if the reason is real. Strong answers: South Carolina if Sellers plays (16.5 overshoot), Nebraska +3 (OSU freshman QB, 0-3 ATS since), Navy +3.5 off the bye vs a bad run defense, Baylor +3.5 with the hook. Generic 'take the favorite' with no reason fails.",
+    "lean_side": "any",
+    "facts": [
+     "see the game items for the numbers"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "pe-sayin-fahey",
+   "cat": "personnel",
+   "games": [
+    401858531
+   ],
+   "turns": [
+    "Is Sayin playing Saturday? If not, what's the backup done?"
+   ],
+   "key": {
+    "must_include": [
+     "Sayin is out: fractured elbow (hurt Oct 17 at Indiana, had surgery), not expected back for Nebraska",
+     "Luke Fahey (true freshman) has started since: lost at USC 30-18, lost to Oregon 41-28, beat Northwestern 28-19; 1-2 straight up and 0-3 ATS"
+    ],
+    "must_not_claim": [
+     "Sayin is probable or playing",
+     "a different backup's name",
+     "Fahey stats not in the key"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Ohio State 7-3, 5-2 Big Ten"
+    ],
+    "sources": [
+     "https://www.cbssports.com/college-football/news/ohio-state-qb-julian-sayin-injury-ryan-day/",
+     "https://athlonsports.com/college-football/julian-sayin-injury-news-when-will-ohio-state-qb-return"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pe-tenn-qb",
+   "cat": "personnel",
+   "games": [
+    401856754
+   ],
+   "turns": [
+    "Who's starting at QB for Tennessee vs LSU?"
+   ],
+   "key": {
+    "must_include": [
+     "Not settled: George MacIntyre hurt his right knee vs Texas A&M and Heupel said Monday he's working toward being ready; freshman Faizon Brandon could start or share it",
+     "Honest 'TBD/watch the week' framing"
+    ],
+    "must_not_claim": [
+     "MacIntyre is definitely out",
+     "MacIntyre is definitely starting",
+     "Nico Iamaleava or Joey Aguilar is Tennessee's QB"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Tennessee runs a lot (rush rate ~61%, among the highest in FBS)",
+     "LSU QB Sam Leavitt threw 3 INTs in the 22-21 loss to Texas"
+    ],
+    "sources": [
+     "https://sports.yahoo.com/articles/josh-heupel-updates-qb-george-173105253.html",
+     "https://www.on3.com/teams/tennessee-volunteers/news/tennessee-josh-heupel-faizon-brandon-george-macintyre-quarterback-cfp/"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pe-clemson-qb",
+   "cat": "personnel",
+   "games": [
+    401858303
+   ],
+   "turns": [
+    "Who's Clemson's QB Friday? Has he ever played?"
+   ],
+   "key": {
+    "must_include": [
+     "Likely Trent Pearman, first career start; career 14 of 29 for 129 yards and 3 INT",
+     "Reynolds (season-ending knee) and Vizzina (concussion + ankle) are out"
+    ],
+    "must_not_claim": [
+     "Cade Klubnik",
+     "Pearman has started before",
+     "stats not in the key"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Freshman Brock Bradley is the backup"
+    ],
+    "sources": [
+     "https://www.tigernet.com/clemson-football/story/digging-into-clemsons-remaining-options-at-quarterback-heading-into-duke-25045"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pe-sellers",
+   "cat": "personnel",
+   "games": [
+    401856753
+   ],
+   "turns": [
+    "Is LaNorris Sellers playing vs Georgia?"
+   ],
+   "key": {
+    "must_include": [
+     "Unknown as of Monday: left ankle injury from the A&M game, missed the Arkansas game (South Carolina lost 34-6), status for Georgia still up in the air"
+    ],
+    "must_not_claim": [
+     "he's confirmed out",
+     "he's confirmed in",
+     "a specific injury other than the ankle"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "https://sports.yahoo.com/articles/south-carolina-announces-lanorris-sellers-060924507.html"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pe-michigan-injuries",
+   "cat": "personnel",
+   "games": [
+    401858528
+   ],
+   "turns": [
+    "Any injuries that matter for Michigan vs UCLA?"
+   ],
+   "key": {
+    "must_include": [
+     "Michigan's top WR JJ Buchanan (shoulder) is out, likely for the season (Kyle Whittingham said Monday)",
+     "OL Andrew Sprague is out for the season"
+    ],
+    "must_not_claim": [
+     "Sherrone Moore is Michigan's coach",
+     "UCLA injuries not in the key"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Michigan offense SP+ #103 already; total 38.5"
+    ],
+    "sources": [
+     "https://on3.com/news/michigan-wr-jj-buchanan-likely-miss-rest-of-season-shoulder-injury",
+     "https://sports.yahoo.com/articles/michigan-football-hit-devastating-injury-165320690.html"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pe-indiana-ol",
+   "cat": "personnel",
+   "games": [
+    401858535
+   ],
+   "turns": [
+    "Indiana lost a lineman? Does that matter at Washington?"
+   ],
+   "key": {
+    "must_include": [
+     "Starting right guard Joe Brunner tore his ACL in practice, out for the season; Austin Leibfried is the likely replacement",
+     "Measured take: one OL spot matters at the margin (pass pro / run game), not a line-mover by itself"
+    ],
+    "must_not_claim": [
+     "Brunner is a QB or skill player",
+     "Indiana's QB is hurt"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Washington DC is Ryan Walters (Indiana beat his Purdue team 66-0)"
+    ],
+    "sources": [
+     "https://sports.yahoo.com/articles/everything-indiana-curt-cignetti-said-181156862.html"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pe-unt-backup",
+   "cat": "personnel",
+   "games": [
+    401862835
+   ],
+   "turns": [
+    "North Texas QB situation? Should I care?"
+   ],
+   "key": {
+    "must_include": [
+     "Tayven Jackson hurt vs UTSA (upper body, sling, not expected back); Chris Jimerson Jr. starts",
+     "It matters: the line dropped from double digits to ~6.5-7"
+    ],
+    "must_not_claim": [
+     "Jackson is playing",
+     "made-up Jimerson stats"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "https://vsin.com/college-football/week-12-college-football-betting-report-and-odds/"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "mu-navy-option",
+   "cat": "matchups",
+   "games": [
+    401862834
+   ],
+   "turns": [
+    "Memphis -3.5 at Navy. How does Memphis's defense match up with the option?"
+   ],
+   "key": {
+    "must_include": [
+     "Navy runs it ~79% of plays (option) and is off a bye (14 days to prep)",
+     "Memphis's run defense is bad by the numbers (rushing PPA allowed +0.18, low stuff rate ~16%; defense SP+ #80)"
+    ],
+    "must_not_claim": [
+     "Memphis has a top run defense",
+     "Navy is coming off a short week"
+    ],
+    "lean": "Navy +3.5 is the data-supported lean (bye, option vs bad run D, hook over 3, Navy won 28-17 at Memphis last year as a 4-point dog). Memphis is defensible only with a real counter (Memphis offense SP+ #14 vs Navy defense #115, total 66.5).",
+    "lean_side": "Navy|none",
+    "facts": [
+     "ESPN DK: MEM -3.5 (open -3), total 66.5",
+     "Memphis 8-2, 6-4 ATS; Navy 3-6, 3-5-1 ATS",
+     "11 AM CT kickoff in Annapolis"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "mu-hou-wvu-pass",
+   "cat": "matchups",
+   "games": [
+    401856868
+   ],
+   "turns": [
+    "Houston at West Virginia has a 70 total. Who has the edge throwing it?"
+   ],
+   "key": {
+    "must_include": [
+     "Houston's passing offense is strong (pass PPA ~+0.48) and WVU's pass defense is among the worst (pass PPA allowed ~+0.53, defense SP+ #127)",
+     "Houston's defense isn't good either (SP+ #61), which is why the total is ~70.5"
+    ],
+    "must_not_claim": [
+     "WVU has a good pass defense"
+    ],
+    "lean": "Optional. A real ATS wrinkle: Houston is 1-6 ATS as a favorite and 3-7 overall (4 straight non-covers); WVU won 45-35 at Houston last year as a 13.5 dog.",
+    "lean_side": "any",
+    "facts": [
+     "ESPN DK: HOU -8.5 (open -7), total 70.5",
+     "WVU 5-5, one win from a bowl"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "mu-tenn-run-lsu",
+   "cat": "matchups",
+   "games": [
+    401856754
+   ],
+   "turns": [
+    "Tennessee wants to run it on LSU. Can they?"
+   ],
+   "key": {
+    "must_include": [
+     "Tennessee is run-heavy (~61% rush rate; offense rushing PPA ~+0.20)",
+     "LSU's run defense is solid: stuffs runs at a high rate (~30% stuff rate) and holds rushing PPA under zero; LSU defense SP+ #10"
+    ],
+    "must_not_claim": [
+     "LSU has a bad run defense"
+    ],
+    "lean": "No lean required; the game is a near pick'em (LSU -1.5) and the Tennessee QB status is the swing.",
+    "lean_side": "none",
+    "facts": [
+     "Tennessee defense SP+ #6, LSU defense #10; total 45.5"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "mu-ucla-def-mich-off",
+   "cat": "matchups",
+   "games": [
+    401858528
+   ],
+   "turns": [
+    "UCLA -3.5 at Michigan, total 38.5. Can Michigan score on UCLA?"
+   ],
+   "key": {
+    "must_include": [
+     "UCLA's defense is elite (SP+ #3, allows ~2.5 points per scoring opportunity) and Michigan's offense is bad (SP+ #103, 2.7 points per opportunity)",
+     "Michigan just lost its top WR (Buchanan) for the season"
+    ],
+    "must_not_claim": [
+     "Michigan has a good offense"
+    ],
+    "lean": "No lean required. Good answers note the paradox: the line moved toward Michigan (open -5.5 to -3.5) despite the injuries, and in a 38.5-total game 3.5 is a lot.",
+    "lean_side": "none",
+    "facts": [
+     "UCLA 10-0, 9-1 ATS (avg cover +10.55); Michigan 5-5, 3-7 ATS, 0-3 ATS on the road"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "mu-unm-def-wyo",
+   "cat": "matchups",
+   "games": [
+    401864542
+   ],
+   "turns": [
+    "New Mexico's defense vs Wyoming's offense, who wins that?"
+   ],
+   "key": {
+    "must_include": [
+     "New Mexico's defense is the best unit in the game: SP+ #11, havoc ~25%, rushing PPA allowed ~-0.26, stuff rate ~35%",
+     "Wyoming's offense is weak (SP+ #103) and run-heavy (~60%), which plays into New Mexico's strength"
+    ],
+    "must_not_claim": [
+     "Wyoming has a top-30 offense"
+    ],
+    "lean": "Optional. Counter-case: Wyoming has covered 4 straight and is 4-0 at home; New Mexico's offense is mediocre (SP+ #66) and just lost at home to UNLV as a 19.5 favorite.",
+    "lean_side": "any",
+    "facts": [
+     "ESPN DK: UNM -7.5 (open -10.5), total 37.5"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "mu-nd-redzone",
+   "cat": "matchups",
+   "games": [
+    401858307
+   ],
+   "turns": [
+    "Notre Dame -20.5 vs SMU. Do the Irish finish drives or kick field goals?"
+   ],
+   "key": {
+    "must_include": [
+     "Notre Dame finishes: ~4.9 points per scoring opportunity (offense SP+ #3), and SMU's defense gives up ~4.3 per opportunity (defense SP+ #43)",
+     "Big-spread caution: Notre Dame is 5-4-1 ATS and didn't cover -30.5 vs Navy (35-13) but did cover -29.5 vs BC (41-7)"
+    ],
+    "must_not_claim": [
+     "Notre Dame is undefeated",
+     "a red-zone % not in the key"
+    ],
+    "lean": "No lean required. SMU is 0-2-1 ATS on the road and just lost 49-7 at home to Wake Forest; backdoor risk exists with a 56.5 total.",
+    "lean_side": "none",
+    "facts": [
+     "Notre Dame 9-1, CFP #5 (Nov 10); SMU 7-3",
+     "ESPN DK: ND -20.5 (open -17.5), total 56.5"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "mu-boise-explosive",
+   "cat": "matchups",
+   "games": [
+    401860925
+   ],
+   "turns": [
+    "Boise -16.5 vs San Diego State. Can Boise's defense be trusted to hold a big number?"
+   ],
+   "key": {
+    "must_include": [
+     "Not really: Boise's defense is SP+ #77 and gives up big plays (explosiveness allowed ~1.53, worst of any team in this exam's games)",
+     "Boise is 1-4 ATS at home and just failed to cover -17.5 vs Oregon State (46-41)"
+    ],
+    "must_not_claim": [
+     "Boise covered vs Oregon State",
+     "Boise has a top-25 defense"
+    ],
+    "lean": "San Diego State has some support (Boise home ATS), but SDSU is 0-4 on the road straight up and ATS with an offense SP+ #88. 'No strong lean' is fine.",
+    "lean_side": "any",
+    "facts": [
+     "ESPN DK: BOISE -16.5 (open -18.5), total 62.5, Sat 8:30 PM CT",
+     "2025: SDSU beat Boise 17-7"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "mu-uga-run",
+   "cat": "matchups",
+   "games": [
+    401856753
+   ],
+   "turns": [
+    "Can South Carolina stop Georgia's run game?"
+   ],
+   "key": {
+    "must_include": [
+     "Georgia's offense is #2 in SP+ with a strong run game (rushing PPA ~+0.26, stuffed only ~11%)",
+     "South Carolina's run defense is average-ish (rushing PPA allowed ~-0.04); its pass defense is the real problem (pass PPA allowed ~+0.32)"
+    ],
+    "must_not_claim": [
+     "South Carolina has an elite defense"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "South Carolina defense SP+ #36"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "ah-indiana-ats",
+   "cat": "ats",
+   "games": [
+    401858535
+   ],
+   "turns": [
+    "Indiana's 9-1 but have they been covering?"
+   ],
+   "key": {
+    "must_include": [
+     "No: Indiana is 2-8 ATS (CFBD), 2-7 as a favorite, 1-6 ATS at home",
+     "Washington is the opposite at home: 0-6 ATS at home, 4-0 ATS on the road"
+    ],
+    "must_not_claim": [
+     "Indiana has a winning ATS record"
+    ],
+    "lean": "No lean required; noticing both trends is the depth.",
+    "lean_side": "none",
+    "facts": [
+     "Indiana covered vs USC 27-13 last week"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "ah-duke-ats",
+   "cat": "ats",
+   "games": [
+    401858303
+   ],
+   "turns": [
+    "How's Duke been against the number?"
+   ],
+   "key": {
+    "must_include": [
+     "8-2 ATS (CFBD), average cover margin about +11; 3-0 ATS as an underdog; covered 4 straight including a 36-25 loss at Miami as a 14-point dog"
+    ],
+    "must_not_claim": [
+     "Duke has a losing ATS record"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "ah-h2h-clem-duke",
+   "cat": "ats",
+   "games": [
+    401858303
+   ],
+   "turns": [
+    "What happened last time Clemson played Duke?"
+   ],
+   "key": {
+    "must_include": [
+     "2025: Duke won 46-45 at Clemson as a 4-point underdog (covered)"
+    ],
+    "must_not_claim": [
+     "Clemson won",
+     "a different score"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "CFBD lines 2025 (cache lines_prev)"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "ah-h2h-navy-mem",
+   "cat": "ats",
+   "games": [
+    401862834
+   ],
+   "turns": [
+    "Navy and Memphis history, anything there?"
+   ],
+   "key": {
+    "must_include": [
+     "Last year (2025, at Memphis): Navy won 28-17 as a 4-point underdog, covering by 15"
+    ],
+    "must_not_claim": [
+     "Memphis won last year"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "CFBD lines 2025 (cache lines_prev)"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "ah-houston-fav",
+   "cat": "ats",
+   "games": [
+    401856868
+   ],
+   "turns": [
+    "Houston laying 8.5 on the road. How do they do as a favorite?"
+   ],
+   "key": {
+    "must_include": [
+     "Badly: 1-6 ATS as a favorite, 3-7 ATS overall, failed to cover 4 straight",
+     "Revenge angle: WVU won 45-35 at Houston last year as a 13.5-point dog"
+    ],
+    "must_not_claim": [
+     "Houston covers as a favorite"
+    ],
+    "lean": "WVU +8.5 is supported by the ATS split; Houston is defensible only via the WVU pass-defense mismatch. Either with a reason.",
+    "lean_side": "any",
+    "facts": [],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "ah-coach-ats-unknown",
+   "cat": "ats",
+   "games": [
+    401856754
+   ],
+   "turns": [
+    "What's Lane Kiffin's career ATS record as a road underdog?"
+   ],
+   "key": {
+    "must_include": [
+     "Honest: Picky doesn't have a career coach-ATS split; he can give what he does have (LSU this year 4-6 ATS, 1-2 SU on the road; note LSU is actually the small favorite this week, not a dog)"
+    ],
+    "must_not_claim": [
+     "any specific Kiffin career ATS record"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Kiffin is in his first season at LSU and returns to Knoxville (he coached Tennessee in 2009)"
+    ],
+    "sources": [
+     "https://sports.yahoo.com/articles/lsu-vs-tennessee-preview-5-170947620.html"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "ah-ucla-ats",
+   "cat": "ats",
+   "games": [
+    401858528
+   ],
+   "turns": [
+    "Is UCLA as good against the spread as their record?"
+   ],
+   "key": {
+    "must_include": [
+     "Yes, close: 9-1 ATS (CFBD), average cover about +10.5, 4-0 ATS on the road; the only miss was last week vs Illinois (22-14 as a 10.5 favorite)"
+    ],
+    "must_not_claim": [
+     "UCLA has a losing ATS record"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "ah-lookahead",
+   "cat": "ats",
+   "games": [
+    401858531,
+    401858528,
+    401856753,
+    401858302,
+    401858303
+   ],
+   "turns": [
+    "Any lookahead or letdown spots this week?"
+   ],
+   "key": {
+    "must_include": [
+     "At least one real one: Ohio State at Nebraska with Michigan next (and Michigan with Ohio State next); Georgia at South Carolina with Georgia Tech next; Virginia Tech at Miami with Virginia next; Clemson at Duke with South Carolina next"
+    ],
+    "must_not_claim": [
+     "a next-week opponent that's wrong"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "CFBD games 2026 (week 13 schedule)"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "ah-vt-letdown",
+   "cat": "ats",
+   "games": [
+    401858302
+   ],
+   "turns": [
+    "Virginia Tech +20.5 at Miami. Too many points?"
+   ],
+   "key": {
+    "must_include": [
+     "Real context: Virginia Tech just lost 40-22 at home to Stanford as a 17.5 favorite; Miami offense is SP+ #1 but Miami failed to cover -14 vs Duke (36-25) and -13.5 at UNC",
+     "The line moved up from ~16.5"
+    ],
+    "must_not_claim": [
+     "Miami is undefeated",
+     "Miami is No. 1 in the CFP rankings"
+    ],
+    "lean": "Either side with a reason; 'no strong lean' fine. Last year VT covered +17.5 by half a point (Miami won 34-17).",
+    "lean_side": "any",
+    "facts": [
+     "Miami 9-1, CFP #7 after losing at Notre Dame",
+     "ESPN DK: MIA -20.5 (open -16.5), total 61.5"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "si-wyoming-cold",
+   "cat": "situational",
+   "games": [
+    401864542
+   ],
+   "turns": [
+    "New Mexico at Wyoming Friday night. Does the weather or altitude matter?"
+   ],
+   "key": {
+    "must_include": [
+     "Laramie is ~7,200 ft and the forecast is cold (around 30°F) with wind ~14 mph (gusts ~24) at kickoff; it's a forecast 5 days out",
+     "Altitude edge is muted: New Mexico plays at ~5,000 ft in Albuquerque",
+     "Cold + wind fits the low total (37.5) and makes 7.5 a lot of points"
+    ],
+    "must_not_claim": [
+     "snow is certain",
+     "a forecast stated as fact without 'forecast'"
+    ],
+    "lean": "Wyoming +7.5 is supported (low total, home 4-0, 4 straight covers); New Mexico defensible via its defense. Either with a reason.",
+    "lean_side": "any",
+    "facts": [
+     "Friday Nov 20, 8 PM CT (7 PM MT)",
+     "Short week for both (6 days rest)",
+     "Wyoming's last conference game; Mountain West title race"
+    ],
+    "sources": [
+     "https://www.mwcconnection.com/hawaii-warriors-football/95893/2026-mountain-west-football-week-11-recap"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "si-byu-wind",
+   "cat": "situational",
+   "games": [
+    401856866
+   ],
+   "turns": [
+    "BYU at Kansas total is 47.5. Weather a factor?"
+   ],
+   "key": {
+    "must_include": [
+     "The forecast has wind around 19 mph at kickoff in Lawrence (5 days out, could change); wind hurts passing and kicking, which leans under",
+     "The total already dropped from ~50.5"
+    ],
+    "must_not_claim": [
+     "certain rain or snow"
+    ],
+    "lean": "Under lean is fine as long as it's framed as a forecast.",
+    "lean_side": "any",
+    "facts": [
+     "11 AM CT kickoff",
+     "ESPN DK: BYU -5.5 (open -7), total 47.5"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "si-ucla-travel",
+   "cat": "situational",
+   "games": [
+    401858528
+   ],
+   "turns": [
+    "UCLA flying to Ann Arbor. Body clock thing?"
+   ],
+   "key": {
+    "must_include": [
+     "Kickoff 2:30 PM CT = 12:30 PM Pacific body clock (3:30 ET local): an early-ish start for a West Coast team, a mild edge at most",
+     "UCLA has handled the road fine: 4-0 straight up and 4-0 ATS on the road"
+    ],
+    "must_not_claim": [
+     "it's a night game",
+     "UCLA has struggled on the road"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Forecast ~62°F, light wind"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "si-tcu-motivation",
+   "cat": "situational",
+   "games": [
+    401856872
+   ],
+   "turns": [
+    "Utah -7 at TCU Saturday night. Motivation angles?"
+   ],
+   "key": {
+    "must_include": [
+     "Utah (10-0, 7-0 Big 12) clinches a Big 12 title-game spot with a win",
+     "TCU is 5-5 and needs one more win for bowl eligibility"
+    ],
+    "must_not_claim": [
+     "Utah has lost a game",
+     "TCU is already bowl eligible"
+    ],
+    "lean": "No lean required. Good: Utah is 6-0 ATS at home but 2-2 on the road and just failed to cover at Arizona (40-39 as a 2.5 favorite); 7 is a key number.",
+    "lean_side": "any",
+    "facts": [
+     "8 PM CT kickoff in Fort Worth",
+     "Utah CFP #2 (Nov 10)"
+    ],
+    "sources": [
+     "https://www.deseret.com/sports/2026/11/15/big-12-football-championship-game-tracker-after-week-11/"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "si-baylor-interim",
+   "cat": "situational",
+   "games": [
+    401856871
+   ],
+   "turns": [
+    "Baylor's playing for an interim coach right? Does that matter vs Texas Tech?"
+   ],
+   "key": {
+    "must_include": [
+     "Yes: Dave Aranda was fired Oct 25; DC Joe Klanderman is interim for the rest of the season",
+     "Baylor is 2-1 straight up and ATS since (won at UCF 41-9, beat Iowa State 42-31, lost 28-7 at BYU) and 7-3 ATS on the year"
+    ],
+    "must_not_claim": [
+     "Aranda is still coaching",
+     "a different interim name"
+    ],
+    "lean": "Optional: Baylor +3.5 gets the hook over 3 after the line moved from ~1.5 to 3.5.",
+    "lean_side": "any",
+    "facts": [
+     "Texas Tech 9-1, CFP #12, still chasing a Big 12 title-game spot",
+     "ESPN DK: TTU -3.5 (open -1.5), total 57.5"
+    ],
+    "sources": [
+     "https://www.si.com/fannation/college/cfb-hq/news/college-football-hot-seat-index-mike-elko-apology-adds-pressure-texas-a-m-jeff-lebby-brent-key-bill-o-brien"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "si-navy-bye",
+   "cat": "situational",
+   "games": [
+    401862834
+   ],
+   "turns": [
+    "Who's rested in Memphis-Navy?"
+   ],
+   "key": {
+    "must_include": [
+     "Navy is off a bye (last played Nov 7 vs Temple, 14 days of rest); Memphis played South Florida the week before (about 8 days of rest)"
+    ],
+    "must_not_claim": [
+     "Memphis is off a bye"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "CFBD games 2026"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "bp-cfp-picture",
+   "cat": "big_picture",
+   "games": [],
+   "turns": [
+    "Who's in the playoff if it ended today?"
+   ],
+   "key": {
+    "must_include": [
+     "Uses the latest committee rankings (Nov 10): 1 Georgia, 2 Utah, 3 Alabama, 4 UCLA, 5 Notre Dame, 6 Texas, 7 Miami, 8 Tennessee, 9 Indiana, 10 BYU, 11 Kentucky, 12 Texas Tech",
+     "Says the next committee ranking comes out this week (Tuesday)"
+    ],
+    "must_not_claim": [
+     "a ranking release newer than Nov 10 as of Monday",
+     "Miami is still No. 1",
+     "invented bracket matchups stated as official"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Miami fell from No. 1 to No. 7 after losing at Notre Dame",
+     "Coaches Poll (Nov 15) differs from the committee"
+    ],
+    "sources": [
+     "https://www.ncaa.com/news/football/article/2026-11-10/georgia-utah-lead-second-college-football-playoff-rankings-2026"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "bp-big12-race",
+   "cat": "big_picture",
+   "games": [
+    401856872,
+    401856871,
+    401856866
+   ],
+   "turns": [
+    "What's the Big 12 title game picture?"
+   ],
+   "key": {
+    "must_include": [
+     "Utah (7-0 Big 12) clinches a spot with one more win (at TCU this week)",
+     "Second spot: Texas Tech (6-1) vs BYU (5-2); BYU holds the tiebreaker over Texas Tech if they finish tied",
+     "Both play this week: Texas Tech at Baylor, BYU at Kansas"
+    ],
+    "must_not_claim": [
+     "Utah has clinched already",
+     "Houston is in the lead"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Big 12 title game Dec 4/5 in Arlington"
+    ],
+    "sources": [
+     "https://www.deseret.com/sports/2026/11/15/big-12-football-championship-game-tracker-after-week-11/",
+     "https://www.heartlandcollegesports.com/2026/11/15/big-12-championship-game-scenarios-tiebreakers-2026/"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "bp-carousel",
+   "cat": "big_picture",
+   "games": [
+    401858303,
+    401856752,
+    401856871,
+    401858528
+   ],
+   "turns": [
+    "Coaching carousel stuff that matters for this week's games?"
+   ],
+   "key": {
+    "must_include": [
+     "At least two real ones tied to this week: Dabo Swinney hot-seat noise after the Georgia Tech loss (Clemson at Duke); Mike Elko on hot-seat lists (A&M at Oklahoma); Baylor fired Dave Aranda, Joe Klanderman interim (vs Texas Tech); Finebaum-style chatter about Michigan under first-year Kyle Whittingham",
+     "Open jobs it may cite: Florida State (Norvell fired Nov 1), Baylor, Maryland (Locksley fired Oct 21), Sam Houston; NC State hired Philip Rivers"
+    ],
+    "must_not_claim": [
+     "Dabo has been fired",
+     "Sherrone Moore coaches Michigan",
+     "made-up firings"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "https://www.espn.com/college-football/story/_/id/49742747/college-football-coaching-hot-seats-2026-next-big-jobs",
+     "https://blog.rallyfuel.com/college-football-coaching-carousel-2026/"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "bp-michigan-coach",
+   "cat": "big_picture",
+   "games": [
+    401858528
+   ],
+   "turns": [
+    "Is Sherrone Moore getting fired after this 5-5 season?"
+   ],
+   "key": {
+    "must_include": [
+     "Corrects the premise: Michigan's coach is Kyle Whittingham (first season), not Sherrone Moore",
+     "Michigan is 5-5 (2-5 Big Ten); there's chatter about whether year one is his only one, but nothing official"
+    ],
+    "must_not_claim": [
+     "Sherrone Moore is Michigan's coach",
+     "Whittingham has been fired or announced leaving"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "https://on3.com/news/michigan-wr-jj-buchanan-likely-miss-rest-of-season-shoulder-injury"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "bp-big-ten",
+   "cat": "big_picture",
+   "games": [
+    401858528,
+    401858535
+   ],
+   "turns": [
+    "Big Ten title race, who's in control?"
+   ],
+   "key": {
+    "must_include": [
+     "UCLA (10-0, 7-0 Big Ten) is in control; Indiana (9-1, 6-1) is chasing after beating USC",
+     "Both play this week: UCLA at Michigan, Indiana at Washington"
+    ],
+    "must_not_claim": [
+     "Ohio State controls its destiny",
+     "UCLA has a conference loss"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "Oregon is 7-3"
+    ],
+    "sources": [
+     "https://www.ncaa.com/news/football/article/2026-11-10/predicting-all-10-fbs-football-conference-champions-three-weeks-play"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "bp-kiffin",
+   "cat": "big_picture",
+   "games": [
+    401856754
+   ],
+   "turns": [
+    "Kiffin going back to Knoxville, is that a thing?"
+   ],
+   "key": {
+    "must_include": [
+     "Yes: Lane Kiffin, in his first season at LSU, coached Tennessee in 2009 and left after one year, so Vols fans hate him; it's his return to Neyland",
+     "Ties it to the game: LSU is 6-4, a small favorite (~-1.5), basically out of the playoff race; Tennessee 8-2 is No. 8 in the CFP rankings"
+    ],
+    "must_not_claim": [
+     "Kiffin is still at Ole Miss",
+     "LSU is in the CFP top 12"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "https://sports.yahoo.com/articles/lsu-vs-tennessee-preview-5-170947620.html"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pb-osu-neb",
+   "cat": "pushback",
+   "games": [
+    401858531
+   ],
+   "turns": [
+    "Ohio State or Nebraska, who you got?",
+    "why?",
+    "what's the best case for the other side?"
+   ],
+   "key": {
+    "must_include": [
+     "Turn 1: a side against the spread with the number",
+     "Turn 2: real reasons (Sayin out / Fahey 0-3 ATS, Nebraska 7-2-1 ATS and def SP+ #9, OSU lookahead to Michigan, the 3)",
+     "Turn 3: an honest counter-case for the other side (OSU still SP+ #4 with defense #8, Nebraska offense SP+ #40, Nebraska lost 2 of its last 3 games)"
+    ],
+    "must_not_claim": [
+     "Sayin is playing"
+    ],
+    "lean": "Nebraska +3 is data-supported; Ohio State is OK if turn 2 gives real reasons. Must stay consistent across turns (no flip-flop without a reason).",
+    "lean_side": "Nebraska|Ohio State",
+    "facts": [],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "pb-duke",
+   "cat": "pushback",
+   "games": [
+    401858303
+   ],
+   "turns": [
+    "Duke -13.5, should I lay it?",
+    "what would change your mind?"
+   ],
+   "key": {
+    "must_include": [
+     "Turn 1: a clear answer tied to the Clemson QB situation and Duke's ATS form",
+     "Turn 2: concrete triggers (e.g. Vizzina cleared to play, the line moving past 14, a low total making 13.5 hard, Clemson's defense SP+ #28 being decent)"
+    ],
+    "must_not_claim": [
+     "Klubnik",
+     "Clemson's starter is healthy"
+    ],
+    "lean": "Either side with a reason.",
+    "lean_side": "any",
+    "facts": [],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "pb-navy",
+   "cat": "pushback",
+   "games": [
+    401862834
+   ],
+   "turns": [
+    "Give me a side in Memphis-Navy.",
+    "why?"
+   ],
+   "key": {
+    "must_include": [
+     "A side with the number",
+     "Reasons from the data (Navy off a bye + option vs Memphis's bad run D + hook over 3 + Navy won last year as a dog; or Memphis offense SP+ #14 vs Navy defense #115)"
+    ],
+    "must_not_claim": [
+     "Memphis lost to Navy at home in 2024 (no data for that)"
+    ],
+    "lean": "Navy +3.5 is data-supported; Memphis OK with a real reason.",
+    "lean_side": "Navy|Memphis",
+    "facts": [],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "pb-uga",
+   "cat": "pushback",
+   "games": [
+    401856753
+   ],
+   "turns": [
+    "Is 16.5 too many for Georgia?",
+    "best case for South Carolina?"
+   ],
+   "key": {
+    "must_include": [
+     "Turn 1: ties the answer to Sellers' status",
+     "Turn 2: a real South Carolina case (Sellers returning, home night game, 16.5 is a big number in an SEC game, South Carolina beat Tennessee and covered at Oklahoma earlier; Georgia lost to Auburn at home)"
+    ],
+    "must_not_claim": [
+     "Sellers is confirmed in or out"
+    ],
+    "lean": "Conditional on Sellers is ideal.",
+    "lean_side": "any",
+    "facts": [],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": true
+   }
+  }
  ]
 }

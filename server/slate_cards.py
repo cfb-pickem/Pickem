@@ -294,6 +294,41 @@ def last_meeting(g: dict) -> str | None:
     return s
 
 
+def lean_lines(g: dict, idx: dict, espn_notes: dict | None) -> list[str]:
+    """pick_brief's factor engine (the pool cards' ATS lean) run against the
+    current MARKET line, since a non-pool game has no league line."""
+    try:
+        import news
+        import pick_brief
+        import slate_intel
+        mk = (espn_notes or {}).get("market") or {}
+        home_now = mk.get("home_now")
+        if home_now is None:
+            home_now = (_line(g) or {}).get("spread")
+        if home_now is None:
+            return []
+        away, home = g["awayTeam"], g["homeTeam"]
+        kick = _sd(g).astimezone(CT).replace(tzinfo=None).isoformat() if _sd(g) else None
+        cg = {"id": g["id"], "away": away, "home": home, "line": home_now, "start": kick,
+              "season": g.get("season"), "week": g.get("week"), "fpi_margin": None}
+        claims, _ = slate_intel.claims_for(g["id"])
+        intel = [{"team": away if c.get("team") == "away" else home, "text": c.get("text"), "kind": c.get("kind"),
+                  "status": c.get("status"), "date": c.get("date"), "source": c.get("source_name")}
+                 for c in claims if c.get("team") in ("away", "home")]
+        intel += pick_brief.news_intel(news.load_cache(), [away, home])
+        b = pick_brief.build(cg, espn_notes, idx, {}, intel)
+    except Exception as e:  # noqa: BLE001 - the card works without a lean
+        log.warning("slate lean failed: %r", e)
+        return []
+    conf = {"strong": "strong lean", "lean": "lean", "none": "coin flip"}[b["strength"]]
+    sc = b["score"]
+    out = [f"  COMPUTED ATS LEAN (vs the market line; not a pool game, so no league line): {b['pick_label']} "
+           f"({conf}; factor score {away} {sc[away]:g}, {home} {sc[home]:g}). Who COVERS, not who wins."]
+    out += [f"    + for {f['side']}: {f['why']}" for f in b["top"][:4]]
+    out += [f"    ! red flag: {f['why']}" for f in b["flags"][:2]]
+    return out
+
+
 def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict) -> str:
     away, home = g["awayTeam"], g["homeTeam"]
     meta = games_ds.get(g["id"]) or {}
@@ -312,6 +347,7 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict) -> str:
     for extra in (style_line(away, home, idx), run_game_line(away, home), rest_line(g, idx, games_ds), last_meeting(g)):
         if extra:
             L.append(extra)
+    L += lean_lines(g, idx, espn_notes)
     wp = (espn_notes or {}).get("espn_win_prob")
     if wp:
         L.append(f"  ESPN FPI: {home} {wp['home']:.0f}% to win")
