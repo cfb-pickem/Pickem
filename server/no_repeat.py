@@ -1,23 +1,26 @@
 """
 Never the same insult twice (Charlie's checklist item 7, enforced in code).
 
-A persistent ledger of every line Picky sends in banter: normalized text,
-who it was aimed at, which chat, the roast angle (the fact or idea the joke
-is built on, e.g. the digit-free text of "TG is 2-7 in Oklahoma games") and
-the opener. `Ledger.is_repeat()` says why a candidate would read as a repeat;
-`screen()` walks prepared options and returns the first one that doesn't.
+A persistent ledger of every banter/roast line Picky sends: normalized text,
+who it was aimed at, which chat, the roast angle, the opener, the punchline
+and the "significant" numbers in it. `Ledger.is_repeat()` says why a candidate
+would read as a repeat; `screen()` walks prepared options and returns the first
+one that doesn't.
 
-Windows (days):
-  - verbatim (same normalized text) on the same target, or in the same chat: never
-  - near-identical (similar() >= SIM_THRESHOLD) on the same target: TARGET_DAYS
-  - same angle on the same target: TARGET_DAYS
-  - near-identical anywhere (any target, any chat): GROUP_DAYS
-  - same 3-word opener as any of the last OPENER_LAST_N sent lines
+What counts as a repeat (windows in days):
   - any BANNED_TICS phrase: always
+  - same normalized text on the same target, or in the same chat: never (hash kept forever)
+  - near-identical (similar() >= SIM_THRESHOLD) or the same punchline:
+        same target TARGET_DAYS, same chat CHAT_DAYS (effectively never), anyone GROUP_DAYS
+  - same angle (explicit label, or the same significant number: a record like 2-7, a margin
+    like 30.5) on the same target: TARGET_DAYS; an explicit angle in the same chat: CHAT_DAYS
+  - same 3-word opener: on the same target TARGET_DAYS, anyone within the last RECENT_N lines
+  - any 3-word phrase (not made only of stop/league words) from the last RECENT_N sent lines
 
 State: PRIVATE JSON (default /Users/Agent/cfb-pickem-private/picky_no_repeat.json,
 override with PICKY_NO_REPEAT_STATE; tests and side sidecars use a temp file).
-Atomic writes under an flock, mode 0600. No model, no network.
+Writes are atomic under an flock (safe across the group sidecar and the chat
+process), mode 0600. No model, no network.
 
 CLI:  no_repeat.py check "<text>" [--target T] [--chat C] [--angle A]
       no_repeat.py sim "<a>" "<b>"
@@ -40,13 +43,18 @@ import unicodedata
 from pathlib import Path
 
 DEFAULT_PATH = "/Users/Agent/cfb-pickem-private/picky_no_repeat.json"
-TARGET_DAYS = 30
-GROUP_DAYS = 21
+TARGET_DAYS = 21          # same person: line, punchline, angle, opener
+GROUP_DAYS = 3            # short-term group-wide cooldown for a near-identical line on anyone
+CHAT_DAYS = 60            # same chat: "never" (entries older than this are pruned; exact hashes stay forever)
+KEEP_DAYS = max(TARGET_DAYS, GROUP_DAYS, CHAT_DAYS)
+RECENT_N = 30             # openers and 3-word phrases: the last 30 sent lines, any age
 OPENER_WORDS = 3
-OPENER_LAST_N = 30
+OPENER_LAST_N = RECENT_N  # (old name)
+FOREVER_CAP = 5000
 # Tuned on the pairs in test_no_repeat.py: a reworded copy of the same joke scores >= 0.62, two
-# different jokes on the same topic (same team, same record) stay under ~0.5.
+# different jokes on the same topic stay under ~0.5.
 SIM_THRESHOLD = 0.62
+PUNCH_SIM = 0.8
 DAY = 86400.0
 
 # Stock phrases that read as a bot (plan 1b/W5, Charlie's checklist 7, chat._TICS). Regexes,
@@ -58,7 +66,7 @@ BANNED_TICS = [
     r"\bfor the record\b",
     r"\bflesh and blood\b",
     r"\blet that sink in\b",
-    r"\blet'?s be real\b",
+    r"\blet'?s be (real|honest)\b",
     r"\bi'?m (just )?here to\b",
     r"\bat least i\b",
     r"\bin the data\b",
@@ -73,6 +81,7 @@ BANNED_TICS = [
     r"\bso maybe you should\b",
     r"\bdon'?t let it go to your head\b",
     r"\bwhich is a nice way of saying\b",
+    r"^\s*look,",
     # preachy (W5): never a lecture, never a refusal
     r"\bnot okay\b|\bnot ok\b",
     r"\bkeep it (respectful|clean|civil|classy)\b|\blet'?s keep it (clean|civil|respectful)\b",
@@ -109,15 +118,12 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
-def _grams(s: str, n: int = 3) -> set[str]:
+def _grams(s: str, n: int = 3) -> frozenset:
     s = f" {s} "
-    return {s[i:i + n] for i in range(max(1, len(s) - n + 1))}
+    return frozenset(s[i:i + n] for i in range(max(1, len(s) - n + 1)))
 
 
-def similar(a: str, b: str) -> float:
-    """0..1. The max of two Dice scores over the normalized texts: character trigrams
-    (catches small rewordings and typos) and word sets (catches reordering)."""
-    na, nb = normalize(a), normalize(b)
+def _sim_norm(na: str, nb: str) -> float:
     if not na or not nb:
         return 0.0
     if na == nb:
@@ -129,9 +135,39 @@ def similar(a: str, b: str) -> float:
     return round(max(char, tok), 4)
 
 
+def similar(a: str, b: str) -> float:
+    """0..1. The max of two Dice scores over the normalized texts: character trigrams
+    (catches small rewordings and typos) and word sets (catches reordering)."""
+    return _sim_norm(normalize(a), normalize(b))
+
+
 def opener(text: str, n: int = OPENER_WORDS) -> str | None:
     w = normalize(text).split()
     return " ".join(w[:n]) if len(w) >= n else None
+
+
+opener_of = opener
+
+
+def punchline(text: str) -> str | None:
+    """The last clause (after the last sentence break or comma) when it's 3+ words: two lines
+    that land on the same closer read as the same joke even with different setups."""
+    parts = [p for p in re.split(r"[.!?,:]+\s+|\s+(?:and|but|so)\s+", (text or "").strip()) if p.strip()]
+    if len(parts) < 2:
+        return None
+    p = normalize(parts[-1])
+    return p if len(p.split()) >= 3 else None
+
+
+_SIG_NUM = re.compile(r"(?<![\w.])(\d+-\d+|\d+\.\d+|\d{2,}%?)(?![\w.]*\d)")
+
+
+def numbers(text: str) -> list[str]:
+    """The significant numbers in a line: records (2-7), margins and lines (30.5), and
+    2+ digit counts; not week numbers or years. Two lines on the same person that hang on
+    the same number are the same angle."""
+    t = re.sub(r"\bweeks? \d+\b|\b20\d\d\b", " ", (text or "").replace("–", "-"), flags=re.I)
+    return sorted({m.group(1).lstrip("+") for m in _SIG_NUM.finditer(t)})
 
 
 def angle_key(text: str | None) -> str | None:
@@ -148,7 +184,27 @@ def _h(norm: str) -> str:
 
 
 def _tkey(target: str | None) -> str | None:
-    return normalize(target) or None if target else None
+    return (normalize(target) or None) if target else None
+
+
+# Words a 3-word phrase may be made of and still not count as a stock phrase.
+_COMMON = set("""a an the and or but if so to of in on at for with by from up out is are was were be been am i im
+you youre your u ur he she it its they them we me my this that what who how why when not no yes do dont did does
+just like get got go going all one more than then there here have has had will would can cant his her their our
+him hes shes theyre thats whats ill youll ive youve still even only too very also now off over about into as
+week weeks cover covered covers missed miss spread line lines pick picks picked points point game games season
+took take taking hit hits lost won win wins loss losses favorite favorites underdog underdogs dog dogs""".split())
+
+
+def phrases(text: str, n: int = 3) -> set[str]:
+    w = normalize(text).split()
+    out = set()
+    for i in range(len(w) - n + 1):
+        g = w[i:i + n]
+        if all(x in _COMMON or re.fullmatch(r"[\d.]+", x) for x in g):
+            continue
+        out.add(" ".join(g))
+    return out
 
 
 # -----------------------------------------------------------------------------
@@ -158,7 +214,7 @@ def _tkey(target: str | None) -> str | None:
 class Ledger:
     """Persistent record of sent lines. Safe across processes (flock + atomic replace)."""
 
-    KEEP_DAYS = max(TARGET_DAYS, GROUP_DAYS) + 1
+    KEEP_DAYS = KEEP_DAYS
 
     def __init__(self, path: str | os.PathLike | None = None):
         self.path = Path(path or os.environ.get("PICKY_NO_REPEAT_STATE") or DEFAULT_PATH)
@@ -167,12 +223,12 @@ class Ledger:
 
     @staticmethod
     def _empty() -> dict:
-        return {"schema": 1, "entries": [], "forever": {}}
+        return {"schema": 2, "entries": [], "forever": {}}
 
     # ---- storage
     def _load(self) -> dict:
         try:
-            m = self.path.stat().st_mtime
+            m = self.path.stat().st_mtime_ns
         except OSError:
             self._mtime, self._doc = None, self._empty()
             return self._doc
@@ -207,7 +263,7 @@ class Ledger:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
             raise
-        self._mtime, self._doc = self.path.stat().st_mtime, doc
+        self._mtime, self._doc = self.path.stat().st_mtime_ns, doc
 
     # ---- checks
     def is_repeat(self, text: str, target: str | None = None, chat_id: str | None = None,
@@ -221,31 +277,42 @@ class Ledger:
             return "empty"
         now = now if now is not None else time.time()
         d = self._load()
-        tk, h = _tkey(target), _h(norm)
+        tk, h, chat = _tkey(target), _h(norm), (str(chat_id) if chat_id else None)
         fv = d.get("forever") or {}
         if tk and h in (fv.get("t:" + tk) or []):
             return f"verbatim repeat on {target}"
-        if chat_id and h in (fv.get("c:" + str(chat_id)) or []):
+        if chat and h in (fv.get("c:" + chat) or []):
             return "verbatim repeat in this chat"
         ak = angle_key(angle) if angle else None
-        op = opener(text)
+        op, pl, nums = opener(text), punchline(text), set(numbers(text))
         entries = d.get("entries") or []
         for e in reversed(entries):
             age = now - float(e.get("ts") or 0)
-            if age > self.KEEP_DAYS * DAY:
+            if age > KEEP_DAYS * DAY:
                 continue
-            same_t = bool(tk) and e.get("target") == tk
-            if same_t and age <= TARGET_DAYS * DAY:
-                if ak and e.get("angle") == ak:
-                    return f"same angle on {target} within {TARGET_DAYS}d: {ak[:60]!r}"
-                if similar(norm, e.get("norm") or "") >= SIM_THRESHOLD:
-                    return f"near-identical line on {target} within {TARGET_DAYS}d"
-            if age <= GROUP_DAYS * DAY and similar(norm, e.get("norm") or "") >= SIM_THRESHOLD:
-                return f"near-identical line used in the group within {GROUP_DAYS}d"
-        if op:
-            recent = [e.get("opener") for e in entries[-OPENER_LAST_N:]]
-            if op in recent:
-                return f"opener {op!r} used in the last {OPENER_LAST_N} replies"
+            same_t = bool(tk) and e.get("target") == tk and age <= TARGET_DAYS * DAY
+            same_c = bool(chat) and e.get("chat") == chat and age <= CHAT_DAYS * DAY
+            anyone = age <= GROUP_DAYS * DAY
+            if not (same_t or same_c or anyone):
+                continue
+            where = (f"on {target} within {TARGET_DAYS}d" if same_t else "in this chat" if same_c
+                     else f"in the group within {GROUP_DAYS}d")
+            if _sim_norm(norm, e.get("norm") or "") >= SIM_THRESHOLD:
+                return f"near-identical line {where}"
+            if pl and e.get("punch") and _sim_norm(pl, e["punch"]) >= PUNCH_SIM:
+                return f"same punchline {where}: {pl[:50]!r}"
+            if ak and e.get("angle") == ak and (same_t or same_c):
+                return f"same angle {where}: {ak[:60]!r}"
+            if same_t and nums and nums & set(e.get("nums") or []):
+                return f"same angle {where}: number {sorted(nums & set(e['nums']))[0]}"
+            if same_t and op and e.get("opener") == op:
+                return f"same opener {where}: {op!r}"
+        recent = entries[-RECENT_N:]
+        if op and op in {e.get("opener") for e in recent}:
+            return f"opener {op!r} used in the last {RECENT_N} replies"
+        stale = self.stale_phrases(text, recent=recent)
+        if stale:
+            return f"phrase {stale[0]!r} used in the last {RECENT_N} replies"
         return None
 
     def record(self, text: str, target: str | None = None, chat_id: str | None = None,
@@ -258,20 +325,22 @@ class Ledger:
         tk = _tkey(target)
         ent = {"ts": round(now, 1), "norm": norm, "target": tk, "chat": str(chat_id) if chat_id else None,
                "angle": angle_key(angle) if angle else None,
-               "opener": (normalize(opener) if opener else globals()["opener"](text))}
+               "opener": normalize(opener) if opener else opener_of(text),
+               "punch": punchline(text), "nums": numbers(text)}
         with self._locked():
             self._mtime = None  # re-read under the lock: another process may have written
             d = json.loads(json.dumps(self._load()))
-            cut = now - self.KEEP_DAYS * DAY
+            cut = now - KEEP_DAYS * DAY
             allv = d["entries"] + [ent]  # chronological: the in-window lines are a suffix
             k = sum(1 for e in allv if float(e.get("ts") or 0) >= cut)
-            d["entries"] = allv[-max(k, OPENER_LAST_N):]  # openers look at the last N whatever their age
+            d["entries"] = allv[-max(k, RECENT_N):]  # openers/phrases look at the last N whatever their age
             h = _h(norm)
             for key in (("t:" + tk) if tk else None, ("c:" + str(chat_id)) if chat_id else None):
                 if key:
                     lst = d["forever"].setdefault(key, [])
                     if h not in lst:
                         lst.append(h)
+                        del lst[:-FOREVER_CAP]
             self._write(d)
 
     def screen(self, options, target: str | None = None, chat_id: str | None = None):
@@ -283,23 +352,18 @@ class Ledger:
                 return o
         return None
 
-    def stale_phrases(self, text: str, n: int = 3) -> list[str]:
-        """n-word runs in `text` that also appear in one of the last OPENER_LAST_N sent lines
-        (W5's 30-reply phrase cooldown; the router decides what to do with them). Runs made only
-        of very common words are ignored."""
-        w = normalize(text).split()
-        grams = {" ".join(w[i:i + n]) for i in range(len(w) - n + 1)}
-        grams = {g for g in grams if not set(g.split()) <= _COMMON}
-        seen = set()
-        for e in (self._load().get("entries") or [])[-OPENER_LAST_N:]:
+    def stale_phrases(self, text: str, n: int = 3, recent: list | None = None) -> list[str]:
+        """3-word runs in `text` that also appear in one of the last RECENT_N sent lines (W5's
+        30-reply phrase cooldown). Runs made only of stop words, league words and numbers are ignored."""
+        grams = phrases(text, n)
+        if not grams:
+            return []
+        seen: set = set()
+        for e in recent if recent is not None else (self._load().get("entries") or [])[-RECENT_N:]:
             ew = (e.get("norm") or "").split()
             seen |= {" ".join(ew[i:i + n]) for i in range(len(ew) - n + 1)}
         return sorted(grams & seen)
 
-
-_COMMON = set("""a an the and or but if so to of in on at for with by from up out is are was were be been am i im
-you youre your u ur he she it its they them we me my this that what who how why when not no yes do dont did does
-just like get got go going all one more than then there here have has had will would can cant""".split())
 
 _default: Ledger | None = None
 

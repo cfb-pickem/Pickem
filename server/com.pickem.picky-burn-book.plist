@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Picky's burn book (burn_book.py, plan W2). Fires hourly; `tick` runs one
+  Opus refresh (claude -p claude-opus-5-5, no tools, zero MCP servers,
+  ANTHROPIC_API_KEY stripped) only when a slot is due: Sunday 9 PM CT (after
+  grading) or Wednesday 10 AM CT, or the book is missing / 8+ days old.
+  Otherwise a no-LLM recheck: rebuild the fact sheet from Supabase so lines
+  whose fact changed stop being offered. A failed refresh keeps the last good
+  book and backs off 6 hours. Output: /Users/Agent/cfb-pickem-private/burn_book.json
+  (0600, never in this public repo) + the banter_bank.json slots.
+  Logs: server/logs/burn_book.launchd.log.
+  Install: cp to ~/Library/LaunchAgents and launchctl load it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.picky-burn-book</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/burn_book.py</string>
+        <string>tick</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/burn_book.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/burn_book.launchd.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/Agent</string>
+        <key>TERM</key>
+        <string>dumb</string>
+        <key>DISABLE_AUTOUPDATER</key>
+        <string>1</string>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

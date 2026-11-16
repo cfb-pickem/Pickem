@@ -240,6 +240,8 @@ def due(doc: dict | None, now: dt.datetime) -> str | None:
         return "missing"
     if (now - made).total_seconds() > MAX_AGE_S:
         return "stale"
+    if doc.get("trigger") == "burn_book":
+        return None  # the burn book (Opus, Sun + Wed) owns the slots while its copy is fresh
     wed = (now - dt.timedelta(days=(now.weekday() - REFRESH_WEEKDAY) % 7)).replace(
         hour=REFRESH_HOUR, minute=0, second=0, microsecond=0)
     if wed > now:

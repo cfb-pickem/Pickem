@@ -83,6 +83,7 @@ import httpx  # noqa: E402
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from starlette.requests import Request as StarletteRequest  # noqa: E402
 
+import burn_book  # noqa: E402  (no-repeat screen at the send point)
 import callbacks  # noqa: E402
 import chat  # noqa: E402
 import group_outbox  # noqa: E402
@@ -666,6 +667,20 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
         log.warning("exchange log: %r", e)
 
 
+def no_repeat_screen(reply: str, q: str, team: str | None, key: str | None) -> str:
+    """Checklist 7 at the send point: a banter/roast reply that repeats a line, angle, opener or
+    stock phrase (no_repeat ledger) goes out as a fresh burn-book line instead; what's sent is
+    recorded. Fails open: a ledger/book error never blocks a reply."""
+    try:
+        out, info = burn_book.enforce(reply, q, sender_team=team, chat_id=key)
+        if info and info.get("why"):
+            log.info("no-repeat: %s -> %s (%s)", info["why"][:80], info["src"], info["ptype"])
+        return out
+    except Exception:  # noqa: BLE001
+        log.warning("no-repeat screen failed", exc_info=True)
+        return reply
+
+
 def history_key(chat_id: str, handle: str, dm: bool) -> str | None:
     """Group: the chat guid. DM: the sender's handle. None (no history) when
     an older watcher sends no chat id."""
@@ -754,6 +769,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply, image = await picky_brain.run(
                 draft, q=q, sender=f"{s.name or s.team} (team \"{s.team}\")" if s.team else (s.name or ""),
                 team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:])
+            if not image:
+                reply = no_repeat_screen(reply, q, s.team, key or chat_id)
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
             await save_turn(key, q_hist, reply, who)
             return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
@@ -780,6 +797,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 break
             log.info("%s reroll %d: filter dropped %d sentence(s)", mode, i + 1, len(drops))
         _, reply, image = best
+        if not image:
+            reply = no_repeat_screen(reply, q, s.team, key or chat_id)
         rare_bits.note_sent(reply)
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}

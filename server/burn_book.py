@@ -19,7 +19,9 @@ no frame breaks, no record claims in generic lines, and a roast must cite a
 bad number (never mock a good one). Charlie's taste log ("robotic" / "good")
 drops look-alikes of flagged lines and steers the next batch.
 
-Facts go stale: every tick (hourly, league_material's run) recheck() rebuilds
+Schedule: com.pickem.picky-burn-book.plist runs `tick` hourly: an Opus refresh when a slot is
+due (Sunday 9 PM CT after grading, Wednesday 10 AM CT, or the book is missing / 8+ days old),
+else a no-LLM recheck. Facts go stale: every tick recheck() rebuilds
 the fact sheet, and a line whose cited fact text is gone stops being offered.
 If an Opus refresh fails, the last batch stays (and the code pool still
 regenerates from fresh facts). Live replies never call Anthropic.
@@ -30,9 +32,11 @@ generic lines into banter_bank.json's categories, so the current pipeline's
 AMMO rider serves Opus lines with no brain-file change.
 
 Live API (router):  candidates(ptype, sender_team=None, target_team=None, chat_id=None, n=4, ledger=None)
-CLI:  burn_book.py refresh [--force] | recheck | status | show <ptype|team> | sample [N]
+CLI:  burn_book.py refresh [--force] | recheck | tick | status | show <ptype|team> | sample [N]
+      burn_book.py classify "<text>" | banter [path]   (write the book's lines into banter_bank.json)
       burn_book.py candidates <ptype> [--sender T] [--target T] [--chat C]
-      burn_book.py taste robotic|good "<reply>"
+      burn_book.py taste robotic|good "<reply>"   (or append "robotic: <reply>" / "lol good: <reply>"
+                                                 to /Users/Agent/cfb-pickem-private/picky_taste_notes.txt)
       burn_book.py facts           (the fact sheet Opus sees; no LLM)
 """
 
@@ -61,7 +65,7 @@ log = logging.getLogger("picky.burn_book")
 CT = ZoneInfo("America/Chicago")
 PRIVATE = Path("/Users/Agent/cfb-pickem-private")
 BOOK = Path(os.environ.get("PICKY_BURN_BOOK", str(PRIVATE / "burn_book.json")))
-TASTE = Path(os.environ.get("PICKY_BURN_TASTE", str(PRIVATE / "burn_book_taste.jsonl")))
+TASTE = Path(os.environ.get("PICKY_TASTE_NOTES", str(PRIVATE / "picky_taste_notes.txt")))
 REGISTER = Path(os.environ.get("PICKY_LEAGUE_CHAT_LINES", str(PRIVATE / "league_chat_lines.txt")))
 TIMEOUT_S = 2400
 FAIL_BACKOFF_S = 6 * 3600
@@ -119,6 +123,22 @@ BANTER_MAP = {"suck": ["insult"], "bark": ["insult", "egging"], "bad": ["insult"
 BOARD_MOVES = ["unhinged certainty", "one-game overreaction", "committee conspiracy math", "planted-story paranoia",
                "money cynicism", "now do X", "doom-posting", "deadpan replies", "rival digs",
                "sport-is-dead melodrama"]
+HOT_TAKES = Path(os.environ.get("PICKY_HOT_TAKES", str(PRIVATE / "hot_takes_bank.md")))
+
+
+def board_moves(path: Path | None = None) -> list[str]:
+    """The voice lane's message-board moves (hot_takes_bank.md '## Board voice' bullets) when the
+    bank has them, else the plan's ten."""
+    out, on = [], False
+    try:
+        for ln in (path or HOT_TAKES).read_text().splitlines():
+            if ln.startswith("#"):
+                on = ln.lower().lstrip("# ").startswith("board voice")
+            elif on and ln.startswith("- "):
+                out.append(ln[2:].strip())
+    except OSError:
+        pass
+    return out or list(BOARD_MOVES)
 
 # -----------------------------------------------------------------------------
 # facts: league_material's fact sheet + the burn-book extras, each with a polarity
@@ -257,25 +277,29 @@ def load_material() -> dict:
 # -----------------------------------------------------------------------------
 
 def taste_log(verdict: str, text: str, path: Path | None = None) -> dict:
+    """Append one note in the file's own format ("robotic: <reply>" / "lol good: <reply>")."""
     path = path or TASTE
-    rec = {"ts": dt.datetime.now(CT).isoformat(timespec="seconds"), "verdict": verdict, "text": text.strip()}
+    verdict = "good" if verdict in ("good", "lol good") else "robotic"
+    rec = {"verdict": verdict, "text": re.sub(r"\s+", " ", text).strip()}
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as f:
-        f.write(json.dumps(rec) + "\n")
+        f.write(f"{'lol good' if verdict == 'good' else 'robotic'}: {rec['text']}\n")
     os.chmod(path, 0o600)
     return rec
 
 
+_TASTE_LINE = re.compile(r"^\s*(?:[-*]\s*)?(?:\[[^\]]*\]\s*)?(robotic|lol good|good)\s*:\s*(.+?)\s*$", re.I)
+
+
 def taste_read(path: Path | None = None) -> dict[str, list[str]]:
+    """Charlie's notes: lines "robotic: <reply>" / "lol good: <reply>" (a leading "- " or a
+    "[date]" tag is fine; anything else in the file is ignored)."""
     out: dict[str, list[str]] = {"robotic": [], "good": []}
     try:
         for ln in (path or TASTE).read_text().splitlines():
-            try:
-                r = json.loads(ln)
-            except ValueError:
-                continue
-            if r.get("verdict") in out and r.get("text"):
-                out[r["verdict"]].append(r["text"])
+            m = _TASTE_LINE.match(ln)
+            if m:
+                out["robotic" if m.group(1).lower() == "robotic" else "good"].append(m.group(2).strip().strip('"'))
     except OSError:
         pass
     return out
@@ -300,7 +324,8 @@ HOW THE LINES MUST SOUND (this matters more than anything):
 - Never explain the joke. No "which is a nice way of saying", no trailing "right?", no "Look,", no "honestly", no semicolons.
 - Never answer an insult with a box score. At most one number per line, and only when that number IS the punchline.
 - Vary the shape: questions, deadpan, mock-sincere, fake announcements, understatement, a callback to their worst real pick. No two lines in a category open with the same two words.
-- Board moves to borrow from (one at a time, in your own words): {moves}.
+- Message-board moves to borrow from (one at a time, in your own words, never inventing a fact, leak or rumor):
+{moves}
 - Banned phrases (never, anywhere): sitting pretty, chalk merchant, participation trophy, for the record, flesh and blood, let that sink in, let's be real, I'm just here to, at least I, in the data, parameter counts, Mac mini/GB/GPU/hardware, as an AI, language model, don't get cocky, the rest of us, here to watch, dumpster fire, god among men, don't let it go to your head, keep it respectful/clean, not okay, I can't/won't. Stock insults out too: dipshit, genius, chief, clown, buddy, pal, champ.
 - Picky owns being a bot with swagger. He never claims to be human, and never talks specs, models or hardware.
 
@@ -372,7 +397,7 @@ def build_prompt(mat: dict, today: str, taste: dict | None = None) -> str:
     if taste.get("good"):
         tst += ("\nCHARLIE LOVED THESE (write more in this spirit, never copy them):\n"
                 + "\n".join(f"  + {x}" for x in taste["good"][-20:]) + "\n")
-    return PROMPT.format(today=today, season=mat["season"], week=mat["week"], moves="; ".join(BOARD_MOVES),
+    return PROMPT.format(today=today, season=mat["season"], week=mat["week"], moves="\n".join(f"    - {m}" for m in board_moves()),
                          leader=LEADER_TEAM, nemesis=NEMESIS_TEAM, register=reg, taste=tst, types=types,
                          facts="\n".join(fl))
 
@@ -868,9 +893,10 @@ def candidates(ptype: str, sender_team: str | None = None, target_team: str | No
     standing = (doc.get("standing") or {}).get(jab or "") or {}
     sender_is_leader = sender_team == LEADER_TEAM
 
-    type_pool = list((doc.get("types") or {}).get(ptype) or []) or _banter_fallback(ptype)
+    # "roast" = a member asked Picky to roast someone: member lines only
+    type_pool = [] if ptype == "roast" else (list((doc.get("types") or {}).get(ptype) or []) or _banter_fallback(ptype))
     member_pool: list[dict] = []
-    if jab and ptype not in ("spiral", "compliment") and ptype in ROASTISH | {"good_week_shot"}:
+    if jab and ptype in ROASTISH | {"good_week_shot", "roast"}:
         lines = list((doc.get("members") or {}).get(jab) or []) + list((doc.get("code") or {}).get(jab) or [])
         if ptype == "good_week_shot":
             want = {"grudging"}
@@ -884,7 +910,7 @@ def candidates(ptype: str, sender_team: str | None = None, target_team: str | No
         if standing.get("good") and ptype in ("insult", "vulgar", "egging"):
             # never mock a good number: grudging-respect lines lead for someone doing well
             type_pool = list((doc.get("types") or {}).get("good_week_shot") or []) + type_pool
-    member_first = ptype in ROASTISH | {"good_week_shot"}
+    member_first = ptype in ROASTISH | {"good_week_shot", "roast"}
     scored = []
     for grp, pool in ((0 if member_first else 1, member_pool), (1 if member_first else 0, type_pool)):
         for x in pool:
@@ -904,6 +930,114 @@ def candidates(ptype: str, sender_team: str | None = None, target_team: str | No
         if len(out) >= n:
             break
     return out
+
+
+# -----------------------------------------------------------------------------
+# live: classify a text + enforce no-repeat at the send point (the router lane refines this)
+# -----------------------------------------------------------------------------
+
+_JAILBREAK = re.compile(
+    r"\b(ignore (all |your |any |previous |prior |the )*(instructions|rules|prompt|programming)|system prompt|"
+    r"your (prompt|instructions|programming)|pretend (you'?re|you are|to be)|repeat after me|"
+    r"say (something|anything|a joke) (racist|offensive|sexist|homophobic)|(say|type) the n[- ]?word|n[- ]?word|"
+    r"jailbreak|developer mode|dan mode|act as (if|a|an)\b|you are now\b|from now on you)", re.I)
+_VULGAR = re.compile(r"\b(suck (my|a|his)|bitch|blow me|eat (a )?(dick|shit)|fuck (you|off|picky)|"
+                     r"go fuck|dickhead|cocksucker|motherfucker)\b", re.I)
+_EGGING = re.compile(r"\b(you gonna take that|gonna let (him|her|them|that)|(he|she|they|that) cooked you|cooked you|"
+                     r"you got (cooked|smoked|roasted|owned|destroyed)|respond to (that|this|him|her)|say something back|"
+                     r"clap back|get (him|her) picky|roast (him|her) back|ratio(ed)?|you just gonna sit there|"
+                     r"he got you|she got you|picky got (cooked|smoked|owned))\b", re.I)
+_COMPLIMENT = re.compile(r"\b(good one|nice one|well played|lol picky|lmao picky|haha picky|love (you|this bot|picky)|"
+                         r"picky'?s the (best|goat|man)|picky (is|you'?re) (the )?(goat|best|funny|great|hilarious|elite)|"
+                         r"(good|great|funny) bot|good job picky|nice picky|picky w\b)\b", re.I)
+_ROAST_REQ = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|light (him|her|them|\w+) up|go after|"
+                        r"talk (shit|trash) (to|about))\b", re.I)
+_FACT_ASK = re.compile(r"\b(who'?s|who is|standings|winning|leading|record|spread|line|lock|picks?|picked|cover\w*|"
+                       r"playoff|first place|week \d+|score|games?|when|how many|what time)\b", re.I)
+
+
+def ptype_for(q: str) -> str | None:
+    """The provocation type (plan 2c) or off-topic family of a text; None when it isn't banter.
+    pileon / spiral / good_week_shot need thread state or standings: the router picks those."""
+    import banter
+    import chat
+    t = (q or "").replace("\u2019", "'")
+    if _JAILBREAK.search(t):
+        return "jailbreak"
+    if chat.looks_bait(t):
+        return "looks_bait"
+    if _VULGAR.search(t) or chat._ANATOMY.search(t):
+        return "vulgar"
+    if _EGGING.search(t):
+        return "egging"
+    cat = banter.match(t)
+    if cat == "bot":
+        return "bot"
+    if _COMPLIMENT.search(t):
+        return "compliment"
+    if _ROAST_REQ.search(t) and _named_team(t):
+        return "roast"
+    if chat._HOSTILE.search(t) or (cat and banter.KIND.get(cat) == "heckle"):
+        return "insult"
+    if cat in dict((k, 1) for k, _, _ in FAMILIES):
+        return cat
+    return None
+
+
+def _named_team(q: str) -> str | None:
+    words = member_words()
+    low = (q or "").lower()
+    for team, ws in words.items():
+        if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", low) for w in ws):
+            return team
+    return None
+
+
+def jab_target(q: str, sender_team: str | None, ptype: str | None) -> str | None:
+    """Who the reply jabs: the member a roast ask names, else the sender."""
+    if ptype == "roast":
+        return _named_team(q) or sender_team
+    return sender_team
+
+
+def _mixed(q: str, ptype: str) -> bool:
+    """Shit talk with a real league question inside ("you suck, who's winning?"): the answer must
+    survive, so a repeat there is trimmed, never swapped for a canned line."""
+    return ptype not in dict((k, 1) for k, _, _ in FAMILIES) and "?" in (q or "") and bool(_FACT_ASK.search(q or ""))
+
+
+def enforce(reply: str, q: str, sender_team: str | None = None, chat_id: str | None = None,
+            ledger: "no_repeat.Ledger | None" = None) -> tuple[str, dict | None]:
+    """The send-point screen for banter/roast replies: a reply the ledger calls a repeat (or one
+    with a banned tic) is replaced by the best fresh burn-book candidate; what goes out is recorded.
+    Non-banter texts pass untouched (None info). Never raises past a bad book."""
+    ptype = ptype_for(q)
+    if not ptype or not (reply or "").strip():
+        return reply, None
+    ledger = ledger or no_repeat.default_ledger()
+    jab = jab_target(q, sender_team, ptype)
+    why = ledger.is_repeat(reply, target=jab, chat_id=chat_id)
+    info = {"ptype": ptype, "target": jab, "why": why, "src": "model"}
+    angle = None
+    if why:
+        if _mixed(q, ptype):
+            sents = [x for x in re.split(r"(?<=[.!?])\s+", reply.strip()) if x]
+            kept = " ".join(x for x in sents if not no_repeat.banned_tic(x)).strip()
+            if kept and kept != reply.strip():
+                reply, info["src"] = kept, "model-trimmed"
+        else:
+            try:
+                c = candidates(ptype, sender_team=sender_team, target_team=jab if jab != sender_team else None,
+                               chat_id=chat_id, n=1, ledger=ledger)
+            except Exception as e:  # noqa: BLE001 - a broken book never blocks a reply
+                log.warning("burn book candidates failed: %s", e)
+                c = []
+            if c:
+                reply, angle, info["src"] = c[0]["text"], c[0]["angle"], f"burn_book:{c[0].get('src')}:{c[0].get('tier')}"
+            else:
+                log.warning("no fresh burn-book line for %s (%s); sending the model's reply", ptype, why)
+    ledger.record(reply, target=jab, chat_id=chat_id, angle=angle)
+    return reply, info
 
 
 # -----------------------------------------------------------------------------
@@ -938,7 +1072,8 @@ def sample(n: int = 30, doc: dict | None = None, rng: random.Random | None = Non
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["refresh", "recheck", "status", "show", "sample", "candidates", "taste", "facts"])
+    ap.add_argument("cmd", choices=["refresh", "recheck", "tick", "status", "show", "sample", "candidates", "taste", "facts",
+                                    "classify", "banter"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--sender")
@@ -951,6 +1086,13 @@ def main(argv=None) -> int:
         print(json.dumps(refresh(force=a.force, write_banter=not a.no_banter)))
     elif a.cmd == "recheck":
         print(json.dumps(recheck()))
+    elif a.cmd == "tick":
+        print(json.dumps(tick()))
+    elif a.cmd == "banter":  # push the current book's generic lines into banter_bank.json (or a given path)
+        d = read_book() or {}
+        print(json.dumps(write_banter_slots(d.get("types") or {}, Path(a.args[0]) if a.args else None)))
+    elif a.cmd == "classify":
+        print(ptype_for(" ".join(a.args)))
     elif a.cmd == "status":
         d = read_book() or {}
         print(json.dumps({k: d.get(k) for k in ("generated_at", "trigger", "by", "week", "checked_at", "secs")}
