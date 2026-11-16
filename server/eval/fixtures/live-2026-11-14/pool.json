@@ -1,0 +1,6 @@
+{"_note": "week 11 pool games and the league's locked lines (all_games, cfb_season 2026; home perspective: home covers when HomePts + line > AwayPts), and one member's 4 picks (public on the site after lock)",
+ "401858301": {"away": "Wake Forest", "home": "SMU", "line": 1.5},
+ "401860914": {"away": "Oregon State", "home": "Boise State", "line": -13.5},
+ "401862827": {"away": "North Texas", "home": "UTSA", "line": 2.5},
+ "401864537": {"away": "North Dakota State", "home": "Hawai'i", "line": 6.5},
+ "_picks": {"Chuck P": {"401858301": "Wake Forest", "401860914": "Oregon State", "401862827": "UTSA", "401864537": "North Dakota State"}}}
