@@ -65,30 +65,20 @@ export function setPlayoffTheme(on) {
 
 const TROPHY = `<svg class="po-trophy" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
   <path d="M18 8h28v10c0 9.5-5.6 17-14 18.6C23.6 35 18 27.5 18 18V8z" fill="currentColor"/>
-  <path d="M18 12H9c0 8 3.6 13 10.4 14.2M46 12h9c0 8-3.6 13-10.4 14.2" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M18 12H9c0 8 3.6 13 10.4 14.2M46 12h9c0 8-3.6 13-10.4 14.2" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
   <path d="M28 36.5h8V46h-8z" fill="currentColor"/>
   <path d="M20 54c0-4.4 3.6-8 8-8h8c4.4 0 8 3.6 8 8v2H20v-2z" fill="currentColor"/>
-  <path d="M25 13l3.2 6.4 7 .9-5.1 4.9 1.3 7-6.4-3.4" fill="rgba(0,0,0,.18)"/>
 </svg>`;
 
-// The header over the playoff board. The four teams themselves are the rows
-// of the board right below it, so they aren't repeated up here.
+// One small gold line over the playoff board. The board itself is the normal
+// leaderboard; this just says which board it is (and flags the preview).
 export function renderPlayoffBanner(el, state, { show }) {
   if (!el) return;
   if (!show || !state || !state.active) { el.hidden = true; el.innerHTML = ''; el.classList.remove('is-preview'); return; }
   el.classList.toggle('is-preview', !!state.preview);
-  el.innerHTML = `
-    <div class="po-glow" aria-hidden="true"></div>
-    ${TROPHY}
-    <div class="po-copy">
-      <div class="po-eyebrow">${state.preview
-        ? '<span class="po-pill">Preview</span><span>If the season ended today</span>'
-        : `<span>${state.season} Playoffs</span>`}</div>
-      <div class="po-title">Four left. Points reset.</div>
-      <div class="po-sub">${state.preview
-        ? 'These four would make the playoffs. Nothing is official until week 15 is graded.'
-        : 'Everyone starts at 0. Each game locks at its own kickoff, and the most points takes the trophy.'}</div>
-    </div>`;
+  el.innerHTML = `${TROPHY}<span>${state.season} Playoffs</span>`
+    + (state.preview ? '<span class="po-pill">Preview</span>' : '')
+    + `<span class="po-sub">${state.preview ? 'If the season ended today' : 'Points reset'}</span>`;
   el.hidden = false;
 }
 
