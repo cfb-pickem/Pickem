@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import tempfile
 import sys
 import time
 from pathlib import Path
@@ -22,6 +23,7 @@ import group_chat as gc  # noqa: E402
 import watcher  # noqa: E402
 
 watcher.SELF_HANDLES = {"picky-bot@example.com"}
+gc.EXCHANGE_LOG = Path(tempfile.mkdtemp()) / "exchanges.jsonl"  # never the real private log
 watcher.TEST_DM_HANDLES = {"+15555550199"}
 
 YES = ["@Picky who's winning?", "@picky", "@PICKY you there", "@ Picky who's first", "yo @Picky, thoughts?",

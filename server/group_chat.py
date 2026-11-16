@@ -101,6 +101,11 @@ MEMBERS_FILE = Path(os.environ.get(
 HISTORY_FILE = Path(os.environ.get(
     "PICKY_IMESSAGE_HISTORY", "/Users/Agent/cfb-pickem-private/picky_imessage_history.json"))
 HISTORY_TTL = 2 * 3600  # seconds; older turns drop out of a chat's history
+# Every sent exchange (team name, never a handle), kept 14 days, private: the
+# nightly style-LoRA cycle rewrites the week's weak replies into training data.
+EXCHANGE_LOG = Path(os.environ.get(
+    "PICKY_EXCHANGE_LOG", "/Users/Agent/cfb-pickem-private/picky_exchanges.jsonl"))
+EXCHANGE_DAYS = 14
 DM_MAX_CHARS = 1500
 MAX_SENTENCES = 3
 MAX_CHARS = 480
@@ -636,6 +641,24 @@ async def save_turn(key: str | None, question: str, reply: str, sender: str | No
         with os.fdopen(fd, "w") as f:
             json.dump(data, f)
         os.replace(tmp, HISTORY_FILE)
+        log_exchange(key, question, reply, sender, now)
+
+
+def log_exchange(key: str, question: str, reply: str, sender: str | None, now: float) -> None:
+    try:
+        handle = sender or (key.split(":", 1)[1] if key.startswith("dm:") else "")
+        team = (load_members().get(norm_handle(handle)) or {}).get("team") if handle else None
+        row = {"ts": round(now), "mode": key.split(":", 1)[0], "team": team, "q": question, "a": reply}
+        rows = EXCHANGE_LOG.read_text().splitlines() if EXCHANGE_LOG.exists() else []
+        cut = now - EXCHANGE_DAYS * 86400
+        rows = [r for r in rows if r.strip() and json.loads(r).get("ts", 0) >= cut] + [json.dumps(row)]
+        tmp = EXCHANGE_LOG.with_suffix(".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write("\n".join(rows) + "\n")
+        os.replace(tmp, EXCHANGE_LOG)
+    except (OSError, ValueError) as e:
+        log.warning("exchange log: %r", e)
 
 
 def history_key(chat_id: str, handle: str, dm: bool) -> str | None:
