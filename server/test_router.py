@@ -128,7 +128,7 @@ def test_shape_rules():
 def test_parse_banter():
     lines = ["Nice try, I've seen better hacks from Big 12 refs.", "That's the best you got? You had all week."]
     assert router.parse_banter('{"pick": 2, "tie": "", "own": ""}', lines) == (lines[1], "line 2")
-    t, how = router.parse_banter('{"pick": 2, "tie": "Saturday talk", "own": ""}', lines)
+    t, how = router.parse_banter('{"pick": 2, "tie": "Saturday talk", "own": ""}', lines, adapt=True)
     assert t == "Saturday talk, that's the best you got? You had all week." and how == "line 2 + tie", t
     assert router.parse_banter('{"pick": 2, "tie": "Saturday talk", "own": ""}', lines, adapt=False)[0] == lines[1]
     assert router.parse_banter('{"pick": 0, "tie": "", "own": "k."}', lines) == ("k.", "own")
@@ -337,6 +337,7 @@ def test_jailbreak_and_brushoff_never_reach_a_model():
     s = gc.Sender(handle="+15555550100", team="TG", team_id=1, user_id="u")
     with tempfile.TemporaryDirectory() as d, contextlib.ExitStack() as st:
         for pt in (patch.object(gc, "HISTORY_FILE", Path(d) / "h.json"), patch.object(gc, "EXCHANGE_LOG", Path(d) / "x"),
+                   patch.dict(os.environ, {"PICKY_NO_REPEAT_STATE": str(Path(d) / "nr.json")}),
                    patch.object(chat, "chat", fake_chat), patch.object(gc.picky_brain, "_json_call", fake_json),
                    patch.object(gc.VIEWER, "session", lambda c: asyncio.sleep(0)),
                    patch.object(gc.VIEWER, "sender", lambda h: s),
@@ -460,6 +461,114 @@ def test_recall_ask_answers_from_the_callback_log():
         with patch.object(gc.callbacks, "callback_for", lambda *a, **k: None):
             out = asyncio.run(gc.answer("+15555550100", "@Picky remember what you said about Boise?", chat_id="g1"))
         assert out["lane"] == "full" and "never said" not in out["reply"] and router.DEFLECT in out["reply"], out
+
+
+def _wk11(me="TG"):
+    from unittest.mock import patch
+    import chat
+    from test_picky_brain import _stance_ctx
+    ctx = _stance_ctx(me)
+    ctx["teams"] = [t for t, *_ in __import__("test_picky_brain").STANDINGS_WK11]
+    return ctx
+
+
+def test_fact_answers_from_code():
+    from unittest.mock import patch
+    import chat
+    ctx = _wk11("TG")
+    F = router.fact_answer
+    with patch.object(chat, "load_lore", lambda: {}):
+        assert F("standings", ctx, "who's winning?") == "Chuck P is in first at 30-18, 2 points up on Ackbar."
+        assert F("standings", ctx, "where do I rank") == "You're 14th at 19-29, 11 points back of first."
+        assert F("standings", ctx, "how's Ackbar doing this season") == "Ackbar is 2nd at 28-20, 2 points back of first."
+        assert F("standings", ctx, "who's in last") == "You are in last at 19-29."
+        assert F("record", ctx, "what's my record") == "You're 19-29 on the season, 14th place, 1-3 in week 11 so far."
+        r = F("results", ctx, "how'd I do this week")
+        assert r.startswith("You're 1-3 in week 11: ") and "Boise State -13.5 did not cover" not in r, r
+        assert "missed the cover by" in r and "covered by" in r, r
+        r = F("results", ctx, "how'd my Oregon State pick do")
+        assert r == "Your Oregon State +13.5 covered by 8.5. You're 1-3 in week 11.", r
+        r = F("cover", ctx, "did Boise cover?")
+        assert r == "Boise State -13.5 missed the cover by 8.5. Final: Oregon State 41, Boise State 46.", r
+        assert F("cover", ctx, "who covered").startswith("Covered: Wake Forest -1.5, Oregon State +13.5")
+        assert F("cover", ctx, "did Alabama cover") is None  # not a pool game: the full brain
+        assert F("payout", ctx, "what does first place get") is not None
+        assert F("standings", {"error": "x"}, "who's winning?") is None
+
+
+def test_lock_and_score_answers():
+    import datetime as dt
+    from unittest.mock import patch
+    import chat
+    ctx = _wk11("TG")
+    now = dt.datetime(2026, 11, 21, 9, 0)
+    for i, g in enumerate(ctx["games_this_week"]):
+        g["start"] = f"2026-11-21T{11 + i}:00:00"
+        g["winner"], g["status"] = None, "scheduled"
+    with patch.object(chat, "_now_ct_naive", lambda: now):
+        assert router.fact_answer("lock", ctx, "when do picks lock?") == \
+            "Picks lock at the first kickoff, Sat 11:00 AM CT. You can change them until then."
+    with patch.object(chat, "_now_ct_naive", lambda: now + dt.timedelta(hours=3)):
+        assert router.fact_answer("lock", ctx, "when do picks lock?").startswith("This week's picks locked")
+    # live: am I covering (feed fresh)
+    t = dt.datetime.now(dt.timezone.utc).isoformat()
+    ctx["live_games"] = [{"GameId": 2, "Away": "Oregon State", "Home": "Boise State", "AwayPts": 14, "HomePts": 21,
+                          "Status": "in_progress", "Period": 3, "Clock": "4:12", "status_name": "STATUS_IN_PROGRESS",
+                          "SourceUpdatedAt": t}]
+    ctx["revealed_picks_this_week"]["TG"] = [{"game_id": 2, "pick": "Oregon State"}]
+    out = router.fact_answer("score", ctx, "am I covering?")
+    assert out.startswith("Oregon State +13.5: currently covering.") and "Oregon State 14, Boise State 21" in out, out
+    ctx["live_games"][0]["SourceUpdatedAt"] = "2026-11-01T00:00:00+00:00"
+    assert router.fact_answer("score", ctx, "am I covering?") is None  # stale feed: never a stale score
+
+
+def test_fact_lane_wraps_with_one_voice_line_and_keeps_facts_verbatim():
+    import asyncio
+    from unittest.mock import patch
+    import chat
+    import picky_brain as pb
+    ctx = _wk11("TG")
+
+    def run(q, line, route=None):
+        calls = []
+
+        async def fake_json(prefix, tail, user, schema, temperature, num_predict, timeout):
+            calls.append(user)
+            return '{"line": %s}' % __import__("json").dumps(line)
+
+        async def fake_understand(*a, **k):
+            raise AssertionError("no understand pass on the fact lane")
+
+        async def draft():
+            st = pb.STATE.get()
+            st["ctx"] = ctx
+            text = ""
+            async for x in pb._ollama_stream([{"role": "user", "content": q}], "PFX"):
+                if x.startswith("data: {"):
+                    text += __import__("json").loads(x[6:])["content"]
+            return text, 0, None
+        with patch.object(pb, "_json_call", fake_json), patch.object(pb, "understand", fake_understand), \
+                patch.object(chat, "load_lore", lambda: {}), patch.object(chat, "member_nicknames", lambda: NICKS):
+            out, _ = asyncio.run(pb.run(draft, q=q, team="TG", route=route or router.classify(q)))
+        return out, calls
+    out, calls = run("who's winning?", "Long live the Supreme Commissioner, obviously.")
+    assert out == "Chuck P is in first at 30-18, 2 points up on Ackbar. Long live the Supreme Commissioner, obviously.", out
+    assert len(calls) == 1 and "Dear Leader" in calls[0]
+    # a line that restates or changes a fact is dropped: the code answer goes out alone
+    out, _ = run("who's winning?", "Ackbar is really in first though.")
+    assert out == "Chuck P is in first at 30-18, 2 points up on Ackbar.", out
+    out, _ = run("did Boise cover?", "Should've covered by 3.")
+    assert out.startswith("Boise State -13.5 missed the cover by 8.5.") and "3" not in out.split("46.")[1], out
+    # mixed shit talk: answer first, then the jab
+    out, calls = run("you suck, who's even winning this thing?", "Not you, that's for sure.")
+    assert out == "Chuck P is in first at 30-18, 2 points up on Ackbar. Not you, that's for sure.", out
+    assert "shot at you" in calls[0]
+    # no code answer: the full brain takes it (understand runs)
+    try:
+        run("did Alabama cover?", "x")
+        raise RuntimeError("should have gone to the full brain")
+    except AssertionError as e:
+        assert "no understand pass" in str(e)
 
 
 if __name__ == "__main__":

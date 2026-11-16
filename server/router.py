@@ -443,3 +443,279 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
         last = sents[-1]
         drop(lambda s: bool(OWN_RECORD.search(s)) and s is not last)
     return " ".join(sents)
+
+
+# -----------------------------------------------------------------------------
+# fact fast lane (move 4): code writes the whole answer from chat.py's builders; gemma only adds one
+# short voice line after it (picky_brain.fact_reply). None = no code answer, the full brain takes it.
+# -----------------------------------------------------------------------------
+
+def _names(teams: list[str], me: str | None) -> str:
+    out = ["you" if t == me else t for t in teams]
+    return out[0] if len(out) == 1 else ", ".join(out[:-1]) + " and " + out[-1]
+
+
+def _is(teams: list[str], me: str | None) -> str:
+    return "are" if len(teams) > 1 or me in teams else "is"
+
+
+def _pts(n: int) -> str:
+    return f"{n} point{'s' * (n != 1)}"
+
+
+_SELF_ASK = re.compile(r"\b(i|me|my|i'?m|am i)\b", re.I)
+
+
+def standings_text(ctx: dict, q: str) -> str | None:
+    st = ctx.get("standings_ytd") or []
+    if not st:
+        return None
+    me = (ctx.get("you") or {}).get("team_name")
+    first = [r for r in st if r["rank"] == 1]
+    nxt = next((r for r in st if r["rank"] > 1), None)
+    named = [r for r in st if r["team"] != me and re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)]
+    row = next((r for r in st if r["team"] == me), None)
+    lead_w = first[0]["w"]
+
+    def place(r, who):
+        if r["rank"] == 1:
+            tied = len(first) > 1
+            gap = lead_w - nxt["w"] if nxt and not tied else 0
+            return (f"{who} {'are' if who == 'You' else 'is'} {'tied for' if tied else 'in'} first at {r['w']}-{r['l']}"
+                    + (f", {_pts(gap)} up on {_names([x['team'] for x in st if x['rank'] == nxt['rank']], me)}"
+                       if gap else "") + ".")
+        return (f"{'You' + chr(39) + 're' if who == 'You' else who + ' is'} {chat._ordinal(r['rank'])} at "
+                f"{r['w']}-{r['l']}, {_pts(lead_w - r['w'])} back of first.")
+    if named:
+        return " ".join(place(r, r["team"]) for r in named[:2])
+    if row and _SELF_ASK.search(q) and not re.search(r"\bwho\b", q, re.I):
+        return place(row, "You")
+    if re.search(r"\b(last|bottom)\b", q, re.I):
+        lr = [r["team"] for r in st if r["rank"] == st[-1]["rank"]]
+        return f"{_cap(_names(lr, me))} {_is(lr, me)} in last at {st[-1]['w']}-{st[-1]['l']}."
+    ft = [r["team"] for r in first]
+    gap = lead_w - nxt["w"] if nxt else 0
+    return (f"{_cap(_names(ft, me))} {_is(ft, me)} in first at {lead_w}-{first[0]['l']}"
+            + (f", {_pts(gap)} up on {_names([x['team'] for x in st if x['rank'] == nxt['rank']][:3], me)}"
+               if nxt and gap else "") + ".")
+
+
+def record_text(ctx: dict, q: str) -> str | None:
+    st = ctx.get("standings_ytd") or []
+    me = (ctx.get("you") or {}).get("team_name")
+    named = [r for r in st if r["team"] != me and re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)]
+    r = named[0] if named else next((x for x in st if x["team"] == me), None)
+    if not r:
+        return None
+    who = "You're" if r["team"] == me else f"{r['team']} is"
+    cw = ctx.get("current_week")
+    wk = ((ctx.get("weekly_records") or {}).get(r["team"]) or {})
+    v = wk.get(cw) if wk.get(cw) is not None else wk.get(str(cw))
+    week = f", {v[0]}-{v[1]} in week {cw} so far" if v and sum(v) else ""
+    return f"{who} {r['w']}-{r['l']} on the season, {chat._ordinal(r['rank'])} place{week}."
+
+
+def _row_text(r: dict) -> str:
+    if r["result"] in ("WIN", "LOSS"):
+        return f"{r['label']} {chat.ats_text(r)}"
+    if r["result"] == "IN PROGRESS":
+        return f"{r['label']} is in progress" + (f" ({r['why']})" if r.get("why") else "")
+    return f"{r['label']} hasn't kicked off"
+
+
+def results_text(ctx: dict, q: str) -> str | None:
+    facts = chat.results_facts(ctx, q)
+    if not facts:
+        return None
+    order = {"member": 0, "picky": 1, "you": 2}
+    subs = sorted(facts["subjects"], key=lambda s: order[s["kind"]])
+    if not subs:
+        return None
+    s = subs[0]
+    named = set(facts.get("named_teams") or [])
+    if named and s["kind"] == "you" and not _SELF_ASK.search(q):
+        return None  # 'how'd Boise do' is about the game: the cover lane
+    rows = [r for r in s["rows"] if {r["game"]["away"], r["game"]["home"]} & named] or s["rows"]
+    w, l = s["record"]
+    who = {"you": "You're", "picky": "I'm", "member": f"{s['team']} is"}[s["kind"]]
+    cw = ctx.get("current_week")
+    if len(rows) == 1 and named:
+        pre = {"you": "Your", "picky": "My", "member": f"{s['team']}'s"}[s["kind"]]
+        return f"{pre} {_row_text(rows[0])}." + (f" {who} {w}-{l} in week {cw}." if w + l > 1 else "")
+    return f"{who} {w}-{l} in week {cw}: " + ", ".join(_row_text(r) for r in rows[:4]) + "."
+
+
+def _named_side(q: str, g: dict) -> str:
+    k = f" {chat._match_key(q)} "
+    for side in (g["home"], g["away"]):
+        mk = chat._match_key(side)
+        if f" {mk} " in k or (mk.endswith(" state") and f" {mk[:-6]} " in k):
+            return side
+    return g["home"]
+
+
+def cover_text(ctx: dict, q: str) -> str | None:
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    live = {x["GameId"]: x for x in ctx.get("live_games") or []}
+    named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games])
+    byid = {g["id"]: g for g in games}
+    out = []
+    if not named and re.search(r"\bwho covered\b", q, re.I):
+        cov, nope = [], []
+        for g in games:
+            if g.get("winner") and g.get("line") is not None:
+                ln = float(g["line"])
+                won = g["home"] if chat.same_team(g["winner"], g["home"]) else g["away"]
+                lost = g["away"] if won == g["home"] else g["home"]
+                cov.append(chat._side_label(won, g["home"], ln) if ln else won)
+                nope.append(chat._side_label(lost, g["home"], ln) if ln else lost)
+        return (f"Covered: {', '.join(cov)}. Didn't cover: {', '.join(nope)}.") if cov else None
+    for n in named[:2]:
+        g = byid.get(n["id"])
+        if not g:
+            continue
+        lg = live.get(g["id"]) or {}
+        side = _named_side(q, g)
+        r = chat.grade_pick(side, g["away"], g["home"], g.get("line"), g.get("winner"), lg.get("Status") or g.get("status"),
+                            lg.get("AwayPts"), lg.get("HomePts"))
+        if r["result"] == "IN PROGRESS":
+            return None  # a live game: the score lane / full brain with the live feed
+        s = _row_text(r) + "."
+        if r["result"] in ("WIN", "LOSS") and lg.get("AwayPts") is not None and lg.get("HomePts") is not None:
+            s += f" Final: {g['away']} {chat._num(float(lg['AwayPts']))}, {g['home']} {chat._num(float(lg['HomePts']))}."
+        out.append(s)
+    return " ".join(out) or None
+
+
+def score_text(ctx: dict, q: str) -> str | None:
+    if ctx.get("live_error") or "live_games" not in ctx:
+        return None
+    now_utc, now_ct = chat._now_utc(), chat._now_ct_naive()
+    age = chat.feed_age(ctx["live_games"], now_utc)
+    by_id = {g["GameId"]: g for g in ctx["live_games"]}
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+
+    def state(pg) -> str | None:
+        g = by_id.get(pg["id"])
+        if g is None:
+            return None
+        g = {**g, "line": pg.get("line"), "winner": pg.get("winner") or g.get("winner")}
+        if g.get("Status") == "in_progress" and age is not None and age > chat.LIVE_STALE:
+            return None  # the feed's lagging: the full brain says so instead of a stale score
+        s = re.sub(r" \([^)]*left in the game\)", "", chat.game_state(g, now_utc, now_ct, age)) + "."
+        if g.get("Status") == "in_progress" and g.get("line") is not None:
+            s += f" Covering right now: {chat._cover_text(g)}."
+        return s
+    me = (ctx.get("you") or {}).get("team_name")
+    if re.search(r"\b(am i|are we|my picks?|is my)\b", q, re.I) and me:
+        rows = [r for r in chat.member_pick_results(ctx, me) if not r["tiebreaker"]]
+        live_rows = [r for r in rows if r["result"] == "IN PROGRESS"]
+        if not rows:
+            return None
+        if not live_rows:
+            if all(r["result"] == "NOT STARTED" for r in rows):
+                return "None of your picks have kicked off yet."
+            return None  # all decided: that's a results question
+        parts = []
+        for r in live_rows[:4]:
+            st = state(r["game"])
+            if st is None:
+                return None
+            parts.append(f"{r['label']}: {r['why'] or 'in progress'}. {st}")
+        return " ".join(parts)
+    named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games])
+    if not named:
+        return None
+    out = [state(next(g for g in games if g["id"] == n["id"])) for n in named[:2]]
+    return None if any(x is None for x in out) else " ".join(out)
+
+
+def lock_text(ctx: dict, q: str) -> str | None:
+    import datetime as dt
+    games = [g for g in ctx.get("games_this_week") or [] if g.get("start")]
+    if not games:
+        return None
+    now = chat._now_ct_naive()
+
+    def t(g):
+        try:
+            return dt.datetime.fromisoformat(str(g["start"])).replace(tzinfo=None)
+        except ValueError:
+            return None
+    starts = sorted((x, g) for g in games if (x := t(g)))
+    if not starts:
+        return None
+    if not chat.week_locks_together(ctx.get("current_week")):
+        nxt = next((x for x, _ in starts if x > now), None)
+        return ("In the playoffs every game locks at its own kickoff"
+                + (f", next one {chat._kickoff(nxt.isoformat())}." if nxt else ". They've all kicked off."))
+    first = starts[0][0]
+    if now < first:
+        return f"Picks lock at the first kickoff, {chat._kickoff(first.isoformat())}. You can change them until then."
+    return f"This week's picks locked at the first kickoff ({chat._kickoff(first.isoformat())}). Nobody can change a pick now."
+
+
+def payout_answer(ctx: dict, q: str) -> str | None:
+    n = len(ctx.get("teams") or []) or None
+    a = rules_answer(q, n_teams=n)
+    if a:
+        return a
+    if not n:
+        return None
+    m = chat.payout_math(n)
+    return (f"${chat.BUY_IN} buy-in x {n} = ${m['pot']:,} pot. First gets ${m['first']:,}, second ${m['second']}, "
+            f"third ${m['third']} (the buy-in back).")
+
+
+def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
+    """The complete answer in code for a fact intent, or None (no data / not this lane's question)."""
+    if not ctx or ctx.get("error"):
+        return None
+    try:
+        fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
+              "score": score_text, "lock": lock_text, "payout": payout_answer}.get(kind)
+        if fn:
+            out = fn(ctx, q)
+            if out is None and kind == "results":
+                out = cover_text(ctx, q)
+            return out
+        if kind == "rules":
+            return rules_answer(q, n_teams=len(ctx.get("teams") or []) or None)
+    except Exception:  # noqa: BLE001  a builder bug falls back to the full brain, never breaks the reply
+        import logging
+        logging.getLogger("picky-router").warning("fact answer %s failed", kind, exc_info=True)
+    return None
+
+
+FACT_TAIL = """
+
+TASK RIGHT NOW: the answer to the NEWEST TEXT is already written below (THE ANSWER) and goes out exactly as is. Don't restate it. Write ONE short line of personality to send right after it, like a buddy in the group text: 12 words max, no numbers, no records, no team names, no new facts. Return JSON only."""
+FACT_SCHEMA = {"type": "object", "properties": {"line": {"type": "string"}}, "required": ["line"]}
+FACT_TOKENS = 32
+
+
+def fact_user(q: str, answer: str, sender: str = "", jab: bool = False, leader: bool = False) -> str:
+    L = [f"Sent by: {sender}" if sender else "Sent by: a league member", f"NEWEST TEXT: {q}", f"THE ANSWER: {answer}"]
+    if jab:
+        L.append("They also took a shot at you: make your line a quick jab back at them.")
+    if leader:
+        L.append("The man in first is the Dear Leader: your line hails him like state media.")
+    L.append('Return {"line": your one line}.')
+    return "\n\n".join(L)
+
+
+_FACTY = re.compile(r"\d|\b(cover\w*|miss\w*|won|lost|record|points?|place|ahead|behind|back of|up on|in first|"
+                    r"in last|spread|line)\b", re.I)
+
+
+def voice_line_ok(line: str, answer: str, ctx: dict | None) -> bool:
+    """The wrap may only add personality: no number, no result/standing word, no team or member name that
+    could restate or contradict the code-written answer, nothing the filters would cut."""
+    import no_repeat
+    if not line or len(line.split()) > 14 or _FACTY.search(line) or PREACHY.search(line) or no_repeat.banned_tic(line):
+        return False
+    names = [r["team"] for r in (ctx or {}).get("standings_ytd") or []]
+    names += [x for g in (ctx or {}).get("games_this_week") or [] for x in (g.get("away"), g.get("home")) if x]
+    if any(n and re.search(rf"(?<!\w){re.escape(n)}(?!\w)", line, re.I) for n in names):
+        return False
+    return chat.sentence_ok(line, set())
