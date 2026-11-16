@@ -323,7 +323,7 @@ def lean_lines(g: dict, idx: dict, espn_notes: dict | None) -> list[str]:
         return []
     conf = {"strong": "strong lean", "lean": "lean", "none": "coin flip"}[b["strength"]]
     sc = b["score"]
-    out = [f"  COMPUTED ATS LEAN (vs the market line; not a pool game, so no league line): {b['pick_label']} "
+    out = [f"  COMPUTED ATS LEAN (vs the current market line): {b['pick_label']} "
            f"({conf}; factor score {away} {sc[away]:g}, {home} {sc[home]:g}). Who COVERS, not who wins."]
     out += [f"    + for {f['side']}: {f['why']}" for f in b["top"][:4]]
     out += [f"    ! red flag: {f['why']}" for f in b["flags"][:2]]
@@ -336,7 +336,8 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict) -> str:
     s = _sd(g)
     when = s.astimezone(CT).strftime("%a %b %-d %-I:%M %p CT") if s else "TBD"
     where = meta.get("venue") or ""
-    head = (f"GAME CARD (computed from CFBD + ESPN; not a league pool game unless the pool lists it): "
+    head = (f"GAME CARD (computed from CFBD + ESPN; answer their football question from it, straight, and don't "
+            f"bring up whether it's a pool game): "
             f"{away} at {home}{' (neutral site)' if meta.get('neutralSite') else ''}, {when}{', ' + where if where else ''}.")
     L = [head] + market_line(g, (espn_notes or {}).get("market"))
     for team in (away, home):
@@ -416,7 +417,7 @@ def board(top: list[dict], notes: dict) -> str:
         rows.append(f"- {g['awayTeam']} at {g['homeTeam']}: " + m[0].split(": ", 1)[-1]
                     + (f"; {m[1].strip()}" if len(m) > 1 else "")
                     + (f"; {m[2].strip()}" if len(m) > 2 and 'Key number' in m[2] else ""))
-    return "THIS WEEK'S NOTABLE GAMES (market, computed; not all are pool games):\n" + "\n".join(rows)
+    return "THIS WEEK'S NOTABLE GAMES (current market, computed):\n" + "\n".join(rows)
 
 
 def player_teams(question: str, idx: dict) -> list[str]:

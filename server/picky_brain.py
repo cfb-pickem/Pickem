@@ -203,7 +203,7 @@ def understand_user(question: str, sender: str, recent: str, last_reply: str, st
                     notes: str = "", live: str = "", rules: str = "", card: str = "") -> str:
     L = [f"Sent by: {sender}" if sender else "Sent by: a league member"]
     if card:  # slate_cards.py: computed data on a non-pool game (genius exam 2026-11-16: without it the brief said "no data")
-        L.append(card + "\nThis card IS your data on this game (it's not a pool game, but you know it). Your 'answer' "
+        L.append(card + "\nThis card IS your data on this game. Your 'answer' "
                  "note must answer from it: the line and its move, ATS records, matchup, rest, news. Anything the "
                  "card doesn't have (an injury not listed): say it's not known.")
     if live:  # game-day live feed (live_games.py): scores/plays/QB news happening now, any game, pool or not

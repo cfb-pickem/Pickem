@@ -7214,9 +7214,19 @@ async def _chat(req: Request, test: bool, hold: int | None):
         body = (body[: -len(q)] + lb + "\n\n" + q) if q and body.endswith(q) else (lb + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
+    # any FBS game this week outside the pool, or a whole-slate question: a computed game card
+    # (slate_cards.py: market + move + key numbers, ATS splits, matchup, rest, last meeting, sourced
+    # availability). Latest turn only; a 'why?' follow-up keeps the card of the game just asked about.
+    sc = ""
+    if last.get("role") == "user" and not ctx.get("error") and SLATE_CARDS:
+        prior = [m.get("content", "") for m in messages[:-1] if m.get("role") == "user"][-2:]
+        try:
+            sc = await slate_cards.slate_note(last.get("content", ""), ctx, prior)
+        except Exception as e:  # noqa: BLE001 - a bad card never breaks chat
+            log.warning("slate card failed: %r", e)
     # a game outside the pool, 'what's on', upsets: the latest question only
-    note = (live_note(ctx, last.get("content", "")) if last.get("role") == "user"
-            and not standings_answer(ctx, last.get("content", "")) else "")
+    note = (live_note(ctx, last.get("content", "")) if last.get("role") == "user" and "GAME CARD" not in sc
+            and not standings_answer(ctx, last.get("content", "")) else "")  # a pre-game card beats 'not started' rows
     if note and convo[-1]["role"] == "user":
         # right before the question, after the other riders: the 9B obeys what's nearest
         body, q = convo[-1]["content"], last.get("content", "")
@@ -7249,16 +7259,6 @@ async def _chat(req: Request, test: bool, hold: int | None):
         body = (body[: -len(q)] + nn + "\n\n" + q) if q and body.endswith(q) else (nn + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
-    # any FBS game this week outside the pool, or a whole-slate question: a computed game card
-    # (slate_cards.py: market + move + key numbers, ATS splits, matchup, rest, last meeting, sourced
-    # availability). Latest turn only; a 'why?' follow-up keeps the card of the game just asked about.
-    sc = ""
-    if last.get("role") == "user" and not ctx.get("error") and SLATE_CARDS:
-        prior = [m.get("content", "") for m in messages[:-1] if m.get("role") == "user"][-2:]
-        try:
-            sc = await slate_cards.slate_note(last.get("content", ""), ctx, prior)
-        except Exception as e:  # noqa: BLE001 - a bad card never breaks chat
-            log.warning("slate card failed: %r", e)
     if sc and convo[-1]["role"] == "user":
         body, q = convo[-1]["content"], last.get("content", "")
         body = (body[: -len(q)] + sc + "\n\n" + q) if q and body.endswith(q) else (sc + "\n\n" + body)
