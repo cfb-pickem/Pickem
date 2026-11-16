@@ -494,7 +494,7 @@ def check_member_line(team: str, kind: str, text: str, cited: list[str], mat: di
     why = lm._line_ok(text, cited, mat["facts"], mat["teams"], max_words=26)
     if why:
         return why
-    if kind != "leader" and _names_in(text, words.get(team) or [team.lower()]):
+    if kind != "leader" and _names_in(text, list(words.get(team) or []) + [team.lower()]):
         return "names the member it's addressed to"
     if _WHEN.search(text):
         return f"relative time label: {_WHEN.search(text).group(0)!r}"
@@ -521,7 +521,7 @@ def validate(raw: dict, mat: dict, taste: dict | None = None, words: dict | None
     """(types, members, dropped). types: {key: [line]}, members: {team: [line]}; a line is
     {id, text, tier, angle, facts, kind, src}."""
     words = words if words is not None else member_words()
-    all_names = sorted({w for v in words.values() for w in v} | {t.lower() for t in mat["teams"] if len(t) > 2})
+    all_names = sorted({w for v in words.values() for w in v} | {t.lower() for t in mat["teams"]})
     robotic = (taste or {}).get("robotic") or []
     dropped: list[str] = []
     kept_texts: list[str] = []
@@ -765,6 +765,10 @@ def refresh(force: bool = False, research=None, mat: dict | None = None, out: Pa
     research = research or (lambda p: dossier.run_claude(p, TIMEOUT_S, schema(), ""))
     try:
         raw = research(build_prompt(mat, now.strftime("%A %Y-%m-%d"), taste))
+        if out == BOOK:  # the raw batch, private, so a rule change can re-validate it without Opus
+            import dossier
+            dossier.write_atomic(out.with_name(out.stem + "_raw.json"), raw)
+            os.chmod(out.with_name(out.stem + "_raw.json"), 0o600)
         types, members, dropped = validate(raw, mat, taste)
     except Exception:
         fail.touch()
@@ -806,10 +810,41 @@ def recheck(mat: dict | None = None, out: Path | None = None) -> dict:
     now_facts = set(mat["facts"].values())
     stale = sum(1 for v in (doc.get("members") or {}).values() for ln in v
                 if not set(ln.get("facts") or []) <= now_facts)
+    removed = revalidate(doc, mat)
     doc.update({"facts_now": sorted(now_facts), "standing": mat["standing"], "code": code_lines(mat),
                 "checked_at": dt.datetime.now(CT).isoformat(timespec="seconds")})
     write_book(doc, out)
-    return {"ok": True, "checked": True, "stale_member_lines": stale}
+    return {"ok": True, "checked": True, "stale_member_lines": stale, "revalidated_out": removed}
+
+
+def revalidate(doc: dict, mat: dict, words: dict | None = None, filters=None) -> int:
+    """Re-run today's validator over the stored book (rules may have tightened since it was
+    written; taste flags too). Member lines whose facts are stale are left alone here (candidates()
+    already skips them). Returns how many lines were removed."""
+    words = words if words is not None else member_words()
+    all_names = sorted({w for v in words.values() for w in v} | {t.lower() for t in mat["teams"]})
+    robotic = taste_read().get("robotic") or []
+    by_text = {v: k for k, v in mat["facts"].items()}
+    removed = 0
+    for key, lines in list((doc.get("types") or {}).items()):
+        keep = [x for x in lines if not check_type_line(key, x["text"], all_names, filters)
+                and not like_robotic(x["text"], robotic)]
+        removed += len(lines) - len(keep)
+        doc["types"][key] = keep
+    for team, lines in list((doc.get("members") or {}).items()):
+        keep = []
+        for x in lines:
+            ids = [by_text.get(f) for f in x.get("facts") or []]
+            if None in ids or not ids:
+                keep.append(x)  # stale fact: candidates() skips it until the fact comes back
+                continue
+            if check_member_line(team, x.get("kind", "roast"), x["text"], ids, mat, words, filters) \
+                    or like_robotic(x["text"], robotic):
+                continue
+            keep.append(x)
+        removed += len(lines) - len(keep)
+        doc["members"][team] = keep
+    return removed
 
 
 def tick() -> dict:
