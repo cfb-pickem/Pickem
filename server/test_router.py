@@ -506,6 +506,7 @@ def test_lock_and_score_answers():
         g["start"] = f"2026-11-21T{11 + i}:00:00"
         g["winner"], g["status"] = None, "scheduled"
     with patch.object(chat, "_now_ct_naive", lambda: now):
+        ctx["games_this_week"][1]["start"] = ctx["games_this_week"][0]["start"]  # two games, same kickoff
         assert router.fact_answer("lock", ctx, "when do picks lock?") == \
             "Picks lock at the first kickoff, Sat 11:00 AM CT. You can change them until then."
     with patch.object(chat, "_now_ct_naive", lambda: now + dt.timedelta(hours=3)):
@@ -554,9 +555,14 @@ def test_fact_lane_wraps_with_one_voice_line_and_keeps_facts_verbatim():
     out, calls = run("who's winning?", "Long live the Supreme Commissioner, obviously.")
     assert out == "Chuck P is in first at 30-18, 2 points up on Ackbar. Long live the Supreme Commissioner, obviously.", out
     assert len(calls) == 1 and "Dear Leader" in calls[0]
-    # a line that restates or changes a fact is dropped: the code answer goes out alone
+    # a line that restates, changes or mocks the Dear Leader's place: replaced by the hail (Dear Leader scope)
     out, _ = run("who's winning?", "Ackbar is really in first though.")
-    assert out == "Chuck P is in first at 30-18, 2 points up on Ackbar.", out
+    assert out == "Chuck P is in first at 30-18, 2 points up on Ackbar. Long live the Supreme Commissioner.", out
+    out, _ = run("who's winning?", "He is just riding a wave of pure, unadulterated luck.")
+    assert out.endswith("Long live the Supreme Commissioner.") and "luck" not in out, out
+    # not the leader's place: a he/they line (about someone in the answer) is dropped
+    out, _ = run("whats Ackbar's record", "He's a fraud and everyone knows it.")
+    assert out == "Ackbar is 28-20 on the season, 2nd place, 3-1 in week 11 so far.", out
     out, _ = run("did Boise cover?", "Should've covered by 3.")
     assert out.startswith("Boise State -13.5 missed the cover by 8.5.") and "3" not in out.split("46.")[1], out
     # mixed shit talk: answer first, then the jab
