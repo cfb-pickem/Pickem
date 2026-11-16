@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.pickem.picky-lora</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/Agent/picky-lora/.venv/bin/python</string>
+		<string>/Users/Agent/cfb-pickem/tools/picky-lora/cycle.py</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<!-- 22:00 nightly cycle; Monday 10:00 extra cycle (all of Monday is a window);
+	     08:35 outside the window = safety net that restores Picky if a run left him down -->
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+		<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+		<dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>35</integer></dict>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardOutPath</key>
+	<string>/Users/Agent/picky-lora/logs/launchd.stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/Agent/picky-lora/logs/launchd.stderr.log</string>
+</dict>
+</plist>

@@ -28,3 +28,10 @@ supabase/.branches/
 # it always tests the current source rather than a stale duplicate - nothing
 # to commit, and committing it would just be a diff nobody remembered to make.
 tools/harness/js/blackjack.js
+
+# Picky style LoRA: code only; data, weights and adapters live in /Users/Agent/picky-lora
+__pycache__/
+*.safetensors
+*.gguf
+tools/picky-lora/data/
+tools/picky-lora/adapters/
