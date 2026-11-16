@@ -658,8 +658,9 @@ def stance_violations(text: str, s: dict | None) -> list[str]:
 # -----------------------------------------------------------------------------
 
 # W3 A/B switch for Charlie's scorecard: 1 = gemma may put up to 8 words in front of the chosen line
-# to tie it to the exact text; 0 = the chosen line goes out verbatim
-BANTER_ADAPT = os.environ.get("PICKY_BANTER_ADAPT", "1") != "0"
+# to tie it to the exact text; 0 (default) = the chosen line goes out verbatim. Quick exam 2026-11-16:
+# gemma's ties were junk ("Because, a bot with swagger...", "Keep piling on since, pile on all you want").
+BANTER_ADAPT = os.environ.get("PICKY_BANTER_ADAPT", "0") == "1"
 BANTER_TIMEOUT = 40.0
 BANTER_N = 4
 # burn-book type for each banter kind (pile-on / spiral levels map onto the book's own types)
@@ -796,6 +797,33 @@ def banter_fallback(st: dict, bad: str = "") -> str | None:
     return None
 
 
+# -----------------------------------------------------------------------------
+# fact fast lane (router lane "fact", plan move 4): code writes the answer, gemma one voice line after it
+# -----------------------------------------------------------------------------
+
+async def fact_reply(st: dict, prefix: str, answer: str) -> str:
+    """THE ANSWER verbatim plus at most one short voice line (a jab on a mixed text). The line is checked in
+    code; a bad or missing line means the code answer goes out alone. No understand pass, no reroll."""
+    rt, ctx = st["route"], st.get("ctx") or {}
+    leader = bool(chat.leader_note(ctx, st["q"])) if not ctx.get("error") else False
+    t0 = time.time()
+    try:
+        raw = await _json_call(prefix, router.FACT_TAIL, router.fact_user(st["q"], answer, st.get("sender", ""),
+                                                                          jab=rt.mixed, leader=leader),
+                               router.FACT_SCHEMA, 0.6, router.FACT_TOKENS, 30.0)
+        line = (json.loads(raw[raw.find("{"): raw.rfind("}") + 1]) or {}).get("line") if "{" in (raw or "") else ""
+    except (httpx.HTTPError, ValueError, AttributeError) as e:
+        log.warning("fact wrap failed: %s", e)
+        line = ""
+    line = router.shape_banter(str(line or ""), st["q"], chat.member_nicknames(), max_words=14, max_sents=1)
+    ok = router.voice_line_ok(line, answer, ctx)
+    out = f"{answer} {line}" if ok else answer
+    log.info("fact (%s, %.1fs, line %s): %r", rt.kind, time.time() - t0, "kept" if ok else f"dropped {line!r}",
+             out[:200])
+    assert out.startswith(answer)  # facts survive the wrap verbatim
+    return out
+
+
 async def _text_stream(text: str):
     if text:
         yield chat._sse({"content": text})
@@ -833,6 +861,20 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             yield x
         return
     rt = st.get("route")
+    if rt is not None and rt.lane == "fact" and st.get("fact_text") is not None:
+        async for x in _text_stream(st["fact_text"]):  # a guard regen asks again: same answer
+            yield x
+        return
+    if prefix and st.get("brief") is None and rt is not None and rt.lane == "fact":
+        ans = router.fact_answer(rt.kind, st.get("ctx"), st["q"])
+        if ans:
+            st["prefix"], st["brief"], st["fact_answer"] = prefix, Brief(intent="question"), ans
+            st["fact_text"] = await fact_reply(st, prefix, ans)
+            async for x in _text_stream(st["fact_text"]):
+                yield x
+            return
+        log.info("fact lane miss (%s): full brain", rt.kind)
+        rt.lane, rt.why, rt.kind = "full", f"fact miss: {rt.kind}", ""
     if rt is not None and rt.lane == "banter" and st.get("banter_text") is not None:
         async for x in _text_stream(st["banter_text"]):  # a guard regen asks again: same line, no new call
             yield x
@@ -1009,6 +1051,14 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                 break
             if image:
                 return text, image
+            if route.lane == "fact":  # code answer + one voice line; facts must come through whole
+                ans = st.get("fact_answer") or ""
+                if ans and (drops or ans not in text):
+                    log.info("fact reply lost part of the answer (%d drops): sending the code answer", drops)
+                    text = ans + ((" " + text.split(ans, 1)[1].strip()) if ans in text else "")
+                log.info("fact reply (%.0fs, %s): %r", time.time() - t0, route.label(), text[:160])
+                _trace(st, q, sender, route, [Draft(text, drops, 0)], [0], 0, "fact", t0)
+                return text.strip(), None
             if route.lane == "banter":  # the fast path: one call, no reroll; a cut line falls back to the book
                 if drops or not text.strip():
                     log.info("banter line cut by the filters (%d drops): %r", drops, text[:120])

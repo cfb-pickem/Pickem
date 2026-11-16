@@ -809,8 +809,8 @@ def _shot_key(text: str) -> str:
 def canned(ptype: str, team: str | None, key: str | None, fallback: list[str]) -> str:
     """A verbatim burn-book line for a type that never reaches a model (jailbreak, brush-off), unused per the
     ledger; the built-in list when the book has none."""
-    try:
-        c = burn_book.candidates(ptype, sender_team=team, chat_id=key, n=1)
+    try:  # type lines only (a jailbreak gets the attempt mocked, not a member roast)
+        c = burn_book.candidates(ptype, sender_team=None, chat_id=key, n=1)
         if c and chat.sentence_ok(c[0]["text"], set()):
             return c[0]["text"]
     except Exception:  # noqa: BLE001
