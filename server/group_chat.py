@@ -87,6 +87,7 @@ import chat  # noqa: E402
 import group_outbox  # noqa: E402
 import maintenance  # noqa: E402
 import picky_brain  # noqa: E402
+import picky_zh  # noqa: E402
 import rare_bits  # noqa: E402
 import playoff_race  # noqa: E402
 
@@ -671,7 +672,30 @@ def history_key(chat_id: str, handle: str, dm: bool) -> str | None:
 
 async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                  allowlisted: bool = False, recent: list | None = None) -> dict | None:
-    """{"reply", "image"}, or None when a DM sender isn't allowed."""
+    """{"reply", "image"}, or None when a DM sender isn't allowed. A Chinese
+    text (or 'reply in Chinese') is answered in English by the normal pipeline,
+    every filter and guard included, and the checked reply is translated
+    (picky_zh; numbers verified in code). English texts are untouched."""
+    q0 = strip_trigger(text)
+    zh = picky_zh.mode(q0)
+    if not zh:
+        return await _answer(handle, text, chat_id, dm, allowlisted, recent)
+    if dm and not allowlisted and not load_members().get(norm_handle(handle)):
+        return None  # same gate _answer applies, before spending a model call
+    asked = picky_zh.strip_request(q0)
+    if not asked.strip():
+        return {"reply": picky_zh.ACK[zh], "image": None, "mode": "dm" if dm else "group"}
+    prefix = picky_brain.LAST_PREFIX["text"]
+    en = asked if not picky_zh._HAN.search(asked) else (await picky_zh.to_english(asked, prefix) or asked)
+    out = await _answer(handle, en, chat_id, dm, allowlisted, recent)
+    if out and out.get("reply") and not out.get("image"):
+        out["reply_en"] = out["reply"]
+        out["reply"] = await picky_zh.to_chinese(out["reply"], zh, picky_brain.LAST_PREFIX["text"])
+    return out
+
+
+async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
+                  allowlisted: bool = False, recent: list | None = None) -> dict | None:
     async with httpx.AsyncClient() as c:
         await VIEWER.session(c)  # also refreshes teams + Picky's uid
         s = VIEWER.sender(handle)

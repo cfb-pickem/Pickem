@@ -50,6 +50,10 @@ JUDGE_BUDGET = 170.0   # seconds: no judge pass after this (the watcher waits 24
 # (Qwen3.5's card suggests ~0.7+ for chat; the filters and the judge guard the facts).
 SAMPLING = [{"temperature": 0.2}, {"temperature": 0.8, "min_p": 0.05, "top_p": 1.0},
             {"temperature": 0.9, "min_p": 0.05, "top_p": 1.0}, {"temperature": 0.4}]
+# exam A/Bs: PICKY_DRAFT_OPTIONS='{"temperature": 0.7, "top_p": 0.8, "top_k": 20, "presence_penalty": 1.5}'
+# replaces draft 1's sampling (the one draft that runs with the judge off)
+if os.environ.get("PICKY_DRAFT_OPTIONS"):
+    SAMPLING[0] = json.loads(os.environ["PICKY_DRAFT_OPTIONS"])
 TRACE = os.environ.get("PICKY_BRAIN_TRACE")  # optional JSONL of every pipeline run (exam judge agreement)
 ANGLES = [
     "",
@@ -578,11 +582,16 @@ _orig_ollama_stream = chat._ollama_stream
 _orig_prompt_prefix = chat.prompt_prefix
 
 
+LAST_PREFIX: dict = {"text": None}  # the latest league prefix: picky_zh's translation passes reuse its checkpoint
+
+
 def _prompt_prefix(ctx: dict) -> str:
     st = STATE.get()
     if st is not None:
         st["ctx"] = ctx
-    return _orig_prompt_prefix(ctx)
+    out = _orig_prompt_prefix(ctx)
+    LAST_PREFIX["text"] = out
+    return out
 
 
 async def _ollama_stream(messages: list[dict], prefix: str | None = None):
