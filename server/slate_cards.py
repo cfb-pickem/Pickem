@@ -382,10 +382,19 @@ def board(top: list[dict], notes: dict) -> str:
     return "THIS WEEK'S NOTABLE GAMES (market, computed; not all are pool games):\n" + "\n".join(rows)
 
 
-async def slate_note(question: str, ctx: dict) -> str:
+_FOLLOW_UP = re.compile(r"^\W*(why|how come|explain|and\b|what about|best case|what would change|change your mind|"
+                        r"other side|you sure|really|the other team|counter|devil'?s advocate|what if)\b", re.I)
+
+
+async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -> str:
+    """`prior`: the member's earlier texts in this chat, newest last. A short
+    follow-up ("why?", "best case for the other side?") keeps the game card of
+    the game they were just asking about."""
     q = question or ""
     if not q.strip():
         return ""
+    if prior and len(q.split()) <= 12 and _FOLLOW_UP.search(q):
+        q = f"{prior[-1]} {q}"
     try:
         idx = cfbd.load_index()
     except Exception:  # noqa: BLE001
