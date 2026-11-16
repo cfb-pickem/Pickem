@@ -451,7 +451,18 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
         t[kind] += 1
         if m.group(3):
             tds.setdefault(m.group(3), {"team": x["team"], "rec": 0, "rush": 0, "return": 0, "pass": 0})["pass"] += 1
+    firsts = {}  # last name -> first names the box score has ('Arch' Manning, never 'Austin')
+    for (_tid, k), r in roster.items():
+        if "." in k and r.get("name") and " " in r["name"]:
+            parts = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", r["name"]).split(" ")
+            firsts.setdefault(parts[-1].lower(), set()).add(parts[0])
+    for x in scoring:  # scoring-play text carries full names too
+        for rx in (r"^([A-Z][a-z'\-]+) ([A-Z][A-Za-z'\-]+)(?:,? (?:Jr\.|Sr\.|II|III|IV))? \d+ Yd",
+                   r"\bpass from ([A-Z][a-z'\-]+) ([A-Z][A-Za-z'\-]+)", r"\(([A-Z][a-z'\-]+) ([A-Z][A-Za-z'\-]+) Kick\)"):
+            for m in re.finditer(rx, x["text"]):
+                firsts.setdefault(m.group(2).lower(), set()).add(m.group(1))
     g.update({"scoring": scoring[-KEEP_SCORING:], "scoring_n": len(scoring), "key": key[-KEEP_KEY:], "tds": tds,
+              "firsts": {k: sorted(v) for k, v in firsts.items()},
               "turnovers": turnovers, "latest_wallclock": next((p.get("wallclock") for p in reversed(plays)
                                                                 if p.get("wallclock")), None),
               "injuries": inj_out[-8:], "qb": qb, "news": news[:3], "detail": True,
@@ -1308,6 +1319,19 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
             nums = {0: "zero", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
             return (lambda t, n=n: bool(re.search(rf"\b({n}|{nums.get(n, n)})\b", t, re.I)),
                     f" {who[0]} has {n} TD{'s' * (n != 1)} so far ({parts}, as of {when}).")
+    m_cnt = re.search(r"\bhow many (picks|ints?|interceptions?|turnovers|fumbles)\b", q, re.I)
+    if m_cnt and g.get("detail"):
+        words = {w.lower() for w in re.findall(r"[A-Za-z][a-z'\-]{2,}", q)}
+        tos = [(tm, x) for tm, lst in (g.get("turnovers") or {}).items() for x in lst]
+        qbs = {re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", n).split(".")[-1].split(" ")[-1].lower(): n
+               for q_ in (g.get("qb") or {}).values() for n in (q_.get("last_seen") or {})}
+        who = [n for last, n in qbs.items() if last in words]
+        if len(who) == 1 and re.search(r"pick|int", m_cnt.group(1), re.I):
+            key_ = _abbr_key(who[0])
+            n = sum(1 for _, x in tos if x["kind"] == "INT" and x.get("who") and _abbr_key(x["who"]) == key_)
+            nums = {0: "zero|no|none", 1: "one|1", 2: "two|2", 3: "three|3", 4: "four|4"}
+            return (lambda t, n=n: bool(re.search(rf"\b({nums.get(n, n)})\b", t, re.I)),
+                    f" {who[0]} has thrown {n} interception{'s' * (n != 1)} so far (as of {when}).")
     m_int = re.search(r"\bwho (threw|tossed)\b.{0,25}\b(pick|int|interception)\b|\bwho fumbled\b", q, re.I)
     if m_int and g.get("turnovers"):
         want = "fumble" if "fumbl" in m_int.group(0).lower() else "INT"
@@ -1385,6 +1409,14 @@ def claim_check(games: list[dict]):
         known = {p.lower() for p in g.get("players") or []}
         injured = {_abbr_key(x["player"]).split(".", 1)[-1].lower() for x in g.get("injuries") or []}
         injured |= {(x.get("full_name") or "").split(" ")[-1].lower() for x in g.get("injuries") or []}
+        g["_qb_lasts"] = {re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", n).split(".")[-1].split(" ")[-1].lower()
+                          for q_ in (g.get("qb") or {}).values() for n in (q_.get("last_seen") or {})}
+        g["_ints"] = {}
+        for lst in (g.get("turnovers") or {}).values():
+            for x in lst:
+                if x["kind"] == "INT" and x.get("who"):
+                    last = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", x["who"]).split(".")[-1].split(" ")[-1].lower()
+                    g["_ints"][last] = g["_ints"].get(last, 0) + 1
         gs.append((g, ok_pairs, names, scorers, known, injured))
 
     def segments(sent: str) -> list[str]:
@@ -1402,6 +1434,13 @@ def claim_check(games: list[dict]):
                 keep.append((st_, en, i))
                 last_end = en
         seg = [None] * len(gs)
+        if not keep:  # no team named: a player only one game in the feed has ('Austin Manning has thrown 1 pick')
+            caps = {w.lower() for w in re.findall(r"\b[A-Z][a-z'\-]{2,}\b", sent)} - _COMMON
+            owners = [i for i, (_, _, _, _, known, _) in enumerate(gs) if caps & known]
+            for i in owners:
+                if not any(caps & gs[j][4] & gs[i][4] for j in owners if j != i):
+                    seg[i] = sent
+            return seg
         if len({i for _, _, i in keep}) <= 1:
             for _, _, i in keep:
                 seg[i] = sent
@@ -1450,6 +1489,21 @@ def claim_check(games: list[dict]):
                 cur = abs(g["away_score"] - g["home_score"])
                 for m in _MARGIN.finditer(seg):
                     if int(m.group(1)) != cur and not re.search(r"\b(cover|spread|line|number)\b", seg, re.I):
+                        return False
+            team_words = {w.lower() for n in names for w in n.split()}
+            for m in re.finditer(r"\b([A-Z][a-z'\-]+) ([A-Z][a-z'\-]+)\b", seg):  # 'Austin Manning' for Arch Manning
+                ok_first = (g.get("firsts") or {}).get(m.group(2).lower())
+                if ok_first and m.group(1).lower() not in team_words and m.group(1) not in ok_first \
+                        and m.group(1).lower() not in _COMMON and m.group(1) not in ("The", "QB", "Coach"):
+                    return False
+            for m in re.finditer(r"\b(no|zero|one|two|three|four|\d) (?:picks?|ints?|interceptions?)\b", seg, re.I):
+                before = re.findall(r"\b([A-Z][a-z'\-]+)\b", seg[max(0, m.start() - 60):m.start()])
+                last = next((w.lower() for w in reversed(before) if w.lower() in (g.get("_ints") or {})
+                             or w.lower() in (g.get("_qb_lasts") or ())), None)
+                if last:  # 'Manning has thrown 1 interception' when he has 2
+                    n = {"no": 0, "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4}.get(m.group(1).lower())
+                    n = int(m.group(1)) if n is None else n
+                    if n != (g.get("_ints") or {}).get(last, 0):
                         return False
             words = {w.lower() for w in re.findall(r"[A-Z][a-z'\-]{2,}", seg)}
             if _SCORE_VERB.search(seg):

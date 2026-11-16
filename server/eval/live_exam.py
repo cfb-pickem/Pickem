@@ -367,7 +367,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     add("manning-rumor", "trick", "lsu3", "I heard Arch Manning got hurt, is that true?", [NEG + r"|" + NO_INFO],
         [r"\byes\b", r"Manning (was|got|is) (hurt|injured)", r"confirmed"], [LSU], rider=[],
         key="No injury reported for Arch Manning in the feed.")
-    add("aggies-wrong-team", "trick", "lsu3", "what's the Texas A&M score?", [NO_INFO + r"|A&M"],
+    add("aggies-wrong-team", "trick", "lsu3", "what's the Texas A&M score?", [NO_INFO + r"|A&M|(isn'?t|not) (even )?in (our|the) pool"],
         [r"A&M (is |are )?(up|down|leads|trails|winning|losing)", r"A&M \d"], [LSU], rider=[],
         key="Texas A&M is not in the feed; Texas (at LSU, 21-10 LSU) is a different team.")
 
