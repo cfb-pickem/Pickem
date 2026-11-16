@@ -160,7 +160,7 @@ def decide(obs: dict[str, dict], state: dict, now: float) -> tuple[list[tuple[st
     for name, o in obs.items():
         f = feeds.setdefault(name, {})
         if o["ok"]:
-            if f.get("bad", 0) >= 2:
+            if f.get("bad", 0) >= 2 or f.get("repairs"):
                 acts.append(("remember", f"{name} feed recovered after ~{int((now - f.get('since', now)) // 60)} min."))
             feeds[name] = {"seen": True}
             continue
@@ -356,7 +356,7 @@ def repair(name: str, why: str = "", claude=call_claude, tests=run_tests, push: 
     """One repair run for a feed. Returns (and logs) the result record."""
     s = freshness.source(name)
     t0 = time.time()
-    stamp = dt.datetime.now(freshness.CT).strftime("%Y%m%d-%H%M%S")
+    stamp = dt.datetime.now(freshness.CT).strftime("%Y%m%d-%H%M%S-%f")
     branch = f"picky-repair/{name}-{stamp}"
     wt = Path(os.environ.get("PICKY_REPAIR_WT_DIR", "/private/tmp")) / f"picky-repair-{name}-{stamp}"
     rec = {"ts": dt.datetime.now(freshness.CT).isoformat(timespec="seconds"), "feed": name, "branch": branch}
