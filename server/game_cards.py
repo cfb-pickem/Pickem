@@ -536,7 +536,7 @@ def card_lines(c: dict, asker: str | None, full: bool) -> list[str]:
     reasons = list(c["reasons"])
     if case.get("reasons") and agree:
         reasons = [r["text"] for r in case["reasons"]] + reasons
-    out.append("  Why (use the best two or three, never all): " + " / ".join(reasons[: (4 if full else 3)]))
+    out.append("  Why (use two, three at most): " + " / ".join(reasons[: (4 if full else 3)]))
     counter = (case.get("counter") or {}).get("text") if agree else None
     if case.get("pick") and not agree:
         counter = f"the film room would take {case['pick']}: " + " / ".join(r["text"] for r in case["reasons"][:2])
@@ -549,8 +549,17 @@ def card_lines(c: dict, asker: str | None, full: bool) -> list[str]:
         for h in c.get("history") or []:
             out.append(f"  History vs this opponent: {re.sub(r'^head-to-head: ', '', h)}")
     th = (c.get("theory") or {}).get(asker or "")
-    if th:
-        out.append(f"  For {asker} (game theory from rivals' past graded picks, never this week's): {th['text']}")
+    if th:  # one clear call for the asker: the lean, or the lean plus the chase angle, never a muddle
+        g_ = {**g, "line": ll["home"]}
+        if th.get("side") and th["side"] != lean["side"]:
+            call = (f"so for {asker} the contrarian play is {pick_brief.side_label(th['side'], g_)}: give your "
+                    f"pick ({lean['label']}) first, then say that chasing makes the other side worth a look")
+        elif th.get("side"):
+            call = f"so game theory backs the same side for {asker}"
+        else:
+            call = "no standings reason to deviate from the pick"
+        out.append(f"  For {asker} (game theory from rivals' past graded picks, never this week's): "
+                   f"{th['text']} Bottom line: {call}.")
     if conf.get("backtest"):
         out.append(f"  Honesty check: {conf['backtest']}. ATS picks are close to a coin flip even for pros, "
                    "so never call it a lock.")

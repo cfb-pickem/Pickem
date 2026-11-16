@@ -272,6 +272,8 @@ def test_card_note_in_the_user_turn_for_the_asker_only():
         assert note.startswith("GAME CARD, Texas A&M at Oklahoma"), note
         assert "I'd take Oklahoma -7.5" in note and "League line: Oklahoma -7.5 (locked Tue 11 AM CT)" in note
         assert "For Ed (game theory" in note and "For Ann" not in note
+        # Ed is chasing and the crowd isn't predictable from one rival: no contrarian muddle, one clear call
+        assert "Bottom line:" in note and note.count("THE PLAY:") == 1
         assert "Honesty check:" in note and "never call it a lock" in note
         # not an opinion question / another asker / line changed since the card: no card
         assert gc.card_note(ctx_for(None), "what channel is Texas A&M vs Oklahoma on?") == ""
@@ -284,6 +286,18 @@ def test_card_note_in_the_user_turn_for_the_asker_only():
     finally:
         chat._now_ct_naive = orig
         chat.week_locked = wl
+
+
+def test_theory_line_is_one_clear_call():
+    table = [{"team": "Ann", "w": 20, "l": 10, "rank": 1}, {"team": "Bo", "w": 18, "l": 12, "rank": 2},
+             {"team": "Cy", "w": 16, "l": 14, "rank": 3}, {"team": "Ed", "w": 11, "l": 19, "rank": 4}]
+    fav = {"n": 20, "fav": 0.8, "home": 0.5, "crowd": 0.5}
+    c = card(table=table, tend={t: fav for t in ("Ann", "Bo", "Cy")})
+    txt = "\n".join(gc.card_lines(c, "Ed", True))
+    assert c["lean"]["side"] == "Oklahoma" and c["theory"]["Ed"]["side"] == "Texas A&M"
+    assert "the contrarian play is Texas A&M +7.5: give your pick (Oklahoma -7.5) first" in txt, txt
+    txt = "\n".join(gc.card_lines(c, "Ann", True))
+    assert "contrarian" not in txt
 
 
 def test_card_never_in_the_prefix():
