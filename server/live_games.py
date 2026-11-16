@@ -328,9 +328,11 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
             who = re.search(r"#\d{1,2} (" + _NAME + r") pass intercepted|fumbled? by #\d{1,2} (" + _NAME + ")", text)
             what = ("INT" if "intercept" in (text + ty).lower() else "fumble lost" if "fumbl" in (text + ty).lower()
                     else "blocked kick" if "Blocked" in ty else "turnover")
+            who = (who.group(1) or who.group(2)) if who else None
+            if not who and what == "INT" and passers.get(off):  # 'Travis Anderson 58 Yd Interception Return' names
+                who = passers[off][-1]["name"]                    # no passer: it was the QB in the game
             turnovers.setdefault(name.get(off, off), []).append(
-                {"kind": what, "who": (who.group(1) or who.group(2)) if who else None, "period": per, "clock": clk,
-                 "td": "Touchdown" in ty})
+                {"kind": what, "who": who, "period": per, "clock": clk, "td": "Touchdown" in ty})
         m = _PASSER.search(text)
         if m and ty not in NON_PLAYS and off:
             passers.setdefault(off, []).append({"name": m.group(2), "jersey": m.group(1), "i": i,
@@ -1273,6 +1275,19 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
             why = (f" (took over from {ch[0]['from']} at {period_label(ch[0]['period'])} {ch[0]['clock']}"
                    + (f", after {ch[0]['from']} was reported injured" if inj else "") + ")")
         return (lambda t, last=last: last.lower() in t.lower(), f" {team} QB right now: {cur}{why}.")
+    m_int = re.search(r"\bwho (threw|tossed)\b.{0,25}\b(pick|int|interception)\b|\bwho fumbled\b", q, re.I)
+    if m_int and g.get("turnovers"):
+        want = "fumble" if "fumbl" in m_int.group(0).lower() else "INT"
+        teams = [t["name"] for t in (g["away"], g["home"]) if any(
+            re.search(rf"(?<![\w']){re.escape(k)}(?!\w|'(?!s\b))", q, 0 if cs_ else re.I) for k, cs_ in _name_keys(t))]
+        xs = [(tm, x) for tm, lst in g["turnovers"].items() for x in lst
+              if x["kind"].startswith(want[:3]) and x.get("who") and (len(teams) != 1 or tm == teams[0])]
+        if xs:
+            tm, x = max(xs, key=lambda y: _tkey(y[1]["period"], y[1]["clock"]))
+            last = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", x["who"]).split(".")[-1].split(" ")[-1]
+            return (lambda t, last=last: last.lower() in t.lower(),
+                    f" {x['who']} ({tm}) {'threw it' if want == 'INT' else 'fumbled'}: {x['kind']}"
+                    f"{' returned for a TD' if x.get('td') else ''} {period_label(x['period'])} {x['clock']}.")
     if _Q_SCORER.search(q) and not re.search(r"\b(pick|int|interception|intercepted|fumbled?|sacked)\b", q, re.I):
         sc = list(g.get("scoring") or [])
         teams = [t["name"] for t in (g["away"], g["home"]) if any(

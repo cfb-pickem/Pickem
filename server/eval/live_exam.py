@@ -289,7 +289,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     add("boi1-cover", "cover", "boi1", "is my Oregon State pick covering?", [r"\byes|covering", r"\b5\.5\b"],
         [r"Oregon State( \+13\.5)?( is)? not covering|Oregon State isn\'?t covering|you\'?re not covering"], [BOI], expect={"cover": (BOI, "Oregon State", 5.5)})
     add("boi1-thrower", "trick", "boi1", "who threw that pick for Oregon State?",
-        [r"Murphy|" + NO_INFO + r"|doesn'?t (say|name)|not (named|listed)"], [r"Hatcher|Reichle|Legree"], [BOI], rider=[],
+        [r"Murphy|" + NO_INFO + r"|doesn'?t (say|name)|not (named|listed)"], [r"Hatcher|Reichle|Legree|Martinez|Madsen|Anderson threw"], [BOI], rider=[r"Murphy"],
         key="The pick-six play text doesn't name the passer; Maalik Murphy is Oregon State's only QB so far.")
 
     # --- Boise 2Q: Gaines TD 29-13, Boise flips to covering -----------------------------------
