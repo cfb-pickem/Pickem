@@ -66,7 +66,7 @@ REST = f"{SUPABASE_URL}/rest/v1"
 AUTH = f"{SUPABASE_URL}/auth/v1"
 
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-MODEL = os.environ.get("PICKEM_CHAT_MODEL", "qwen2.5:7b-instruct")
+MODEL = os.environ.get("PICKEM_CHAT_MODEL", "gemma4:12b-it-qat")
 CLAUDE_MODEL = os.environ.get("PICKY_CLAUDE_MODEL", "claude-haiku-5-5")
 CLAUDE_EFFORT = os.environ.get("PICKY_CLAUDE_EFFORT", "medium")
 # The API key never touches the repo (public GitHub Pages): env first, else
