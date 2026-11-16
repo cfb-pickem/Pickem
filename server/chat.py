@@ -1064,6 +1064,8 @@ async def _build_context(
             jwt,
         )
         current_week = last[0]["week"] if last else None
+    if os.environ.get("PICKY_PIN_WEEK"):  # replays/exams only (eval/live_exam.py: last Saturday's pool); never live
+        current_week = int(os.environ["PICKY_PIN_WEEK"])
 
     week_games_t = _rest_get(
         client,
