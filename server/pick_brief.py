@@ -360,10 +360,20 @@ _QUES = re.compile(r"\b(questionable|game[- ]time decision|day[- ]to[- ]day|limi
 _AVAIL = re.compile(r"\b(will play|available|cleared|probable|ready to go|expected to start|returns?)\b", re.I)
 
 
+# 'Illinois may turn to third-string QB Boyd after Houser injury' / 'status in limbo' (2026-11-16): a
+# hedged report is questionable, not out (it read as out from 'surgery' further down the story).
+_HEDGE = re.compile(r"\b(may|might|could) (turn to|start|be without|miss|not play|sit)\b|\bin limbo\b|"
+                    r"\bstatus (is |remains )?(uncertain|unclear|up in the air)\b|\bif he can'?t\b|"
+                    r"\bdon'?t know what his status\b", re.I)
+_SURE_OUT = re.compile(r"\b(ruled out|out for the (season|year)|season[- ]ending|will not play|won'?t play)\b", re.I)
+
+
 def injury_status(text: str, given: str | None = None) -> str | None:
     if given in ("out", "doubtful", "questionable", "probable", "available"):
         return given
     t = text or ""
+    if _HEDGE.search(t) and not _SURE_OUT.search(t):
+        return "questionable"
     if _AVAIL.search(t) and not _OUT.search(t):
         return "available"
     if _OUT.search(t):
@@ -574,8 +584,15 @@ def f_personnel(g: dict, side: str, t: dict | None, idx: dict, notes_side: dict 
     elif qb:
         out.append(F(8, None, 0, f"QB status: no injury report on {side} QB {qb} in the cached news"))
     if inj:
-        w = min(W_INJ * len(inj), W_INJ_MAX)
-        txt = "; ".join(_short(_intel_text(i), 90) for i in inj[:3])
+        seen, heads = set(), []
+        for i in inj:  # the same story from the dossier and the news feed reads once, without 'Source:'
+            h = re.sub(r"^\s*(source|per [^:]{1,40}):\s*", "", _intel_text(i), flags=re.I)
+            k = re.sub(r"\W+", " ", h.lower())[:40]
+            if k not in seen:
+                seen.add(k)
+                heads.append(_short(h, 90))
+        w = min(W_INJ * len(heads), W_INJ_MAX)
+        txt = "; ".join(heads[:3])
         out.append(F(10, opp, w, f"key injuries ({side}): {txt}"))
     return out
 

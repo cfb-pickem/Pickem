@@ -81,7 +81,7 @@ BANNED_TICS = [
     r"\bdumpster fire\b",
     r"\bgod among men\b",
     r"\bso maybe you should\b",
-    r"\bdon'?t let it go to your head\b",
+    r"\bgo(es|ing)? to (your|his|her|their) head\b",  # 'try not to let that 4-0 week go to your head' (11/16)
     r"\bwhich is a nice way of saying\b",
     r"^\s*look,",
     # preachy (W5): never a lecture, never a refusal

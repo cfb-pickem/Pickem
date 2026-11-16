@@ -448,6 +448,14 @@ def land_ack_for(user_id: str, messages: list) -> str | None:
     return LAND_ACKS[next(_ack_turn) % len(LAND_ACKS)]
 
 
+def scrub_tics(text: str) -> str:
+    """Picky's earlier replies minus their tic sentences ('try not to let that 4-0 week go to your head'):
+    the model copies its own history, so a tic in it comes back on the next answer."""
+    sents = re.split(r"(?<=[.!?])\s+", text or "")
+    kept = " ".join(x for x in sents if not _TICS.search(x.replace("\u2019", "'"))).strip()
+    return kept or text
+
+
 def strip_land_ack(text: str) -> str:
     """Keep the acknowledgment out of the history the model sees, so the 9B
     doesn't copy it into later answers."""
@@ -1456,6 +1464,25 @@ def _side_label(side: str, home: str, pool_home: float) -> str:
     return f"{side} {sign}{_num(abs(pool_home))}"
 
 
+PRE_LOCK_NOTE = (" (NOT banked: the league line isn't locked until Tue 11 AM CT and can still move, so it's only "
+                 "value if it holds through the lock)")
+VALUE_MIN_GAP = 0.5  # the game cards' EDGE_SOME: a half point counts (Northwestern -2.5 vs -3 crosses 3)
+
+
+def lines_locked(ctx: dict) -> bool:
+    """Has this week's league line lock (Tue 11 AM CT, league_rules.line_lock_at) passed?"""
+    import pick_brief
+    now = _now_ct_naive()
+    for g in ctx.get("games_this_week") or []:
+        try:
+            la = pick_brief.line_lock(dt.datetime.fromisoformat(str(g.get("start"))))
+        except (TypeError, ValueError):
+            continue
+        if la and now >= la:
+            return True
+    return False
+
+
 def line_value(notes: dict, away: str, home: str, line) -> str | None:
     """Where the ESPN market and the pool line disagree; a gap means one side
     of the pool line is getting points the market wouldn't give."""
@@ -1760,7 +1787,8 @@ def render_context(ctx: dict) -> str:
             L.append(f"  ESPN market line {old or 'now'}: {mk}" if mk else "  ESPN market line: none posted")
             lv = line_value(notes, away, home, g.get("line"))
             if lv:
-                L.append(f"  Line value: {lv}")
+                L.append(f"  Line value: {lv}" + ("" if lv.startswith("pool line and ESPN") or lines_locked(ctx)
+                                                  else PRE_LOCK_NOTE))
             L.append(_team_line(away, notes.get("away") or {},
                                 not (cf and cfbd.resolve_team(away, cf))))
             L.append(_team_line(home, notes.get("home") or {},
@@ -1805,16 +1833,23 @@ def render_context(ctx: dict) -> str:
             notes = espn_all.get(g["id"]) or {}
             if notes.get("unavailable") or g.get("status") in ("final", "in_progress", "in", "live"):
                 continue
-            lv = line_value(notes, g["away"], g["home"], g.get("line"))
-            if not lv:
+            mg = _market_gap(notes, g.get("line"))
+            if mg is None:
                 continue
-            if lv.startswith("pool line and ESPN"):
+            if abs(mg[1]) < VALUE_MIN_GAP:
                 nv.append(f"game {i} ({g['away']} at {g['home']})")
             else:
-                vs.append(f"{lv.split(' is the value side')[0]} (game {i}, "
-                          f"{_num(abs(_market_gap(notes, g.get('line'))[1]))} points)")
-        L.append("VALUE SIDES in games not started yet, all of them: " + ("; ".join(vs) if vs else "none")
-                 + (f". No value side in {', '.join(nv)}." if nv else "."))
+                side = g["home"] if mg[1] > 0 else g["away"]
+                vs.append(f"{_side_label(side, g['home'], mg[0])} (game {i}, market {_num(abs(mg[1]))} "
+                          f"point{'' if abs(mg[1]) == 1 else 's'} better)")
+        if lines_locked(ctx):
+            L.append("VALUE SIDES in games not started yet (league lines locked), all of them: "
+                     + ("; ".join(vs) if vs else "none") + (f". No gap in {', '.join(nv)}." if nv else "."))
+        else:
+            L.append("LINE GAPS vs the market in games not started yet, all of them (league lines are NOT locked "
+                     "until Tue 11 AM CT and can still move, so a gap is only value IF it holds through the lock; "
+                     "never call one 'the only value side'): " + ("; ".join(vs) if vs else "none")
+                     + (f". No gap in {', '.join(nv)}." if nv else "."))
 
     cw, done, _n = _week_state(ctx)
     if done:
@@ -1898,6 +1933,7 @@ def you_block(ctx: dict) -> str:
             notes = (espn_all or {}).get(g["id"]) if espn_all is not None else None
             pv = (pick_verdict(notes, away, home, g.get("line"), mine[g["id"]], locked)
                   if notes and not notes.get("unavailable") else None)
+            pv = pv + PRE_LOCK_NOTE if pv and "value" in pv and not lines_locked(ctx) else pv
             L.append(f"    Value check on {me}'s pick: {pv}" if pv else
                      f"    Value check on {me}'s pick: none, no market line right now. Don't call it "
                      "the value side or the wrong side.")
@@ -4397,9 +4433,24 @@ _GAME_OPINION_ASK = re.compile(r"\b(think|thoughts?|like|take|lean|play|pick|fee
                                r"breakdown|preview|matchup|analy[sz]\w*|chances?|smash|spot)\b", re.I)
 
 
+# A slate question ('gimme a read on this week's games', 'who should I pick', 'what do you like this week',
+# 'picks?') gets every open game's card (live 2026-11-16: both of Charlie's slate asks matched no game, so
+# Picky only listed the games, then called a pre-lock gap 'the only value side').
+_SLATE_ASK = re.compile(
+    r"\b(read|thoughts?|takes?|picks?|leans?|plays?|like|liking|bets?|advice|breakdown)\b.{0,30}?\b(this|the|these|"
+    r"today'?s|saturday'?s|week'?s|weekend'?s)\s+(weeks?'?s?\s+|weekends?'?s?\s+)?(games?|slate|board|week|weekend)\b"
+    r"|\bwho (should|do|would|will) (i|we|you|u) (pick|take|go with|play|like|back)\b"
+    r"|\bwhat (do|would|should) (you|u|i|we) (like|take|pick|play)\b(?!.{0,25}\b(in|on|with|for)\b)"
+    r"|\b(gimme|give me|got any|any|your|ur) (picks?|plays?|leans?)\b|^\W*(picks?|plays?|leans?)\W*$", re.I)
+
+
+def slate_ask(question: str) -> bool:
+    return bool(_SLATE_ASK.search(question or ""))
+
+
 def take_games(ctx: dict, question: str) -> list[dict]:
     """Open pool games whose analyst take this question should get: every
-    game a breakdown question covers, or the 1-2 games it names when it asks
+    game a breakdown or slate question covers, or the 1-2 games it names when it asks
     for an opinion (not 'what's the line', not 'who's hurt')."""
     q = question or ""
     if not AMMO_ON or ctx.get("error") or not q.strip() or week_locked(ctx):
@@ -4407,13 +4458,17 @@ def take_games(ctx: dict, question: str) -> list[dict]:
     ag = analysis_games(ctx, q)
     if ag:
         return ag[:4]
-    if _INJURY_ASK.search(q) or not _GAME_OPINION_ASK.search(q):
+    if _INJURY_ASK.search(q):
         return []
     now = _now_ct_naive()
     games = [g for g in ctx.get("games_this_week") or [] if not g.get("winner") and not g.get("tiebreaker")
              and not _game_is_locked({"Start (CT)": g.get("start"), "Status": g.get("status")}, now)]
     ids = [n["id"] for n in games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games],
                                         cap=2)]
+    if not ids and slate_ask(q):
+        return games[:4]
+    if not _GAME_OPINION_ASK.search(q):
+        return []
     return [g for g in games if g["id"] in ids]
 
 
@@ -6040,13 +6095,56 @@ _ANATOMY = re.compile(r"\b(dick|dicks|cock|cocks|penis|weenie|wiener|schlong|pec
 # Verbal tics from the exam (m4: "don't get cocky" closed 16 of 122 answers). A
 # short filler sentence built on one is dropped; a longer one with real content stays.
 _TICS = re.compile(r"\b(don'?t get cocky|sitting pretty|the rest of us|here to watch|dumpster fire|god among men|"
-                   r"so maybe you should|don'?t let it go to your head|let that sink in)\b", re.I)  # board-voice tic, 11/16
+                   r"so maybe you should|go(es|ing)? to (your|his|her|their) head|let that sink in)\b", re.I)  # board-voice tic, 11/16
 
 
 def _both(a, b):
     if a is None or b is None:
         return a or b
     return lambda x: a(x) and b(x)
+
+
+_VALUE_WORD = re.compile(r"\b(value|free points?)\b", re.I)
+_VALUE_IF = re.compile(r"\b(if|holds?|holding|tuesday|until|till|before the lock|line lock|still move|"
+                       r"can (still )?move)\b", re.I)
+_ONLY_VALUE = re.compile(r"\bonly (real |true |actual )?value\b|\b(no|zero) (line )?value\b", re.I)
+
+
+def value_claim_check(ctx: dict):
+    """Before the Tue 11 AM CT line lock a league-vs-market gap isn't banked (the league line can still
+    move): a sentence calling something value has to say 'if it holds through the lock', and 'the only
+    value side' / 'no value' never goes out (live 2026-11-16: 'Iowa -6.5, the only value side', with
+    Northwestern -2.5 vs -3 also a gap). After the lock it's real value, but 'only value side' still
+    can't go out when two or more games have a gap."""
+    if ctx.get("error") or not ctx.get("games_this_week"):
+        return None
+    locked = lines_locked(ctx)
+    espn_all = ctx.get("espn") or {}
+    gaps = sum(1 for g in ctx["games_this_week"] if not g.get("winner")
+               and (mg := _market_gap(espn_all.get(g["id"]) or {}, g.get("line"))) and abs(mg[1]) >= VALUE_MIN_GAP)
+    if locked and gaps < 2:
+        return None
+
+    def ok(sent: str) -> bool:
+        if _ONLY_VALUE.search(sent):
+            return False
+        return locked or not _VALUE_WORD.search(sent) or bool(_VALUE_IF.search(sent))
+    return ok
+
+
+_RECORD_JAB = re.compile(
+    r"\bgo(es|ing)? to (your|his|her|their) head\b|"
+    r"\b(you|you'?re|your|ur)\b.{0,60}\b(\d{1,2}-\d{1,2}\s+(week|weekend|start|run|slate)|first place|"
+    r"(perfect|hot|good|great|big) week|your record|that record)\b|"
+    r"\b\d{1,2}-\d{1,2}\s+(week|weekend)\b.{0,60}\b(you|you'?re|your|ur)\b", re.I)
+
+
+def advice_jab_check(ctx: dict, question: str):
+    """Pick advice is advice: no tacked-on jab about the asker's record ('try not to let that 4-0 week go
+    to your head', seen 4+ times on 2026-11-16). Only when the question gets game cards."""
+    if not take_games(ctx, question):
+        return None
+    return lambda sent: not _RECORD_JAB.search(sent)
 
 
 def trait_word_check(ctx: dict, question: str):
@@ -6724,7 +6822,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
     ]
     convo = [convo[0]] + [
         {"role": "user", "content": _user_turn(ctx, m["content"])} if m["role"] == "user"
-        else {"role": "assistant", "content": strip_land_ack(m["content"])}
+        else {"role": "assistant", "content": scrub_tics(strip_land_ack(m["content"]))}
         for m in convo[1:]
     ]
 
@@ -6842,8 +6940,9 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
                 extra=_both(_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
                                   _both(grounded_check(ctx, corpus, qtext), news_claim_check(corpus))),
-                            _both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
-                                  _both(picky_claim_check(ctx), picky_claim_check(ctx, "you")))) if not ctx.get("error") else None),
+                            _both(_both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
+                                        _both(picky_claim_check(ctx), picky_claim_check(ctx, "you"))),
+                                  _both(value_claim_check(ctx), advice_jab_check(ctx, qtext)))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),

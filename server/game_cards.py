@@ -511,18 +511,122 @@ def _asof(iso: str | None) -> str:
         return "recently"
 
 
-def card_lines(c: dict, asker: str | None, full: bool) -> list[str]:
+def is_locked(c: dict, now: dt.datetime | None = None) -> bool:
+    """The league line's lock state NOW (Tue 11 AM CT, league_rules.line_lock_at), not when the card was
+    built: a Monday card read on Wednesday is locked."""
+    ll = c["league_line"]
+    if ll.get("locked"):
+        return True
+    try:
+        lock_at = dt.datetime.fromisoformat(ll["lock_at"]).replace(tzinfo=None)
+    except (TypeError, ValueError, KeyError):
+        return False
+    return (now or now_ct()).replace(tzinfo=None) >= lock_at
+
+
+def _pts(x: float) -> str:
+    return "half a point" if x == 0.5 else f"{pick_brief._n(x)} point" + ("" if x == 1 else "s")
+
+
+def value_text(c: dict, locked: bool) -> str | None:
+    """The league-vs-market gap in words. Before the lock it's conditional (the league line can still
+    move, so nothing is banked); after the lock it's real value."""
+    v, mk = c.get("value"), c.get("market")
+    if not v or not mk:
+        return None
+    g = c["game"]
+    league = pick_brief.side_label(v["side"], {**g, "line": c["league_line"]["home"]})
+    market = pick_brief.side_label(v["side"], {**g, "line": mk["home_now"]})
+    key = re.search(r"crosses (\d+)", v.get("key") or "")
+    key_t = f", and it's on the good side of the key number {key.group(1)}" if key else ""
+    if locked:
+        return (f"the league line is locked at {league} and the market's at {market} ({mk['src']}): "
+                f"{_pts(v['points'])} of real value on {v['side']}{key_t}")
+    return (f"the league has {league} and the market's at {market} ({mk['src']}); if that holds through "
+            f"Tuesday's 11 AM CT line lock, that's {_pts(v['points'])} of value on {v['side']}{key_t}. Not banked "
+            "yet: the league line can still move before the lock")
+
+
+def _reasons(c: dict, locked: bool) -> list[str]:
+    """The card's reasons with the line-value pair (gap + key number) as one lock-aware sentence."""
+    vt = value_text(c, locked)
+    out = []
+    for r in c.get("reasons") or []:
+        if r.startswith("key number:"):
+            continue
+        out.append(vt if r.startswith("line value:") and vt else r)
+    return out
+
+
+_GAP_TALK = re.compile(r"\b(market|pool|league line|free points?|points? of value|value|stale)\b", re.I)
+
+
+def _case_reasons(case: dict, locked: bool) -> list[str]:
+    """The film room's reasons; before the lock the ones about the league-vs-market gap drop out ('two free
+    points'), since value_text already says it conditionally."""
+    return [r["text"] for r in case.get("reasons") or [] if locked or not _GAP_TALK.search(r["text"])]
+
+
+def _say(c: dict, locked: bool) -> str:
+    conf = c["confidence"]
+    if not locked and conf.get("word") == "best play":
+        return "I like it if the league line holds through Tuesday's lock; still not a lock"
+    return conf["say"]
+
+
+CONF_RANK = {"best play": 3, "lean": 2, "slight lean": 1, "coin flip": 0}
+
+
+def strongest(cards: list[dict]) -> dict | None:
+    """The best play on the slate: the card's confidence word first, then the factor-score margin."""
+    def key(c):
+        sc = c["lean"].get("score") or {}
+        return (CONF_RANK.get(c["confidence"].get("word"), 0),
+                abs(sc.get(c["game"]["away"], 0) - sc.get(c["game"]["home"], 0)))
+    pool = [c for c in cards if c["lean"].get("side")]
+    return max(pool, key=key) if pool else None
+
+
+def slate_lines(cards: list[dict], now: dt.datetime | None = None) -> list[str]:
+    """Every open game in one compact block: the side, two reasons, the lock-aware gap, then the best play."""
+    if not cards:
+        return []
+    locked = all(is_locked(c, now) for c in cards)
+    lk = ("lines are locked (since Tue 11 AM CT)" if locked else
+          "league lines are NOT locked yet (they lock Tue 11 AM CT), so a gap vs the market is only value if it "
+          "holds through the lock")
+    out = [f"SLATE READ, all {len(cards)} open games (game cards built offline {_asof(cards[0]['generated_at'])}; "
+           f"every number computed, copy exactly; graded ATS: the pick is who COVERS the league line; {lk}):"]
+    for c in cards:
+        g, lean, lkc = c["game"], c["lean"], is_locked(c, now)
+        case = c.get("case") or {}
+        rs = [r for r in _reasons(c, lkc) if not r.startswith(("the league has", "the league line is locked"))]
+        if case.get("pick") == lean["side"]:
+            rs = [r for r in _case_reasons(case, lkc) if not _GAP_TALK.search(r)] + rs
+        line = f"- {g['away']} at {g['home']}: I'd take {lean['label']} ({_say(c, lkc)}). Why: " + " / ".join(rs[:2])
+        vt = value_text(c, lkc)
+        if vt:
+            line += f". Line: {vt}"
+        out.append(line + ".")
+    best = strongest(cards)
+    if best:
+        out.append(f"STRONGEST PLAY: {best['lean']['label']} ({best['game']['away']} at {best['game']['home']}).")
+    return out
+
+
+def card_lines(c: dict, asker: str | None, full: bool, now: dt.datetime | None = None) -> list[str]:
     g, ll, lean = c["game"], c["league_line"], c["lean"]
+    locked = is_locked(c, now)
     out = [f"GAME CARD, {g['away']} at {g['home']} (built offline {_asof(c['generated_at'])}; every number is "
            "computed, copy them exactly; graded ATS: the pick is who COVERS the league line):"]
-    lk = "locked Tue 11 AM CT" if ll["locked"] else "not locked yet, locks Tue 11 AM CT"
+    lk = "locked Tue 11 AM CT" if locked else "not locked yet, locks Tue 11 AM CT"
     mk = c.get("market")
     out.append(f"  League line: {ll['text'].split(' / ')[0]} ({lk})."
                + (f" Market: {mk['text'].split(' / ')[0]} ({mk['src']}, as of {_asof(mk['as_of'])})." if mk else
                   " No market line on file."))
-    if c.get("value"):
-        out.append(f"  Value: {re.sub(r'^line value: ', '', c['value']['why'])}."
-                   + (f" {c['value']['key']}." if c["value"].get("key") else ""))
+    vt = value_text(c, locked)
+    if vt:
+        out.append(f"  {'Value' if locked else 'Line gap (NOT value yet)'}: {vt}.")
     if c.get("move"):
         cause = re.sub(r"^cause of the move: (lines up with )?", "", c["move"].get("cause") or "")
         cause = "" if cause.startswith("no injury or news") else cause
@@ -532,10 +636,10 @@ def card_lines(c: dict, asker: str | None, full: bool) -> list[str]:
     case = c.get("case") or {}
     agree = case.get("pick") == lean["side"]
     conf = c["confidence"]
-    out.append(f"  THE PLAY: I'd take {lean['label']} ({conf['say']}).")
-    reasons = list(c["reasons"])
+    out.append(f"  THE PLAY: I'd take {lean['label']} ({_say(c, locked)}).")
+    reasons = _reasons(c, locked)
     if case.get("reasons") and agree:
-        reasons = [r["text"] for r in case["reasons"]] + reasons
+        reasons = _case_reasons(case, locked) + reasons
     out.append("  Why (use two, three at most): " + " / ".join(reasons[: (4 if full else 3)]))
     counter = (case.get("counter") or {}).get("text") if agree else None
     if case.get("pick") and not agree:
@@ -576,19 +680,33 @@ def card_note(ctx: dict, question: str) -> str:
         return ""
     asker = (ctx.get("you") or {}).get("team_name")
     full = len(games) <= 2 and (pick_brief.wants_full(question) or len(games) == 1)
-    out = []
+    cards = []
     for g in games[:4]:
         c = load_card(ctx.get("current_week"), g["id"])
         if not c or c["league_line"]["home"] != float(g.get("line") or 0):
             continue  # no card, or the league line changed since: the live breakdown covers it
-        out += card_lines(c, asker, full)
-    if not out:
+        cards.append(c)
+    if not cards:
         return ""
+    if len(games) >= 3 and chat.slate_ask(question):
+        return "\n".join(slate_lines(cards)) + "\n" + SLATE_SAY
+    out = []
+    for c in cards:
+        out += card_lines(c, asker, full)
     return "\n".join(out) + (
         "\nSay it like a sharp buddy, in your voice: the side by team name and number ('I'd take X -3.5'; never "
         "'my pick' or 'I took', those mean your real league picks), the best two or three reasons, the case "
         "against only if it fits, and the game-theory line only to the person it's for. Confidence exactly as "
-        "the card words it. No stats, names or injuries that aren't on the card. " + chat.TALK_LIKE_A_PERSON)
+        "the card words it. No stats, names or injuries that aren't on the card. " + PRE_LOCK_SAY
+        + chat.TALK_LIKE_A_PERSON)
+
+
+PRE_LOCK_SAY = ("Before Tuesday's 11 AM CT lock a line gap is NOT value yet: say it with 'if it holds through "
+                "Tuesday' and never call anything 'the only value side'. ")
+SLATE_SAY = ("Text it like a buddy, phone-length (about 100 words): one short line per game in this order, 'I'd "
+             "take X (line)' plus one or two of its reasons in plain words (no stat labels like SP+ or EPA, no "
+             "sources, no per-line citations, round the numbers), then one line on the strongest play. " + PRE_LOCK_SAY
+             + "No jab about their record or the standings: it's pick advice.")
 
 
 # -----------------------------------------------------------------------------
