@@ -678,8 +678,12 @@ def ask(a) -> int:
             if not it["follow"]:
                 hist.write_text("{}")  # each question starts a fresh DM thread; follow-ups keep their parent's
             t0 = time.time()
-            r = c.post(a.group, headers={"X-Picky-Group-Secret": secret},
-                       json={"handle": handle, "text": it["q"], "chat": f"live80-{a.tag}-{it['id']}", "dm": True})
+            for attempt in (1, 2):  # one retry on a 5xx (a Supabase auth blip is infra, not Picky)
+                r = c.post(a.group, headers={"X-Picky-Group-Secret": secret},
+                           json={"handle": handle, "text": it["q"], "chat": f"live80-{a.tag}-{it['id']}", "dm": True})
+                if r.status_code < 500:
+                    break
+                time.sleep(5)
             ans = (r.json().get("reply") or "") if r.status_code == 200 else f"[HTTP {r.status_code}]"
             ok, why = grade(it, ans, tr)
             rec = {"id": it["id"], "cat": it["cat"], "moment": it["moment"], "q": it["q"], "a": ans, "ok": ok, "why": why,

@@ -956,6 +956,9 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
                                               if v.get(k)) for n, v in g["tds"].items()) + ".")
     elif st == "in" and g.get("detail"):
         lines.append("  No points yet.")
+    if g.get("detail") and st in ("in", "post") and g.get("qb"):
+        lines.append("  QBs " + ("right now" if st == "in" else "at the end") + ": " + "; ".join(
+            f"{team} {q.get('current') or q.get('starter')}" for team, q in (g.get("qb") or {}).items()) + ".")
     if g.get("detail") and st in ("in", "post"):
         to = g.get("turnovers") or {}
         lines.append("  Turnovers so far (all of them): " + ("; ".join(
@@ -1292,7 +1295,7 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
             inj = any(x.get("qb") and _abbr_key(x["player"]) == _abbr_key(ch[0]["from"]) for x in g.get("injuries") or [])
             why = (f" (took over from {ch[0]['from']} at {period_label(ch[0]['period'])} {ch[0]['clock']}"
                    + (f", after {ch[0]['from']} was reported injured" if inj else "") + ")")
-        return (lambda t, last=last: last.lower() in t.lower(), f" {team} QB right now: {cur}{why}.")
+        return (lambda t, last=last: last.lower() in t.lower(), f" {team} QB right now: {cur}{why}".rstrip(".") + ".")
     m_td = re.search(r"\bhow many (tds?|touchdowns?|scores)\b", q, re.I)
     if m_td and g.get("tds") is not None:
         words = {w.lower() for w in re.findall(r"[A-Za-z][a-z'\-]{2,}", q)}
