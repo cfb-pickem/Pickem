@@ -39,6 +39,7 @@ import callbacks
 import chat
 import league_rules
 import live_flag
+import router
 
 log = logging.getLogger("picky-brain")
 
@@ -691,6 +692,12 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
                                        **({"notes": nb} if (nb := brief_notes(st["q"])) else {}),
                                        **({"live": lv} if (lv := (st.get("ctx") or {}).get("live_rider")) else {}),
                                        **({"rules": rule} if rule else {}))
+        rt = st.get("route")
+        if rt is not None:  # the router's fallback: no rule matched, the brief decides (plan 2d)
+            nr = router.from_brief(rt, st["brief"].intent, st["brief"].asking, st["q"])
+            if nr is not rt:
+                log.info("route (from brief): %s -> %s", rt.label(), nr.label())
+                rt.__dict__.update(nr.__dict__)
         if not st["stance"] and st["brief"].intent == "insult" and re.search(r"\bpicky\b|^(you|me)?$", st["brief"].about, re.I):
             # a bare insult ('Pussy', live 2026-11-16) slips past the regexes; without a stance the brief said
             # "fire back first" and 0-3 Picky mocked the 4-0 leader
@@ -796,12 +803,15 @@ def install() -> None:
 # -----------------------------------------------------------------------------
 
 async def run(draft, *, q: str, sender: str = "", team: str | None = None, recent: str = "", last_reply: str = "",
-              recent_picky: list[str] | None = None, t0: float | None = None) -> tuple[str, str | None]:
+              recent_picky: list[str] | None = None, t0: float | None = None,
+              route: "router.Route | None" = None) -> tuple[str, str | None]:
     """(reply, image). `draft()` runs chat.py's pipeline once and returns
-    (shaped reply, sentences the filters dropped, image or None)."""
+    (shaped reply, sentences the filters dropped, image or None). `route` (router.classify) picks the
+    lane; the run may refine it in place (the brief's fallback), so the caller can log the final lane."""
     t0 = t0 or time.time()
+    route = route if route is not None else router.Route("full", why="no router")
     st = {"q": q, "sender": sender, "team": team, "recent": recent, "last_reply": last_reply, "brief": None, "ammo": None,
-          "prefix": None, "idx": 0, "options": dict(SAMPLING[0])}
+          "prefix": None, "idx": 0, "options": dict(SAMPLING[0]), "route": route}
     tok, otok = STATE.set(st), chat.OPTIONS_OVERRIDE.set(st["options"])
     try:
         drafts: list[Draft] = []
@@ -850,7 +860,8 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                  time.time() - t0)
         if TRACE:
             with open(TRACE, "a") as f:
-                f.write(json.dumps({"q": q, "sender": sender, "brief": (st["brief"] or Brief()).__dict__,
+                f.write(json.dumps({"q": q, "sender": sender, "lane": route.label(), "route": route.as_dict(),
+                                    "brief": (st["brief"] or Brief()).__dict__,
                                     "drafts": [d.__dict__ for d in drafts], "eligible": [d.idx for d in pool],
                                     "pick": pick.idx, "how": how, "secs": round(time.time() - t0, 1)}) + "\n")
         return pick.text, None

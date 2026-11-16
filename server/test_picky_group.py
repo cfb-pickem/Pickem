@@ -310,6 +310,23 @@ def test_dm_routing_and_history():
         assert gc.load_history("dm:+15555550100", now=time.time() + gc.HISTORY_TTL + 1) == []
 
 
+def test_lane_logged_in_exchange_log_and_response():
+    """Router (plan 2d): every reply records which exit answered it, so the scorecard can show the lane."""
+    import contextlib
+    mapped = gc.Sender(handle="+15555550100", team="Chuck P", team_id=1, user_id="uuid-chuck")
+    with tempfile.TemporaryDirectory() as d, patch.object(gc, "HISTORY_FILE", Path(d) / "h.json"), \
+            patch.object(gc, "EXCHANGE_LOG", Path(d) / "x.jsonl"):
+        seen = []
+        with contextlib.ExitStack() as st:
+            for pt in _fake_answer_env(mapped, seen):
+                st.enter_context(pt)
+            out = asyncio.run(gc.answer("+15555550100", "what did you think of this weekend's games?",
+                                        chat_id="any;-;x", dm=True))
+        assert out["lane"] == "full", out
+        row = json.loads((Path(d) / "x.jsonl").read_text().splitlines()[-1])
+        assert row["lane"] == "full" and row["q"].startswith("what did you think"), row
+
+
 def test_dm_trim():
     assert gc.dm_trim("## Take\n**Bold** call.") == "Take\nBold call."
     assert len(gc.dm_trim("Word. " * 600)) <= gc.DM_MAX_CHARS

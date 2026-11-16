@@ -92,6 +92,7 @@ import maintenance  # noqa: E402
 import picky_brain  # noqa: E402
 import picky_zh  # noqa: E402
 import rare_bits  # noqa: E402
+import router  # noqa: E402
 import playoff_race  # noqa: E402
 
 log = logging.getLogger("picky-group")
@@ -630,7 +631,8 @@ def load_history(key: str | None, now: float | None = None, sender: str | None =
     return [{"role": t["role"], "content": t["content"]} for t in turns]
 
 
-async def save_turn(key: str | None, question: str, reply: str, sender: str | None = None) -> None:
+async def save_turn(key: str | None, question: str, reply: str, sender: str | None = None,
+                    lane: str | None = None) -> None:
     if not key or not reply:
         return
     async with _HIST_LOCK:
@@ -647,14 +649,17 @@ async def save_turn(key: str | None, question: str, reply: str, sender: str | No
         with os.fdopen(fd, "w") as f:
             json.dump(data, f)
         os.replace(tmp, HISTORY_FILE)
-        log_exchange(key, question, reply, sender, now)
+        log_exchange(key, question, reply, sender, now, lane)
 
 
-def log_exchange(key: str, question: str, reply: str, sender: str | None, now: float) -> None:
+def log_exchange(key: str, question: str, reply: str, sender: str | None, now: float,
+                 lane: str | None = None) -> None:
     try:
         handle = sender or (key.split(":", 1)[1] if key.startswith("dm:") else "")
         team = (load_members().get(norm_handle(handle)) or {}).get("team") if handle else None
         row = {"ts": round(now), "mode": key.split(":", 1)[0], "team": team, "q": question, "a": reply}
+        if lane:  # which router exit answered (scorecard: fact / banter / full / jailbreak)
+            row["lane"] = lane
         rows = EXCHANGE_LOG.read_text().splitlines() if EXCHANGE_LOG.exists() else []
         cut = now - EXCHANGE_DAYS * 86400
         rows = [r for r in rows if r.strip() and json.loads(r).get("ts", 0) >= cut] + [json.dumps(row)]
@@ -738,11 +743,14 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         q_hist = q
         key = history_key(chat_id, handle, dm)
         who = s.handle if mode == "group" else None
+        route = router.classify(q)
+        log.info("route: %s (%s)%s", route.label(), route.why, " mixed" if route.mixed else "")
         if playoff_race.is_need_question(q) or chat._RACE_ASK.search(q):
             exact = race_answer(q, s, await race_data())
             if exact:
-                await save_turn(key, q_hist, exact, who)
-                return {"reply": exact, "image": None, "mode": mode}
+                route.lane, route.kind = "fact", "playoff"
+                await save_turn(key, q_hist, exact, who, lane=route.label())
+                return {"reply": exact, "image": None, "mode": mode, "lane": route.label()}
         messages = load_history(key, sender=who) + [{"role": "user", "content": q}]
         body = json.dumps({"messages": messages, "supabase_jwt": jwt, "mode": "leaderboard"}).encode()
 
@@ -768,12 +776,15 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             mine = [str(m.get("text") or "") for m in recent or [] if isinstance(m, dict) and m.get("from_me")]
             reply, image = await picky_brain.run(
                 draft, q=q, sender=f"{s.name or s.team} (team \"{s.team}\")" if s.team else (s.name or ""),
-                team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:])
+                team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:],
+                route=route)
             if not image:
                 reply = no_repeat_screen(reply, q, s.team, key or chat_id)
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
-            await save_turn(key, q_hist, reply, who)
-            return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
+            log.info("lane: %s", route.label())
+            await save_turn(key, q_hist, reply, who, lane=route.label())
+            return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode,
+                    "lane": route.label()}
 
         # keep the first answer the filter left whole; else the one it cut least
         t0, best = time.time(), None
@@ -859,9 +870,10 @@ async def group(req: Request):
         log.info("dm skipped sender=%s: not a mapped member or allowlisted", handle[-4:] or "?")
         return {"reply": None}
     callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text), out.get("reply_en") or out["reply"], is_dm=dm)
-    log.info("%s reply sender=%s mapped=%s %.1fs chars=%d image=%s", out["mode"], handle[-4:] or "?",
-             bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]))
-    return {"reply": out["reply"] or None, "image": out["image"]}
+    log.info("%s reply sender=%s mapped=%s %.1fs chars=%d image=%s lane=%s", out["mode"], handle[-4:] or "?",
+             bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]),
+             out.get("lane") or "-")
+    return {"reply": out["reply"] or None, "image": out["image"], "lane": out.get("lane")}
 
 
 def _check_secret(req: Request) -> None:
