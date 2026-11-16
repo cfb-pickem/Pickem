@@ -127,9 +127,19 @@ def strip_trigger(text: str) -> str:
     return re.sub(r"(?<![\w@])@\s?picky\b[,:]?\s*", "", text or "", flags=re.I).strip()
 
 
+FACT_WORDS = {"cover", "covered", "covers", "missed", "line", "spread", "ats", "points", "point", "push", "week", "place"}
+
+
 def grams(text: str, n: int = 4) -> set[tuple]:
+    """4-word runs that could be a voice tic: not all stopwords, no numbers, no ATS/standings vocabulary
+    ('missed the cover by' in two ATS answers is the house style, not a repeat)."""
     w = norm_words(text)
-    return {tuple(w[i:i + n]) for i in range(len(w) - n + 1) if not all(x in STOP for x in w[i:i + n])}
+    out = set()
+    for i in range(len(w) - n + 1):
+        g = tuple(w[i:i + n])
+        if not all(x in STOP for x in g) and not any(any(c.isdigit() for c in x) or x in FACT_WORDS for x in g):
+            out.add(g)
+    return out
 
 
 def banned_tic(text: str) -> str | None:
@@ -219,9 +229,10 @@ def check_reply(item: dict, replies: list[str], others: list[str], true_margins:
         out.append(("no W-L dump", not dump, ", ".join(wls) if wls else "'for the record'"))
     tic = banned_tic(joined)
     out.append(("no bot tics", tic is None, f"'{tic}'" if tic else ""))
-    mine = set().union(*(grams(r) for r in replies if r)) if replies else set()
-    rep = next((" ".join(x) for o in others for x in grams(o) & mine), None)
-    out.append(("no repeated phrase", rep is None, f"'{rep}' also in another reply" if rep else ""))
+    if g in ("banter", "offtopic", "callbacks"):  # the voice groups; facts answers share vocabulary by design
+        mine = set().union(*(grams(r) for r in replies if r)) if replies else set()
+        rep = next((" ".join(x) for o in others for x in grams(o) & mine), None)
+        out.append(("no repeated phrase", rep is None, f"'{rep}' also in another reply" if rep else ""))
     sent = " ".join([item.get("text") or ""] + [t for _, t in item.get("burst") or []])
     ech = echo_of(joined, sent)
     out.append(("no echo", ech is None, f"'{ech}'" if ech else ""))
@@ -804,8 +815,8 @@ async def run(args) -> int:
     secret = os.environ.get("PICKY_GROUP_SECRET") or subprocess.run(
         ["security", "find-generic-password", "-a", "drake", "-s", "CFB_PICKEM__PICKY_GROUP_SECRET", "-w"],
         capture_output=True, text=True).stdout.strip()
-    missing = sorted({it["sender"] for it in items} | {w for it in items for w, _ in (it.get("setup") or []) + (it.get("burst") or [])}
-                     - set(hmap))
+    senders = {it["sender"] for it in items} | {w for it in items for w, _ in (it.get("setup") or []) + (it.get("burst") or [])}
+    missing = sorted(senders - set(hmap))
     if missing:
         raise SystemExit(f"no handle mapped for {missing}")
     sha_b = ensure_worktree(args.before, BEFORE_WT)
@@ -814,8 +825,9 @@ async def run(args) -> int:
     print(f"before {args.before} {sha_b[:8]} @ {BEFORE_WT}; after {args.after} {sha_a[:8]} @ {after_wt}", flush=True)
     frozen = sctx.get("frozen_at")
     replay = frozen is not None and not args.frozen_at_no_replay
-    phases = [("normal", [i for i in items if not i.get("frozen")], None, False),
-              ("frozen", [i for i in items if i.get("frozen")], frozen, replay)]
+    phases = ([("normal", [i for i in items if not i.get("frozen")], None, False),
+               ("frozen", [i for i in items if i.get("frozen")], frozen, replay)] if frozen
+              else [("normal", items, None, False)])  # a live, unlocked slate: no second phase needed
     runner = Runner(secret, hmap)
     results: dict = {"before": {}, "after": {}}
     t0 = time.time()
