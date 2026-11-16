@@ -561,6 +561,60 @@ def test_brief_core_drops_a_sentence_the_filter_would_cut():
     assert "Own the 0-3." in r and "tragic" not in r, r
 
 
+def _wk11_ctx(final: bool = True) -> dict:
+    """Week 11 on the board (last kickoff Sat 11/14), week 10 = the pool's previous week (LSU)."""
+    c = _stance_ctx("Chuck P")
+    for i, g in enumerate(c["games_this_week"]):
+        g["start"] = f"2026-11-14T{11 + 3 * i:02d}:00:00"
+        if not final and i == 3:
+            g["status"], g["winner"] = "scheduled", None
+    c["last_week"] = {"week": 10, "games": [{"id": 9, "away": "Alabama", "home": "LSU", "line": -5.5,
+                                            "away_pts": 31, "home_pts": 13, "covered": "Alabama",
+                                            "picks": {"Chuck P": "LSU"}}]}
+    return c
+
+
+def test_last_week_guard_monday_after_a_final_week():
+    """Live 2026-11-16 (Monday, week 11 all final, board still on week 11): 'you let LSU get blown out
+    by 18 last week' about week 10, all day, in replies that weren't roasts (and parroted from history)."""
+    c, mon = _wk11_ctx(), dt.datetime(2026, 11, 16, 16, 30)
+    assert chat.prev_week_stale(c, mon) and chat.prev_week_stale(c, dt.datetime(2026, 11, 17, 9))
+    bad = ("You're 4-0 this week and sitting in first place. It's hard to argue with a 30-18 season, even if "
+           "you did let LSU get blown out by 18 points last week. Last weekend's LSU pick was rough.")
+    out = chat.fix_last_week(bad, c, mon)
+    assert "last week" not in out.lower() and "let LSU get blown out by 18 points in week 10." in out, out
+    assert "Week 10's LSU pick was rough." in out and out.startswith("You're 4-0 this week and"), out
+    # 'last week' about week 11 (Saturday's games) is right on Monday: left alone
+    ok = "Wake Forest smoked SMU 49-7 last week. You missed LSU in week 10."
+    assert chat.fix_last_week(ok, c, mon) == ok
+    with patch.object(chat, "_now_ct_naive", lambda: mon):
+        assert chat.last_week_label(c) == "WEEK 10 (two weeks ago)" and "(two weeks ago)" in chat._week_tag(c, 10)
+        assert "LAST WEEK" not in chat.member_facts(c, "Chuck P")
+        assert "week 10, two weeks ago" in chat.roast_pick_lines(c, "Chuck P")
+
+
+def test_last_week_guard_off_saturday_and_sunday():
+    """Mid-week Saturday (week 11 not final) and the weekend after it, week 10 really is last week."""
+    sat_live, bad = _wk11_ctx(final=False), "You let LSU get blown out last week."
+    for c, now in ((sat_live, dt.datetime(2026, 11, 14, 15)), (_wk11_ctx(), dt.datetime(2026, 11, 14, 23, 50)),
+                   (_wk11_ctx(), dt.datetime(2026, 11, 15, 12))):
+        assert not chat.prev_week_stale(c, now) and chat.fix_last_week(bad, c, now) == bad
+        with patch.object(chat, "_now_ct_naive", lambda: now):
+            assert chat.last_week_label(c) == "LAST WEEK (week 10)"
+            assert "Chuck P last week: took LSU" in chat.roast_pick_lines(c, "Chuck P")
+
+
+def test_history_turns_get_the_week_guard():
+    """Picky's own past turns go into the prompt through fix_last_week, so the 07:37 line isn't parroted."""
+    c, mon = _wk11_ctx(), dt.datetime(2026, 11, 16, 16, 30)
+    src = open(Path(chat.__file__)).read()
+    assert 'fix_last_week(m["content"], ctx)' in src
+    assert "fix_last_week(text, st.get(\"ctx\"))" in open(Path(pb.__file__)).read()
+    with patch.object(chat, "_now_ct_naive", lambda: mon):
+        assert "LSU" in chat.fix_last_week("even if you did let LSU get blown out last week", c)
+        assert "last week" not in chat.fix_last_week("even if you did let LSU get blown out last week", c)
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

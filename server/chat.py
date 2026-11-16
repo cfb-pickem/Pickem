@@ -196,9 +196,7 @@ def roast_pick_lines(ctx: dict, team: str, chalk: bool = False) -> str:
             if g["id"] in picks and g.get("winner") and not g.get("tiebreaker")]
     # the Monday after a fully final week, 'last week' (the pool's) is two weeks ago on the calendar
     # (live 2026-11-16: 'you let LSU get blown out last week' about week 10, the day after week 11)
-    _w, done, n = _week_state(ctx)
-    prev = (f"week {(ctx.get('last_week') or {}).get('week')}, two weeks ago" if n and done == n
-            else "last week")
+    prev = f"week {(ctx.get('last_week') or {}).get('week')}, two weeks ago" if prev_week_stale(ctx) else "last week"
     rows += [(g, g["picks"][team], g.get("away_pts"), g.get("home_pts"), g.get("covered"), prev)
              for g in (ctx.get("last_week") or {}).get("games") or [] if (g.get("picks") or {}).get(team)]
     out = []
@@ -1636,9 +1634,49 @@ def this_week_label(ctx: dict) -> str:
     return f"THIS WEEK (week {ctx.get('current_week')}, {_final_words(ctx)})"
 
 
+def prev_week_stale(ctx: dict, now: dt.datetime | None = None) -> bool:
+    """True when the pool's previous week is two weeks ago on the calendar: this week's pool games are all
+    final and the last one kicked off before this Monday (the Monday/Tuesday before next week's games post;
+    the board still shows this week). Saturday night or Sunday, 'last week' is still right."""
+    _w, done, n = _week_state(ctx)
+    if not n or done < n or not (ctx.get("last_week") or {}).get("week"):
+        return False
+    starts = [str(g["start"]) for g in ctx.get("games_this_week") or [] if g.get("start") and not g.get("tiebreaker")]
+    now = now or _now_ct_naive()
+    return not starts or max(starts)[:10] < (now - dt.timedelta(days=now.weekday())).date().isoformat()
+
+
 def last_week_label(ctx: dict) -> str:
     lw = (ctx.get("last_week") or {}).get("week")
+    if lw and prev_week_stale(ctx):
+        return f"WEEK {lw} (two weeks ago)"
     return f"LAST WEEK (week {lw})" if lw else "LAST WEEK"
+
+
+_LAST_WK = re.compile(r"\b(last week(?:end)?)('s)?\b", re.I)
+
+
+def fix_last_week(text: str, ctx: dict | None, now: dt.datetime | None = None) -> str:
+    """In the prev_week_stale window, a sentence that pins 'last week(end)' on a team from the pool's
+    previous week (and not this week's games) says 'in week N' instead. Live 2026-11-16: 'you let LSU
+    get blown out by 18 last week' about week 10, the Monday after week 11. Runs on every reply and on
+    Picky's own past turns in the prompt history (he parroted his 07:37 line all day)."""
+    if not text or not ctx or not _LAST_WK.search(text) or not prev_week_stale(ctx, now):
+        return text
+    lw = ctx["last_week"]
+    cur = [t for g in ctx.get("games_this_week") or [] for t in (g.get("away"), g.get("home")) if t]
+    old = {t for g in lw.get("games") or [] for t in (g.get("away"), g.get("home"))
+           if t and not any(same_team(t, c) for c in cur)}
+    if not old:
+        return text
+    pat = re.compile(r"(?<!\w)(" + "|".join(re.escape(t) for t in sorted(old, key=len, reverse=True)) + r")(?!\w)", re.I)
+
+    def lab(m):
+        out = f"week {lw['week']}'s" if m.group(2) else f"in week {lw['week']}"
+        return out[0].upper() + out[1:] if m.group(1)[0].isupper() else out
+
+    parts = re.split(r"(?<=[.!?])(\s+)", text)
+    return "".join(_LAST_WK.sub(lab, x) if pat.search(x) else x for x in parts)
 
 
 def _week_tag(ctx: dict, w) -> str:
@@ -1646,7 +1684,7 @@ def _week_tag(ctx: dict, w) -> str:
     if w == ctx.get("current_week"):
         return f"wk{w} (this week, {_final_words(ctx)})"
     if w == (ctx.get("last_week") or {}).get("week"):
-        return f"wk{w} (last week)"
+        return f"wk{w} ({'two weeks ago' if prev_week_stale(ctx) else 'last week'})"
     return f"wk{w}"
 
 
@@ -1865,7 +1903,7 @@ def render_context(ctx: dict) -> str:
     lw = ctx.get("last_week") or {}
     if lw.get("games"):
         L.append("")
-        L.append(f"LAST WEEK (week {lw['week']}) FINALS, all done (not this week):")
+        L.append(f"{last_week_label(ctx)} FINALS, all done (not this week):")
         for g in lw["games"]:
             score = (f"{g['away']} {_num(g['away_pts'])}, {g['home']} {_num(g['home_pts'])}"
                      if g.get("away_pts") is not None else f"{g['away']} at {g['home']} (score missing)")
@@ -1942,7 +1980,7 @@ def you_block(ctx: dict) -> str:
            for g in lw.get("games") or [] if (g.get("picks") or {}).get(me)]
     if res:
         hits = sum(ok for _, ok in res)
-        L.append(f"LAST WEEK (week {lw['week']}) {me} went {hits}-{len(res) - hits}: "
+        L.append(f"{last_week_label(ctx)} {me} went {hits}-{len(res) - hits}: "
                  + ", ".join(f"took {pk} ({'HIT' if ok else 'MISS'})" for pk, ok in res) + ".")
     L.append(f"{me} has {'made' if ctx.get('you_have_picks_this_week') else 'NOT made'} picks this week.")
 
@@ -2172,7 +2210,7 @@ def picky_player_block(ctx: dict) -> str:
            "playoff spot, and you never bump a human. Never list yourself in the standings or "
            "count yourself when giving anyone's place.",
            f"- Your season record against the spread: {w}-{l}{pct}."
-           + (f" Last week: {lw[0]}-{lw[1]}." if sum(lw) else "")]
+           + (f" {last_week_label(ctx).capitalize()}: {lw[0]}-{lw[1]}." if sum(lw) else "")]
     for p in pp["this_week"]:
         res = f", {p['result'].upper()}" if p["result"] else ", not decided yet"
         tb = " (tiebreaker game, never counts)" if p["tiebreaker"] else ""
@@ -6822,7 +6860,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
     ]
     convo = [convo[0]] + [
         {"role": "user", "content": _user_turn(ctx, m["content"])} if m["role"] == "user"
-        else {"role": "assistant", "content": scrub_tics(strip_land_ack(m["content"]))}
+        else {"role": "assistant", "content": scrub_tics(strip_land_ack(fix_last_week(m["content"], ctx)))}
         for m in convo[1:]
     ]
 
