@@ -123,6 +123,7 @@ every call fail fast; `test_anthropic_down.py` (GPU-free suite) proves the paths
 | dossiers | Opus web research | local model over news-cache leads |
 | analyst takes, game-card cases | Opus | previous take/case (marked stale), else code factors |
 | league material, banter bank, burn book, hot takes, insider notes | Opus (Sun/Wed) | last good copy under freshness.py's age limits |
+| league rules re-verify (`league_rules.py --check`) | Opus review | code-extracted rules, change flagged "verify" |
 | exam judges, LoRA harvest/gen, wit loop (paused), feed repairs | Opus | skipped |
 
 ## Game dossiers (`dossier.py`)

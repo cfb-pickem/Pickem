@@ -1306,19 +1306,10 @@ def opus_verify(sections: list[str], generated: dict[str, str], sources: dict[st
 
 
 def _run_claude(prompt: str, schema: dict, timeout: int = 900) -> dict:
-    import picky_claude
-    picky_claude.guard()
-    claude = next((p for p in ("/Users/Agent/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude")
-                   if Path(p).exists()), "claude")
-    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-    env.update({"DISABLE_AUTOUPDATER": "1", "TERM": "dumb",
-                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"})
+    import picky_claude  # Opus, guard(), empty MCP, no API key, daily usage log
     work = CACHE / "rules-claude"
     work.mkdir(parents=True, exist_ok=True)
-    cmd = [claude, "-p", "--model", picky_claude.MODEL, "--tools", "", "--dangerously-skip-permissions",
-           "--strict-mcp-config", "--mcp-config", str(SERVER / "empty.mcp.json"),
-           "--output-format", "json", "--json-schema", json.dumps(schema)]
-    p = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, cwd=work, env=env)
+    p = picky_claude.run(prompt, timeout=timeout, caller="league_rules", cwd=work, tools="", schema=schema)
     if p.returncode != 0:
         raise RuntimeError(f"claude exit {p.returncode}: {(p.stderr or p.stdout)[-300:]}")
     out = json.loads(p.stdout)
