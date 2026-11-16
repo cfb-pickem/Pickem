@@ -25,6 +25,20 @@ event plus the league's own graded results.
   COOLDOWN. A callback item is used once (COOLDOWN_DAYS); if server/no_repeat.py
   is present its Ledger also vetoes a line too close to one already sent.
 
+  POLICY. callback_for(..., banter=True/False) is the per-reply call: at most
+  one callback, forced on roughly every 4th banter reply in a chat where one
+  exists (PICKY_CALLBACK_EVERY, counter kept in the state file), and always on
+  an explicit recall ask ("remember what you said about Boise?"). Without
+  `banter` it just offers the best one.
+
+  BURN SHEET. burn_sheet(team): the roastable, true lines from the lore cache
+  (blown chalk, winless weeks, miss streaks, bad h2h, stats-page oddities);
+  league data, so callable anywhere. The burn-book lane can use it too.
+
+  RIDER (exam flag, PICKY_CALLBACK_RIDER=1). group_chat sets CHAT per request;
+  picky_brain asks rider(q, intent) after its brief and puts the line in the
+  draft prompt. Off by default: the router lane wires callbacks in for real.
+
 Interface (BUILD-COMMON.md): log_shot, log_lean, after_reply, callback_for.
 `hook()` is what group_chat.py calls after a reply goes out: it runs
 after_reply in a daemon thread and swallows every error, so logging can never
@@ -38,6 +52,7 @@ sidecars and exams never pollute the live log.
 
 from __future__ import annotations
 
+import contextvars
 import datetime as dt
 import json
 import logging
@@ -65,6 +80,16 @@ SHOT_FRESH_DAYS = 21    # a shot is callable for this long after it was taken
 GRADE_EVERY = 600.0     # seconds between background grading passes kicked by callback_for
 GAMES_TTL = 300.0       # seconds the league snapshot is cached
 GAME_LEN = 4 * 3600     # a game kicked off this long ago is treated as over (shot outcome week)
+BANTER_INTENTS = ("banter", "insult", "reaction")  # picky_brain's brief intents that count as banter
+LORE_FILE = Path(__file__).resolve().parent / "cache" / "lore.json"
+
+
+def force_every() -> int:
+    """Force a callback on every Nth banter reply in a chat (where one exists)."""
+    try:
+        return max(1, int(os.environ.get("PICKY_CALLBACK_EVERY") or 4))
+    except ValueError:
+        return 4
 
 _LOCK = threading.RLock()
 
@@ -87,7 +112,7 @@ def enabled() -> bool:
 # -----------------------------------------------------------------------------
 
 def _empty() -> dict:
-    return {"shots": [], "leans": [], "used": {}, "graded_at": 0}
+    return {"shots": [], "leans": [], "used": {}, "graded_at": 0, "policy": {}}
 
 
 def _load() -> dict:
@@ -647,55 +672,204 @@ def _grade_soon(d: dict) -> None:
     threading.Thread(target=run, name="picky-callbacks-grade", daemon=True).start()
 
 
+_RECALL = re.compile(r"\bremember (?:what|when|how) you\b|\bremember your\b|\bwhat did you (?:say|tell me|have)\b"
+                     r"|\byou (?:said|told me|had me on)\b|\bwhat was your (?:call|lean|pick|take)\b"
+                     r"|\bhow(?:'d| did) your (?:call|lean|pick|take)\b", re.I)
+
+
+def is_recall(text: str | None) -> bool:
+    """'remember what you said about Boise?' / 'what did you tell me on UTSA': asks for his own past lean."""
+    return bool(text) and bool(_RECALL.search(str(text)))
+
+
+def _names(x: dict) -> list[str]:
+    return [t for t in (x.get("away"), x.get("home"), x.get("side")) if t]
+
+
+def _mentions_game(text: str | None, x: dict) -> bool:
+    """The text names one of the lean's teams (full name, or without a trailing 'State')."""
+    t = norm(text or "")
+    for name in _names(x):
+        for n in {norm(name), re.sub(r"\s+state$", "", norm(name))}:
+            if len(n) >= 3 and re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", t):
+                return True
+    return False
+
+
+def pending_line(x: dict) -> str:
+    """An ungraded lean, only for an explicit recall ask naming it: the call, no result."""
+    lab = f"{x['side']} {'+' if float(x['line']) > 0 else ''}{_num(float(x['line']))}" if x.get("line") not in (None, 0) \
+        else f"{x['side']} (pick'em)" if x.get("line") == 0 else x["side"]
+    return (f"I faded {other_side(x['side'], x)} there, so {lab}. not graded yet." if x.get("fade") and x.get("away")
+            else f"I had you on {lab}. not graded yet.")
+
+
 def candidates(chat_id: str, sender_team: str | None, is_dm: bool, text: str | None = None,
                now: float | None = None) -> list[tuple[str, str]]:
-    """[(item id, line)] callable for this member in this chat, best first, cooldown not applied."""
+    """[(item id, line)] callable for this member in this chat, best first, cooldown not applied.
+    Graded material only, except an explicit recall ask naming a game also gets that pending lean."""
     here = scope(chat_id, is_dm)
     if not here or not sender_team:
         return []
     now = time.time() if now is None else now
     d = _load()
+    recall = is_recall(text)
     leans = sorted((x for x in d["leans"] if x["team"] == sender_team and x.get("result") and _visible(x, here)
                     and now - (x["result"].get("kick") or x["ts"]) < LEAN_FRESH_DAYS * 86400),
-                   key=lambda x: -(x["result"].get("kick") or x["ts"]))
+                   key=lambda x: (not (recall and _mentions_game(text, x)), -(x["result"].get("kick") or x["ts"])))
     shots = sorted((s for s in d["shots"] if s["team"] == sender_team and s.get("outcome") and _visible(s, here)
                     and s["outcome"]["l"] >= s["outcome"]["w"] and s["outcome"]["w"] + s["outcome"]["l"] > 0
                     and now - s["ts"] < SHOT_FRESH_DAYS * 86400 and s["outcome"].get("done", 0) <= now),
                    key=lambda s: (not (text and similar_shot(text, s["text"])), -s["ts"]))
     a = [(x["id"], lean_line(x)) for x in leans]
+    if recall and any(_mentions_game(text, x) for x in d["leans"] if x["team"] == sender_team):
+        # he's asking about a specific game: only that lean (graded, else pending), or nothing. A game he
+        # only discussed in another chat gets nothing back, so a DM lean can't even be confirmed here.
+        pend = [x for x in d["leans"] if x["team"] == sender_team and not x.get("result") and _visible(x, here)
+                and now - x["ts"] < LEAN_FRESH_DAYS * 86400 and _mentions_game(text, x)]
+        return ([(x["id"], lean_line(x)) for x in leans if _mentions_game(text, x)]
+                + [(x["id"] + ":p", pending_line(x)) for x in sorted(pend, key=lambda x: -x["ts"])])
     b, weeks = [], set()
     for s in shots:  # five shots before the same bad week are one callback, used once
         if s["outcome"]["week"] not in weeks:
             weeks.add(s["outcome"]["week"])
             b.append((f"sw:{norm(sender_team)}:{s['outcome']['week']}", shot_line(s, now, text)))
-    return b + a if text and is_shot(text) else a + b
+    return b + a if text and is_shot(text) and not recall else a + b
+
+
+def _due(d: dict, here: str, banter: bool | None, text: str | None) -> bool:
+    """Policy: an explicit recall ask always; a banter reply when it's the Nth since the last callback here."""
+    if banter is None or is_recall(text):
+        return True
+    return bool(banter) and d["policy"].get(here, 0) + 1 >= force_every()
 
 
 def callback_for(chat_id: str, sender_team: str | None, is_dm: bool, text: str | None = None,
-                 now: float | None = None, mark: bool = True) -> str | None:
+                 now: float | None = None, mark: bool = True, banter: bool | None = None) -> str | None:
     """At most one short, true callback for the member texting Picky in this chat, or None. Group material
     anywhere, DM material only in that DM. Returned items go on cooldown (mark=False to peek). `text` (the
-    member's current message, optional) lets a repeat shot get 'you said that Saturday too'. Pure file
-    read: no network on this path (grading runs in the background)."""
+    member's current message, optional) lets a repeat shot get 'you said that Saturday too' and a recall ask
+    get the lean it names.
+
+    `banter` turns on the per-reply policy (call once per reply): True/False = is this a banter reply. A line
+    comes back only on an explicit recall ask, or on the every-Nth banter reply in this chat where one exists
+    (the counter waits for material; a served callback resets it). None = just offer the best one.
+    Pure file read: no network on this path (grading runs in the background)."""
     try:
         now = time.time() if now is None else now
+        here = scope(chat_id, is_dm)
         with _LOCK:
             d = _load()
             _grade_soon(d)
-            led = _ledger()
-            here = scope(chat_id, is_dm)
-            for iid, line in candidates(chat_id, sender_team, is_dm, text, now):
-                if now - d["used"].get(iid, 0) < COOLDOWN_DAYS * 86400:
-                    continue
-                if led is not None and led.is_repeat(line, target=sender_team, chat_id=here):
-                    continue
-                if mark:
+            write = mark and enabled()
+            line, iid = None, None
+            if here and _due(d, here, banter, text):
+                led = _ledger()
+                for iid, cand in candidates(chat_id, sender_team, is_dm, text, now):
+                    if now - d["used"].get(iid, 0) < COOLDOWN_DAYS * 86400:
+                        continue
+                    if led is not None and led.is_repeat(cand, target=sender_team, chat_id=here):
+                        continue
+                    line = cand
+                    if write and led is not None:
+                        led.record(cand, target=sender_team, chat_id=here, angle="callback")
+                    break
+            if write and here and (line or banter):
+                if line:
                     d["used"][iid] = now
-                    _save(d)
-                    if led is not None:
-                        led.record(line, target=sender_team, chat_id=here, angle="callback")
-                return line
-        return None
+                    d["policy"][here] = 0
+                elif banter:
+                    d["policy"][here] = d["policy"].get(here, 0) + 1
+                _save(d)
+            return line
     except Exception as e:  # noqa: BLE001  a callback is garnish: never break the reply over one
         log.warning("callbacks: callback_for failed: %r", e)
         return None
+
+
+# -----------------------------------------------------------------------------
+# burn sheet (lore): true, roastable lines per member
+# -----------------------------------------------------------------------------
+
+_BURN = [  # (angle, regex on a lore line, phrasing) -- every number comes from the lore line itself
+    ("blown", re.compile(r"worst blown picks \(favorite that lost outright\): (.+?)\.?$", re.I), None),
+    ("lone_miss", re.compile(r"lone-wolf misses: (.+?)\.?$", re.I), None),
+    ("winless", re.compile(r"^(?:.*?, )?(\d{4})(?: season| so far)[^:]*:.*?winless weeks: ([^;]+)", re.I), None),
+    ("worst_week", re.compile(r"^(?:.*?, )?(\d{4}) so far[^:]*:.*?worst week (\d+)-(\d+) \(([^)]+)\)", re.I), None),
+    ("miss_streak", re.compile(r"^(?:.*?, )?(\d{4})(?: season| so far)[^:]*:.*?longest miss streak (\d+)", re.I), None),
+    ("oddity", re.compile(r"stats-page oddity: (.+?)\.?$", re.I), None),
+    ("h2h", re.compile(r"head to head [^:]*: .*?worst vs (.+?) (\d+)-(\d+)\.?$", re.I), None),
+]
+
+
+def _load_lore() -> dict:
+    try:
+        return json.loads(LORE_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def burn_sheet(team: str, lore: dict | None = None) -> list[dict]:
+    """[{id, text, angle, facts, scope}] for `team`: the roastable lines in the lore cache, each a short
+    true fact (from lore.py's computed lines, nothing added). League data, so scope 'group' (callable
+    anywhere). Worst first-ish: blown chalk, lone-wolf misses, winless weeks, this season's worst week,
+    long miss streaks (5+), losing stats-page oddities, losing head-to-head."""
+    lines = ((lore if lore is not None else _load_lore()).get("members") or {}).get(team) or []
+    out: list[dict] = []
+
+    def add(angle, text, facts):
+        out.append({"id": f"burn:{norm(team)}:{angle}:{len(out)}", "text": text, "angle": angle,
+                    "facts": facts, "scope": "group"})
+    for ln in lines:
+        for angle, rx, _ in _BURN:
+            m = rx.search(ln)
+            if not m:
+                continue
+            if angle in ("blown", "lone_miss"):
+                for part in [p.strip() for p in m.group(1).split(";") if p.strip()]:
+                    add(angle, part, {"line": ln})
+            elif angle == "winless":
+                add(angle, f"went winless in {m.group(2).strip()} ({m.group(1)})", {"season": m.group(1)})
+            elif angle == "worst_week":
+                w, l = int(m.group(2)), int(m.group(3))
+                if l > w:
+                    add(angle, f"worst week this season: {w}-{l} ({m.group(4)})", {"w": w, "l": l})
+            elif angle == "miss_streak":
+                if int(m.group(2)) >= 5:
+                    add(angle, f"missed {m.group(2)} picks in a row in {m.group(1)}", {"streak": int(m.group(2))})
+            elif angle == "oddity":
+                rec = re.findall(r"\b(\d+)-(\d+)\b", m.group(1))
+                if (rec and int(rec[0][1]) > int(rec[0][0])) or re.search(r"\blost all \d+", m.group(1)):
+                    add(angle, m.group(1), {"line": ln})
+            elif angle == "h2h":
+                w, l = int(m.group(2)), int(m.group(3))
+                if l > w:
+                    add(angle, f"{w}-{l} head to head against {m.group(1)}", {"vs": m.group(1), "w": w, "l": l})
+    order = [a for a, _, _ in _BURN]
+    return sorted(out, key=lambda x: order.index(x["angle"]))
+
+
+# -----------------------------------------------------------------------------
+# exam rider (PICKY_CALLBACK_RIDER=1): group_chat sets CHAT, picky_brain asks rider()
+# -----------------------------------------------------------------------------
+
+CHAT: contextvars.ContextVar = contextvars.ContextVar("picky_callbacks_chat", default=None)  # (chat_id, team, is_dm)
+
+
+def rider_on() -> bool:
+    return os.environ.get("PICKY_CALLBACK_RIDER") == "1"
+
+
+def rider(q: str, intent: str = "") -> str:
+    """The draft-prompt line for this reply, or ''. One callback at most, by the policy above."""
+    c = CHAT.get()
+    if not rider_on() or not c:
+        return ""
+    chat_id, team, is_dm = c
+    line = callback_for(chat_id, team, is_dm, text=q, banter=intent in BANTER_INTENTS)
+    if not line:
+        return ""
+    log.info("callback rider: %s", line[:160])
+    return ("CALLBACK (true, from your own log of this league; use it): work this in as ONE short clause in your "
+            "own words, keeping every team, line and number exactly as written, aimed at the person texting you: "
+            f"\"{line}\"")

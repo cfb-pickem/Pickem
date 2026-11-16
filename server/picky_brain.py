@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 import httpx
 
 import banter
+import callbacks
 import chat
 
 log = logging.getLogger("picky-brain")
@@ -682,6 +683,7 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
                 log.info("stance (from brief): %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         st["shots"] = few_shot_turns(st["q"], st["brief"].intent, st.get("stance")) if FEW_SHOT else []
         st["ammo"] = "" if st["shots"] else banter.ammo_rider(st["q"], st["brief"].intent)  # shots replace the AMMO text
+        st["callback"] = callbacks.rider(st["q"], st["brief"].intent)  # '' unless PICKY_CALLBACK_RIDER=1
         if st["shots"]:
             log.info("few-shot: %s", " | ".join(m["content"][:60] for m in st["shots"] if m["role"] == "assistant"))
         if st["ammo"]:
@@ -701,7 +703,7 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
                             and not chat._ROAST_VOICE.search(st["q"])):
         messages = drop_voice(messages)
     rider = "\n\n".join(x for x in (brief_rider(b, stance=bool(sr)), st.get("ammo") or "" if i in (1, 2) else "",
-                                     sr, ANGLES[i]) if x)
+                                     sr, st.get("callback") or "", ANGLES[i]) if x)
     st["options"].clear()
     st["options"].update(SAMPLING[i])  # read by chat._ollama_stream via OPTIONS_OVERRIDE
     if st.get("shots") and messages and messages[0].get("role") == "system":

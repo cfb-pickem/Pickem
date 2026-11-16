@@ -831,6 +831,7 @@ async def group(req: Request):
         return {"reply": line}
     t0 = time.time()
     recent = body.get("recent") if isinstance(body.get("recent"), list) else None
+    callbacks.CHAT.set((chat_id, VIEWER.sender(handle).team, dm))  # for the exam rider (PICKY_CALLBACK_RIDER=1)
     out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
                        recent=recent)
     if out is None:

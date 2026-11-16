@@ -273,6 +273,140 @@ try:
 finally:
     threading.excepthook = old_hook
 
+# --- policy: at most one per reply, forced on every 4th banter reply where one exists --------
+def graded_ackbar():
+    """Ackbar: a graded group fade lean (Boise), a DM lean (UTSA) and a shot before a 1-3 week."""
+    reset()
+    STATE["games"] = W11_OPEN + W12
+    cb.after_reply(GROUP, "Ackbar", "@Picky who", "Boise -13.5 is a trap.", ts=thu)
+    cb.after_reply(DM_ACK, "Ackbar", "UTSA?", "I'd take UTSA -2.5.", is_dm=True, ts=thu)
+    cb.after_reply(GROUP, "Ackbar", "@Picky you're trash", "ok.", ts=ts("2026-11-14T10:00:00"))
+    STATE["games"] = W11_FINAL + W12
+    cb.grade_pending(now=mon)
+
+
+graded_ackbar()
+check(cb.force_every() == 4, "default: force every 4th banter reply")
+seq = [cb.callback_for(GROUP, "Ackbar", False, text="lol", now=mon, banter=True) for _ in range(8)]
+check([x is not None for x in seq] == [False, False, False, True] * 2, f"banter replies 1-3 none, 4th forced, x2 ({seq})")
+check(cb._load()["policy"]["group:" + GROUP] == 0, "policy counter persisted in the state file (reset after a callback)")
+check(cb.callback_for(GROUP, "Ackbar", False, text="who's winning", now=mon, banter=False) is None
+      and cb._load()["policy"]["group:" + GROUP] == 0, "a non-banter reply never gets one and doesn't count")
+graded_ackbar()
+for _ in range(3):
+    cb.callback_for(GROUP, "Ackbar", False, now=mon, banter=True, mark=False)
+check(cb._load()["policy"].get("group:" + GROUP, 0) == 0, "mark=False (peek) doesn't move the counter")
+reset()
+for _ in range(5):
+    cb.callback_for(GROUP, "Ackbar", False, now=mon, banter=True)
+check(cb._load()["policy"]["group:" + GROUP] == 5, "no material: the counter keeps waiting")
+STATE["games"] = W11_OPEN + W12
+cb.after_reply(GROUP, "Ackbar", "@Picky who", "Boise -13.5 is a trap.", ts=thu)
+STATE["games"] = W11_FINAL + W12
+cb.grade_pending(now=mon)
+check(cb.callback_for(GROUP, "Ackbar", False, now=mon, banter=True) is not None,
+      "material shows up: the very next banter reply gets it")
+graded_ackbar()
+with patch.dict(os.environ, {"PICKY_CALLBACK_EVERY": "1"}):
+    check(cb.callback_for(GROUP, "Ackbar", False, text="you suck", now=mon, banter=True)
+          == "you said that Saturday too, then went 1-3 against the number in week 11.",
+          "PICKY_CALLBACK_EVERY=1 (tests/exam): every banter reply; the repeat shot leads")
+check(cb.callback_for(GROUP, "TG", False, now=mon, banter=True) is None, "a member with no material: nothing")
+graded_ackbar()
+with patch.dict(os.environ, {"PICKY_CALLBACKS_STATE": ""}), patch.object(cb, "state_path", lambda: TMP / "callbacks.json"), \
+        patch.dict(os.environ, {"PICKY_GROUP_PORT": "8788"}):
+    before = cb.state_path().read_text()
+    got = cb.callback_for(GROUP, "Ackbar", False, now=mon)
+    check(got and cb.state_path().read_text() == before, "disabled (side sidecar, no override): reads, never writes")
+
+# --- recall asks: 'remember what you said about X' ---------------------------------
+graded_ackbar()
+for t, want in [("remember what you said about Boise?", True), ("what did you tell me on UTSA", True),
+                ("you said Boise was a trap", True), ("remember when we won", False), ("you suck", False)]:
+    check(cb.is_recall(t) is want, f"is_recall({t!r}) = {want}")
+r = cb.callback_for(GROUP, "Ackbar", False, text="remember what you said about Boise?", now=mon, banter=False)
+check(r and "Boise State -13.5 was a trap" in r, f"recall about Boise -> that graded lean, even on a non-banter reply ({r})")
+graded_ackbar()
+r = cb.callback_for(DM_ACK, "Ackbar", True, text="what did you tell me on UTSA", now=mon, banter=False)
+check(r and r.startswith("told you UTSA -2.5 was the play, covered by 1.5"), f"recall in that DM: the DM lean ({r})")
+graded_ackbar()
+r = cb.callback_for(GROUP, "Ackbar", False, text="what did you tell me on UTSA", now=mon, banter=False)
+check(r is None, f"LEAK TEST: recall of a DM lean in the group -> nothing at all ({r})")
+r = cb.callback_for(DM_OTHER, "Ackbar", True, text="remember what you said about UTSA?", now=mon, banter=False)
+check(r is None, f"LEAK TEST: ... or in another DM ({r})")
+graded_ackbar()
+everything = [ln for _ in range(6) for ln in [cb.callback_for(GROUP, "Ackbar", False, text=q, now=mon, banter=True)
+                                              for q in ("you suck", "remember what you said?", "lol")] if ln]
+check(everything and not any("UTSA" in ln or "North Texas" in ln for ln in everything),
+      "LEAK TEST: draining every group callback never shows the DM lean")
+graded_ackbar()
+cb.log_lean(GROUP, "Ackbar", 202, "Memphis", -3.5, ts=mon - 3600, week=12, away="Memphis", home="USF")
+check(cb.callback_for(GROUP, "Ackbar", False, text="lol", now=mon, mark=False) is not None
+      and "Memphis" not in " ".join(ln for _, ln in cb.candidates(GROUP, "Ackbar", False, text="lol", now=mon)),
+      "an ungraded lean is never a callback on its own")
+r = cb.callback_for(GROUP, "Ackbar", False, text="remember what you said about Memphis?", now=mon, banter=False)
+check(r == "I had you on Memphis -3.5. not graded yet.", f"recall naming an ungraded lean: the call, no result ({r})")
+check(not any("Memphis" in ln for _, ln in cb.candidates(GROUP, "Ackbar", False, text="remember what you said about "
+                                                                                    "Memphis?", now=mon + 11 * 86400)),
+      "a pending lean past LEAN_FRESH_DAYS is skipped")
+
+# --- ATS framing ---------------------------------------------------------------------
+def L(side, fade, covered, margin, label, faded, mp=None):
+    return {"side": side, "fade": fade, "result": {"covered": covered, "margin": margin, "label": label,
+                                                    "faded_label": faded, "member_pick": mp}}
+check(cb.lean_line(L("Oregon State", True, True, 3.5, "Oregon State +13.5", "Boise State -13.5"))
+      == "told you Boise State -13.5 was a trap, it missed the cover by 3.5.", "ATS: trap that hit")
+check(cb.lean_line(L("UTSA", False, True, 1.5, "UTSA -2.5", "North Texas +2.5"))
+      == "told you UTSA -2.5 was the play, covered by 1.5.", "ATS: play that covered by X")
+check(cb.lean_line(L("UTSA", False, False, 4, "UTSA -2.5", "North Texas +2.5"))
+      == "my bad on UTSA -2.5, missed the cover by 4.", "ATS: owns the miss, didn't cover by X")
+check(cb.lean_line(L("Navy", True, False, 2, "Navy -7", "SMU +7"))
+      == "I faded SMU +7 and it covered by 2. that one's on me.", "ATS: owns a fade that covered")
+check("by" not in cb.lean_line(L("UTSA", False, True, None, "UTSA -2.5", "North Texas +2.5")),
+      "ATS: no margin claimed when the score disagrees with the graded winner")
+check(not any(w in cb.lean_line(L("UTSA", False, True, 30, "UTSA -2.5", "x")) for w in ("won by", "beat")),
+      "ATS framing: covered/missed the cover, never straight-up 'won'")
+
+# --- burn sheet (lore) --------------------------------------------------------------
+LORE = {"members": {"Ackbar": [
+    "Ackbar, 2025 season: 28 wins in weeks 1-15, 6th of 13: best week 4-0 (week 13), worst week 0-4 (week 15); "
+    "perfect weeks: week 13; winless weeks: week 15; longest hit streak 6 picks, longest miss streak 5.",
+    "Ackbar, 2026 so far (through 2026-11-16): best week 4-0 (week 10), worst week 1-3 (week 8); longest hit streak 5 "
+    "picks, longest miss streak 2; last 8 picks 7-1.",
+    "Ackbar, best upset hits: UCLA +11.5 won outright 17-15 (UCLA at Oregon, 2026 week 6).",
+    "Ackbar, worst blown picks (favorite that lost outright): Alabama -13.5 lost outright 17-31 (Alabama at Florida "
+    "State, 2025 week 1); Texas -8.5 lost outright 24-27 (Texas at Oklahoma, 2026 week 6).",
+    "Ackbar, stats-page oddity: Ackbar has picked against Northwestern 4 times over the last two seasons (2025-2026) "
+    "and gone 0-4.",
+    "Ackbar, stats-page oddity: Ackbar is 5-1 in Iowa games.",
+    "Ackbar, head to head (games where they took opposite sides, 2025-2026): best vs TG 16-7; worst vs Chuck P 18-21."]}}
+bs = cb.burn_sheet("Ackbar", LORE)
+texts = [b["text"] for b in bs]
+check([b["angle"] for b in bs] == ["blown", "blown", "winless", "worst_week", "miss_streak", "oddity", "h2h"],
+      f"burn sheet angles, worst first ({[b['angle'] for b in bs]})")
+check("Alabama -13.5 lost outright 17-31 (Alabama at Florida State, 2025 week 1)" in texts
+      and "18-21 head to head against Chuck P" in texts and "worst week this season: 1-3 (week 8)" in texts,
+      "burn sheet lines are lore facts verbatim")
+check(not any("UCLA" in t or "Iowa" in t or "16-7" in t for t in texts), "burn sheet skips the good stuff")
+check(all(b["scope"] == "group" and b["id"].startswith("burn:") for b in bs) and len({b["id"] for b in bs}) == len(bs),
+      "burn sheet items: group scope, unique ids")
+check(cb.burn_sheet("Nobody", LORE) == [] and cb.burn_sheet("Ackbar", {}) == [], "no lore: empty sheet")
+
+# --- exam rider (PICKY_CALLBACK_RIDER=1) -----------------------------------------------
+graded_ackbar()
+check(cb.rider("you suck", "insult") == "", "rider off by default")
+with patch.dict(os.environ, {"PICKY_CALLBACK_RIDER": "1", "PICKY_CALLBACK_EVERY": "1"}):
+    check(cb.rider("you suck", "insult") == "", "rider on but no chat context: nothing")
+    tok = cb.CHAT.set((GROUP, "Ackbar", False))
+    try:
+        r = cb.rider("you suck", "insult")
+        check("CALLBACK" in r and "then went 1-3 against the number in week 11" in r, f"rider carries the line ({r[:90]})")
+        check(cb.rider("who's winning", "question") == "", "rider: no callback on a plain question")
+        r = cb.rider("what did you tell me about UTSA", "question")
+        check("UTSA" not in r, "LEAK TEST: rider in the group never carries the DM lean")
+    finally:
+        cb.CHAT.reset(tok)
+
 # group_chat.py: the hook fires after the reply and can't change or break it
 try:
     import group_chat as gc
@@ -309,6 +443,43 @@ else:
     finally:
         for p in common:
             p.stop()
+
+# picky_brain: the rider rides in the draft prompt, right before the question; off -> nothing added
+try:
+    import chat
+    import picky_brain as pb
+except Exception as e:  # noqa: BLE001
+    print("skip picky_brain rider check:", e)
+else:
+    def draft_prompt(rider_env: str) -> str:
+        got = {}
+
+        async def fake_orig(messages, prefix=None):
+            got["user"] = messages[-1]["content"]
+            yield 'data: {"content": "hi"}\n\n'
+
+        async def fake_understand(*a, **k):
+            return pb.Brief(asking="a shot at you", intent="insult", about="Picky", answer="Jab back.")
+
+        async def go():
+            st = {"q": "you suck", "team": "Ackbar", "idx": 0, "brief": None, "options": {"temperature": 0.2}}
+            t1, t2, t3 = pb.STATE.set(st), chat.OPTIONS_OVERRIDE.set(st["options"]), cb.CHAT.set((GROUP, "Ackbar", False))
+            try:
+                return [x async for x in pb._ollama_stream([{"role": "user", "content": "R\n\nyou suck"}], "PFX")]
+            finally:
+                cb.CHAT.reset(t3)
+                chat.OPTIONS_OVERRIDE.reset(t2)
+                pb.STATE.reset(t1)
+        graded_ackbar()
+        with patch.object(pb, "_orig_ollama_stream", fake_orig), patch.object(pb, "understand", fake_understand), \
+                patch.object(pb, "compute_stance", lambda *a, **k: None), \
+                patch.dict(os.environ, {"PICKY_CALLBACK_RIDER": rider_env, "PICKY_CALLBACK_EVERY": "1"}):
+            asyncio.run(go())
+        return got["user"]
+    u = draft_prompt("1")
+    check("CALLBACK" in u and "went 1-3 against the number in week 11" in u and u.index("CALLBACK") < u.rindex("you suck"),
+          "flag on: the callback rides in the draft prompt before the question")
+    check("CALLBACK" not in draft_prompt("0"), "flag off: draft prompt unchanged")
 
 print("\nall passed" if not fails else f"\n{fails} FAILED")
 sys.exit(1 if fails else 0)
