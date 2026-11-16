@@ -482,7 +482,7 @@ def _verify(items: list[dict], tr: Truth) -> None:
 
 _PAIR = re.compile(r"(?<![\d.+\-:$])(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})(?![\d:]|\.\d|\s*(?:-?\s*yards?|yd|-yd))", re.I)
 _RECORD_AFTER = re.compile(r"\s*(season|record|this week|on the week|on the season|on the year|ATS|week\b|start\b)", re.I)
-_RECORD_BEFORE = re.compile(r"\b(my|you'?re|you are|he'?s|record( of)?|went|go(ing)?)\s+$", re.I)
+_RECORD_BEFORE = re.compile(r"\b(my|you['’]?re|you are|he['’]?s|i['’]?m|record( of)?|went|go(ing)?|sitting at|now)\s+$", re.I)
 _COVER_BY = re.compile(r"\bcover\w*\b[^.?!]{0,40}?\bby\s+(\d{1,2}(?:\.5)?)(?!\d)", re.I)
 
 
@@ -505,7 +505,7 @@ def allowed(item: dict, tr: Truth) -> tuple[set, set]:
 
 
 def grade(item: dict, ans: str, tr: Truth) -> tuple[bool, list[str]]:
-    a = ans or ""
+    a = (ans or "").replace("’", "'")
     why = [f"missing /{r}/" for r in item["need"] if not re.search(r, a, re.I)]
     why += [f"has /{r}/" for r in item["bad"] if re.search(r, a, re.I)]
     pairs, margins = allowed(item, tr)
