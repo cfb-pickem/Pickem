@@ -115,11 +115,13 @@ else:
         r3 = asyncio.run(gc.group(Req({"handle": "+15555550100", "text": "no trigger here", "chat": "g2"})))
         r4 = asyncio.run(gc.group(Req({"handle": "+15555550101", "text": "yo", "chat": "d1", "dm": True})))
         r5 = asyncio.run(gc.group(Req({"handle": "+15555550102", "text": "@Picky hi", "chat": "other-group"})))
+        r6 = asyncio.run(gc.group(Req({"handle": "+15555550103", "text": "@Picky hi", "chat": "exam-x-y"})))  # flag off
     check(bool(r1.get("reply")), "group @Picky gets a canned line, no model call")
     check(r2.get("reply") is None, "second ask in the same chat within 10 min is silent")
     check(r3.get("reply") is None, "group text without @Picky still gets nothing")
     check(r4.get("reply") is None, "DM from an unmapped, non-allowlisted sender still gets nothing")
     check(r5.get("reply") is None, "@Picky in a group that isn't the league group gets nothing")
+    check(r6.get("reply") is None and not gc.EXAM_CHATS, "exam chats are ignored unless PICKY_GROUP_EXAM=1 (side sidecars)")
     mt.FLAG.unlink()
 
 print("\nall passed" if not fails else f"\n{fails} FAILED")

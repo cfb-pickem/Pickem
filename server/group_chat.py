@@ -95,6 +95,8 @@ log = logging.getLogger("picky-group")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 PORT = int(os.environ.get("PICKY_GROUP_PORT", "8768"))
+# side (test) sidecars only: answer eval/run.py's "exam-..." group chats despite the league-group-only rule
+EXAM_CHATS = os.environ.get("PICKY_GROUP_EXAM") == "1"
 SECRET_SERVICE = "CFB_PICKEM__PICKY_GROUP_SECRET"
 SERVICE_KEY_SERVICE = "CFB_PICKEM__SUPABASE_SERVICE_KEY"
 MEMBERS_FILE = Path(os.environ.get(
@@ -815,7 +817,8 @@ async def group(req: Request):
     chat_id, dm = str(body.get("chat") or ""), bool(body.get("dm"))
     if not dm and not TRIGGER.search(text):  # groups need @Picky; DMs always get a reply
         return {"reply": None}
-    if not dm and chat_id != (group_outbox.config().get("group_guid") or ""):
+    if not dm and chat_id != (group_outbox.config().get("group_guid") or "") and not (
+            EXAM_CHATS and chat_id.startswith("exam-")):
         log.info("group skipped: not the league group")  # Charlie 2026-11-16: league group only
         return {"reply": None}
     if maintenance.active():  # brain in the shop (flag file or Ollama down): canned line, no model
