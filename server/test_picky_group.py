@@ -467,6 +467,21 @@ def test_live_failure_reply_loses_the_false_sentences():
     assert "Oregon State" not in " ".join(kept) and "last in the league" not in " ".join(kept), kept
 
 
+def test_sender_pick_claims_match_their_picks():
+    ctx = _with_picky(_wk11_ctx("Ackbar"))  # Ackbar: Wake Forest, Boise State, UTSA, North Dakota State
+    ctx["last_week"] = {"games": [{"away": "Alabama", "home": "LSU", "picks": {"Ackbar": "LSU"}, "covered": "Alabama",
+                                   "away_pts": 31, "home_pts": 13}]}
+    ok = chat.picky_claim_check(ctx, "you")
+    # replay 2026-11-16: he DID take LSU last week
+    assert not ok("But hey, at least you're not the guy who took LSU last week and watched them get blown out by Alabama.")
+    for bad in ("You took Oregon State.", "You picked Alabama last week.", "You didn't take Boise State."):
+        assert not ok(bad), bad
+    for good in ("You took Boise State -13.5 and it missed by 8.5.", "You took LSU -5.5 and lost by 18.",
+                 "You faded Oregon State.", "I took Boise State.", "You're 3-1 this week."):
+        assert ok(good), good
+    assert chat.picky_claim_check({"you": {"team_name": "Nobody"}}, "you") is None
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_") and callable(v)]
     failed = 0

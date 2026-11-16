@@ -42,6 +42,8 @@ def test_number_preservation_check():
     assert zh.numbers_kept(en, good.replace("30-18", "30－18")) == []              # full-width dash is fine
     assert zh.numbers_kept("Chuck P is in first place.", "Chuck P 排第1名。") == []  # 'first' -> 1 is allowed
     assert zh.numbers_kept("You're 3-1 this week.", "你这周3 - 1。") == []
+    assert zh.numbers_kept("while you're stuck at 2-2.", "而你还卡在 2-2。") == []      # replay 2026-11-16: '2-2.'
+    assert zh.numbers_kept("Boise State -13.5.", "Boise State -13.5。") == []
     assert zh.numbers_kept("Hawai'i +6.5 missed by 1.5.", "Hawai'i +6.5 差1.5分。") == []
 
 
@@ -61,6 +63,9 @@ def test_translation_retries_once_then_falls_back_to_english():
         out = asyncio.run(zh.to_chinese(en, "hant"))
     assert out.startswith(en) and zh.FALLBACK_NOTE["hant"] in out and len(calls) == 2
     assert "Traditional" in zh.TO_ZH.format(script=zh.SCRIPT_NAME["hant"])
+    outs, calls[:] = ["Ackbar 这周 3-1，别指望他。"], []                        # asked for Traditional, got Simplified
+    with patch.object(zh, "_call", fake):
+        assert asyncio.run(zh.to_chinese("Ackbar is 3-1 this week.", "hant")) == "Ackbar 這周 3-1，別指望他。"
 
 
 def test_answer_translates_in_and_out_and_leaves_english_alone():
@@ -70,7 +75,7 @@ def test_answer_translates_in_and_out_and_leaves_english_alone():
         seen.append(text)
         return {"reply": "Chuck P is 1st at 30-18, two games up on Ackbar.", "image": None, "mode": "group"}
 
-    async def fake_en(text, prefix=None):
+    async def fake_en(text):
         return "Who's in first place?"
 
     async def fake_zh(reply, script, prefix=None):

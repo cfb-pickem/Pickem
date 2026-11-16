@@ -514,7 +514,11 @@ def compute_stance(ctx: dict | None, q: str, sender_team: str | None) -> dict | 
         jabs = jab_material(ctx, team)
         leader = (ctx.get("leader") or {}).get("team_name")
         if team == leader and not chat.leader_is_caller(ctx):
-            stance = "deflect"  # Dear Leader is never roasted by others; his rider turns it on the sender
+            # Dear Leader is never roasted by others: no ammo on him, his rider turns it on the sender
+            stance = "deflect"
+            jabs = jab_material(ctx, sender_team) if me else []
+            facts.append(f"- {team} is the Dear Leader: refuse to roast him, praise him, then needle "
+                         + (f"{sender_team} (the sender) with the jab material below." if me else "the sender."))
         elif crushing(tr):
             stance = "deflect"
         elif pk and better(pk, tr) < 0:
@@ -551,7 +555,9 @@ def stance_rider(s: dict | None) -> str:
 
 # a sentence that fights the stance: Picky (worse, or facing someone crushing it) acting superior
 _SUPERIOR = re.compile(r"\blook in (the|a) mirror\b|\bpot (calling|meet\w*) the kettle\b|\btakes one to know\b|"
-                       r"\bat least i'?m not\b|\byou'?re (worse|no better|the one who sucks)\b", re.I)
+                       r"\bat least i'?m not\b|\byou'?re (worse|no better|the one who sucks)\b|"
+                       r"\byou'?re the one (who|that)\b|\breality check\b|\bcheck yourself\b|\blook who'?s talking\b",
+                       re.I)
 _MOCK_WORDS = re.compile(r"\b(suck\w*|bad|pathetic|embarrass\w*|weak|joke|garbage|trash|lucky|fluke|sad|mid|"
                          r"terrible|awful)\b", re.I)
 
@@ -562,6 +568,8 @@ def stance_violations(text: str, s: dict | None) -> list[str]:
     if not s or s["stance"] not in ("own_it", "deflect"):
         return []
     nums = [re.escape(g.split("'s ", 1)[1].split()[0]) for g in s["good"] if re.search(r"\d-\d", g)]
+    if any(re.search(r"'s \d+-0 ", g) for g in s["good"]):  # 'lucky to be perfect' mocks the 4-0 too
+        nums += ["perfect", "undefeated", "unbeaten", "spotless"]
     bad = []
     for sent in re.split(r"(?<=[.!?])\s+", text or ""):
         if _SUPERIOR.search(sent) or (nums and re.search(rf"\b({'|'.join(nums)})\b", sent)

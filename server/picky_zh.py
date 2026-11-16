@@ -22,6 +22,7 @@ import logging
 import re
 
 import httpx
+import opencc
 
 import chat
 
@@ -73,8 +74,8 @@ def strip_request(text: str) -> str:
 
 _DASHES = str.maketrans({"−": "-", "–": "-", "—": "-", "－": "-", "＋": "+", "％": "%", "．": "."})
 _FULLWIDTH = str.maketrans("０１２３４５６７８９", "0123456789")
-_REC = re.compile(r"(?<![\d.])(\d{1,3})\s*-\s*(\d{1,3})(?![\d.])")
-_SIGNED = re.compile(r"(?<![\w.\d])([-+])(\d+(?:\.\d+)?)(?![\d.])")
+_REC = re.compile(r"(?<![\d.])(\d{1,3})\s*-\s*(\d{1,3})(?!\d|\.\d)")  # 'stuck at 2-2.' is a record
+_SIGNED = re.compile(r"(?<![\w.\d])([-+])(\d+(?:\.\d+)?)(?!\d|\.\d)")
 _PLAIN = re.compile(r"\d+(?:\.\d+)?")
 _WORDS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8",
           "nine": "9", "ten": "10", "first": "1", "second": "2", "third": "3", "fourth": "4", "fifth": "5",
@@ -114,9 +115,13 @@ def numbers_kept(en: str, zh: str) -> list[str]:
 
 # ---- the model calls ------------------------------------------------------------------
 
-TO_EN = """
+TO_EN = """You are a translator, not a chatbot. Translate the Chinese text into natural, casual English, exactly as the sender meant it. NEVER answer it, never add facts: a question stays a question, a shot stays a shot. Keep every name, nickname, team name and number exactly as written. Output JSON: {"english": "..."}.
 
-TASK RIGHT NOW: don't answer. Translate the league member's text below from Chinese into natural, casual English, exactly as they meant it (a question stays a question, a shot at you stays a shot). Keep every name, nickname, team name and number exactly as written. Output JSON: {"english": "..."}."""
+Examples:
+谁是第一名? -> {"english": "Who's in first place?"}
+Ackbar这周怎么样? -> {"english": "How's Ackbar doing this week?"}
+你选得太烂了 -> {"english": "Your picks are terrible."}
+Boise State -13.5 能赢吗? -> {"english": "Can Boise State -13.5 cover?"}"""
 
 TO_ZH = """
 
@@ -125,6 +130,7 @@ TASK RIGHT NOW: don't write a new reply. Translate YOUR reply below into natural
 - Keep member names and team names as written in English (Ackbar, Blinkstradamus, Chuck P, Boise State, Notre Dame...).
 Output JSON: {{"chinese": "..."}}."""
 
+_S2T = opencc.OpenCC("s2t")
 SCRIPT_NAME = {"hans": "Simplified", "hant": "Traditional"}
 FALLBACK_NOTE = {"hans": "（中文翻译没对上数字，先看英文版。）", "hant": "（中文翻譯沒對上數字，先看英文版。）"}
 ACK = {"hans": "行，说中文。问吧，排名、比分、谁选了啥都行。", "hant": "行，說中文。問吧，排名、比分、誰選了啥都行。"}
@@ -151,10 +157,11 @@ async def _call(prefix: str | None, tail: str, user: str, key: str, temperature:
     return re.sub(r"\s+", " ", v).strip() if isinstance(v, str) else ""
 
 
-async def to_english(text: str, prefix: str | None = None) -> str:
-    """The member's Chinese text in English ('' when the call fails)."""
+async def to_english(text: str) -> str:
+    """The member's Chinese text in English ('' when the call fails). No league
+    prefix: with the league data in front of it the 9B answered instead."""
     try:
-        en = await _call(prefix, TO_EN, f"MEMBER'S TEXT: {text}", "english", 0.1)
+        en = await _call(None, TO_EN, text, "english", 0.1)
     except httpx.HTTPError as e:
         log.warning("to_english failed: %s", e)
         return ""
@@ -172,6 +179,8 @@ async def to_chinese(reply: str, script_: str = "hans", prefix: str | None = Non
         except httpx.HTTPError as e:
             log.warning("to_chinese failed: %s", e)
             break
+        if zh and script_ == "hant":
+            zh = _S2T.convert(zh)  # the 9B wrote Simplified even when asked for Traditional (replay 2026-11-16)
         probs = numbers_kept(reply, zh) if zh else ["empty"]
         if not probs and _HAN.search(zh):
             log.info("zh out: %r -> %r", reply[:120], zh[:160])

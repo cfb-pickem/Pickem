@@ -685,8 +685,9 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     asked = picky_zh.strip_request(q0)
     if not asked.strip():
         return {"reply": picky_zh.ACK[zh], "image": None, "mode": "dm" if dm else "group"}
-    prefix = picky_brain.LAST_PREFIX["text"]
-    en = asked if not picky_zh._HAN.search(asked) else (await picky_zh.to_english(asked, prefix) or asked)
+    # no league prefix for this pass: with the league data in front of it the 9B answered the question
+    # instead of translating it (replay 2026-11-16). The draft passes re-prime the prefix right after.
+    en = asked if not picky_zh._HAN.search(asked) else (await picky_zh.to_english(asked) or asked)
     out = await _answer(handle, en, chat_id, dm, allowlisted, recent)
     if out and out.get("reply") and not out.get("image"):
         out["reply_en"] = out["reply"]
@@ -789,6 +790,13 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
 # -----------------------------------------------------------------------------
 
 app = FastAPI(title="Picky group chat")
+
+
+@app.on_event("startup")
+async def _load_mascots():
+    # chat.py loads its nickname filter in ITS startup hook, which never runs here: without this the
+    # text path let "blew out the Vols" style nicknames through (found 2026-11-16)
+    await chat.load_mascots()
 SECRET = os.environ.get("PICKY_GROUP_SECRET") or _keychain(SECRET_SERVICE)
 
 

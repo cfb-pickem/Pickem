@@ -349,7 +349,9 @@ def test_stance_for_roast_requests():
     assert "TG (the sender): 1-3 this week, 19-29 on the season, 14th place of 14." in r, r
     assert "Between them, Ackbar is doing better." in r and "Ackbar's 3-1 this week" in r, r
     assert "takes the favorite 75%" in r and "Boise State -13.5" in r, r  # his real miss, graded in code
-    assert _stance("Ackbar", "roast Charlie")["stance"] == "deflect"   # Dear Leader is never roasted by others
+    s = _stance("Ackbar", "roast Charlie")                              # Dear Leader is never roasted by others
+    assert s["stance"] == "deflect" and s["jabs"] and all("Chuck P" not in j for j in s["jabs"]), s
+    assert any("Ackbar" in j for j in s["jabs"]) and "refuse to roast him" in pb.stance_rider(s)
     s = _stance("Ackbar", "roast Andrew Bub")                          # 0-4 week, Picky 0-3
     assert s["stance"] == "own_it" and "Andrew Bub's 0-4 this week" in s["bad"], s
     assert "Fair game (actually bad): Andrew Bub's 0-4 this week" in pb.stance_rider(s)
@@ -362,6 +364,10 @@ def test_stance_violations_cut_superior_lines():
     reply = ("You suck at picks? Look in the mirror, Chuck P. You're 4-0 this week, but you're still last in the "
              "league at being a Notre Dame homer. That 4-0 is a fluke. Fair, 4-0 is 4-0 and I'm 0-3.")
     assert pb.stance_violations(reply, s) == ["Look in the mirror, Chuck P.", "That 4-0 is a fluke."]
+    live2 = "I'm 0-3 this week, but you're 4-0, so you're the one who needs a reality check. Fair play."
+    assert pb.stance_violations(live2, s) == [live2.rsplit(" Fair", 1)[0]]  # replay 2026-11-16
+    live3 = "But you took LSU last week, so maybe you're just lucky to be perfect right now."
+    assert pb.stance_violations(live3, s) == [live3]
     assert pb.stance_violations("Look in the mirror.", _stance("Andrew Bub", "you suck", picky_wins=True)) == []
 
 

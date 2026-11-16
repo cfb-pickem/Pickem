@@ -5441,6 +5441,9 @@ _HYPO = re.compile(r"\b(would|could|should|might|will|gonna|going to|if|next wee
 _NEG_1P = re.compile(r"\b(never|not|didn'?t|did not|don'?t|wouldn'?t|won'?t|no way)\b", re.I)
 _OTHER_SUBJ = re.compile(r"\b(you|your|you'?re|he|she|they|his|her|their|we|everyone|everybody|nobody|who else)\b"
                          r"|[,;]|\b(but|while|and|whereas)\b", re.I)
+_YOU = r"(?<![\w'])(?:you|you're|you've|you are|your|yourself)(?![\w'])"
+_OTHER_SUBJ_2P = re.compile(r"\b(i|i'?m|me|my|he|she|they|his|her|their|we|everyone|everybody|nobody|who else)\b"
+                            r"|[,;]|\b(but|while|and|whereas)\b", re.I)
 _AGAINST = re.compile(r"\b(over|against|vs\.?|versus|instead of|fad(?:e|ed|ing))\s+(?:the\s+)?$", re.I)
 _SELF_PERFECT = re.compile(_ME + r"[^.!?]{0,30}?\b(undefeated|unbeaten|perfect|spotless|haven'?t missed|can'?t miss|"
                            r"never miss|haven'?t lost|hit (them|'?em) all|swept)\b", re.I)
@@ -5448,17 +5451,33 @@ _SELF_WINLESS = re.compile(_ME + r"[^.!?]{0,30}?\b(winless|haven'?t (hit|won) (a
                            re.I)
 
 
-def picky_claim_check(ctx: dict):
+def picky_claim_check(ctx: dict, who: str = "picky"):
     """Sentence test: anything Picky says about his own picks ('I took X', 'my
     Boise pick hit', "I'm 2-1", 'undefeated') must match his revealed, graded
-    picks. None when Picky isn't loaded (nothing to hold him to)."""
-    pp = ctx.get("picky_player")
-    if not pp:
-        return None
-    picks = [p for p in (pp.get("revealed") or pp.get("this_week") or []) if p.get("pick")]
-    facts = results_facts(ctx, "how did your picks do, picky?")
-    if facts:
-        facts = {**facts, "subjects": [s for s in facts["subjects"] if s["kind"] == "picky"]}
+    picks. None when Picky isn't loaded (nothing to hold him to).
+    who="you": the same pick-claim test for the sender ('you took X', 'at least
+    you're not the guy who took LSU' when he did), against their revealed picks
+    this week and last week."""
+    facts = None
+    if who == "you":
+        me = (ctx.get("you") or {}).get("team_name")
+        gid = {g["id"]: g for g in ctx.get("games_this_week") or []}
+        picks = [{**gid[p["game_id"]], "pick": p["pick"]} for p in (ctx.get("revealed_picks_this_week") or {}).get(me, [])
+                 if p["game_id"] in gid and gid[p["game_id"]].get("winner")] if me else []
+        picks += [{"away": g.get("away"), "home": g.get("home"), "winner": g.get("covered"), "pick": g["picks"][me]}
+                  for g in (ctx.get("last_week") or {}).get("games") or [] if me and (g.get("picks") or {}).get(me)]
+        if not picks:
+            return None
+        anchor, others, brk = _YOU, _OTHER_SUBJ_2P, r"i|he|she|they|ackbar|chuck"
+    else:
+        pp = ctx.get("picky_player")
+        if not pp:
+            return None
+        picks = [p for p in (pp.get("revealed") or pp.get("this_week") or []) if p.get("pick")]
+        facts = results_facts(ctx, "how did your picks do, picky?")
+        if facts:
+            facts = {**facts, "subjects": [s for s in facts["subjects"] if s["kind"] == "picky"]}
+        anchor, others, brk = _ME, _OTHER_SUBJ, r"you|he|she|they|ackbar|chuck"
     # teams in decided games only: a line on an undecided game is a take, not his record
     decided = [(g["away"], g["home"]) for g in ctx.get("games_this_week") or [] if g.get("winner")]
     decided += [(g.get("away"), g.get("home")) for g in (ctx.get("last_week") or {}).get("games") or []]
@@ -5467,8 +5486,8 @@ def picky_claim_check(ctx: dict):
     rx = {t: re.compile(_team_re(t, False), re.I) for t in names}
     graded = [p for p in picks if p.get("winner") and not p.get("tiebreaker")]
     wins = sum(same_team(p["pick"], p["winner"]) for p in graded)
-    season = pp.get("season") or [0, 0]
-    has_w, has_l = bool(wins or season[0]), bool(len(graded) - wins or season[1])
+    season = (pp.get("season") or [0, 0]) if who == "picky" else [0, 0]
+    has_w, has_l = (bool(wins or season[0]), bool(len(graded) - wins or season[1])) if who == "picky" else (False, False)
 
     def took(team: str) -> bool | None:
         """Did Picky take `team`? None when he didn't pick that game at all."""
@@ -5488,7 +5507,7 @@ def picky_claim_check(ctx: dict):
         like 'a losing team like' allowed) and the run joined to it by 'and',
         commas or 'over'. against = the claim is the other side of that game."""
         hit = first_team(rest)
-        if not hit or re.search(r"[;:,.!?]|\b(but|and|you|he|she|they|ackbar|chuck)\b", rest[:hit[1].start()], re.I):
+        if not hit or re.search(rf"[;:,.!?]|\b(but|and|{brk})\b", rest[:hit[1].start()], re.I):
             return []
         out = [(hit[0], fade or bool(_AGAINST.search(rest[:hit[1].start()])))]
         pos = hit[1].end()
@@ -5508,7 +5527,7 @@ def picky_claim_check(ctx: dict):
 
     def ok(sent: str) -> bool:
         s = sent.replace("’", "'").replace("‘", "'")
-        if not re.search(_ME, s, re.I):
+        if not re.search(anchor, s, re.I):
             return True
         if facts and facts["subjects"] and check_answer(s, facts):
             return False  # 'my Boise pick cashed', "I'm 3-0 this week"
@@ -5518,12 +5537,12 @@ def picky_claim_check(ctx: dict):
         m = _SELF_WINLESS.search(s)
         if has_w and m and not re.search(r"\b(not|far from)\b", m.group(0), re.I):
             return False
-        for me in re.finditer(_ME, s, re.I):
+        for me in re.finditer(anchor, s, re.I):
             v = _PICK_VERB_1P.search(s, me.end(), min(len(s), me.end() + 45))
             if not v:
                 continue
             between = s[me.end():v.start()]
-            if _HYPO.search(between) or _OTHER_SUBJ.search(between):
+            if _HYPO.search(between) or others.search(between):
                 continue  # 'I'd take', 'I think you took', "I'm 0-3, but Ackbar took"
             neg = bool(_NEG_1P.search(between))
             fade = v.group(0).lower().startswith("fad")
@@ -6307,7 +6326,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
                 extra=_both(_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
                                   grounded_check(ctx, corpus, qtext)),
-                            _both(pick_claim_check(ctx, qtext), picky_claim_check(ctx))) if not ctx.get("error") else None),
+                            _both(pick_claim_check(ctx, qtext), _both(picky_claim_check(ctx),
+                                                                      picky_claim_check(ctx, "you")))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),
