@@ -73,6 +73,25 @@ KEEP_KEY = 6
 BIG_PLAY_YDS = 30
 CT = dt.timezone(dt.timedelta(hours=-6))  # display only; CFB season is CST after early Nov
 
+try:  # freshness.py owns the max ages ('live_game' per game, 'live_games' for the board file)
+    import freshness as _freshness
+except Exception:  # noqa: BLE001 - standalone (tests, replay) falls back to MAX_AGE
+    _freshness = None
+
+
+def game_max_age() -> float:
+    try:
+        return float(_freshness.max_age("live_game")) if _freshness else MAX_AGE
+    except Exception:  # noqa: BLE001
+        return MAX_AGE
+
+
+def board_max_age() -> float:
+    try:
+        return float(_freshness.max_age("live_games")) if _freshness else MAX_AGE
+    except Exception:  # noqa: BLE001
+        return MAX_AGE
+
 # ----------------------------------------------------------------------------
 # small helpers
 # ----------------------------------------------------------------------------
@@ -552,9 +571,10 @@ def ensure_fresh(game_ids, refresh_age: float = REFRESH_AGE, cap: int = 3) -> li
     return got
 
 
-def refresh_board_if_stale(max_age: float = MAX_AGE) -> bool:
+def refresh_board_if_stale(max_age: float | None = None) -> bool:
     """Chat side: if the poller's file is older than max_age (poller down) and
     games may be on, read the scoreboard once into the overlay."""
+    max_age = board_max_age() if max_age is None else max_age
     data = load()
     if data.get("updated_ts") and time.time() - data["updated_ts"] <= max_age:
         return False
@@ -834,7 +854,7 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
     head = f"- {g['away']['name']} at {g['home']['name']}: "
     if st == "pre":
         lines.append(head + f"not started (kickoff {_kick_ct(g.get('start'))}).")
-    elif st == "in" and a is not None and a > MAX_AGE:
+    elif st == "in" and a is not None and a > game_max_age():
         lines.append(head + f"LIVE but the feed is {int(a)} s behind and the refresh failed: do NOT give a "
                      "current score; say the live feed is lagging.")
         return "\n".join(lines)
@@ -909,7 +929,7 @@ def rider(question: str, pool: dict | None = None, refresh: bool = True, now: fl
     data = load()
     games = data.get("games") or {}
     if refresh and _LIVE_ASK.search(question or "") and (not games or not data.get("updated_ts")
-                                                         or time.time() - data["updated_ts"] > MAX_AGE):
+                                                         or time.time() - data["updated_ts"] > board_max_age()):
         if refresh_board_if_stale():
             data = load()
             games = data.get("games") or {}
@@ -965,7 +985,7 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True) -> str:
     rows = {str(r.get("GameId")): r for r in ctx.get("live_games") or []}
     for pg in ctx.get("games_this_week") or []:
         g = games.get(str(pg["id"]))
-        if not g or g.get("state") not in _STATUS or (age(g, now) or 1e9) > MAX_AGE:
+        if not g or g.get("state") not in _STATUS or (age(g, now) or 1e9) > game_max_age():
             continue
         r = rows.get(str(pg["id"]))
         if r is None:

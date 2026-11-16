@@ -841,7 +841,7 @@ def live_pings(lg, games: dict | None = None) -> list[tuple[str, str]]:
         if not g.get("picked") or g.get("tiebreaker"):
             continue
         lv = games.get(str(g["GameId"]))
-        if not lv or lv.get("state") != "in" or (L.age(lv) or 1e9) > L.MAX_AGE:
+        if not lv or lv.get("state") != "in" or (L.age(lv) or 1e9) > L.game_max_age():
             continue
         bits, names = [], []
         for x in lv.get("injuries") or []:
