@@ -317,7 +317,7 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict) -> str:
         L.append(f"  ESPN FPI: {home} {wp['home']:.0f}% to win")
     if (espn_notes or {}).get("weather"):
         L.append(f"  Weather (ESPN): {espn_notes['weather']}")
-    L += news_lines(away, home)
+    L += news_lines(away, home, g["id"])
     return "\n".join(L)
 
 
@@ -333,9 +333,19 @@ _INJ = re.compile(r"\b(injur\w*|out for (the )?season|ruled out|questionable|dou
                   r"transfer|fired|interim|hot seat)\b", re.I)
 
 
-def news_lines(away: str, home: str) -> list[str]:
-    """Team-tagged headlines from Picky's news feed (news.py cache), personnel
-    first, dated. The only injury/QB facts Picky may state for this game."""
+def news_lines(away: str, home: str, game_id=None) -> list[str]:
+    """Personnel facts for this game: sourced slate intel (slate_intel.py, Opus
+    offline, validated) plus team-tagged personnel headlines from the news feed.
+    The only injury/QB facts Picky may state for this game."""
+    intel = []
+    try:
+        import slate_intel
+        claims, iasof = slate_intel.claims_for(game_id)
+        intel = [f"    - {c['text']} ({c.get('source_name') or 'source'}, {c.get('date')})"
+                 + (" [rumor]" if c.get("kind") == "rumor" else "") for c in claims[:5]]
+    except Exception as e:  # noqa: BLE001
+        log.warning("slate intel: %r", e)
+    out = [f"  Availability (checked news, as of {iasof}):"] + intel if intel else []
     try:
         import news
         rows = news.news_for(None, teams=[away, home], limit=8)
@@ -343,12 +353,14 @@ def news_lines(away: str, home: str) -> list[str]:
     except Exception as e:  # noqa: BLE001
         log.warning("slate news: %r", e)
         rows, asof = [], None
-    rows = [r for r in rows if _INJ.search(r)][:4]
-    if not rows:
+    rows = [r for r in rows if _INJ.search(r)][:4 if not intel else 2]
+    if not rows and not intel:
         return [f"  News: nothing in the feed on {away} or {home}"
                 + (f" (as of {asof})" if asof else "") + ". Injuries/QB status: unknown; say so, never guess."]
-    return [f"  News on these teams (as of {asof}; the only injury/QB facts you know, report them as written):"] + [
-        f"    - {r}" for r in rows] + ["  Anything not in these lines (a player's status, a QB change): unknown; say so."]
+    if rows:
+        out += [f"  Headlines (as of {asof}):"] + [f"    - {r}" for r in rows]
+    return out + ["  These are the only injury/QB facts you know: report them as written. Anything else about a "
+                  "player's status: unknown; say so."]
 
 
 def board(top: list[dict], notes: dict) -> str:
