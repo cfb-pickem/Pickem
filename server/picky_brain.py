@@ -39,7 +39,10 @@ import chat
 
 log = logging.getLogger("picky-brain")
 
-N_DRAFTS = 3
+# Charlie 2026-11-15: drop the best-of-3 judge (57% agreement, leaned to draft 1). One draft, plus a
+# reroll only when the filters cut it. PICKY_JUDGE=1 brings back 3 drafts + judge.
+USE_JUDGE = os.environ.get("PICKY_JUDGE") == "1"
+N_DRAFTS = 3 if USE_JUDGE else 1
 DRAFT_BUDGET = 105.0   # seconds: no new draft starts after this
 JUDGE_BUDGET = 170.0   # seconds: no judge pass after this (the watcher waits 240)
 
@@ -396,7 +399,9 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
         if not pool:
             return (drafts[0].text if drafts else ""), None
         pick, how = pool[0], "only eligible"
-        if len(pool) > 1 and st["prefix"] and time.time() - t0 < JUDGE_BUDGET:
+        if not USE_JUDGE:
+            pick, how = min(pool, key=lambda d: (d.drops, d.idx)), "no judge"
+        elif len(pool) > 1 and st["prefix"] and time.time() - t0 < JUDGE_BUDGET:
             # in draft order: the 9B judge leans to draft 1 (the cold one). It agreed with a Claude grader 57%
             # of the time this way vs 34% with the order shuffled (chance ~40%), so the lean is kept on purpose.
             k = await judge(st["prefix"], q, sender, st["brief"] or Brief(), [d.text for d in pool])

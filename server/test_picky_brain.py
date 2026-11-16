@@ -73,6 +73,43 @@ def test_stale_records_catch_a_true_record_from_the_wrong_week():
     assert not pb.stale_records("I'm 0-3 this season.", ctx, "Blinkstradamus")  # Picky's own: not a member
 
 
+def _with_judge(fn):
+    """These pin the PICKY_JUDGE=1 path (3 drafts + judge); the default is one draft, no judge."""
+    def wrapped():
+        old = pb.USE_JUDGE, pb.N_DRAFTS
+        pb.USE_JUDGE, pb.N_DRAFTS = True, 3
+        try:
+            fn()
+        finally:
+            pb.USE_JUDGE, pb.N_DRAFTS = old
+    wrapped.__name__ = fn.__name__
+    return wrapped
+
+
+def test_pipeline_default_one_draft_no_judge():
+    calls = []
+
+    async def draft():
+        st = pb.STATE.get()
+        calls.append(st["idx"])
+        st["prefix"] = "PREFIX"
+        return ("Cinnamon Toast Crunch, no contest.", 0, None)
+
+    async def no_judge(*a, **k):
+        raise AssertionError("judge must not run by default")
+
+    old_j, old_u = pb.judge, pb.understand
+    async def fake_understand(*a, **k):
+        return pb.Brief()
+    pb.judge, pb.understand = no_judge, fake_understand
+    try:
+        out, img = asyncio.run(pb.run(draft, q="best cereal?", sender="Blinkstradamus"))
+    finally:
+        pb.judge, pb.understand = old_j, old_u
+    assert calls == [0] and out.startswith("Cinnamon") and img is None
+
+
+@_with_judge
 def test_pipeline_drafts_screens_and_judges():
     texts = iter([("You're 1-3, Blinky.", 0, None), ("Cinnamon Toast Crunch, no contest.", 0, None),
                   ("Frosted Flakes. Obviously.", 0, None)])
@@ -98,6 +135,7 @@ def test_pipeline_drafts_screens_and_judges():
     assert chat.OPTIONS_OVERRIDE.get() is None and pb.STATE.get() is None  # reset after
 
 
+@_with_judge
 def test_pipeline_extra_draft_only_when_all_cut_and_image_short_circuits():
     calls = []
 
