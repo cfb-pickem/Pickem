@@ -41,6 +41,7 @@ import cfbd
 import dossier
 import edge
 import espn
+import board_voice
 import news
 import rare_bits
 
@@ -3570,6 +3571,12 @@ TAKE_TOPICS = [  # (bank section heading starts with, question regex)
 ]
 
 
+def _take_ok(t: str) -> bool:
+    """Board takes are paraphrased off public boards: one with a slur, a family/tragedy
+    angle or anatomy never rides, whatever the refresh let through."""
+    return not (_SLURS.search(t) or board_voice.OFFSIDE.search(t))
+
+
 def load_takes() -> dict:
     try:
         m = HOT_TAKES_FILE.stat().st_mtime
@@ -3591,7 +3598,8 @@ def load_takes() -> dict:
                 cur = "_voice"
                 secs[cur] = []
             elif cur == "_voice" and ln.startswith("- "):
-                secs[cur].append(ln[2:].strip())
+                if _take_ok(ln):
+                    secs[cur].append(ln[2:].strip())
                 continue
             elif ln.startswith("## "):
                 cur = None
@@ -3602,7 +3610,7 @@ def load_takes() -> dict:
                 t = re.sub(r"^\s*\d+\.\s*", "", ln)
                 hot = "[HOT]" in t
                 t = re.sub(r"\s*\[(added|FACT|HOT)[^\]]*\]", "", t).replace("**", "").strip()
-                if t:
+                if t and _take_ok(t):
                     secs[cur].append(t)
                     if hot:  # Charlie (2026-11-16): "the most outrageous ones" go first
                         secs.setdefault("_hot", []).append(t)
@@ -3769,23 +3777,16 @@ def insider_note(question: str, limit: int = 4) -> str:
 _ROAST_VOICE = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|talk (shit|trash)|trash talk|light (him|her|them|\w+) up)\b", re.I)
 
 
-# Board moves that invite a made-up fact (a leak, a rumor, a count of committee ties) never ride live;
-# the burn book's Opus style brief can still use all ten.
-_RISKY_MOVE = re.compile(r"\b(planted|leak\w*|rumou?r\w*|report\w*|count\w*)\b", re.I)
-
-
 def voice_note(question: str) -> str:
-    """Two message-board moves (hot_takes_bank.md 'Board voice') for the
-    opinion part of a reply; '' if the bank has none. Rides only on opinion /
+    """Two message-board moves (hot_takes_bank.md 'Board voice', else
+    board_voice.BOARD_MOVES) for the opinion part of a reply. Rides only on opinion /
     hot-take answers and explicit roast asks (see _user_turn; picky_brain
     drops it on banter and shots at Picky)."""
-    moves = [m for m in load_takes().get("_voice") or [] if not _RISKY_MOVE.search(m)]
-    if not moves:
-        return ""
+    moves = board_voice.live_moves(load_takes().get("_voice"))  # bank's current list, else the module's ten
     k = sum(map(ord, question or ""))
     pick = list(dict.fromkeys([moves[k % len(moves)], moves[(k + 3) % len(moves)]]))
     return ("BOARD VOICE (for the opinion or roast part only: sound like a message-board regular with unhinged "
-            "confidence, in short punchy lines, not a rant. Borrow ONE move, never its wording, and no stock "
+            "confidence, in short punchy lines, not a rant, and never a longer reply than without it. Borrow ONE move, never its wording, and no stock "
             "catchphrase like 'let that sink in'. Facts stay exact: every fact, number and pick as given, and an "
             "opinion is never news, a report or a rumor):\n"
             + "\n".join(f"- {m}" for m in pick))

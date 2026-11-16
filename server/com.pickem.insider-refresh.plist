@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Picky's insider notes refresh (insider_refresh.py): Sun + Wed 10:40 CT, after the
+  hot-takes refresh. One offline claude -p (Opus via picky_claude.py) on Charlie's
+  subscription (ANTHROPIC_API_KEY stripped), web tools + Read/Edit only, zero MCP
+  servers. Writes the private cfb-pickem-private/insider_bank.md only after its
+  validator passes; otherwise the last good copy stays. No Ollama, no RAM lock needed.
+  Logs: server/logs/insider_refresh.log.
+  Install: cp to ~/Library/LaunchAgents and launchctl load it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.insider-refresh</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/insider_refresh.py</string>
+        <string>run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Weekday</key>
+            <integer>0</integer>
+            <key>Hour</key>
+            <integer>10</integer>
+            <key>Minute</key>
+            <integer>40</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key>
+            <integer>3</integer>
+            <key>Hour</key>
+            <integer>10</integer>
+            <key>Minute</key>
+            <integer>40</integer>
+        </dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/insider_refresh.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/insider_refresh.launchd.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/Agent</string>
+        <key>TERM</key>
+        <string>dumb</string>
+        <key>DISABLE_AUTOUPDATER</key>
+        <string>1</string>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

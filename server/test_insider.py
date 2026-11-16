@@ -224,6 +224,76 @@ def test_hot_take_never_stated_as_news():
     assert not any(b in pre for b in chat._SOURCE_BLOCKS)  # the prefix alone never counts as a source
 
 
+def test_board_moves_export_and_live_filter():
+    import board_voice as bv
+    assert len(bv.BOARD_MOVES) == 10
+    live = bv.live_moves()
+    assert 6 <= len(live) < 10 and not any(bv.RISKY.search(m) for m in live)
+    brief = bv.style_brief()
+    assert all(m in brief for m in bv.BOARD_MOVES) and "never news" in brief and "Slang" in brief
+    assert bv.live_moves(["Planted-story paranoia: leaked by a rival."]) == live  # all risky: fall back
+    for q in ("hot take please", "roast the SEC", "x"):
+        v = chat.voice_note(q)
+        assert "not a rant" in v and "longer reply" in v, v
+
+
+def test_board_takes_filtered():
+    for bad in ("Bama fans are fat and ugly", "His mom could coach Rutgers", "that QB is a retard"):
+        assert not chat._take_ok(bad), bad
+    for ok in ("The SEC title game is dead and the committee paid for the funeral.",
+               "Notre Dame collects AP votes with no conference and no title game."):
+        assert chat._take_ok(ok), ok
+
+
+def test_insider_refresh_keeps_last_good():
+    import datetime as dt
+    import insider_refresh as ir
+    src = (TMP / "insider.md").read_text()
+    good = src.replace("### Realignment\n", "### Realignment\n- Nov 15: Fixture realignment note. (ESPN) [checked 2026-11-16]\n")
+    errs, n = ir.validate(src)
+    assert errs == [f"{n} notes; must be 20-70"], errs  # fixture is small; rules still run
+    ir.MIN_TOTAL = 10
+    try:
+        assert ir.validate(src)[0] == []
+        assert ir.validate(src.replace("(ESPN)", "ESPN"))[0]  # bad line
+        assert ir.validate(src.replace("end after 2026", 'end "after" 2026'))[0]  # quotes
+        assert ir.validate("\n".join(src.splitlines()[:12]) + "\n## Sources\n", src)[0]  # truncated
+        bank = TMP / "bank.md"
+        ir.BANK, ir.WORK_DIR, ir.LOG = bank, TMP / "work", TMP / "refresh.log"
+
+        def fake(text):
+            def run(prompt, tools, timeout):
+                assert "Today is" in prompt and str(ir.WORK_DIR) in prompt and "WebSearch" in tools
+                (ir.WORK_DIR / "insider_bank.md").write_text(text)
+                return "INSIDER ADDED=1\nBIGGEST: x"
+            return run
+
+        def down(prompt, tools, timeout):
+            raise RuntimeError("claude exit 1: overloaded")
+        bank.write_text(src)
+        assert not ir.refresh(dt.date(2026, 11, 18), down) and bank.read_text() == src
+        calls = []
+
+        def broken(prompt, tools, timeout):
+            calls.append(tools)
+            (ir.WORK_DIR / "insider_bank.md").write_text("# nope\n")
+            return ""
+        assert not ir.refresh(dt.date(2026, 11, 18), broken) and bank.read_text() == src
+        assert calls == ["WebSearch,WebFetch,Read,Edit", "Read,Edit"]  # one repair pass, then give up
+        assert ir.refresh(dt.date(2026, 11, 18), fake(good))
+        new = bank.read_text()
+        assert "Fixture realignment note" in new and "Last refreshed 2026-11-18" in new
+        assert (TMP / "bank.md.prev").read_text() == src and oct(bank.stat().st_mode)[-3:] == "600"
+        os.environ["PICKY_NO_ANTHROPIC"] = "1"
+        try:
+            assert not ir.refresh(dt.date(2026, 11, 21)) and bank.read_text() == new  # real run_claude, guarded
+        finally:
+            del os.environ["PICKY_NO_ANTHROPIC"]
+        assert "kept the last good copy" in ir.LOG.read_text()
+    finally:
+        ir.MIN_TOTAL = 20
+
+
 def main():
     fails = 0
     for name, fn in list(globals().items()):
