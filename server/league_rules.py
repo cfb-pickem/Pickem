@@ -1659,7 +1659,8 @@ ANSWERS = [
      r"\b(pick|eliminated|everyone|anyone|non.?playoff|still)\b|\beliminated\b.{0,40}\bpick", "STANDINGS AND PLAYOFFS", _a_playoff_pick),
     ("pick deadlines", r"\b(picks?|deadline)\b.{0,30}\block|\block\w*\b.{0,20}\bpicks?\b|\bdeadline\b|picks? due|"
                        r"how late can i", "DEADLINE AND PRIVACY", _a_pick_lock),
-    ("tiebreakers", r"tie ?-?break|\bties?\b.{0,20}\bbroken|break(s|ing)? (a |the )?ties?\b|\btied\b", "TIEBREAKERS", _a_tiebreakers),
+    ("tiebreakers", r"tie ?-?break|\bties?\b.{0,50}\b(broken|decided|settled)|break(s|ing)? (a |the )?ties?\b|\btied\b|"
+                    r"\bwho wins (a|the) tie", "TIEBREAKERS", _a_tiebreakers),
     ("the playoff cut", r"\bwho (makes|gets in|gets into|qualifies|is in)\b.{0,20}\bplayoffs?|\bmake (the )?playoffs?\b|"
                         r"\bhow (do|does) (you|i|we|a team|someone) (make|get into|qualify)|\bplayoff (format|cut|spots?)\b|"
                         r"\bcut ?line\b|how many (teams )?make|how do (the )?(league )?playoffs work", "STANDINGS AND PLAYOFFS", _a_who_makes),

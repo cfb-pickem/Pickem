@@ -237,8 +237,13 @@ _NOT_LEAGUE = re.compile(r"\b(cfp|committee|college football playoff|rank(ed|ing
                          r"last (year|season)|who won)\b", re.I)
 
 
+# "can I still pick the playoff games if I don't make it?" is a rules question
+# (league_rules: only the seeded teams pick playoff games), not playoff math.
+_PICK_RULE = re.compile(r"\bpick\w*\b.{0,30}\bplayoff (games?|picks?)\b|\bplayoff (games?|picks?)\b.{0,30}\bpick", re.I)
+
+
 def is_need_question(q: str) -> bool:
-    return bool(_NEED_ASK.search(q or "")) and not _NOT_LEAGUE.search(q or "")
+    return bool(_NEED_ASK.search(q or "")) and not _NOT_LEAGUE.search(q or "") and not _PICK_RULE.search(q or "")
 
 
 # -----------------------------------------------------------------------------

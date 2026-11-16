@@ -903,7 +903,8 @@ def build(t: Truth) -> list[dict]:
     R("rules-chips-points", "Do chips count as points?", r"\bno\b|never|only (break|tie)", "chips only break ties")
     # league_rules.py (rules lane): who can pick in the playoffs, from the playoff-field trigger
     R("rules-playoff-picks", "Can I still pick the playoff games if I don't make the playoffs?",
-      r"\bno\b|nope|can'?t|only (the )?(4|four|playoff|seeded)|top (4|four)|seeded teams|playoff teams",
+      r"\bonly\b.{0,40}\b(4|four|playoff|seed\w*|top|made it)|\bseed(ed|s)\b|playoff teams|top (4|four) teams|"
+      r"(can'?t|cannot|won'?t be able to) pick",
       "only the 4 seeded teams pick playoff games")
 
     # ---- site how-to ---------------------------------------------------------------------------
@@ -928,7 +929,8 @@ def build(t: Truth) -> list[dict]:
     top2 = [r["team"] for r in t.standings[:2]] if len(t.standings) > 4 else []
     def c_ended(a, t, p, top2=top2):
         from checks import mentions
-        return [must("names_the_top", all(mentions(a[-1], n) for n in top2), f"{top2}")]
+        need = [n for n in top2 if n != p["me"]]  # the caller gets "you"
+        return [must("names_the_top", all(mentions(a[-1], n) for n in need), f"{need}")]
     add("race-ended-today", "standings", ["If the season ended today, who makes the playoffs?"], c_ended,
         skip=None if top2 else "too few teams",
         judge="Gives the projected top 4 from the site's playoff math (points, tie at 4th broken by the real "

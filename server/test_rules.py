@@ -364,6 +364,7 @@ def test_flagged_sections_make_picky_hedge():
 ANSWER_CASES = [
     ("When do picks lock?", [r"first game", r"(regular season|week)", r"own kickoff"]),
     ("What's the pick deadline?", [r"first game"]),
+    ("How are ties in the final season standings broken?", [r"conference championship", r"army"]),
     ("How do tiebreakers work?", [r"1\) conference championship", r"2\) army", r"chips", r"celebration", r"last 8", r"coin flip"]),
     ("What happens on a push?", [r"no pushes", r"half point", r"away team"]),
     ("Can I pick the playoff games?", [r"only if your team made the playoffs", r"4 seeds", r"database"]),
@@ -389,6 +390,20 @@ def test_answers_for_typical_questions():
     for q in ("Roast TG", "Who's winning the pool?", "Who do you like in Utah Iowa?", "Is Iowa's QB healthy?"):
         assert L.answer(q, facts=_FACTS, flagged=[]) is None, q
     assert "$1,050 pot" in L.answer("What's the payout?", n_teams=14, facts=_FACTS, flagged=[])
+
+
+def test_brain_brief_and_race_math_defer_to_the_rules():
+    """Text Picky's understand step gets the computed rule (its brief used to
+    say 'the rules don't cover it'), and playoff_race's exact-math shortcut
+    doesn't swallow 'can I pick the playoff games?'."""
+    import picky_brain
+    import playoff_race
+    rule = L.answer("What happens on a push?")
+    u = picky_brain.understand_user("What happens on a push?", "TG", "", "", rules=rule)
+    assert "LEAGUE RULE" in u and "half point" in u and u.rstrip().endswith("NEWEST TEXT: What happens on a push?")
+    assert "LEAGUE RULE" not in picky_brain.understand_user("Roast TG", "TG", "", "")
+    assert not playoff_race.is_need_question("Can I still pick the playoff games if I don't make the playoffs?")
+    assert playoff_race.is_need_question("What do I need to make the playoffs?")
 
 
 def test_rules_answer_rides_in_the_user_turn():

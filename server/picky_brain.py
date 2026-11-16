@@ -37,6 +37,7 @@ import httpx
 import banter
 import callbacks
 import chat
+import league_rules
 import live_flag
 
 log = logging.getLogger("picky-brain")
@@ -183,10 +184,13 @@ def brief_notes(question: str) -> str:
 
 
 def understand_user(question: str, sender: str, recent: str, last_reply: str, stance: str = "",
-                    notes: str = "", live: str = "") -> str:
+                    notes: str = "", live: str = "", rules: str = "") -> str:
     L = [f"Sent by: {sender}" if sender else "Sent by: a league member"]
     if live:  # game-day live feed (live_games.py): scores/plays/QB news happening now, any game, pool or not
         L.append(live + "\nYour 'answer' note must use these live facts (exact score, scorer, clock) for a live-game ask.")
+    if rules:  # league_rules.answer(): the rule, computed from the site's code (or a "may have changed" hedge)
+        L.append("LEAGUE RULE for this question (from the site's own code; your 'answer' note must say this, "
+                 f"never 'the rules don't cover it'): {rules}")
     if recent:
         L.append(recent.strip())
     if last_reply:
@@ -233,10 +237,11 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
 
 
 async def understand(prefix: str, question: str, sender: str, recent: str, last_reply: str = "",
-                     timeout: float = 60.0, stance: str = "", notes: str = "", live: str = "") -> Brief:
+                     timeout: float = 60.0, stance: str = "", notes: str = "", live: str = "",
+                     rules: str = "") -> Brief:
     try:
         raw = await _json_call(prefix, UNDERSTAND_TAIL,
-                               understand_user(question, sender, recent, last_reply, stance, notes, live),
+                               understand_user(question, sender, recent, last_reply, stance, notes, live, rules),
                                UNDERSTAND_SCHEMA, 0.1, 260, timeout)
     except (httpx.HTTPError, ValueError) as e:
         log.warning("understand failed: %s", e)
@@ -677,10 +682,12 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         st["stance"] = compute_stance(st.get("ctx"), st["q"], st.get("team"))
         if st["stance"]:
             log.info("stance: %s (%s)", st["stance"]["stance"], st["stance"]["who"])
+        rule = (league_rules.answer(st["q"]) or "") if chat.wants_rules(st["q"]) else ""
         st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
                                        st.get("last_reply", ""), stance=stance_rider(st["stance"]),
                                        **({"notes": nb} if (nb := brief_notes(st["q"])) else {}),
-                                       **({"live": lv} if (lv := (st.get("ctx") or {}).get("live_rider")) else {}))
+                                       **({"live": lv} if (lv := (st.get("ctx") or {}).get("live_rider")) else {}),
+                                       **({"rules": rule} if rule else {}))
         if not st["stance"] and st["brief"].intent == "insult" and re.search(r"\bpicky\b|^(you|me)?$", st["brief"].about, re.I):
             # a bare insult ('Pussy', live 2026-11-16) slips past the regexes; without a stance the brief said
             # "fire back first" and 0-3 Picky mocked the 4-0 leader
