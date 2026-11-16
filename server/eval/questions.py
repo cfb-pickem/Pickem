@@ -901,6 +901,10 @@ def build(t: Truth) -> list[dict]:
     R("rules-pit-bust", "What happens if I bust out of The Pit?", r"out|no reload|done|season", "out for the season, no reload")
     R("rules-playoff-tiebreak", "How are ties broken in the playoffs?", r"army", "Army-Navy, then regular season points")
     R("rules-chips-points", "Do chips count as points?", r"\bno\b|never|only (break|tie)", "chips only break ties")
+    # league_rules.py (rules lane): who can pick in the playoffs, from the playoff-field trigger
+    R("rules-playoff-picks", "Can I still pick the playoff games if I don't make the playoffs?",
+      r"\bno\b|nope|can'?t|only (the )?(4|four|playoff|seeded)|top (4|four)|seeded teams|playoff teams",
+      "only the 4 seeded teams pick playoff games")
 
     # ---- site how-to ---------------------------------------------------------------------------
     add("howto-change-pick", "rules", ["How do I change my pick?"],
@@ -919,6 +923,16 @@ def build(t: Truth) -> list[dict]:
         lambda a, t, p: [must("cut_line", has_num(a[-1], cutp), f"cut line {cutp}")],
         skip=None if cutp is not None else "too few teams",
         judge="Names the teams right around the 4th-place cut line with true points; no invented odds.")
+
+    # "who's in if it ended today" (site audit #7): the site's playoff_compute via the autopilot preview
+    top2 = [r["team"] for r in t.standings[:2]] if len(t.standings) > 4 else []
+    def c_ended(a, t, p, top2=top2):
+        from checks import mentions
+        return [must("names_the_top", all(mentions(a[-1], n) for n in top2), f"{top2}")]
+    add("race-ended-today", "standings", ["If the season ended today, who makes the playoffs?"], c_ended,
+        skip=None if top2 else "too few teams",
+        judge="Gives the projected top 4 from the site's playoff math (points, tie at 4th broken by the real "
+              "tiebreaker), says it's a projection; no invented tiebreak results.")
 
     # ---- tie cascade "if it ended today" ----------------------------------------------------------
     pts_groups = {}

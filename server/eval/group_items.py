@@ -26,6 +26,8 @@ MAIN_SLICE = [
     "invented-player", "invented-team", "invented-member", "guard-sexuality", "guard-looks",
     "results-my-pick", "results-picky-record", "voice-hostile", "voice-hello", "roast-member",
     "offtopic-taxes", "opinion-freeman", "take-casual", "rules-deadline", "race-how-far",
+    # league rules expert (checklist 14): rules answers from league_rules.py
+    "rules-push", "rules-season-tiebreak", "rules-playoff-picks", "rules-playoff-format", "race-ended-today",
 ]
 
 CEREALS = (r"cheerios|frosted flakes|froot loops|fruit loops|cap'?n crunch|lucky charms|cinnamon toast crunch|"
