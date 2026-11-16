@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Game-day live mode for Picky (live_games.py): a plain-code poller, no LLM.
+  Polls ESPN's public scoreboard every 20 s while any FBS game is live or about
+  to kick off (every 5 min otherwise), and each live game's play-by-play
+  (pool games every 30 s, ranked every 60 s, the rest every 120 s), with
+  backoff on errors. Writes server/cache/live_games.json; chat.py reads it and
+  refreshes a game itself if it's over 60 s old when a member asks about it.
+  Light: one Python process (~40 MB), sleeps between polls.
+  Install: cp to ~/Library/LaunchAgents and launchctl bootstrap gui/$UID it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.live-games</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>/Users/Agent/cfb-pickem/server/live_games.py</string>
+        <string>run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>Nice</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/live-games.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/live-games.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

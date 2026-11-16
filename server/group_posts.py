@@ -821,6 +821,68 @@ def make_ping(lg: League, finals: list[tuple[dict, float, float]], writer=run_wr
 
 
 # -----------------------------------------------------------------------------
+# in-game pings (live_games.py). OFF unless the flag file exists: Charlie hasn't
+# asked for in-game posts, and a 14-person group doesn't want a play-by-play.
+# Only QB news in a live POOL game (reported injured on the play / QB change),
+# plain text from the feed (no writer), quiet hours respected, one ping per
+# LIVE_PING_GAP_S at most, each event once.
+# -----------------------------------------------------------------------------
+
+LIVE_PINGS_FLAG = ob.PRIVATE / "PICKY_LIVE_PINGS"
+LIVE_PING_GAP_S = 20 * 60
+
+
+def live_pings(lg, games: dict | None = None) -> list[tuple[str, str]]:
+    """(key, text) per live pool game with QB news not yet posted."""
+    import live_games as L
+    games = (L.load().get("games") or {}) if games is None else games
+    out = []
+    for g in lg.games:
+        if not g.get("picked") or g.get("tiebreaker"):
+            continue
+        lv = games.get(str(g["GameId"]))
+        if not lv or lv.get("state") != "in" or (L.age(lv) or 1e9) > L.MAX_AGE:
+            continue
+        bits, names = [], []
+        for x in lv.get("injuries") or []:
+            if x.get("qb") and not x.get("returned"):
+                bits.append(f"{x.get('team') or ''} QB {x.get('full_name') or x['player']} reported hurt on a play "
+                            f"({L.period_label(x['period'])} {x['clock']}, per ESPN's play-by-play)".strip())
+                names.append(x["player"])
+        for team, q in (lv.get("qb") or {}).items():
+            for c in q.get("changes") or []:
+                bits.append(f"{c['to']} in at QB for {team}")
+                names.append(c["to"])
+        if not bits:
+            continue
+        key = f"live:{g['GameId']}:qb:{','.join(sorted(set(names)))}"
+        if ob.done(key):
+            continue
+        txt = "; ".join(bits) + f". {L.clock_text(lv)}: {lv['away']['name']} {lv['away_score']}, " \
+              f"{lv['home']['name']} {lv['home_score']}."
+        cs = L.cover_status(g["Away"], g["Home"], g.get("line"), lv.get("away_score"), lv.get("home_score"))
+        if cs:
+            txt += f" Pool line: {cs.split(' (')[0]}."
+        out.append((key, txt))
+    return out
+
+
+def tick_live_pings(lg, now: dt.datetime, dry_run=None, echo=print) -> None:
+    if not LIVE_PINGS_FLAG.exists():
+        return
+    st = ob.state()
+    if now.timestamp() - float(st.get("live_ping_at") or 0) < LIVE_PING_GAP_S:
+        return
+    for key, text in live_pings(lg)[:1]:
+        r = ob.post("live", [text], key, quiet=True, expires_s=600, dry_run=dry_run, now=now, echo=echo)
+        log.info("live ping %s -> %s", key, r)
+        if r == "queued":
+            st = ob.state()
+            st["live_ping_at"] = now.timestamp()
+            ob.save_state(st)
+
+
+# -----------------------------------------------------------------------------
 # tick
 # -----------------------------------------------------------------------------
 
@@ -883,6 +945,7 @@ def tick(dry_run: bool | None = None, now: dt.datetime | None = None, echo=print
         for g, _, _ in finals:
             ob.mark(f"ping:{g['GameId']}", r)
         log.info("ping %s -> %s", key, r)
+    tick_live_pings(lg, now, dry_run=dry_run, echo=echo)
     return 0
 
 

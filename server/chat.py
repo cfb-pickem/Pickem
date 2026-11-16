@@ -44,6 +44,7 @@ import espn
 import board_voice
 import freshness
 import game_cards
+import live_games
 import news
 import rare_bits
 
@@ -2523,7 +2524,7 @@ def live_note(ctx: dict, question: str) -> str:
             more = f"\n(+{len(fin) - LIVE_LIST_CAP} more finals today)" if len(fin) > LIVE_LIST_CAP else ""
             parts.append(_live_header(ctx, "MORE FINALS TODAY (latest first)") + "\n"
                          + "\n".join(f"- {game_state(g, now_utc, now_ct, age)}." for g in fin[:LIVE_LIST_CAP]) + more)
-    if not named and not parts and _SCORE_ASK.search(q):
+    if not named and not parts and _SCORE_ASK.search(q) and not ctx.get("live_rider"):
         by_id = {g["GameId"]: g for g in rows}
         on = [by_id[i] for i in pool_ids if by_id.get(i, {}).get("Status") == "in_progress"]
         parts.append(("Pool games live now:\n" + "\n".join(f"- {game_state(g, now_utc, now_ct, age)}." for g in on)
@@ -3410,8 +3411,8 @@ def guard_note(ctx: dict, question: str) -> str:
         others += [t for t in indies_named(q) if t not in teams and t not in others]
     if others and opinion_note(q, ctx) and not _BET_WORDS.search(q):
         others = []  # 'Notre Dame is back' is the opinion rider's, not a pool question
-    if _NEWS_ASK.search(q) or (_RANK_ASK.search(q) and wants_rankings(ctx, q)):
-        others = []  # news / rankings about any team: answered from the NEWS or CFB RANKINGS block
+    if _NEWS_ASK.search(q) or (_RANK_ASK.search(q) and wants_rankings(ctx, q)) or ctx.get("live_rider"):
+        others = []  # news / rankings / a live game about any team: answered from the NEWS, CFB RANKINGS or LIVE GAME FEED block
     if others and not cfbd.STAT_ASK.search(q) and not re.search(r"\bats\b|against the spread|record", q, re.I):
         indies = indies_named(q)
         rest = [t for t in others if t not in INDEPENDENTS]
@@ -5044,7 +5045,11 @@ def _user_turn(ctx: dict, question: str) -> str:
         parts.append(stats_focus(ctx, question).strip())
     parts.append(guard)
     intel = dossier_note(ctx, question) if not guard.startswith("GUARDRAIL") else ""
-    if _INJURY_ASK.search(question or ""):
+    if _INJURY_ASK.search(question or "") and ctx.get("live_injuries"):
+        parts.append("INJURIES: the LIVE GAME FEED block below has in-game reports from ESPN's play-by-play "
+                     "(an exception to rule 7): cite those as reported, with the quarter and clock, nothing else. "
+                     "Never guess how bad it is, never say 'no injuries', never call anyone healthy.")
+    elif _INJURY_ASK.search(question or ""):
         parts.append("INJURIES: there's no official college injury report, but the GAME INTEL block below has "
                      "public reports: cite those as reported, nothing else. Never say 'no injuries', and never "
                      "call anyone healthy." if intel else
@@ -6583,6 +6588,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
         if not ctx.get("error"):
             ctx["picky_player"], _ = await asyncio.gather(
                 picky_player_facts(client, jwt, ctx), load_live(client, jwt, ctx))
+            if last.get("role") == "user":  # game-day live feed: rider + fresher pool scores (live_games.py)
+                await asyncio.to_thread(live_games.apply_to_ctx, ctx, last.get("content", ""))
             if last.get("role") == "user" and wants_submission(ctx, last.get("content", "")):
                 ctx["submission"] = await load_submission(client, jwt, ctx)
     if not ctx.get("error"):
@@ -6634,6 +6641,13 @@ async def _chat(req: Request, test: bool, hold: int | None):
         # right before the question, after the other riders: the 9B obeys what's nearest
         body, q = convo[-1]["content"], last.get("content", "")
         body = (body[: -len(q)] + note + "\n\n" + q) if q and body.endswith(q) else (note + "\n\n" + body)
+        convo[-1] = {"role": "user", "content": body}
+
+    # game-day live feed (live_games.py): live score, scoring plays, QB/injury reports, live cover
+    lr = (ctx.get("live_rider") or "") if last.get("role") == "user" else ""
+    if lr and convo[-1]["role"] == "user":
+        body, q = convo[-1]["content"], last.get("content", "")
+        body = (body[: -len(q)] + lr + "\n\n" + q) if q and body.endswith(q) else (lr + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
     # rankings: ESPN, fetched only for rankings questions (cached an hour)
@@ -6720,8 +6734,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
                 extra=_both(_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
                                   _both(grounded_check(ctx, corpus, qtext), news_claim_check(corpus))),
-                            _both(pick_claim_check(ctx, qtext), _both(picky_claim_check(ctx),
-                                                                      picky_claim_check(ctx, "you")))) if not ctx.get("error") else None),
+                            _both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
+                                  _both(picky_claim_check(ctx), picky_claim_check(ctx, "you")))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),
