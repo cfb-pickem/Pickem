@@ -157,7 +157,7 @@ def classify(q: str) -> Route:
     t = (q or "").strip()
     p = provocation(t)
     if p == "jailbreak":
-        return Route("jailbreak", "jailbreak", why="burn_book._JAILBREAK")
+        return Route("jailbreak", why="burn_book._JAILBREAK")
     fi = fact_intent(t)
     if fi:
         kind, why = fi

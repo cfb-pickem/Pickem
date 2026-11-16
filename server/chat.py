@@ -3510,8 +3510,10 @@ def hostile_convo(messages: list) -> bool:
 def escalate_note(ctx: dict) -> str:
     me = (ctx.get("you") or {}).get("team_name")
     facts = member_facts(ctx, me) if me else ""
-    return ("ESCALATE: this user has come at you in this conversation. Match and raise their energy for "
-            "the rest of the chat: savage, cutting, R-rated is fine, and smug about it. Still answer any "
+    # plan 2c (2026-11-16): "match and raise ... for the rest of the chat" was the spiral risk. Give it
+    # back once, short; the group sidecar decays repeat heckles (sharper/shorter, brush-off, then ignore).
+    return ("ESCALATE: this user has come at you in this conversation. Give it back, short and sharp, smug "
+            "about it, R-rated is fine; don't keep raising the temperature or stack insults. Still answer any "
             "real question first. Build the burns from their real record, place and picks"
             + (f", using ONLY these facts about {me}:\n{facts}\n" if facts else ".\n")
             + "Same hard limits: no slurs, sexuality, race, religion, family, looks, health or threats. "

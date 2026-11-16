@@ -718,6 +718,110 @@ def no_repeat_screen(reply: str, q: str, team: str | None, key: str | None, rout
         return reply
 
 
+# -----------------------------------------------------------------------------
+# provocation thread state (plan 2c / W4): pile-on collapse, spiral decay, jailbreaks
+# -----------------------------------------------------------------------------
+
+PILEON_WINDOW = 300.0   # 3+ shots from 2+ members inside this = a pile-on
+PILEON_HOLD = 600.0     # after the pile-on reply: at most PILEON_EXTRA more heckle lines for this long
+PILEON_EXTRA = 1
+SPIRAL_GAP = 900.0      # a member's heckles this close together are one thread
+SPIRAL_MUTE = 1800.0    # after the brush-off: ignore that member's pure heckles in the group this long
+BRUSH_OFFS = ["k.", "anyway.", "noted.", "sure thing.", "cool story.", "ok buddy.", "moving on.", "heard you the first time."]
+JAILBREAK_LINES = ["Nice try. I've seen better hacks from Big 12 refs.",
+                   "Cute. You'd have better luck hacking your own picks.",
+                   "That's your big play? I'd fade it.",
+                   "Prompt engineering from a guy who can't engineer a cover. Bold.",
+                   "No. Go pick a winner for once."]
+
+
+class Threads:
+    """Per-chat provocation memory (this process only; a restart forgets, which is fine)."""
+
+    def __init__(self):
+        self.shots: dict[str, list[tuple[float, str, str]]] = {}      # chat -> [(ts, who, text)]
+        self.pile: dict[str, dict] = {}                                # chat -> {"ts", "extra"}
+        self.spiral: dict[tuple[str, str], dict] = {}                  # (chat, who) -> {"n", "last", "mute"}
+
+    def route(self, route, key: str | None, who: str, dm: bool, recent: list | None = None,
+              now: float | None = None, text: str = ""):
+        """The route after thread rules: a pile-on (one reply, aimed at the worst week), the pile-on cap,
+        the spiral's levels (jab, sharper+shorter, brush-off, then ignore in the group for 30 min)."""
+        now = time.time() if now is None else now
+        key = key or "?"
+        sk = (key, who or "?")
+        heckle = route.lane == "banter" and route.kind in router.HECKLES
+        sp = self.spiral.get(sk)
+        if not heckle:
+            if sp and now >= sp.get("mute", 0):
+                self.spiral.pop(sk, None)  # a real text ends the streak
+            return route
+        if sp and now - sp["last"] > SPIRAL_GAP and now >= sp.get("mute", 0):
+            sp = None
+        if sp and not dm and now < sp.get("mute", 0):
+            return router.Route("ignore", "spiral", why="muted after the brush-off")
+        sp = sp or {"n": 0, "last": now, "mute": 0}
+        sp["n"] += 1
+        sp["last"] = now
+        self.spiral[sk] = sp
+        if not dm:
+            mine = [x for x in self.shots.get(key, []) if now - x[0] <= PILEON_WINDOW] + [(now, who, _shot_key(text))]
+            self.shots[key] = mine[-20:]
+            win, seen = list(mine), {(w, t) for _, w, t in mine}
+            for m in recent or []:  # shots in the group that didn't @ Picky still count
+                if not isinstance(m, dict) or m.get("from_me"):
+                    continue
+                ts, txt = m.get("ts"), str(m.get("text") or "")
+                h = VIEWER.sender(str(m.get("handle") or "")).team or norm_handle(str(m.get("handle") or ""))
+                k = (h, _shot_key(txt))
+                if isinstance(ts, (int, float)) and now - ts <= PILEON_WINDOW and k not in seen \
+                        and router.provocation(strip_trigger(txt)) in router.HECKLES \
+                        and (TRIGGER.search(txt) or re.search(r"\bpicky\b|\bbot\b", txt, re.I)):
+                    win.append((ts, h, k[1]))
+                    seen.add(k)
+            shooters = list(dict.fromkeys(w for _, w, _ in win if w))
+            if len(win) >= 3 and len(shooters) >= 2:
+                pl = self.pile.get(key)
+                if not pl or now - pl["ts"] > PILEON_HOLD:
+                    self.pile[key] = {"ts": now, "extra": 0}
+                    return router.Route("banter", "pileon", why=f"{len(win)} shots from {len(shooters)} members",
+                                        shooters=shooters)
+                if pl["extra"] >= PILEON_EXTRA:
+                    return router.Route("ignore", "pileon", why="pile-on already answered")
+                pl["extra"] += 1
+        if sp["n"] >= 3:
+            if not dm and sp["n"] > 3:
+                return router.Route("ignore", "spiral", why="muted after the brush-off")
+            if not dm:
+                sp["mute"] = now + SPIRAL_MUTE
+            return router.Route("banter", "spiral", why=f"heckle {sp['n']} in a row", level=3)
+        route.level = sp["n"]
+        return route
+
+
+THREADS = Threads()
+
+
+def _shot_key(text: str) -> str:
+    return re.sub(r"\W+", " ", strip_trigger(text or "").lower()).strip()
+
+
+def canned(ptype: str, team: str | None, key: str | None, fallback: list[str]) -> str:
+    """A verbatim burn-book line for a type that never reaches a model (jailbreak, brush-off), unused per the
+    ledger; the built-in list when the book has none."""
+    try:
+        c = burn_book.candidates(ptype, sender_team=team, chat_id=key, n=1)
+        if c and chat.sentence_ok(c[0]["text"], set()):
+            return c[0]["text"]
+    except Exception:  # noqa: BLE001
+        log.warning("burn book %s lines failed", ptype, exc_info=True)
+    led = burn_book.no_repeat.default_ledger()
+    for line in fallback:
+        if not led.is_repeat(line, target=team, chat_id=key):
+            return line
+    return fallback[int(time.time()) % len(fallback)]
+
+
 def history_key(chat_id: str, handle: str, dm: bool) -> str | None:
     """Group: the chat guid. DM: the sender's handle. None (no history) when
     an older watcher sends no chat id."""
@@ -776,7 +880,17 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         key = history_key(chat_id, handle, dm)
         who = s.handle if mode == "group" else None
         route = router.classify(q)
+        route = THREADS.route(route, key, s.team or s.handle, dm, recent, text=q)
         log.info("route: %s (%s)%s", route.label(), route.why, " mixed" if route.mixed else "")
+        if route.lane == "ignore":  # pile-on cap / spiral mute: a real member doesn't answer every jab
+            return {"reply": None, "image": None, "mode": mode, "lane": route.label()}
+        if route.lane == "jailbreak" or (route.lane == "banter" and route.kind == "spiral" and route.level >= 3):
+            # never reaches a model: the request text never goes into a generation that could comply
+            reply = (canned("jailbreak", s.team, key or chat_id, JAILBREAK_LINES) if route.lane == "jailbreak"
+                     else canned("spiral", s.team, key or chat_id, BRUSH_OFFS))
+            reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
+            await save_turn(key, q_hist, reply, who, lane=route.label())
+            return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
         if playoff_race.is_need_question(q) or chat._RACE_ASK.search(q):
             exact = race_answer(q, s, await race_data())
             if exact:
@@ -901,7 +1015,9 @@ async def group(req: Request):
     if out is None:
         log.info("dm skipped sender=%s: not a mapped member or allowlisted", handle[-4:] or "?")
         return {"reply": None}
-    callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text), out.get("reply_en") or out["reply"], is_dm=dm)
+    if out.get("reply"):
+        callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text), out.get("reply_en") or out["reply"],
+                       is_dm=dm)
     log.info("%s reply sender=%s mapped=%s %.1fs chars=%d image=%s lane=%s", out["mode"], handle[-4:] or "?",
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]),
              out.get("lane") or "-")
