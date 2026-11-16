@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.pickem.genius-refresh</string>
+<key>ProgramArguments</key><array><string>/bin/zsh</string><string>/Users/Agent/cfb-pickem/server/eval/genius/refresh.sh</string></array>
+<key>StartCalendarInterval</key><array><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict></array>
+<key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+<key>StandardOutPath</key><string>/Users/Agent/cfb-pickem-private/genius/launchd.log</string>
+<key>StandardErrorPath</key><string>/Users/Agent/cfb-pickem-private/genius/launchd.log</string>
+<key>LowPriorityIO</key><true/><key>Nice</key><integer>10</integer>
+</dict></plist>

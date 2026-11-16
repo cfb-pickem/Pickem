@@ -42,8 +42,20 @@ RESULTS, REPORTS = HERE / "results", HERE / "reports"
 DEFAULT_PERSONA = "Wedge Mulshine"  # mid-table member: no Dear Leader / last-place riders
 
 
+def questions_file() -> Path:
+    """The repo's questions.json, unless the weekly refresh (refresh.py) wrote a
+    newer week into the private dir (PICKY_GENIUS_QUESTIONS pins a file)."""
+    if os.environ.get("PICKY_GENIUS_QUESTIONS"):
+        return Path(os.environ["PICKY_GENIUS_QUESTIONS"])
+    repo = HERE / "questions.json"
+    week = json.loads(repo.read_text())["week"]
+    newer = sorted((int(p.stem.split("-w")[-1]), p) for p in PRIVATE.glob("questions-w*.json")
+                   if p.stem.split("-w")[-1].isdigit())
+    return newer[-1][1] if newer and newer[-1][0] > week else repo
+
+
 def load_items(include_private: bool = True) -> tuple[dict, list[dict]]:
-    q = json.loads((HERE / "questions.json").read_text())
+    q = json.loads(questions_file().read_text())
     items = [dict(i, private=False) for i in q["items"]]
     pf = PRIVATE / "items-private.json"
     if include_private and pf.exists():

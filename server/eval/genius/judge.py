@@ -146,6 +146,11 @@ def main(paths: list[str]) -> int:
         verdicts = json.loads(jp.read_text()) if jp.exists() and "--rejudge" not in sys.argv else judge_run(p)
         (G.REPORTS / f"{run['tag']}.md").write_text(render(run, verdicts))
         rows.append((run["tag"], summary(run, verdicts)))
+        if "--history" in sys.argv:  # nightly: one line per run, private (no answers, just scores)
+            G.PRIVATE.mkdir(parents=True, exist_ok=True)
+            with (G.PRIVATE / "history.jsonl").open("a") as f:
+                f.write(json.dumps({"tag": run["tag"], "started": run["started"], "week": run["week"],
+                                    "model": (run.get("health") or {}).get("model"), **rows[-1][1]}) + "\n")
     for tag, s in rows:
         print(f"{tag}: {s['score']}  means {s['means']}  det_fail {s['det_fail']}  invented {s['invented_items']}  "
               f"lat med {s['latency_median']}s  by_cat {s['by_cat']}")
