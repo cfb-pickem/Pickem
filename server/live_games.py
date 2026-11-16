@@ -1079,8 +1079,8 @@ def rider(question: str, pool: dict | None = None, refresh: bool = True, now: fl
         head = head.replace("These are the CURRENT facts", "No game named here is live; these are the latest facts")
     body = "\n".join(game_block(g, pool.get(g["id"]), now) for g in hit)
     body += no_injury_lines(question, hit)
-    hit = [{**g, "cover_margin": cover_margin(pool[g["id"]], g), "cover_side": cover_side(pool[g["id"]], g)}
-           if g["id"] in pool else g for g in hit]
+    hit = [{**g, "cover_margin": cover_margin(pool[g["id"]], g), "cover_side": cover_side(pool[g["id"]], g),
+            "in_pool": True} if g["id"] in pool else {**g, "in_pool": False if pool else None} for g in hit]
     return head + "\n" + body, hit
 
 
@@ -1280,7 +1280,8 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
     if _Q_COVER.search(q):
         row = rows.get(str(g["id"]))
         if not row or row.get("line") is None:
-            return (lambda t: bool(re.search(r"pool|league line|no line|spread", t, re.I)),
+            return (lambda t: bool(re.search(r"\b(not|isn'?t|wasn'?t|aren'?t)\b.{0,25}\bpool\b|\bno (league |pool )?(line|spread)\b|"
+                                             r"\boutside the pool\b|\bnot one of\b", t, re.I)),
                     f" {hd} isn't a pool game this week, so there's no league line to cover.")
         cs = cover_status(row["away"], row["home"], row["line"], a, h)
         m = abs(h + float(row["line"]) - a)
@@ -1467,6 +1468,10 @@ def claim_check(games: list[dict]):
                         tnum[side] = int(m.group(1))
             if len(tnum) == 2 and tuple(sorted(tnum.values())) not in ok_pairs:
                 return False
+            if g.get("in_pool") is False and re.search(r"\b(pool|league) line\b|\bcover\w*\b|\bspread\b|\bline is\b", seg, re.I) \
+                    and not re.search(r"\b(not|isn'?t|wasn'?t|aren'?t)\b.{0,25}\bpool\b|\bno (league |pool )?(line|spread)\b|"
+                                      r"\boutside the pool\b|\bwithout a line\b", seg, re.I):
+                return False  # 'the pool line is LSU -5.5' on a game that isn't in the pool
             if g.get("cover_margin") is not None:  # 'covering by 11' when it's 13.5 against the line
                 for m in _COVER_BY.finditer(seg):
                     if float(m.group(1)) != g["cover_margin"]:
