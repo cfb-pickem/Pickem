@@ -3643,22 +3643,25 @@ def takes_note(question: str) -> str:
     if not picks:
         return fact_txt.strip()
     return fact_txt + ("HOT TAKES you can riff on (opinions from around the sport; say them as opinions in your own words, "
-            "never as news; any record or rank in them may be stale, so use only the real data for numbers). For "
+            "never as news, a report or a rumor, and never credit them to anyone; any record or rank in them may be "
+            "stale, so use only the real data for numbers). For "
             "an opinion question like this, use one instead of saying there's nothing to talk about"
             + (" (asked who's on the hot seat: name only coaches these takes or the INSIDER NOTES name)" if
                re.search(r"\bhot seat\b|\bfired?\b", q, re.I) else "") + ":\n"
-            + "\n".join(f"- {t}" for t in picks)
-            + ("\n\n" + voice_note(q) if voice_note(q) else ""))
+            + "\n".join(f"- {t}" for t in picks))
 
 
 # Insider notes (Charlie, 2026-11-16: "have all the knowledge of Ross Dellenger").
 # PRIVATE fact-checked notes (cfb-pickem-private/insider_bank.md, refreshed Sun+Wed by
-# refresh_hot_takes.sh phase 2) on realignment, revenue sharing / NIL, the CFP format and
+# insider_refresh.py, which keeps the last good copy on a failed run) on realignment, revenue sharing / NIL, the CFP format and
 # committee, the coaching carousel, commissioners and governance. Read server-side only,
 # re-read on mtime change, injected on topic into the LATEST user turn, never prompt_prefix().
 INSIDER_FILE = Path(os.environ.get("PICKY_INSIDER", "/Users/Agent/cfb-pickem-private/insider_bank.md"))
 _insider_memo: dict = {"mtime": None, "data": None}
 _INSIDER_LINE = re.compile(r"^- ([^:]{3,16}): (.+) \(([^()]+)\) \[checked \d{4}-\d{2}-\d{2}\]$")
+# 'Last refreshed' (else the file's mtime) is the notes' fetched_at: refreshes run twice a week, so past
+# INSIDER_STALE_DAYS a reply must say "as of <date>", and past INSIDER_MAX_AGE_DAYS the notes stop riding.
+INSIDER_STALE_DAYS, INSIDER_MAX_AGE_DAYS = 8, 21
 INSIDER_TOPICS = [  # (section heading starts with, question regex)
     ("Realignment", r"\brealign\w*|\bconference (moves?|switch\w*|changes?|title games?|championship games?)\b|"
                     r"\b(conference |league )?(title|championship) games?\b|\bpac[- ]?12\b|\bsuper ?conference\w*|"
@@ -3692,14 +3695,13 @@ def load_insider() -> dict:
     if _insider_memo["mtime"] == m:
         return _insider_memo["data"] or {}
     secs: dict[str, list[dict]] = {}
-    cur, asof = None, ""
+    cur, day = None, dt.date.fromtimestamp(m)
     try:
         for ln in INSIDER_FILE.read_text().splitlines():
             if ln.startswith("Last refreshed "):
                 d = re.match(r"Last refreshed (\d{4}-\d{2}-\d{2})", ln)
                 if d:
                     day = dt.date.fromisoformat(d.group(1))
-                    asof = f"{day:%b} {day.day}"
             elif ln.startswith("### "):
                 cur = ln[4:].strip()
                 secs[cur] = []
@@ -3713,7 +3715,7 @@ def load_insider() -> dict:
                     secs[cur].append({"when": when, "text": text.replace('"', "").strip(), "label": label})
     except (OSError, ValueError):
         return _insider_memo["data"] or {}
-    data = {"secs": secs, "asof": asof}
+    data = {"secs": secs, "day": day, "asof": f"{day:%b} {day.day}"}
     _insider_memo.update(mtime=m, data=data)
     return data
 
@@ -3730,6 +3732,9 @@ def insider_note(question: str, limit: int = 4) -> str:
     q = question or ""
     data = load_insider()
     secs = data.get("secs") or {}
+    age = (_now_ct_naive().date() - data["day"]).days if data.get("day") else 0
+    if age > INSIDER_MAX_AGE_DAYS:  # refreshes kept failing: old notes would read as current news
+        return ""
     heads = insider_topics(q)
     dl = bool(_DELLENGER_ASK.search(q))
     if not secs or not (heads or dl):
@@ -3750,7 +3755,9 @@ def insider_note(question: str, limit: int = 4) -> str:
         return ""
     asof = data.get("asof") or "recently"
     return ("INSIDER NOTES (checked public reporting, as of " + asof + "; this is a real college football question, "
-            "so answer it from these lines, it is not off-topic):\n"
+            "so answer it from these lines, it is not off-topic"
+            + (f"; these are {age} days old, so say 'as of {asof}' with anything you take from them" if
+               age > INSIDER_STALE_DAYS else "") + "):\n"
             + "\n".join(f"- {n['when']}, {n['label']}: {n['text']}" for n in picked)
             + "\nLead with the straight answer from these lines, then at most one opinionated line in your own voice. "
             "Credit 'Dellenger reported' only on lines labeled Dellenger, 'per <outlet>' on the others. In your own "
@@ -3762,17 +3769,25 @@ def insider_note(question: str, limit: int = 4) -> str:
 _ROAST_VOICE = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|talk (shit|trash)|trash talk|light (him|her|them|\w+) up)\b", re.I)
 
 
+# Board moves that invite a made-up fact (a leak, a rumor, a count of committee ties) never ride live;
+# the burn book's Opus style brief can still use all ten.
+_RISKY_MOVE = re.compile(r"\b(planted|leak\w*|rumou?r\w*|report\w*|count\w*)\b", re.I)
+
+
 def voice_note(question: str) -> str:
     """Two message-board moves (hot_takes_bank.md 'Board voice') for the
-    opinion part of a reply; '' if the bank has none."""
-    moves = load_takes().get("_voice") or []
+    opinion part of a reply; '' if the bank has none. Rides only on opinion /
+    hot-take answers and explicit roast asks (see _user_turn; picky_brain
+    drops it on banter and shots at Picky)."""
+    moves = [m for m in load_takes().get("_voice") or [] if not _RISKY_MOVE.search(m)]
     if not moves:
         return ""
     k = sum(map(ord, question or ""))
     pick = list(dict.fromkeys([moves[k % len(moves)], moves[(k + 3) % len(moves)]]))
-    return ("BOARD VOICE (for the opinion or roast part only, sound like an unhinged message-board poster: "
-            "borrow ONE move, never its wording, and no stock catchphrase like 'let that sink in'; every fact, "
-            "number and pick stays exact):\n"
+    return ("BOARD VOICE (for the opinion or roast part only: sound like a message-board regular with unhinged "
+            "confidence, in short punchy lines, not a rant. Borrow ONE move, never its wording, and no stock "
+            "catchphrase like 'let that sink in'. Facts stay exact: every fact, number and pick as given, and an "
+            "opinion is never news, a report or a rumor):\n"
             + "\n".join(f"- {m}" for m in pick))
 
 
@@ -4893,7 +4908,9 @@ def _user_turn(ctx: dict, question: str) -> str:
                      "Never say 'no injuries', and never call anyone healthy.")
     ln = leader_note(ctx, question)
     parts.append(ln)
-    if _ROAST_VOICE.search(question or "") and not ln and not guard.startswith("GUARDRAIL"):
+    # board voice: opinion / hot-take answers and explicit roast asks only; never with Dear Leader or a guardrail
+    if (("HOT TAKES" in opinion or _ROAST_VOICE.search(question or "")) and not ln
+            and not guard.startswith("GUARDRAIL")):
         parts.append(voice_note(question))
     if len((question or "").split()) <= 7 and re.search(r"\b(hey|hi|hello|yo|sup|what'?s up|wassup|howdy|morning|"
                                                          r"evening)\b", question or "", re.I):
@@ -5941,6 +5958,44 @@ def grounded_check(ctx: dict, corpus: str, question: str = ""):
     return ok
 
 
+# A news-style claim ("reportedly", "per ESPN", "sources say", "Dellenger reported") needs a source block
+# in the prompt, and can't be a HOT TAKE dressed up as news (plan 2026-11-16: no [HOT] or rumor item
+# stated as news). Source lines and takes are the prompt's "- " bullets.
+_NEWSY = re.compile(r"\b(reported(ly)?|reports? (say|said|that|have|are)|sources? (say|said|tell|told|close)|"
+                    r"breaking news|insiders?|rumou?r(s|ed)?|leak(ed|s)?|word is|i'?m told)\b", re.I)
+_CREDIT = re.compile(r"\b[Pp]er (?:the )?[A-Z][A-Za-z0-9&+.]*|\b[Aa]ccording to\b")  # also fine on data ('per CFBD')
+_SOURCE_BLOCKS = ("NEWS QUESTION (free", "INSIDER NOTES (", "GAME INTEL,", "CHECKED FACTS (", "CFB RANKINGS (")
+_TAKES_HEAD = "HOT TAKES you can riff on"
+
+
+def news_claim_check(corpus: str):
+    """Sentence predicate for _filtered: False for a news-style claim with no
+    source block in the prompt, or one whose words come from a HOT TAKE more
+    than from any sourced line."""
+    def words(t):
+        return set(re.findall(r"[a-z0-9]{4,}", t.lower()))
+    tk = corpus.split(_TAKES_HEAD, 1)[1].split("\n\n", 1)[0] if _TAKES_HEAD in corpus else ""
+    take_lines = {ln for ln in tk.splitlines() if ln.startswith("- ")}
+    takes = [words(ln) for ln in take_lines]
+    srcs = [words(ln) for ln in corpus.splitlines() if ln.startswith("- ") and ln not in take_lines]
+    sourced = any(b in corpus for b in _SOURCE_BLOCKS)
+
+    def ok(sent: str) -> bool:
+        newsy = bool(_NEWSY.search(sent))
+        if not (newsy or _CREDIT.search(sent)):
+            return True
+        if newsy and not sourced:
+            log.info("news filter: no source block for %r", sent[:100])
+            return False
+        w = words(sent)
+        t = max((len(w & x) for x in takes), default=0)
+        if t >= 3 and t > max((len(w & x) for x in srcs), default=0):
+            log.info("news filter: hot take stated as news in %r", sent[:100])
+            return False
+        return True
+    return ok
+
+
 # Known-false mashups from the final exam run: only Picky has exhibition picks; Bo Nix never
 # played at Notre Dame; Freeman's 2024 team lost the title game to Ohio State.
 _MASHUPS = re.compile(r"\b(your|his|their|you'?re|he'?s|my|i'?m)\b[^.]{0,30}\bexhibition\b"
@@ -6514,7 +6569,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
                 extra=_both(_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
-                                  grounded_check(ctx, corpus, qtext)),
+                                  _both(grounded_check(ctx, corpus, qtext), news_claim_check(corpus))),
                             _both(pick_claim_check(ctx, qtext), _both(picky_claim_check(ctx),
                                                                       picky_claim_check(ctx, "you")))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or required_fact(ctx, qtext) or rankings_fact(rn))

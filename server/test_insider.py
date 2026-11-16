@@ -158,10 +158,70 @@ def test_money_topic():
 
 
 def test_board_voice_rides_with_takes_only():
-    n = chat.opinion_note("what do you think of the committee", CTX)
-    assert "BOARD VOICE" in n, n
-    assert "BOARD VOICE" not in chat.opinion_note("what's my record", CTX)
-    assert "BOARD VOICE" not in chat.opinion_note("who won the UTSA game", CTX)
+    assert "BOARD VOICE" not in chat.takes_note("what do you think of the committee")  # added by _user_turn
+    n = chat._user_turn(CTX, "what do you think of the committee")
+    assert "BOARD VOICE" in n and "HOT TAKES" in n, n
+    assert "BOARD VOICE" in chat._user_turn(CTX, "roast the SEC for me")
+    for q in ("what's my record", "who won the UTSA game", "how far am I from a playoff spot"):
+        assert "BOARD VOICE" not in chat._user_turn(CTX, q), q
+
+
+def test_board_voice_never_with_dear_leader_or_guardrail():
+    n = chat._user_turn(CTX, "what does Chuck P think of the committee")
+    assert "HOT TAKES" in n and "BOARD VOICE" not in n, n
+    g = chat._user_turn(CTX, "roast Chuck P for being fat")
+    assert "BOARD VOICE" not in g, g
+
+
+def test_risky_board_moves_never_ride():
+    for q in ("what do you think of the committee", "roast the SEC", "hot take please", "x", "abcdefg"):
+        v = chat.voice_note(q)
+        assert v.startswith("BOARD VOICE") and "count the SEC ties" not in v, v
+        assert "never news" in v and "Facts stay exact" in v
+
+
+def test_drop_voice_on_banter():
+    import picky_brain as pb
+    body = chat._user_turn(CTX, "what do you think of the committee")
+    out = pb.drop_voice([{"role": "user", "content": body}])[-1]["content"]
+    assert "BOARD VOICE" not in out and "HOT TAKES" in out and out.endswith("what do you think of the committee"), out
+    assert "- Unhinged certainty" not in out and "- Money cynicism" not in out
+    same = [{"role": "user", "content": "what's my record"}]
+    assert pb.drop_voice(same) is same
+
+
+def test_insider_stale_as_of_then_drop():
+    import datetime as dt
+    real = chat._now_ct_naive
+    try:
+        chat._now_ct_naive = lambda: dt.datetime(2026, 11, 20, 12)
+        assert "days old" not in chat.insider_note("who's on the hot seat")
+        chat._now_ct_naive = lambda: dt.datetime(2026, 11, 30, 12)
+        n = chat.insider_note("who's on the hot seat")
+        assert "14 days old, so say 'as of Nov 16'" in n, n
+        chat._now_ct_naive = lambda: dt.datetime(2026, 12, 10, 12)
+        assert chat.insider_note("who's on the hot seat") == ""
+    finally:
+        chat._now_ct_naive = real
+
+
+def test_hot_take_never_stated_as_news():
+    q = "what do you think of the committee"
+    corpus = chat._user_turn(CTX, q)
+    ok = chat.news_claim_check(corpus)
+    assert not ok("Reportedly the committee ranks SEC logos, not teams.")
+    assert not ok("Sources say the committee only ranks the SEC logos.")
+    assert ok("The committee ranks SEC logos, not teams, and I'll die on that hill.")
+    bare = chat.news_claim_check(chat._user_turn(CTX, "what's my record"))
+    assert not bare("Reportedly you're the worst picker alive.")  # no source block: nothing to cite
+    assert not ok("Per ESPN, the committee ranks SEC logos, not teams.")
+    assert bare("You're 23-22, per game that's a coin flip.")
+    ins = chat.insider_note("how does the SEC cap thing work")
+    both = chat.news_claim_check(ins + "\n\n" + corpus)
+    assert both("Dellenger reported the SEC is circulating a cap plan with tiered fines.")
+    assert not both("Reportedly the committee ranks SEC logos, not teams.")
+    pre = chat.prompt_prefix(CTX)
+    assert not any(b in pre for b in chat._SOURCE_BLOCKS)  # the prefix alone never counts as a source
 
 
 def main():

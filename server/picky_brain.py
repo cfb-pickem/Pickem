@@ -175,7 +175,7 @@ def brief_notes(question: str) -> str:
     """The insider notes and picked hot takes for the understand pass (the
     drafts get them as riders); '' when neither rides."""
     ins = chat.insider_note(question, limit=3).split("\nLead with")[0]
-    tk = chat.takes_note(question).split("\n\nBOARD VOICE")[0]
+    tk = chat.takes_note(question)
     tk = tk[tk.find("HOT TAKES"):] if "HOT TAKES" in tk else ""
     return "\n\n".join(x for x in (ins, tk) if x)
 
@@ -190,8 +190,8 @@ def understand_user(question: str, sender: str, recent: str, last_reply: str, st
     if stance:
         L.append(stance + "\nYour 'answer' note must follow this STANCE.")
     if notes:  # insider notes / hot takes: without them the core answer said 'no data' or made up a take
-        L.append(notes + "\nYour 'answer' note builds on these lines: a fact only from them, a take reworded "
-                 "from one of them.")
+        L.append(notes + "\nYour 'answer' note builds on these lines: a fact only from the INSIDER NOTES, a take "
+                 "reworded from a HOT TAKE and said as an opinion, never as news or a report.")
     L.append(f"NEWEST TEXT: {question}")
     return "\n\n".join(L)
 
@@ -695,11 +695,12 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         messages = drop_escalate(messages)  # 'build the burns from their record' fights the stance
     if st.get("stance"):
         messages = drop_hook(messages)  # 'you're in first place, 2 ahead' tacked onto a comeback reads like a bot
-    # board voice for plain banter (Charlie, 2026-11-16: message-board personality); shots at Picky keep the stance
-    vo = (chat.voice_note(st["q"]) if b.intent == "banter" and not st.get("stance")
-          and "BOARD VOICE" not in ((messages[-1].get("content") or "") if messages else "") else "")
+    # board voice rides on opinion / hot-take answers and explicit roast asks only (plan 2026-11-16): banter,
+    # reactions and shots at Picky belong to the short banter path, where "unhinged" came out long and ranty
+    if st.get("stance") or (b.intent in ("banter", "insult", "reaction") and not chat._ROAST_VOICE.search(st["q"])):
+        messages = drop_voice(messages)
     rider = "\n\n".join(x for x in (brief_rider(b, stance=bool(sr)), st.get("ammo") or "" if i in (1, 2) else "",
-                                     sr, vo, ANGLES[i]) if x)
+                                     sr, ANGLES[i]) if x)
     st["options"].clear()
     st["options"].update(SAMPLING[i])  # read by chat._ollama_stream via OPTIONS_OVERRIDE
     if st.get("shots") and messages and messages[0].get("role") == "system":
@@ -755,6 +756,14 @@ def drop_hook(messages: list[dict]) -> list[dict]:
     if not messages or messages[-1].get("role") != "user" or "OPTIONAL HOOK:" not in messages[-1]["content"]:
         return messages
     body = re.sub(r"OPTIONAL HOOK: .*?feel forced\.\s*", "", messages[-1]["content"], count=1, flags=re.S)
+    return messages[:-1] + [{**messages[-1], "content": body}]
+
+
+def drop_voice(messages: list[dict]) -> list[dict]:
+    """chat.voice_note's BOARD VOICE block out of the latest user turn."""
+    if not messages or messages[-1].get("role") != "user" or "BOARD VOICE (" not in messages[-1]["content"]:
+        return messages
+    body = re.sub(r"BOARD VOICE \(.*?(?:\n- [^\n]*)+\n*", "", messages[-1]["content"], count=1, flags=re.S)
     return messages[:-1] + [{**messages[-1], "content": body}]
 
 
