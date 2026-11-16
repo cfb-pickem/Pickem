@@ -58,6 +58,7 @@
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=e6e45cfb">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=2973ba3d">
   <link rel="stylesheet" href="./css/theme-sickos.css?v=3a9977e5">
+  <link rel="stylesheet" href="./css/theme-playoffs.css?v=b31745c8">
   <link rel="modulepreload" href="./js/vendor/supabase.js">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
@@ -709,7 +710,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=dd4a6892">
+  <link rel="stylesheet" href="./css/tailwind.css?v=8580a8e6">
 </head>
 <body data-page="picks">
   <div class="max-w-7xl mx-auto p-4 md:p-6 fade-in">
@@ -1462,6 +1463,8 @@
       userInPlayoffs = !!(playoffRows || []).some(r => Number(r.team_id) === selectedTeamId);
 
       if (isPlayoffMode) {
+        // Playoff look (css/theme-playoffs.css), same switch as the leaderboard's.
+        document.documentElement.setAttribute('data-playoffs', 'on');
         if (gamesLoading) gamesLoading.classList.add('hidden');
         setStatus(`Playoff mode is active for Season ${currentSeason}.`);
         await logosReady;

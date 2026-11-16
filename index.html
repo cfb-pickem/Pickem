@@ -75,6 +75,7 @@
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=e6e45cfb">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=2973ba3d">
   <link rel="stylesheet" href="./css/theme-sickos.css?v=3a9977e5">
+  <link rel="stylesheet" href="./css/theme-playoffs.css?v=b31745c8">
   <link rel="modulepreload" href="./js/vendor/supabase.js">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
@@ -398,7 +399,7 @@
     }
   </style>
   <!-- Tailwind: prebuilt (npm run css). Loads last so utilities win ties, matching the old CDN cascade. -->
-  <link rel="stylesheet" href="./css/tailwind.css?v=dd4a6892">
+  <link rel="stylesheet" href="./css/tailwind.css?v=8580a8e6">
 </head>
 
 <body data-page="leaderboard">
@@ -429,6 +430,11 @@
       <div class="reveal-clock" id="reveal-clock">--:--</div>
       <div class="reveal-sub" id="reveal-sub"></div>
     </div>
+
+    <!-- Playoff mode (js/playoffState.js): the banner once the field is set,
+         and a one-line note while the autopilot is waiting on something. -->
+    <div id="playoff-banner" class="playoff-banner" hidden></div>
+    <div id="playoff-hold" class="playoff-hold" role="status" hidden></div>
 
     <div class="scoreboard-wrap overflow-auto scroll-hint" id="table-scroll-wrap">
       <div id="table-loading" class="p-6 space-y-3">
@@ -530,6 +536,7 @@
     import { openScoutPanel } from './js/scoutPanel.js';
     import { renderWeekRecap } from './js/weekRecap.js';
     import initPit, { resetPit, revealHand } from './js/blackjack.js';
+    import { loadPlayoffState, setPlayoffTheme, renderPlayoffBanner, renderHoldNote } from './js/playoffState.js';
 
     // DOM
     const seasonSelect = document.getElementById('season-select');
@@ -591,6 +598,8 @@
     // every page load, but only for the live week - unbounded, week 12 would mean
     // forty cells spinning before anybody could read a score.
     let liveWeek = null;
+    // Playoff seeds + autopilot state for the season on screen (js/playoffState.js).
+    let playoffState = null;
     let lastGames = [];
 
     // kickoff times
@@ -955,7 +964,7 @@
         // started loading it - see the matching check in startup() below.
         if (hashTiebreakerConsumed) { hashTiebreakerConsumed = false; return; }
 
-        if (Number.isFinite(maxPickedWeek2) && maxPickedWeek2 > 15) {
+        if ((Number.isFinite(maxPickedWeek2) && maxPickedWeek2 > 15) || playoffState?.active) {
           currentWeek = 'playoff';
           isPlayoffView = true;
           weekSelect.value = 'playoff';
@@ -1026,9 +1035,9 @@
       }
 
       // Default behavior:
-      // - If max picked week > 15, default to playoff
+      // - If the season has playoff seeds, or max picked week > 15, default to playoff
       // - Else default to max picked regular week (week 1-15)
-      if (Number.isFinite(maxPickedWeek) && maxPickedWeek > 15) {
+      if ((Number.isFinite(maxPickedWeek) && maxPickedWeek > 15) || playoffState?.active) {
         currentWeek = 'playoff';
         isPlayoffView = true;
         weekSelect.value = 'playoff';
@@ -1193,7 +1202,11 @@
       }
 
       const maxPickedWeek = uniqueWeeks[uniqueWeeks.length - 1];
-      hasPlayoffOption = maxPickedWeek > 15;
+      // Seeds are the switch (written by hand or by the playoff autopilot), so
+      // the Playoff board exists from the moment they do, before any playoff
+      // game has been picked.
+      playoffState = await loadPlayoffState(supabase, season);
+      hasPlayoffOption = maxPickedWeek > 15 || playoffState.active;
 
       const regularWeeks = uniqueWeeks.filter(w => w <= 15);
       weeks = regularWeeks;
@@ -1417,6 +1430,7 @@
       renderTable(teams, {}, {}, true, winsByTeamRegular, false);
       setWeeklySubmissionsVisible(false);
       showTable();
+      refreshPlayoffChrome();
 
       status(teams.length
         ? `Season ${currentSeason} — no games picked yet. Showing all ${teams.length} teams.`
@@ -1519,6 +1533,7 @@
         { season: currentSeason, week, games, teams: teamsSorted })
         .catch(e => console.warn('week recap unavailable:', e));
 
+      refreshPlayoffChrome();
       saveSnapshot();
       startLiveTicker();
       startRevealCountdown();
@@ -1527,6 +1542,18 @@
       } else {
         status(`Season ${currentSeason} • Week ${week}`);
       }
+    }
+
+    // Playoff look: on for the newest season once it has seeds (every board),
+    // and on any season's playoff boards. Banner on the playoff board; the
+    // autopilot's "waiting on" note on the newest season while it holds.
+    function refreshPlayoffChrome(){
+      const st = playoffState && playoffState.season === currentSeason ? playoffState : null;
+      const newest = seasons.length && currentSeason === seasons[seasons.length - 1];
+      const on = !!st && ((newest && st.active) || isPlayoffView || isPlayoffTbView);
+      setPlayoffTheme(on);
+      renderPlayoffBanner(document.getElementById('playoff-banner'), st, { show: on && isPlayoffView });
+      renderHoldNote(document.getElementById('playoff-hold'), st, { show: !!newest && !isTiebreakerView });
     }
 
     async function loadPlayoffWeek(){
@@ -1575,17 +1602,14 @@
         lineMap[g.GameId]   = (typeof g.line === 'number') ? g.line : (g.line!=null? Number(g.line): null);
       });
 
-      const { data: playoffRows, error: poErr } = await supabase
-        .from('playoffs')
-        .select('team_id, seed, teams ( team_name )')
-        .eq('season', currentSeason)
-        .order('seed', { ascending: true });
-      if (poErr) return status('Could not load playoff seeds.', true);
+      // Same seeds query as before, via js/playoffState.js, which also swaps in
+      // the projected field under ?playoffs=preview.
+      const poState = await loadPlayoffState(supabase, currentSeason);
       if(mySeq !== loadSeq) return;
 
-      let playoffTeams = (playoffRows || []).map(r => ({
+      let playoffTeams = poState.seeds.map(r => ({
         team_id: r.team_id,
-        team_name: r.teams?.team_name || `Team ${r.team_id}`,
+        team_name: r.team_name,
         seed: r.seed
       }));
 
@@ -1634,9 +1658,10 @@
 
       saveSnapshot();
       startLiveTicker();
+      refreshPlayoffChrome();
       status(seedsMissing
         ? `Season ${currentSeason} • Playoff — no seeds set, showing all teams.`
-        : `Season ${currentSeason} • Playoff`);
+        : `Season ${currentSeason} • Playoff${poState.preview ? ' (preview)' : ''}`);
     }
 
 
@@ -1779,6 +1804,7 @@
         initPit(document.getElementById('pit')).then(ok => { if (ok) revealHand(); }).catch(() => {});
       }
 
+      refreshPlayoffChrome();
       startLiveTicker();
       const decided = games.filter(g => g.winner != null).length;
       status(`Season ${currentSeason} \u2022 ${label} \u2014 ${decided} of ${games.length} settled. These do not count toward season points.`);
@@ -2554,6 +2580,11 @@
       rows.forEach(team=>{
         const tr = document.createElement('tr');
         tr.className = 'border-t border-[rgba(231,231,231,.08)] hover:bg-[rgba(233,185,73,.04)]';
+        if (playoffMode && isPlayoffView && team.seed != null) tr.dataset.seed = String(team.seed);
+        if (shouldInsertDivider && !playoffMode) {
+          const at = teams.indexOf(team);
+          if (at >= 0 && at <= lastCutIndex) tr.dataset.inField = '1';
+        }
 
         if (currentTeamId != null && team.team_id === currentTeamId) {
           tr.dataset.me = 'true';
@@ -2593,6 +2624,13 @@
         } else {
           tdTeam.textContent = team.team_name;
           if (isSelf) tdTeam.title = 'You cannot scout yourself';
+        }
+        if (tr.dataset.seed) {
+          const b = document.createElement('span');
+          b.className = 'po-seed-badge';
+          b.textContent = tr.dataset.seed;
+          b.title = `Seed ${tr.dataset.seed}`;
+          tdTeam.prepend(b);
         }
         tr.appendChild(tdTeam);
 
