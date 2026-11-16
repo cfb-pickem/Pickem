@@ -1059,9 +1059,9 @@ def no_injury_lines(question: str, hit: list[dict]) -> str:
     for g in hit:
         injured = {_abbr_key(x["player"]).split(".", 1)[-1].lower() for x in g.get("injuries") or []}
         known = {p.lower() for p in g.get("players") or []}
-        for w in dict.fromkeys(re.findall(r"\b[A-Z][a-z'\-]{3,}\b", question or "")):
-            if w.lower() in known and w.lower() not in injured:
-                out.append(f"  NO injury reported in the live feed for {w} ({g['away']['name']} at {g['home']['name']}): "
+        for w in dict.fromkeys(re.findall(r"\b[A-Za-z][a-z'\-]{3,}\b", question or "")):  # 'did kienholz get hurt' too
+            if w.lower() in known and w.lower() not in injured and w.lower() not in _COMMON:
+                out.append(f"  NO injury reported in the live feed for {w.capitalize()} ({g['away']['name']} at {g['home']['name']}): "
                            f"no 'injured on the play' note for him. Say there's no report; don't confirm the rumor.")
     return ("\n" + "\n".join(out)) if out else ""
 
