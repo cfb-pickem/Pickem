@@ -305,6 +305,24 @@ check("reported label shown", any("[REPORTED" in news.story_line(s, T0) for s in
 check("lede: first sentence, not the headline again",
       news.lede({"title": "A", "summary": "No. 3 Texas won. More."}) == "No. 3 Texas won.")
 
+# --- daily offline QA (fake Opus / fake repair: no Anthropic in tests) --------------------------
+import news_qa  # noqa: E402
+news_qa.LOG = Path(tempfile.mkdtemp()) / "qa.log"
+rows = news_qa.sample(cache2)
+check("qa sample: stories with derived fields + merged/superseded", rows and {"teams", "status", "label", "merged",
+      "superseded"} <= set(rows[0]) and any(r["superseded"] for r in rows), rows[:2])
+fixed = []
+r = news_qa.run(opus=lambda p: {"errors": []}, fixer=fixed.append, cache=cache2)
+check("qa: clean verdict -> ok, no repair", r["result"] == "ok" and not fixed, r)
+r = news_qa.run(opus=lambda p: {"errors": [{"id": i, "field": "status", "why": "x"} for i in range(len(rows))]},
+                fixer=lambda w: fixed.append(w) or {"result": "rejected", "branch": "b"}, cache=cache2)
+check("qa: many wrong -> repair branch requested with examples", r["result"] == "needs fix" and fixed
+      and "status" in fixed[0] and r["repair"]["branch"] == "b", r)
+def _down(p):
+    raise RuntimeError("anthropic down")
+r = news_qa.run(opus=_down, fixer=fixed.append, cache=cache2)
+check("qa: Anthropic down -> skipped, nothing else happens", r["result"] == "skipped")
+
 # --- chat rider: triggers on news asks, quiet otherwise ----------------------------------------
 try:
     import chat
