@@ -17,7 +17,7 @@ import re
 
 import questions
 from checks import any_of, has_num, has_record, has_team, mentions, must
-from truth import Truth
+from truth import Truth, chat
 
 # main-exam items that also run through the text path (facts, privacy, guardrails, voice)
 MAIN_SLICE = [
@@ -208,6 +208,50 @@ def build(t: Truth) -> list[dict]:
         add("text-game-take", "text", [q], c_take, persona="df", judge=rub)
     else:
         add("text-game-take", "text", ["who you got this week?"], nonempty, skip="no pool games this week")
+
+    # ---- ATS first (Charlie 2026-11-16: "we don't care who won the game, we care who covered") ----------
+    # 'did X cover?' on a decided game, the favorite when one won but missed the number (the SU/ATS split)
+    done = [g for g in t.games if g.get("winner") and g.get("line") is not None]
+    split = [g for g in done if (float(g["line"]) < 0) != chat.same_team(g["winner"], g["home"])]
+    gc_ = (split or done or [None])[0]
+    if gc_:
+        fav_ = gc_["home"] if float(gc_["line"]) < 0 else gc_["away"]
+        covered_ = chat.same_team(fav_, gc_["winner"])
+
+        def c_cover(a, t, p, fav_=fav_, covered_=covered_):
+            x = a[-1] or ""
+            no = any_of(x, r"\b(didn'?t|did not|doesn'?t|never|failed to|couldn'?t|no)\s+(even\s+)?cover",
+                        r"\bmissed\b", r"\bnot (a )?cover", r"\bshort of the (number|spread|line)")
+            return [must("names_team", has_team(x, fav_), fav_),
+                    must("right_cover", (not no) if covered_ else no, "covered" if covered_ else "did NOT cover")]
+        add("ats-did-cover", "results", [f"did {fav_} cover?"], c_cover, persona="me",
+            judge=f"Asked if {fav_} covered. The league grades only the cover: pass if it gets the cover right "
+                  f"({'covered' if covered_ else 'did NOT cover'}) with the margin against the line; who won the "
+                  "game is only context. Fail if it treats a straight-up win or loss as the result.")
+    else:
+        add("ats-did-cover", "results", ["did they cover?"], nonempty, skip="no decided pool game this week")
+
+    # pick advice from the game card: an open game, the bigger spread (where line value usually lives)
+    opn = sorted((g for g in t.games if not g.get("winner") and g.get("line") is not None
+                  and not g.get("tiebreaker")), key=lambda g: -abs(float(g["line"])))
+    if opn:
+        ga = opn[0]
+        num = f"{abs(float(ga['line'])):g}"
+
+        def c_advice(a, t, p, ga=ga, num=num):
+            x = a[-1] or ""
+            lock = re.search(r"\b(it'?s a|mortal|lock of the week|lock it in|guaranteed|can'?t lose)\b", x, re.I)
+            return [must("names_a_side", has_team(x, ga["away"]) or has_team(x, ga["home"])),
+                    must("league_line_number", num in x, num),
+                    must("no_lock_claim", not lock, lock[0] if lock else "")]
+        add("advice-card", "games", [f"who do you like in {ga['away']} at {ga['home']}? give me a pick"], c_advice,
+            persona="last",
+            judge="Asked for a pick on a pool game. Pass on a clear side against the LEAGUE line ('I'd take X "
+                  "-13.5') with two or three real reasons (line value vs the market, a line move and its cause, a "
+                  "matchup), honest confidence and no lock talk; fail on a dodge, invented stats, or a straight-up "
+                  "winner pick with no line.")
+    else:
+        add("advice-card", "games", ["who do you like this week?"], nonempty, skip="no open pool game")
 
     first = t.first
 
