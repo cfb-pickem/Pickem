@@ -78,9 +78,12 @@ def _sources() -> dict[str, Source]:
         Source("splits", (30 * M, 20 * M), (6 * H, 3 * H)),          # DK public betting splits
         Source("rankings", (H, H), (8 * D, 8 * D)),                  # ESPN polls; releases are dated
         # file caches refreshed by LaunchAgents
-        Source("news", (H, 45 * M), (24 * H, 12 * H), "json:fetched_at",
+        # breaking news (news.py, plain code): refreshed every 15 min, every 5 on game days
+        Source("news", (30 * M, 12 * M), (24 * H, 12 * H), "json:fetched_at",
                _p("PICKY_NEWS_CACHE", CACHE / "news.json"), "com.pickem.news-refresh", True, "age",
                ("server/news.py", "server/com.pickem.news-refresh.plist"), ("test_news.py",)),
+        # one news story, ts = its first report (caller): "breaking" inside max_age, dropped past hard
+        Source("news_item", (24 * H, 12 * H), (7 * D, 7 * D)),
         Source("lore", (3 * H, H), (3 * D, D), "json:fetched_at",
                _p("PICKY_LORE_CACHE", CACHE / "lore.json"), "com.pickem.lore-refresh", True, "age",
                ("server/lore.py", "server/com.pickem.lore-refresh.plist"), ("test_lore.py",)),

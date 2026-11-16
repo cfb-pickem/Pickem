@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Live CFB news for Picky (news.py): Ross Dellenger's Yahoo articles + ESPN
-  + CBS college football news, cached to server/cache/news.json (headline,
-  date, link, short summary; 7 days). Fires every 15 min; news.py itself
-  skips unless 30 min have passed (15 on Saturdays 11am-midnight CT).
-  Free public feeds only; Ollama (local) only to condense the rare long blurb,
-  and only while chat has no member traffic. chat.py reads the cache only.
-  Install: cp to ~/Library/LaunchAgents and launchctl load it.
+  Breaking CFB news for Picky (news.py, plain code end to end: no Opus, no
+  Ollama): ESPN, Yahoo, CBS, The Athletic, On3, Action Network, AP + insiders'
+  bylines, deduped across outlets, tagged, superseded, cached to
+  server/cache/news.json (7 days). Fires every 5 min; news.py runs every 15
+  min, every 5 on game days or while a game is live. chat.py reads the cache.
+  Install: cp to ~/Library/LaunchAgents, then launchctl bootstrap gui/$UID it.
 -->
 <plist version="1.0">
 <dict>
@@ -22,7 +21,7 @@
     <key>WorkingDirectory</key>
     <string>/Users/Agent/cfb-pickem/server</string>
     <key>StartInterval</key>
-    <integer>900</integer>
+    <integer>300</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
@@ -33,8 +32,6 @@
     <dict>
         <key>PATH</key>
         <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
-        <key>PICKEM_CHAT_MODEL</key>
-        <string>gemma4:12b-it-qat</string>
     </dict>
 </dict>
 </plist>

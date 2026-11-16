@@ -1334,10 +1334,11 @@ def news_intel(cache: dict | None, teams: list[str], max_tags: int = 3) -> list[
     out = []
     for it in ((cache or {}).get("items") or {}).values():
         tags = it.get("teams") or []
-        if not tags or len(tags) > max_tags or not keys & {cfbd.norm(t) for t in tags}:
-            continue
+        if not tags or len(tags) > max_tags or not keys & {cfbd.norm(t) for t in tags} or it.get("superseded_by"):
+            continue  # superseded: a newer status / confirmation replaced it (news.py)
         out.append({"teams": tags, "players": it.get("players") or [], "title": it.get("title"), "summary": it.get("summary"), "date": it.get("date"),
-                    "source": "Dellenger" if it.get("dellenger") else it.get("source")})
+                    "source": "Dellenger" if it.get("dellenger") else it.get("source"),
+                    "kind": it.get("kind"), "status": it.get("status")})  # news.py's injury tagging
     return out
 
 

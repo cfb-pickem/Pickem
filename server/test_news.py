@@ -4,7 +4,7 @@ news_for() lookup chat.py will use.
 
 Run:  ./.venv/bin/python3 -I test_news.py
 
-Offline: fixture feeds and a hand-built tagger; no network, no Ollama.
+Offline: fixture feeds and a hand-built tagger; no network, no LLM (the pipeline has none).
 """
 
 from __future__ import annotations
@@ -148,40 +148,185 @@ line = news.news_line({"title": "Same", "summary": "Same.", "source": "ESPN", "d
 check("summary that just repeats the headline is omitted", line == "Nov 14, ESPN: Same", line)
 
 # --- cadence ------------------------------------------------------------------------
+import os, json, tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+os.environ["PICKY_LIVE_CACHE"] = "/nonexistent/live_games.json"
+news.LIVE_CACHE = Path(os.environ["PICKY_LIVE_CACHE"])
 sat_game = dt.datetime(2026, 11, 14, 20, 0, tzinfo=dt.timezone.utc)  # Sat 2pm CT
 check("never fetched -> due", news.due({}, NOW))
-check("Saturday game window: due after 15 min",
-      news.due({"fetched_at": (sat_game - dt.timedelta(minutes=15)).isoformat()}, sat_game))
+check("game day: due after 5 min", news.due({"fetched_at": (sat_game - dt.timedelta(minutes=5)).isoformat()}, sat_game))
+check("game day: not due after 3 min",
+      not news.due({"fetched_at": (sat_game - dt.timedelta(minutes=3)).isoformat()}, sat_game))
 tue = dt.datetime(2026, 11, 17, 20, 0, tzinfo=dt.timezone.utc)
-check("weekday: not due after 15 min", not news.due({"fetched_at": (tue - dt.timedelta(minutes=15)).isoformat()}, tue))
-check("weekday: due after 30 min", news.due({"fetched_at": (tue - dt.timedelta(minutes=30)).isoformat()}, tue))
+check("weekday: not due after 10 min", not news.due({"fetched_at": (tue - dt.timedelta(minutes=10)).isoformat()}, tue))
+check("weekday: due after 15 min", news.due({"fetched_at": (tue - dt.timedelta(minutes=15)).isoformat()}, tue))
+with tempfile.TemporaryDirectory() as d:
+    lf = Path(d) / "live.json"
+    lf.write_text(json.dumps({"games": {"1": {"state": "pre", "start": "2026-11-17T22:00Z"}}}))
+    check("weekday MACtion kicking off within 3h -> live window (5-min cadence)", news.live_window(tue, lf))
+    lf.write_text(json.dumps({"games": {"1": {"state": "post", "start": "2026-11-17T01:00Z"}}}))
+    check("finished game -> no live window", not news.live_window(tue, lf))
 
-# --- Ollama condense (fake client: never touches the real model) ----------------------
-class _R:
-    def __init__(self, d): self.d = d
-    def json(self): return self.d
-    def raise_for_status(self): pass
+# --- feeds per run: insider rotation, google backoff ---------------------------------
+c0 = {}
+f1 = [f.name for f in news.feeds_for_run(c0, tue)]
+f2 = [f.name for f in news.feeds_for_run(c0, tue)]
+check("every desk each run + one insider, rotating", "espn_rss" in f1 and "ap" in f1
+      and [x for x in f1 if x.startswith("insider:")] != [x for x in f2 if x.startswith("insider:")], (f1, f2))
+c0["google_backoff_until"] = (tue + dt.timedelta(minutes=30)).isoformat()
+f3 = [f.name for f in news.feeds_for_run(c0, tue)]
+check("google feeds skipped while backed off", "ap" not in f3 and not any(x.startswith("insider:") for x in f3)
+      and "yahoo" in f3, f3)
+c0["feed_last"]["dellenger_author"] = tue.isoformat()
+check("30-min feed not refetched 5 min later",
+      "dellenger_author" not in [f.name for f in news.feeds_for_run(c0, tue + dt.timedelta(minutes=5))])
+
+# --- new parsers: bylines, publishers, AP, insiders -----------------------------------
+DC = 'xmlns:dc="http://purl.org/dc/elements/1.1/"'
+CBS2 = f"""<?xml version="1.0"?><rss version="2.0" {DC}><channel>
+<item><title>Sources: Florida State targeting Lane Kiffin's OC for head coach job</title><link>https://www.cbssports.com/a</link>
+<pubDate>Tue, 17 Nov 2026 18:00:00 +0000</pubDate><description>Florida State is zeroing in on its next coach.</description>
+<dc:creator>Matt Zenitz</dc:creator></item>
+<item><title>Kentucky hosts Florida in SEC matchup</title><link>https://www.cbssports.com/p</link>
+<pubDate>Tue, 17 Nov 2026 18:00:00 +0000</pubDate><description>Florida (4-6) at Kentucky (5-5), Nov. 21 at noon.</description></item>
+<item><title>Duke basketball rolls past Army</title><link>https://www.cbssports.com/b</link>
+<pubDate>Tue, 17 Nov 2026 18:00:00 +0000</pubDate></item>
+</channel></rss>"""
+z = news.parse_rss(CBS2, "CBS Sports")
+check("rss: dc:creator byline -> insider credit (Zenitz on CBS)", len(z) == 1 and z[0]["author"] == "Matt Zenitz"
+      and z[0]["insider"] == "Matt Zenitz", z)
+check("rss: auto game preview and other sports dropped", len(z) == 1, [i["title"] for i in z])
+check("credit reads 'CBS Sports' Matt Zenitz'", news.credit(z[0]) == "CBS Sports' Matt Zenitz", news.credit(z[0]))
+YH = f"""<?xml version="1.0"?><rss version="2.0" {DC} xmlns:y="http://y"><channel>
+<item><title>Oregon's Raiola named Big Ten player of the week</title><link>https://sports.yahoo.com/x</link>
+<pubDate>Tue, 17 Nov 2026 17:00:00 +0000</pubDate><description>Big day.</description><y:publisher>Ducks Wire</y:publisher></item>
+<item><title>Dellenger: inside the SEC cap vote</title><link>https://sports.yahoo.com/y</link>
+<pubDate>Tue, 17 Nov 2026 16:00:00 +0000</pubDate><description>The vote.</description><dc:creator>Ross Dellenger</dc:creator>
+<y:publisher>Yahoo Sports</y:publisher></item></channel></rss>"""
+y = news.parse_rss(YH, "Yahoo Sports")
+check("yahoo: syndicated item labeled by its publisher", y[0]["source"] == "Ducks Wire", y[0])
+check("yahoo: Dellenger byline -> dellenger + insider", y[1]["dellenger"] and y[1]["insider"] == "Ross Dellenger", y[1])
+GN_AP = """<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>UTEP fires coach Scotty Walden after 8th straight loss - AP News</title><link>https://news.google.com/a</link>
+<pubDate>Mon, 16 Nov 2026 16:00:00 GMT</pubDate><source url="https://apnews.com">AP News</source></item>
+<item><title>Some blog repost - Blog</title><link>https://news.google.com/b</link>
+<pubDate>Mon, 16 Nov 2026 16:00:00 GMT</pubDate><source url="https://b.com">Blog</source></item></channel></rss>"""
+ap = news.parse_gnews(GN_AP, ("AP News",), "AP")
+check("google news: source filter + suffix stripped + label", len(ap) == 1 and ap[0]["source"] == "AP"
+      and ap[0]["title"] == "UTEP fires coach Scotty Walden after 8th straight loss", ap)
+GN_T = GN_AP.replace("AP News", "ESPN")
+th = news.parse_gnews(GN_T, news.INSIDERS["Pete Thamel"], "ESPN", insider="Pete Thamel")
+check("insider search: kept only from his outlet, credited", len(th) == 1 and news.credit(th[0]) == "ESPN's Pete Thamel", th)
+
+# --- classify: topics, status, reported vs confirmed -------------------------------------
+C = news.classify
+check("injury out", C("Texas DL Hero Kanu undergoes season-ending surgery on arm")["status"] == "out")
+check("injury questionable", C("Arch Manning questionable vs. Arkansas with ankle injury")["status"] == "questionable")
+check("injury available", C("Arch Manning cleared to play Saturday after ankle injury")["status"] == "available")
+check("'will miss the playoff' is not an injury", C("LSU will miss the College Football Playoff")["kind"] is None)
+check("'likely to miss rest of season' = out + reported",
+      C("Michigan WR JJ Buchanan likely to miss rest of season with shoulder injury") ==
+      {"topics": ["injury"], "kind": "injury", "status": "out", "label": "reported"},
+      C("Michigan WR JJ Buchanan likely to miss rest of season with shoulder injury"))
+check("sources -> reported", C("Sources: Florida State targeting Kiffin's OC")["label"] == "reported")
+check("fires -> confirmed + coaching", C("UTEP fires coach Scotty Walden")["label"] == "confirmed"
+      and "coaching" in C("UTEP fires coach Scotty Walden")["topics"])
+check("'could' / 'may' alone don't make a report", C("Could Indiana vs. USC decide a playoff spot?")["label"] is None)
+
+# --- cluster / supersede / breaking rider ---------------------------------------------------
+T0 = dt.datetime(2026, 11, 17, 18, 0, tzinfo=dt.timezone.utc)  # Tue noon CT (not a game day)
 
 
-class _C:
-    def __init__(self, health): self.health, self.sent = health, []
-    def get(self, url, **kw): return _R(self.health)
-    def post(self, url, json=None, **kw):
-        self.sent.append(json)
-        return _R({"response": "Kansas won 37-14. Marshall ran for 164 yards."})
+def it(title, src, hours_ago, teams=(), players=(), summary="", insider=None):
+    x = news._item(title, "https://x/" + news.key_for(title)[:20], (T0 - dt.timedelta(hours=hours_ago)).isoformat(),
+                   summary, src, insider=insider)
+    x.update({"teams": list(teams), "players": list(players), "confs": []})
+    return x
 
 
-busy = _C({"gate": {"members_active": 1, "test_busy": False}})
-idle = _C({"gate": {"members_active": 0, "test_busy": False}})
-check("member chatting -> chat not idle", not news._chat_idle(busy))
-check("no members -> idle", news._chat_idle(idle))
-s2 = news._condense(idle, {"title": "Kansas wins"}, "long blurb " * 60)
-body = idle.sent[-1]
-check("condense uses chat's model + num_ctx, no thinking (no reload/evict of a different model)",
-      body["model"] == news.MODEL and body["options"]["num_ctx"] == 16384 and body["think"] is False, body)
-check("condense output is a short summary", s2 == "Kansas won 37-14. Marshall ran for 164 yards.", s2)
-check("long blurb kept in memory only for condensing",
-      "_desc" in news._item("t", "l", None, "x " * 300, "ESPN") and "_desc" not in news._item("t", "l", None, "short", "ESPN"))
+TG2 = news.Tagger(teams={"UTEP": "Conference USA", "Texas": "SEC", "Clemson": "ACC", "Tennessee": "SEC",
+                          "Arkansas": "SEC", "Iowa": "Big Ten", "Rice": "American Athletic"},
+                  players={"Arch Manning": "Texas", "Tait Reynolds": "Clemson"})
+feed = [
+    it("UTEP fires head coach Scotty Walden", "On3", 6, ["UTEP"], summary="UTEP fired Walden Monday."),
+    it("UTEP fires coach Scotty Walden after 8th straight loss", "AP", 5.5, ["UTEP"]),
+    it("UTEP fires Scotty Walden: Miners coach went 6-28", "CBS Sports", 5, ["UTEP"]),
+    it("Texas DL Hero Kanu undergoes season-ending surgery", "ESPN", 1, ["Texas"]),
+    it("Arch Manning questionable vs. Arkansas with ankle injury", "ESPN", 30, ["Texas", "Arkansas"], ["Arch Manning"]),
+    it("Arch Manning out vs. Arkansas, Texas rules him out with ankle injury", "Yahoo Sports", 2, ["Texas", "Arkansas"],
+       ["Arch Manning"], insider="Pete Thamel"),
+    it("Sources: Clemson QB Tait Reynolds expected to transfer", "ESPN", 20, ["Clemson"], ["Tait Reynolds"],
+       insider="Pete Thamel"),
+    it("Clemson QB Tait Reynolds announces he will transfer", "CBS Sports", 3, ["Clemson"], ["Tait Reynolds"]),
+    it("Iowa vs Rice Prediction, Pick, NCAAF Odds for Saturday", "Action Network", 4, ["Iowa", "Rice"]),
+    it("Tennessee vs Arkansas Prediction, Pick, NCAAF Odds for Saturday", "Action Network", 4, ["Tennessee", "Arkansas"]),
+    it("Tennessee hires new defensive coordinator", "ESPN", 60, ["Tennessee"]),
+]
+for x in feed:
+    x["pubDate"] = None
+cache2 = news.merge({"items": {}}, feed, T0)
+for x in cache2["items"].values():
+    x.update(news.classify(f"{x['title']}. {x.get('summary', '')}"))
+news.cluster(cache2, TG2)
+news.supersede(cache2, TG2)
+sts = news.stories(cache2)
+utep = [s for s in sts if "UTEP" in s["teams"]]
+check("same story from 3 outlets = 1 story with 3 sources", len(utep) == 1 and utep[0]["n_outlets"] == 3, [s["outlets"] for s in utep])
+check("Kanu and Manning stories stay separate (same team, different people)",
+      len([s for s in sts if "Texas" in s["teams"]]) == 2, [s["lead"]["title"] for s in sts if "Texas" in s["teams"]])
+check("two different games' prediction pieces don't merge",
+      len([s for s in sts if "betting" in s["topics"]]) == 2)
+q_item = next(x for x in cache2["items"].values() if "questionable" in x["title"])
+check("questionable superseded by the newer 'out'", bool(q_item.get("superseded_by")), q_item)
+r_item = next(x for x in cache2["items"].values() if x["title"].startswith("Sources: Clemson"))
+check("report superseded by the newer confirmation", bool(r_item.get("superseded_by")), r_item)
+
+L = news.breaking_for("any news on Arch Manning", cache=cache2, tg=TG2, now=T0)
+check("named player: newest status only, superseded 'questionable' gone",
+      len(L) == 1 and "[status: out]" in L[0] and "questionable" not in L[0], L)
+check("insider credit + hours label", L and L[0].startswith("2h ago, per Yahoo Sports' Pete Thamel"), L)
+L = news.breaking_for("what's the latest", cache=cache2, tg=TG2, now=T0)
+check("generic: newest first", L and L[0].startswith("1h ago") and all("Prediction" not in x for x in L), L)
+check("generic: multi-outlet story credited with its other outlets",
+      any("UTEP fires" in x and "(also " in x for x in L), L)
+check("generic: 60h-old item never shown as breaking",
+      all("defensive coordinator" not in x for x in L) or any("older, not breaking" in x for x in L), L)
+L = news.breaking_for("Tennessee news", cache=cache2, tg=TG2, now=T0)
+check("old item labeled 'older, not breaking' (never 'ago')",
+      any("Tennessee hires" in x and "(older, not breaking)" in x for x in L), L)
+L = news.breaking_for("is Clemson's QB playing", cache=cache2, tg=TG2, now=T0)
+check("availability ask with no injury item -> [] (no transfer filler)", L == [], L)
+L = news.breaking_for("is Texas's QB playing", cache=cache2, tg=TG2, now=T0)
+check("QB availability: QB items only (no DL surgery)", all("Kanu" not in x for x in L), L)
+check("superseded never in news_for either",
+      all("questionable" not in x for x in news.news_for("Arch Manning", cache=cache2, tg=TG2, limit=5)))
+check("reported label shown", any("[REPORTED" in news.story_line(s, T0) for s in
+                                  news.stories(cache2, include_superseded=True) if s["label"] == "reported"))
+check("lede: first sentence, not the headline again",
+      news.lede({"title": "A", "summary": "No. 3 Texas won. More."}) == "No. 3 Texas won.")
+
+# --- chat rider: triggers on news asks, quiet otherwise ----------------------------------------
+try:
+    import chat
+    d = tempfile.mkdtemp()
+    f = Path(d) / "news.json"
+    cache2["fetched_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    now_shift = dt.datetime.now(dt.timezone.utc) - T0
+    for x in cache2["items"].values():  # same ages relative to the real clock
+        x["date"] = (dt.datetime.fromisoformat(x["date"]) + now_shift).isoformat()
+    f.write_text(json.dumps(cache2))
+    news.CACHE_PATH, news._mem, news._tagger = f, None, TG2
+    n = chat.news_note("what's the latest")
+    check("rider: 'what's the latest' -> NEWS QUESTION with timed, attributed lines",
+          n.startswith("NEWS QUESTION") and " ago, per " in n and "newest first" in n, n[:300])
+    n = chat.news_note("any news on Arch Manning")
+    check("rider: 'any news on Arch Manning' -> his newest status", "[status: out]" in n and "questionable" not in n, n[:400])
+    n = chat.news_note("is Texas's QB playing this week")
+    check("rider: 'is Texas's QB playing' triggers", n.startswith("NEWS QUESTION"), n[:200])
+    for quiet in ("who's winning the pool?", "lol you suck picky", "what's my record", "take Iowa or Rice?"):
+        check(f"rider quiet on non-news: {quiet!r}", chat.news_note(quiet) == "", chat.news_note(quiet)[:120])
+except ImportError as e:
+    check(f"chat importable ({e})", False)
 
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

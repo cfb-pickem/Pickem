@@ -3540,7 +3540,10 @@ def leader_note(ctx: dict, question: str) -> str:
 _NEWS_ASK = re.compile(
     r"\b(news|headlines?|latest|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
     r"hot seat|buyout|transfer\w*|portal|decommit\w*|what'?s (going on|happening|new)|happening in|dellenger|"
-    r"tweet\w*|twitter|recruit\w*|suspend\w*|any updates?)\b", re.I)
+    r"tweet\w*|twitter|recruit\w*|suspend\w*|any updates?|breaking|questionable|doubtful|injury report|"
+    r"availability|game[- ]time decision|(is|are|will)\b[^?.!]{0,30}\b(qb|quarterback|starter)s?\b[^?.!]{0,20}"
+    r"\b(play|playing|start|starting|out|back|healthy|available|suit\w* up)|will [A-Z]\w+( [A-Z]\w+)? play)\b",
+    re.I)
 _TWEET_ASK = re.compile(r"\b(tweet\w*|twitter|x post|posts? on x|on x)\b", re.I)
 
 
@@ -3560,12 +3563,11 @@ def news_note(question: str) -> str:
         if not any(tags.values()) and len(rest.split()) >= 2:
             lines = []  # names something the feeds can't place (a fake team?): no keyword guessing
         else:
-            lines = news.news_for(q, limit=3)
-        asof = news.as_of()
+            lines = news.breaking_for(q, limit=5)  # plain-code pipeline: deduped, superseded, newest first
         fv = freshness.check("news", news.load_cache().get("fetched_at"))
         if not fv.use:
             return ""  # feed down past its hard limit: no news beats old news
-        asof = f"{asof}, last checked {fv.as_of}" if fv.hedge else asof
+        asof = f"{news.as_of()}, last checked {fv.as_of}" if fv.hedge else fv.as_of
     except Exception as e:  # noqa: BLE001 - a bad cache never breaks chat
         log.warning("news lookup failed: %s", e)
         return ""
@@ -3574,12 +3576,14 @@ def news_note(question: str) -> str:
     if not lines:
         return (f"NEWS QUESTION: {tweet}nothing in your news feed (as of {asof}) matches this. Say there's "
                 "nothing new on that as of then. Don't make anything up and don't fill with other topics.")
-    return ("NEWS QUESTION (free public feeds; these lines are all the news you know, as of "
-            f"{asof}):\n{tweet}" + "\n".join(f"- {ln}" for ln in lines)
-            + f"\nSay 'as of {asof}'. Credit 'per Ross Dellenger' on lines labeled Dellenger, 'per ESPN' or "
-            "'per CBS' on the others. Never add a detail, score, quote or claim beyond these lines. Live scores "
-            "and standings beat anything here. Injury news: report only what a line says; never call anyone "
-            "healthy.")
+    return ("NEWS QUESTION (free public feeds: " + news.sources_line() + "; these lines are all the news you "
+            f"know, newest first, as of {asof}):\n{tweet}" + "\n".join(f"- {ln}" for ln in lines)
+            + "\nLead with the newest line. Credit each line the way it's labeled ('per ESPN's Pete Thamel', "
+            "'per Action Network'; 'also' outlets mean several outlets have it) and keep its time ('2h ago'). "
+            "[REPORTED, not confirmed] = say 'reportedly'. [status: X] = that player's latest status. Only call "
+            "something breaking if its time is in minutes or hours; 'older, not breaking' lines are background. "
+            "Never add a detail, score, quote or claim beyond these lines. Live scores and standings beat "
+            "anything here. Injury news: report only what a line says; never call anyone healthy.")
 
 
 # Present-day CFB (Charlie, 2026-11-14): current CFP / AP rankings from ESPN's
