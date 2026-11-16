@@ -24,6 +24,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 TMP = Path(tempfile.mkdtemp())
 os.environ["PICKY_CALLBACKS_STATE"] = str(TMP / "callbacks.json")
+os.environ["PICKY_NO_REPEAT_STATE"] = str(TMP / "no_repeat.json")  # never the real ledger; cleared by reset()
 import callbacks as cb  # noqa: E402
 
 cb.GRADE_EVERY = float("inf")  # no background grading threads racing the fixtures
@@ -41,9 +42,9 @@ def ts(s: str) -> float:
 
 
 def reset():
-    p = cb.state_path()
-    if p.exists():
-        p.unlink()
+    for p in (cb.state_path(), TMP / "no_repeat.json"):
+        if p.exists():
+            p.unlink()
 
 
 # --- fixtures: week 11 (Sat 11/14) and week 12 (Sat 11/21) -------------------
