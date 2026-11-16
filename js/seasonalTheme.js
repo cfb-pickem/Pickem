@@ -71,7 +71,20 @@ function specialWeekTheme(seasonYear, games) {
   if (!games || !games.length) return null;
   const weeks = new Set(games.map(g => Number(g && g.week)));
   const hit = SPECIAL_WEEKS.find(s => s.season === Number(seasonYear) && weeks.has(s.week));
-  return hit ? hit.id : null;
+  if (!hit) return null;
+  // The board keeps showing a week until the next week's games post, so a themed
+  // week ends at 6am CT the day after its last kickoff (Charlie, 2026-11-16).
+  const starts = games
+    .filter(g => Number(g && g.week) === hit.week && g["Start (CT)"])
+    .map(g => new Date(g["Start (CT)"]).getTime())
+    .filter(t => !Number.isNaN(t));
+  if (starts.length) {
+    const end = new Date(Math.max(...starts));
+    end.setDate(end.getDate() + 1);
+    end.setHours(6, 0, 0, 0);
+    if (Date.now() > end.getTime()) return null;
+  }
+  return hit.id;
 }
 
 // If multiple windows overlap, earlier entries in HOLIDAY_THEMES win
