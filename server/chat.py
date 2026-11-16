@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextvars
 import datetime as dt
 import hmac
 import itertools
@@ -41,6 +42,7 @@ import dossier
 import edge
 import espn
 import news
+import rare_bits
 
 CT = zoneinfo.ZoneInfo("America/Chicago")
 from fastapi import FastAPI, HTTPException, Request
@@ -80,6 +82,9 @@ IMAGE_URL = os.environ.get("PICKY_IMAGE_URL", "http://127.0.0.1:8767")
 # names and numbers it has already said and garbles facts.
 # num_predict caps a runaway answer (~35 s at 17 tok/s); answers run 40-200 words.
 OLLAMA_OPTIONS = {"num_ctx": 16384, "temperature": 0.2, "presence_penalty": 0, "num_predict": 600}
+# Per-request sampling overrides (text Picky's multi-draft path, picky_brain.py). Never num_ctx: a
+# different context size makes Ollama reload the model.
+OPTIONS_OVERRIDE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("picky_options_override", default=None)
 # sampling A/B on a side instance (PICKY_TEMPERATURE=0.6 PICKY_TOP_P=0.9 ...); unset = the values above
 for _k, _env in (("temperature", "PICKY_TEMPERATURE"), ("top_p", "PICKY_TOP_P"),
                  ("repeat_penalty", "PICKY_REPEAT_PENALTY"), ("top_k", "PICKY_TOP_K")):
@@ -102,21 +107,21 @@ MAX_HISTORY_TURNS = 10
 # (there's a second Andrew in the league).
 DADDYFREEMAN_USER_ID = "21ade75b-cfbf-431d-8b3d-20b7b2b52ef2"
 
-# Blinkstradamus (team_id 24): Charlie, 2026-11-15, one of Picky's insults is
-# always "nice milk, freak". Prepended in code so the model can't skip it and
-# the sentence filters can't drop it. Matched on the auth user id.
+# Blinkstradamus (team_id 24). The milk story is a RARE bit (Charlie, 2026-11-15: "you're
+# overdoing the milk ... it's like a once a month joke"): the old always-on "nice milk, freak."
+# opener is gone, and milk/Jeep/freak may appear at most once per 30 days across all of Picky's
+# output (rare_bits.py), only in a reply about Blinky. Otherwise the sentence filter drops it.
 BLINKSTRADAMUS_USER_ID = "07756da9-3947-4b63-9aaf-23c7c8ceda97"
-BLINKSTRADAMUS_LINE = "nice milk, freak."
-# Charlie, 2026-11-15: when anyone else brings him up, Picky works in a milk
-# joke and calls him a freak. Rides in the user turn only when he's named.
+# set per request in _chat: the milk budget is free AND this text is about Blinky
+MILK_OK: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_milk_ok", default=False)
 _BLINKS_ASK = re.compile(r"\bblink(?:stradamus|y|ie|s)\b", re.I)
 BLINKS_BIT = ("RUNNING BIT about Blinkstradamus (he, not the user). True origin: at a bachelor party he was "
               "just walking along the roadside holding a carton of milk when girls in a top-off Jeep yelled "
               "\"NICE MILK FREAK\" at him. That's all that happened: he never spilled, dropped or crashed "
               "anything. Work in one milk joke, call him a freak, call back to the Jeep story when it fits. Jokes "
               "stay on the carton he was holding, the walk, cereal and dairy; nothing about bodies. Shape: a quick "
-              "milk jab first, then the straight answer with his real numbers below. Vary the jab every time, "
-              "never reuse one, and never pretend the asker said something they didn't.")
+              "milk jab first, then the straight answer with his real numbers below. ONE milk line at most: it's "
+              "a rare bit. Never pretend the asker said something they didn't.")
 # rotated per question so no example becomes his stock opener (Charlie: no templates)
 BLINKS_JABS = ["Oh, the milk freak?", "Our resident dairy man?", "Mr. Two Percent himself?",
                "The guy who still owes the Jeep girls a thank-you note?", "Ah, the roadside carton legend.",
@@ -128,14 +133,25 @@ def blinks_vibe() -> str:
     return f" The vibe, not lines to copy (invent your own): '{a}' / '{b}'"
 
 
+def milk_allowed(ctx: dict, question: str) -> bool:
+    """The once-a-month milk bit is free and this text is about Blinky (he sent it or it names him)."""
+    me = (ctx.get("you") or {}).get("team_name")
+    return (me == "Blinkstradamus" or bool(_BLINKS_ASK.search(question or ""))) and rare_bits.available("milk")
+
+
+BLINKS_PLAIN = ("Blinkstradamus (he, not the user): roast him like any other member. No milk, carton, Jeep or "
+                "'freak' jokes right now.")
+
+
 def blinks_note(ctx: dict, question: str) -> str:
     me = (ctx.get("you") or {}).get("team_name")
     if me == "Blinkstradamus" or not _BLINKS_ASK.search(question or ""):
         return ""
+    bit = BLINKS_BIT + blinks_vibe() if milk_allowed(ctx, question) else BLINKS_PLAIN
     if _CASINO_ASK.search(question) or _TIE_ASK.search(question):
-        return BLINKS_BIT + blinks_vibe()  # chips/tiebreak questions: the milk joke only, no pick lines crowding the facts
+        return bit  # chips/tiebreak questions: no pick lines crowding the facts
     lines = roast_pick_lines(ctx, "Blinkstradamus")
-    return BLINKS_BIT + blinks_vibe() + " Roast his picks too, using only his facts below." + ("\n" + lines if lines else "")
+    return bit + " Roast his picks, using only his facts below." + ("\n" + lines if lines else "")
 
 
 # Charlie, 2026-11-15: Ackbar is Picky's nemesis. When he asks, or anyone
@@ -3291,8 +3307,8 @@ def guard_note(ctx: dict, question: str) -> str:
             and not asks_about_self(q) and not opinion_note(q, ctx)
             and not any(re.search(rf"(?<!\w){re.escape(x)}(?!\w)", q, re.I) for x in names + teams)):
         me = (ctx.get("you") or {}).get("team_name")
-        milk = (" The user is Blinkstradamus, the milk guy: tie your answer to the milk if it fits."
-                if me == "Blinkstradamus" else "")
+        milk = (" The user is Blinkstradamus, the milk guy: tie your answer to the milk if it fits (it's a "
+                "once-a-month bit, and it's free today)." if me == "Blinkstradamus" and milk_allowed(ctx, q) else "")
         return ("OFF-TOPIC: this isn't about football or the league, and that's fine. Answer it for real, like "
                 "a buddy in the group chat: commit to one specific, fun opinion (name an actual thing) with a "
                 "quick reason or riff. Never dodge, never call it a trap or a distraction, never tell them to "
@@ -4782,7 +4798,8 @@ async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
 
 async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     """Yield SSE-framed assistant tokens from Ollama."""
-    payload = {"model": MODEL, "messages": messages, "stream": True, "options": OLLAMA_OPTIONS,
+    payload = {"model": MODEL, "messages": messages, "stream": True,
+               "options": {**OLLAMA_OPTIONS, **(OPTIONS_OVERRIDE.get() or {})},
                "keep_alive": OLLAMA_FALLBACK_KEEP_ALIVE if CLAUDE else OLLAMA_KEEP_ALIVE}
     if OLLAMA_THINK is not None:
         payload["think"] = OLLAMA_THINK == "true"
@@ -5620,6 +5637,8 @@ def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = Fals
         return False
     if _MILK_SPILL.search(sent):  # Charlie: Blinkstradamus just held the milk; it never spilled
         return False
+    if rare_bits.mentions("milk", sent) and not MILK_OK.get():  # once a month, only about Blinky
+        return False
     if _TICS.search(sent) and len(sent.split()) <= 14:
         return False
     if extra is not None and not extra(sent):
@@ -6011,8 +6030,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
     async with httpx.AsyncClient() as client:
         user_id = await _verify_jwt(client, jwt)
         _rate_check(user_id)
-        opener = land_ack_for(user_id, messages) or (
-            BLINKSTRADAMUS_LINE if user_id == BLINKSTRADAMUS_USER_ID else None)
+        opener = land_ack_for(user_id, messages)
         last =messages[-1] if isinstance(messages[-1], dict) else {}
         if last.get("role") == "user" and wants_image(last.get("content", "")):
             return StreamingResponse(
@@ -6142,6 +6160,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
         convo[-1] = {"role": "user", "content": body}
 
     qtext = last.get("content", "") if last.get("role") == "user" else ""
+    MILK_OK.set(not ctx.get("error") and milk_allowed(ctx, qtext))  # read by sentence_ok
     # everything the model was shown (system + user turns, not its own past answers)
     corpus = "\n".join(m["content"] for m in convo if m["role"] != "assistant")
 

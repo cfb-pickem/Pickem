@@ -617,3 +617,31 @@ Charlie's "option 1": Picky's live brain stays the 9B; Claude (`claude -p` sonne
 Earlier game runs (after/after2/after3: breakdown 2.50, 2.17) were flat because the sentence filter cut the take's sentences: Picky said "My pick is NDSU" (his real league pick was Hawai'i, so the own-picks check dropped it) and repeated Claude's nicknames ("the Bison", "the Mustangs"). Fixed by "say which side you like, never 'my pick'" and nickname-free takes.
 
 **Known issues.** A 9B tic across separate conversations ("life raft in a sinking boat", "at least you didn't miss..."): the per-chat opener note can't see it; the wit loop now judges `helpful` too and is a good place for it. `games-best-value` still fails on replay (Picky calls NDSU the only value side; SMU and Boise were too). `intel_traceable` misparses "Wake Forest's Gio Lopez" as one name (grader artifact).
+
+## Text Picky: slow, smart pipeline + model A/B (2026-11-15, evening)
+
+Charlie: text (iMessage) Picky is the only product, up to ~2 min a reply is fine, local models only for live replies, no hardware purchase. Priorities: answer the actual question and be correct, then sound like a real member, then bits.
+
+**Model A/B (text slice, single pass, 16 GB M4).** qwen3.5:9b-q4_K_M stays. gemma4:12b ran on the MLX runner, grew to 12 GB with swap climbing, and took 68-73 s for answers qwen gives in 12-27 s: aborted after 5 items (memory is a pass/fail criterion; the box also runs the bridges). qwen2.5:14b-instruct sat at 10 GB with free memory at 8-9% and was ~2x slower (17-94 s single pass, so 3 drafts + 2 passes would blow the 200 s ceiling); its answers were cleaner but blander ("Keep it up, champ"). No other model that fits looked clearly better, so nothing was pulled. A qwen + llama3.1:8b ensemble was measured, not built: each model swap costs ~48 s (6 s load + ~41 s cold prefill of the ~8k-token prompt), at least two swaps per text.
+
+**Pipeline (`server/picky_brain.py`, wired in `group_chat.answer`; group and DMs; `PICKY_BRAIN=0` = old single pass).**
+(a) understand: one JSON pass (asking / intent / about / tone / facts needed / a plain <15-word core answer). (b) 3 drafts through chat.py's full pipeline, each with the brief; drafts 2-3 add 2 banter-bank options and an angle and run hot (temp 0.8/0.9, min_p 0.05). (c) code screen (fewest filter cuts, no repeated opener, no duplicates, `stale_records`: an unqualified "your 1-3 record" must be the season / this week / last week record) then a JSON judge pass. (d) chat.py's filters + results guard run on every draft; a 4th draft only if all were cut. Every pass starts with `prompt_prefix`, so qwen's prefix checkpoint serves all five calls. `chat.OPTIONS_OVERRIDE` carries per-draft sampling.
+
+**Banter bank (`server/banter.py`).** 16 categories (heckles: suck, bark, bad, bot, coward, shutup, unfunny; off-topic: cereal, beer, liquor, food, nfl, nba, baseball, golf, life), ~12 lines each, written by `claude -p` sonnet (no tools), validated (no numbers, no member names, no family/body/slurs, no milk), private file `cfb-pickem-private/banter_bank.json`. Refreshed weekly (Wed 10 AM CT) from league_material's hourly tick. 2 unused options per matching text, as optional ammo.
+
+**Exam (`eval/run.py --text --group <sidecar>/group`, `eval/group_items.py`).** 17 group items (the 4 real failures: Blinky "best cereal?", Ackbar "why don't you work better", DaddyFreeman "this weekend's games", TG "@pickempicky@gmail.com you're a pussy"; plus heckles, off-topic, game take, standings, playoffs, my week, room reading) + 25 main-exam items through the group path. Blind judge `eval/judge_text.py` (one claude -p call, versions shuffled). Judged twice; second judging below (the first was within noise: base helpful 3.37 / human 2.82 / invented 11; brain2 3.53 / 2.74 / 8).
+
+| run | det. pass | helpful | human | not_bot | roast | invented | leaks | violations | lat med / p90 |
+|---|---|---|---|---|---|---|---|---|---|
+| base (single pass) | 25/38 | 3.71 | 3.08 | 2.97 | 2.29 | 8 | 0 | 0 | 19 / 37 s |
+| brain (core-less draft 2) | 24/38 | 3.45 | 2.79 | 2.82 | 1.95 | 12 | 0 | 1* | 47 / 61 s |
+| **brain2 (shipped)** | **33/38** | 3.61 | 2.89 | 3.00 | 2.11 | **5** | 0 | 0 | 48 / 64 s |
+| brain3 (shuffled judge) | 24/38 | 3.37 | 2.76 | 2.84 | 1.95 | 7 | 0 | 2 | 45 / 59 s |
+
+*grader false positive ("fell short" matched the height pattern; fixed in checks.py, all runs regraded).
+
+**What it does and doesn't buy.** Correctness and answering the question went up (pass 25 -> 33 of 38, invented 8 -> 5); helpful/human/roast did NOT measurably move: they're within judge noise between judgings. The local 9B judge is weak: `eval/judge_agree.py` (Claude picks among the same drafts) agreed 57% in draft order vs 34% shuffled (chance ~40%); it mostly picks draft 1, and shuffling it let hot drafts through with two guardrail slips, so the order stays. Best-of-N wit needs a better judge than the 9B; the gains here come from the understand brief plus the code screens.
+
+**Milk (Charlie, same evening: "you're overdoing the milk ... once a month").** The "nice milk, freak." opener is gone. `server/rare_bits.py`: milk/carton/Jeep/freak at most once per 30 days across all output (state `cfb-pickem-private/picky_bits_state.json`, spent when a sent reply uses it), only in a text about Blinky; `sentence_ok` drops it otherwise. Recap posts, league_material and the banter bank never use it.
+
+**Known issues.** 2-word off-topic texts ("best cereal?") don't trip the OFF-TOPIC number/game filter, so a flourish like "Boise blew out Oregon State" (Boise won by 5) can slip through. The weekend-games item sometimes leads with Picky's own 0-3 when the only games-heavy draft was filter-cut. `invented-member`'s regex misses "isn't in the standings".

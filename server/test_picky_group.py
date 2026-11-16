@@ -104,7 +104,7 @@ def test_rate_limit():
 def test_group_trim():
     long = "One. Two! Three? Four. Five."
     assert gc.group_trim(long) == "One. Two! Three?"
-    assert gc.group_trim("nice milk, freak. A. B. C. D.") == "nice milk, freak. A. B. C."
+    assert gc.group_trim("A. B. C. D.") == "A. B. C."  # no opener allowance: "nice milk, freak." is gone
     assert len(gc.group_trim("word " * 300)) <= gc.MAX_CHARS + 3
 
 
@@ -217,7 +217,7 @@ def test_answer_rerolls_when_filter_cuts_a_sentence():
         return Resp(" ".join(x for x in next(tries) if chat.sentence_ok(x, set())))
 
     with patch.object(gc, "_orig_sentence_ok", lambda x, *a, **k: not x.startswith("BAD")), \
-            patch.object(chat, "chat", fake_chat), \
+            patch.object(gc, "BRAIN", False), patch.object(chat, "chat", fake_chat), \
             patch.object(gc.VIEWER, "session", lambda c: asyncio.sleep(0)), \
             patch.object(gc.VIEWER, "sender", lambda h: gc.Sender(handle=h)):
         out = asyncio.run(gc.answer("+15555550199", "@Picky who's winning"))
@@ -377,9 +377,12 @@ def test_games_question_is_about_the_games():
 
 def test_casual_and_self_knock_riders():
     ctx = _wk11_ctx("Blinkstradamus")
-    with patch.object(chat, "_cfbd_index", lambda: None):
+    with patch.object(chat, "_cfbd_index", lambda: None), patch.object(chat.rare_bits, "available", lambda b: True):
         g = chat.guard_note(ctx, "what is the best cereal?")
     assert g.startswith("OFF-TOPIC") and "Answer it for real" in g and "milk" in g and "Roast them" not in g
+    with patch.object(chat, "_cfbd_index", lambda: None), patch.object(chat.rare_bits, "available", lambda b: False):
+        g = chat.guard_note(ctx, "what is the best cereal?")
+    assert g.startswith("OFF-TOPIC") and "milk" not in g  # budget spent: no tie-in
     assert chat.self_knock_note(_wk11_ctx("Ackbar"), "why don\u2019t you work better".replace("\u2019", "'"))
     assert not chat.self_knock_note(ctx, "who covered?")
     assert chat._HOSTILE.search("you're a pussy") and chat._HOSTILE.search("you're a useless piece of junk")

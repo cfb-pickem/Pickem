@@ -8,7 +8,7 @@ minutes. A tick detects the group, exits if paused, and otherwise decides what
 is due (Central time):
 
   recap     Sunday 9:00 (until Mon 9:00), once per fully-final pool week:
-            worst pick, chalk of the week, best call, milk freak update,
+            worst pick, chalk of the week, best call,
             Picky's own week, then the playoff math (deterministic text).
   preview   Thursday 12:00 until the week's first kickoff: the slate, Picky's
             card (his submitted picks, else what his pick logic leans today)
@@ -62,6 +62,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import group_outbox as ob  # noqa: E402
 import playoff_race as pr  # noqa: E402
+import rare_bits  # noqa: E402
 
 log = logging.getLogger("picky.posts")
 CT = zoneinfo.ZoneInfo("America/Chicago")
@@ -285,9 +286,8 @@ Wit over volume: callbacks, specific absurd comparisons, short punchlines. Never
 race, religion or sexuality, no slurs. Never call yourself a bot, an AI, or an exhibition entry.
 
 Running bits (use when they fit, never forced, never the same joke twice):
-- Blinky (team Blinkstradamus) is "the milk freak". True story: at a bachelor party he was walking along the
-  road HOLDING a carton of milk when girls in a top-off Jeep yelled "NICE MILK FREAK" at him. That's all. He
-  never spilled, dropped or crashed anything. Milk, cereal and dairy jokes about the carton he was holding.
+- Blinky (team Blinkstradamus): roast him like anyone else. No milk, carton, Jeep or "freak" jokes in posts
+  (Charlie: it's a once-a-month bit, and live replies ration it).
 - Ackbar is your nemesis: a chalk merchant who always takes the favorite. Be openly antagonistic, friendly
   league roast. Only quote his favorite percentage if it's in the facts.
 - Charlie (team Chuck P) is the commissioner. When you mention him, a little North Korean state-media worship
@@ -358,6 +358,8 @@ def validate(texts: list[str], facts: list[str], lg_names: dict[str, str], recen
             probs.append(f"text {i + 1} calls Picky a bot/AI/exhibition")
         if "milk" in low and re.search(r"\b(spill\w*|dropp?\w*|crash\w*|knock\w* over)\b", low):
             probs.append(f"text {i + 1} breaks the milk canon (he never spilled or dropped anything)")
+        elif rare_bits.mentions("milk", t):
+            probs.append(f"text {i + 1} uses the milk bit (once a month at most, never in posts); drop it")
         if _BODY.search(t):
             probs.append(f"text {i + 1} goes after bodies or family")
         who = mentioned(t, lg_names)
@@ -489,7 +491,7 @@ def recap_facts(lg: League, w: int) -> tuple[list[str], dict]:
                  + f" (of {len(rows)}).")
     b = "Blinkstradamus"
     if b in wk:
-        facts.append(f"MILK FREAK UPDATE: Blinky went {wk[b][0]}-{wk[b][1]} in week {w}; season {pts[b]}-{los[b]}, "
+        facts.append(f"Blinky went {wk[b][0]}-{wk[b][1]} in week {w}; season {pts[b]}-{los[b]}, "
                      f"{_ord(rk[b])} place.")
         mv = material_fact(rf"Blinkstradamus moved from \d+\w+ to \d+\w+ place in week {w}\b")
         if mv:
@@ -527,7 +529,7 @@ def race_text(lg: League) -> tuple[str, dict, dict]:
 def make_recap(lg: League, w: int, writer=run_writer) -> list[str] | None:
     facts, _ = recap_facts(lg, w)
     task = (f"Sunday morning recap of week {w}, posted in the group. Hand out the awards with personality: worst pick, "
-            "chalk of the week, best call, a milk freak update on Blinky, and own your own week honestly "
+            "chalk of the week, best call, and own your own week honestly "
             "(brag if good, excuses if bad). A few short texts, conversational, not a report. Don't do playoff "
             "math: that goes in a separate text after yours.")
     texts, probs = write(task, facts, lg.names, writer=writer)

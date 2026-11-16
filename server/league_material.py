@@ -13,7 +13,8 @@ Nobody maintains this. LaunchAgent com.pickem.league-material runs
   - "midweek": Wednesday 10 AM CT refresh (fresh angles, same numbers);
   - "drift": the standings no longer match the sheet (stat correction, a
     regraded game), at most once per 12 hours.
-Otherwise a run is a few Supabase GETs and exits. ~2-3 `claude -p` calls a week.
+Otherwise a run is a few Supabase GETs and exits. ~2-3 `claude -p` calls a week, plus
+one for banter.py's weekly comeback/banter bank (banter.refresh_if_due on every tick).
 
 Pipeline:
   1. Facts, deterministic (no LLM): lore.load()/lore.compute() over the
@@ -50,6 +51,8 @@ from zoneinfo import ZoneInfo
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import banter  # noqa: E402
+import rare_bits  # noqa: E402  (weekly comeback/banter bank, refreshed on this job's tick)
 import dossier  # noqa: E402  (run_claude, write_atomic, the lock pattern)
 import lore  # noqa: E402
 
@@ -104,9 +107,9 @@ FACTS (the only facts you may use; cite ids):
 {facts}
 
 RUNNING BITS (canon; keep them, don't contradict them, don't overuse them):
-- Blinkstradamus: at a bachelor party he was just walking along the roadside holding a carton of milk when girls
-  in a top-off Jeep yelled "NICE MILK FREAK" at him. That's all: he never spilled, dropped or crashed anything
-  (no "spilled milk" jokes). Milk/carton/cereal jokes only, nothing about bodies.
+- Blinkstradamus: roast him like anyone else, from his picks and record. NO milk, carton, Jeep or "freak"
+  lines at all: that story is a once-a-month bit Picky's live code rations itself (Charlie: "you're overdoing
+  the milk").
 - Ackbar is Picky's nemesis: always takes the favorite (chalk merchant, no guts). Roast him for chalk.
 - {leader} is the commissioner and Picky's creator, the "Dear Leader". For him write kind "leader" lines in
   deadpan North Korean state-media style (titles like Dear Leader / Supreme Commissioner, one absurd flourish,
@@ -366,6 +369,8 @@ def _line_ok(text: str, fids: list[str], facts: dict[str, str], teams: list[str]
         return f"names a member not in cited facts: {missing}"
     if chat_milk_spill(text):
         return "milk spill (Blinkstradamus never spilled it)"
+    if rare_bits.mentions("milk", text):
+        return "milk bit (once a month, rationed live by rare_bits; never in the material sheet)"
     if _BANNED.search(text):
         return f"banned topic: {_BANNED.search(text).group(0)}"
     if _REPORTY.search(text):
@@ -532,6 +537,10 @@ def main(argv=None) -> int:
         log.exception("material run failed: %s", e)
         return 1
     finally:
+        # text Picky's comeback/banter bank rides the same hourly tick (weekly, never raises)
+        banter_res = banter.refresh_if_due()
+        if banter_res and (banter_res.get("built") or not banter_res.get("ok")):
+            log.info("banter bank: %s", banter_res)
         shutil.rmtree(LOCK, ignore_errors=True)
     print(json.dumps(res))
     return 0

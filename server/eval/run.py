@@ -56,6 +56,7 @@ if _PLIST.exists():
     for k, v in (plistlib.loads(_PLIST.read_bytes()).get("EnvironmentVariables") or {}).items():
         os.environ.setdefault(k, str(v))
 import checks  # noqa: E402
+import group_items  # noqa: E402
 import questions  # noqa: E402
 from truth import Truth, chat  # noqa: E402
 
@@ -65,6 +66,8 @@ RESULTS = HERE / "results"
 REPORTS = HERE / "reports"
 TEST_TOKEN_SERVICE = "CFB_PICKEM__TEST_TOKEN"
 MAX_PREEMPT_RETRIES = 40
+GROUP_SECRET_SERVICE = "CFB_PICKEM__PICKY_GROUP_SECRET"
+MEMBERS_FILE = Path(os.environ.get("PICKY_GROUP_MEMBERS", "/Users/Agent/cfb-pickem-private/picky_group_members.json"))
 
 
 def test_token() -> str:
@@ -161,6 +164,29 @@ async def ask(client, url, jwt, history, mode, pacer=None, who="me") -> tuple[st
     return f"[ERROR preempted {MAX_PREEMPT_RETRIES + 1} times]", 0.0, 0.0, False, gate
 
 
+def group_handles() -> dict[str, str]:
+    """team -> one of its iMessage handles (private map; never printed)."""
+    d = json.loads(MEMBERS_FILE.read_text())
+    return {m["team"]: (m.get("handles") or [""])[0] for m in d.get("members") or [] if m.get("team")}
+
+
+async def ask_group(client, url, secret, handle, text, chat_id, recent) -> tuple[str, float]:
+    """One text through the group sidecar (/group) as the member with `handle`.
+    (reply, seconds). The sidecar keeps the per-chat history, so multi-turn
+    items share one chat id."""
+    for attempt in range(3):  # a Supabase blip is a 502 from the sidecar: not Picky's answer
+        t0 = time.time()
+        r = await client.post(url, headers={"X-Picky-Group-Secret": secret},
+                              json={"handle": handle, "text": text, "chat": chat_id, "recent": recent})
+        if r.status_code < 500:
+            break
+        print(f"  sidecar {r.status_code}, retry in 15s", flush=True)
+        await asyncio.sleep(15)
+    if r.status_code != 200:
+        return f"[HTTP {r.status_code}] {r.text[:200]}", time.time() - t0
+    return (r.json().get("reply") or ""), time.time() - t0
+
+
 # ---- grading ---------------------------------------------------------------------
 
 
@@ -238,7 +264,7 @@ def render(run: dict, judge: dict) -> str:
          "Hard gates: " + ", ".join(f"{k}: **{v}**" for k, v in g.items()),
          "",
          *[f"{k.title()} (judge, 1-5): {statistics.mean(v):.2f} over {len(v)} answers" for k in
-           ("breakdown", "roast", "human", "helpful")
+           ("breakdown", "roast", "human", "not_bot", "helpful")
            if (v := [judge[r["id"]][k] for r in res if isinstance((judge.get(r["id"]) or {}).get(k), (int, float))])],
          "Repetition: " + repetition(res), "",
          *([f"Edge (judge, 1-5): {statistics.mean(e):.2f} over {len(e)} breakdown answers", ""]
@@ -358,8 +384,8 @@ async def run(args):
         if args.replay:
             install_replay(frozen)
     t = await Truth().load()
-    P = questions.personas(t)
-    items = questions.build(t)
+    P = group_items.personas(t) if args.text else questions.personas(t)
+    items = group_items.all_items(t) if args.text else questions.build(t)
     if args.only:
         keys = set(args.only.split(","))
         items = [i for i in items if i["id"] in keys or i["cat"] in keys]
@@ -369,7 +395,7 @@ async def run(args):
             print(f"- {it['id']} [{it['cat']}, {it['persona']}] {it['turns']}" + (f" SKIP: {it['skip']}" if it["skip"] else ""))
         print(f"{len(items)} items")
         return
-    url = LOCAL if args.local else (args.url or REMOTE)
+    url = args.group or (LOCAL if args.local else (args.url or REMOTE))
     started = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     tag = args.tag or dt.datetime.now().strftime("%Y%m%d-%H%M")
     if args.at:
@@ -382,16 +408,23 @@ async def run(args):
         chat.RATE_LIMIT_PER_MIN = 10_000
         await chat.load_mascots()  # the live app loads the nickname filter at startup; ASGITransport skips that
         transport = httpx.ASGITransport(app=chat.app)
+    elif args.group:
+        handles = group_handles()
+        jwts = {k: handles.get(v) for k, v in P.items() if v}
+        secret = os.environ.get("PICKY_GROUP_SECRET") or subprocess.run(
+            ["security", "find-generic-password", "-a", "drake", "-s", GROUP_SECRET_SERVICE, "-w"],
+            capture_output=True, text=True).stdout.strip()
+        transport = None
     else:
         jwts = {k: mint_jwt(t.key, t.uid_by_team[v]) for k, v in P.items() if v}
         transport = None
     pacer = Pacer()
     model = None
-    headers = {} if args.at else {"X-Picky-Test": test_token()}
+    headers = {} if (args.at or args.group) else {"X-Picky-Test": test_token()}
     async with httpx.AsyncClient(transport=transport, headers=headers,
                                  timeout=httpx.Timeout(connect=10, read=300, write=10, pool=10)) as client:
         try:
-            model = (await client.get(url.replace("/chat", "/health"))).json().get("model")
+            model = (await client.get(re.sub(r"/(chat|group)$", "/health", url))).json().get("model")
             if args.at:
                 model = f"{model} (in-process, clock frozen at {args.at})"
         except Exception:  # noqa: BLE001
@@ -404,6 +437,7 @@ async def run(args):
         preemptions, gate_wait = 0, 0.0
         for n, it in enumerate(items, 1):
             r = {k: it[k] for k in ("id", "cat", "persona", "judge", "skip", "mode")}
+            r["recent"] = it.get("recent") or []
             r["persona_team"] = P[it["persona"]]
             r["turns"] = []
             if it["skip"]:
@@ -411,8 +445,20 @@ async def run(args):
                 print(f"[{n}/{len(items)}] {it['id']}: SKIP ({it['skip']})", flush=True)
                 continue
             history, answers = [], []
-            for q in it["turns"]:
+            for ti, q in enumerate(it["turns"]):
                 history.append({"role": "user", "content": q})
+                if args.group:
+                    now = time.time()
+                    recent = [{"handle": jwts.get(who) or "", "text": txt, "ts": now - 60 + k, "from_me": False}
+                              for k, (who, txt) in enumerate(it.get("recent") or [])] if ti == 0 else []
+                    text = (it.get("raw") if ti == 0 and it.get("raw") else f"@Picky {q}")
+                    a, total = await ask_group(client, url, secret, jwts[it["persona"]], text,
+                                               f"exam-{tag}-{it['id']}", recent)
+                    history.append({"role": "assistant", "content": a})
+                    answers.append(a)
+                    r["turns"].append({"q": text, "a": a, "ttft": total, "total": total, "preemptions": 0,
+                                       "gate_wait": 0.0})
+                    continue
                 try:
                     a, ttft, total, _img, g = await ask(client, url, jwts[it["persona"]], history, it["mode"],
                                                         pacer, it["persona"])
@@ -463,10 +509,11 @@ async def regrade(runrec: dict) -> dict:
     """Re-run today's graders on a stored run's answers (asks Picky nothing)."""
     t = await Truth().load()
     P = runrec["personas"]
-    items = {i["id"]: i for i in questions.build(t)}
+    items = {i["id"]: i for i in questions.build(t)} | {i["id"]: i for i in group_items.build(t)}
     for r in runrec["results"]:
         it = items.get(r["id"])
-        if it and not r.get("skip") and r.get("turns") and it["turns"] == [tn["q"] for tn in r["turns"]]:
+        asked = [re.sub(r"^@picky\s+", "", tn["q"], flags=re.I) for tn in r.get("turns") or []]
+        if it and not r.get("skip") and r.get("turns") and (it["turns"] == asked or it.get("raw")):
             r["checks"] = grade(it, [tn["a"] for tn in r["turns"]], t, P)
     runrec["tag"] += "-regraded"
     return runrec
@@ -477,7 +524,7 @@ async def regrade(runrec: dict) -> dict:
 # directly, bypassing the gate: run those only when the league is quiet.)
 NO_MODEL_TESTS = ["test_privacy.py", "test_standings.py", "test_cfbd.py", "test_rules.py", "test_picky_player.py",
                   "test_leader.py", "test_opinions.py", "test_daddyfreeman.py", "test_gate.py", "test_results.py",
-                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "eval/test_checks.py"]
+                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "eval/test_checks.py"]
 
 
 def no_model() -> int:
@@ -509,6 +556,8 @@ def no_model() -> int:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url")
+    ap.add_argument("--group", default="", help="ask through a group sidecar, e.g. http://127.0.0.1:8781/group")
+    ap.add_argument("--text", action="store_true", help="the text-path exam (eval/group_items.py)")
     ap.add_argument("--local", action="store_true")
     ap.add_argument("--only", default="")
     ap.add_argument("--tag", default="")

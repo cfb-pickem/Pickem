@@ -85,6 +85,8 @@ from starlette.requests import Request as StarletteRequest  # noqa: E402
 
 import chat  # noqa: E402
 import group_outbox  # noqa: E402
+import picky_brain  # noqa: E402
+import rare_bits  # noqa: E402
 import playoff_race  # noqa: E402
 
 log = logging.getLogger("picky-group")
@@ -101,8 +103,11 @@ HISTORY_TTL = 2 * 3600  # seconds; older turns drop out of a chat's history
 DM_MAX_CHARS = 1500
 MAX_SENTENCES = 3
 MAX_CHARS = 480
-MAX_TRIES = 3          # rerolls when chat.py's sentence filter cut part of an answer
+MAX_TRIES = 3          # rerolls when chat.py's sentence filter cut part of an answer (PICKY_BRAIN=0 only)
 REROLL_BUDGET = 120.0  # seconds; the watcher gives up at 240
+# Text Picky's slow, smart path (picky_brain.py): understand -> 3 drafts -> judge, every draft
+# through chat.py's filters. Charlie OK'd ~2 min a reply (2026-11-15). PICKY_BRAIN=0 = old single pass.
+BRAIN = os.environ.get("PICKY_BRAIN", "1") != "0"
 
 GROUP_RIDER = (
     "\n\nGROUP TEXT: you're answering in the league's iMessage group chat. Every member reads "
@@ -375,6 +380,9 @@ def _system_tail(ctx: dict) -> str:
     return _orig_system_tail(ctx) + GROUP_RIDER + who + RECENT.get()
 
 
+picky_brain.install()
+# up to 4 drafts per text, each one a chat.py request: the per-user limit is per draft
+chat.RATE_LIMIT_PER_MIN = 40
 chat._verify_jwt = _verify_jwt
 chat._build_context = _build_context
 chat.you_block = _you_block
@@ -527,8 +535,7 @@ _SENT = re.compile(r"(?<=[.!?])[\"')\]]*\s+(?=\S)")
 def group_trim(text: str) -> str:
     text = re.sub(r"\s+", " ", (text or "").replace("**", "")).strip()
     parts = [p for p in _SENT.split(text) if p.strip()]
-    keep = MAX_SENTENCES + (1 if parts and parts[0].strip().lower() == chat.BLINKSTRADAMUS_LINE else 0)
-    out = " ".join(parts[:keep]).strip()
+    out = " ".join(parts[:MAX_SENTENCES]).strip()
     if len(out) > MAX_CHARS:
         cut = out[:MAX_CHARS]
         out = cut[: max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? ")) + 1] or cut.rsplit(" ", 1)[0] + "..."
@@ -677,6 +684,27 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         def shape(raw: str) -> str:
             return group_trim(drop_echo(raw, q)) if mode == "group" else dm_trim(raw)
 
+        async def draft() -> tuple[str, int, str | None]:
+            drops = []
+            dtok = DROPS.set(drops)
+            try:
+                req = StarletteRequest({"type": "http", "method": "POST", "path": "/chat", "headers": [],
+                                        "query_string": b""}, receive)
+                raw, image = await _collect(await chat.chat(req))
+                return shape(raw), len(drops), image
+            finally:
+                DROPS.reset(dtok)
+
+        if BRAIN:
+            past = [m["content"] for m in messages[:-1] if m["role"] == "assistant"]
+            mine = [str(m.get("text") or "") for m in recent or [] if isinstance(m, dict) and m.get("from_me")]
+            reply, image = await picky_brain.run(
+                draft, q=q, sender=f"{s.name or s.team} (team \"{s.team}\")" if s.team else (s.name or ""),
+                team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:])
+            rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
+            await save_turn(key, q_hist, reply, who)
+            return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
+
         # keep the first answer the filter left whole; else the one it cut least
         t0, best = time.time(), None
         for i in range(MAX_TRIES):
@@ -699,6 +727,7 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 break
             log.info("%s reroll %d: filter dropped %d sentence(s)", mode, i + 1, len(drops))
         _, reply, image = best
+        rare_bits.note_sent(reply)
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
     finally:

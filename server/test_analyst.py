@@ -183,7 +183,10 @@ with tempfile.TemporaryDirectory() as tmp:
 # -- Blinkstradamus held the milk; it never spilled (Charlie, 2026-11-15) -------------------
 check("milk spill sentence dropped", not chat.sentence_ok("He's the guy who spilled his carton on the road.", set()))
 check("carton knocked off dropped", not chat.sentence_ok("That loss knocked the whole carton off the counter.", set()))
+_mt = chat.MILK_OK.set(True)  # the once-a-month milk budget is free and it's about Blinky
 check("'dropped to 3rd' near milk is fine", chat.sentence_ok("He dropped to 3rd but the milk is fresh.", set()))
+chat.MILK_OK.reset(_mt)
+check("milk line dropped when the milk budget isn't free", not chat.sentence_ok("He dropped to 3rd but the milk is fresh.", set()))
 check("rider says he held it, no spill", "holding a carton of milk" in chat.BLINKS_BIT and "never spilled" in chat.BLINKS_BIT
       and "league's milk guy" not in chat.BLINKS_BIT)
 

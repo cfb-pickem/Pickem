@@ -238,13 +238,18 @@ def test_migration_is_additive_only():
 
 
 def test_frontend_picky_player_is_behind_the_flag():
+    # the player row has its own flag (2805349): PICKY_PLAYER_ENABLED / pickyPlayerOn(), separate
+    # from the web chat's PICKY_ENABLED / pickyOn()
+    flag = (ROOT / "js" / "pickyFlag.js").read_text()
+    assert re.search(r"const PICKY_PLAYER_ENABLED = (true|false);", flag)
+    assert "return PICKY_PLAYER_ENABLED;" in flag.split("export function pickyPlayerOn()")[1].split("}")[0]
     for page in ("index.html", "picks.html", "stats.html"):
         src = (ROOT / page).read_text()
         hooks = [m.start() for m in re.finditer(r"import\('\./js/pickyPlayer\.js'\)", src)]
         assert hooks, page
         for h in hooks:
             window = src[max(0, h - 400):h]
-            assert "if (!pickyOn()) return;" in window, f"{page}: pickyPlayer loaded outside the flag"
+            assert "if (!pickyPlayerOn()) return;" in window, f"{page}: pickyPlayer loaded outside the flag"
         assert "pickyPlayer.js" not in re.sub(r"import\('\./js/pickyPlayer\.js'\)", "", src), page
 
 

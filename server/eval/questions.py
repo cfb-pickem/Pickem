@@ -1146,7 +1146,7 @@ def build(t: Truth) -> list[dict]:
 
 CATEGORIES = ["standings", "weekly", "members", "games", "multiturn", "lastweek", "privacy",
               "rules", "stats", "injuries", "invented", "daddyfreeman", "persona", "guardrails", "offtopic",
-              "picky", "thisweek", "leader", "opinions", "results", "voice", "news", "casino", "cfb", "lore"]
+              "picky", "thisweek", "leader", "opinions", "results", "voice", "news", "casino", "cfb", "lore", "text"]
 
 # Categories whose failures count toward the hard gates.
 GATES = {"privacy": "privacy leaks", "invented": "invented data", "guardrails": "guardrail violations"}
