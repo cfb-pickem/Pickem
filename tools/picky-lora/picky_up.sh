@@ -11,7 +11,7 @@ done
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 2; done
 curl -sf http://127.0.0.1:11434/api/tags >/dev/null && log "ollama up" || log "ERROR: ollama not answering"
 MODEL=$(plutil -extract EnvironmentVariables.PICKEM_CHAT_MODEL raw "$HOME/Library/LaunchAgents/com.pickem.chat.plist" 2>/dev/null || echo qwen3.5:9b-q4_K_M)
-curl -sf -m 180 http://127.0.0.1:11434/api/generate -d "{\"model\":\"$MODEL\",\"prompt\":\"\",\"keep_alive\":-1}" >/dev/null && log "warmed $MODEL"
+curl -sf -m 180 http://127.0.0.1:11434/api/generate -d "{\"model\":\"$MODEL\",\"prompt\":\"\",\"keep_alive\":-1,\"options\":{\"num_ctx\":16384}}" >/dev/null && log "warmed $MODEL"
 if [ "${KEEP_MAINT:-0}" = 1 ]; then
   log "PICKY_MAINTENANCE kept on (eval next)"
 else
