@@ -317,7 +317,7 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict) -> str:
         L.append(f"  ESPN FPI: {home} {wp['home']:.0f}% to win")
     if (espn_notes or {}).get("weather"):
         L.append(f"  Weather (ESPN): {espn_notes['weather']}")
-    L.append("  (Injuries/QB news: only what NEWS or a dossier says. Not listed here = unknown; say so, never guess.)")
+    L += news_lines(away, home)
     return "\n".join(L)
 
 
@@ -326,6 +326,29 @@ def notable(games: list[dict], idx: dict) -> list[dict]:
         x = cfbd.resolve_team(t, idx)
         return ((x or {}).get("sp") or {}).get("rating") or -30
     return sorted(games, key=lambda g: sp(g["homeTeam"]) + sp(g["awayTeam"]), reverse=True)[:BOARD_ROWS]
+
+
+_INJ = re.compile(r"\b(injur\w*|out for (the )?season|ruled out|questionable|doubtful|torn|ACL|concussion|surgery|"
+                  r"sling|ankle|knee|shoulder|elbow|QB|quarterback|start(s|er|ing)?|backup|suspend\w*|opt(s|ed)? out|"
+                  r"transfer|fired|interim|hot seat)\b", re.I)
+
+
+def news_lines(away: str, home: str) -> list[str]:
+    """Team-tagged headlines from Picky's news feed (news.py cache), personnel
+    first, dated. The only injury/QB facts Picky may state for this game."""
+    try:
+        import news
+        rows = news.news_for(None, teams=[away, home], limit=8)
+        asof = news.as_of()
+    except Exception as e:  # noqa: BLE001
+        log.warning("slate news: %r", e)
+        rows, asof = [], None
+    rows = [r for r in rows if _INJ.search(r)][:4]
+    if not rows:
+        return [f"  News: nothing in the feed on {away} or {home}"
+                + (f" (as of {asof})" if asof else "") + ". Injuries/QB status: unknown; say so, never guess."]
+    return [f"  News on these teams (as of {asof}; the only injury/QB facts you know, report them as written):"] + [
+        f"    - {r}" for r in rows] + ["  Anything not in these lines (a player's status, a QB change): unknown; say so."]
 
 
 def board(top: list[dict], notes: dict) -> str:
