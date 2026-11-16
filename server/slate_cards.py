@@ -321,11 +321,19 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict) -> str:
     return "\n".join(L)
 
 
-def notable(games: list[dict], idx: dict) -> list[dict]:
+def notable(games: list[dict], idx: dict, n: int = BOARD_ROWS, movers: bool = False) -> list[dict]:
+    """The week's most notable games by combined SP+; with movers=True, plus every
+    game whose line moved 3+ points from the open (that's where the news is)."""
     def sp(t):
         x = cfbd.resolve_team(t, idx)
         return ((x or {}).get("sp") or {}).get("rating") or -30
-    return sorted(games, key=lambda g: sp(g["homeTeam"]) + sp(g["awayTeam"]), reverse=True)[:BOARD_ROWS]
+    top = sorted(games, key=lambda g: sp(g["homeTeam"]) + sp(g["awayTeam"]), reverse=True)[:n]
+    if movers:
+        for g in games:
+            ln = _line(g) or {}
+            if g not in top and ln.get("spreadOpen") is not None and abs(ln["spread"] - ln["spreadOpen"]) >= 3:
+                top.append(g)
+    return top
 
 
 _INJ = re.compile(r"\b(injur\w*|out for (the )?season|ruled out|questionable|doubtful|torn|ACL|concussion|surgery|"

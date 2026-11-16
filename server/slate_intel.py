@@ -33,7 +33,7 @@ sys.path.insert(0, str(HERE))
 log = logging.getLogger("picky.slate_intel")
 CT = ZoneInfo("America/Chicago")
 CACHE = Path(os.environ.get("PICKY_SLATE_INTEL", HERE / "cache" / "slate_intel.json"))
-MAX_GAMES = 16
+MAX_GAMES = 28
 MAX_AGE = dt.timedelta(hours=36)
 REFRESH_EVERY = dt.timedelta(hours=12)
 TIMEOUT_S = 1500
@@ -94,8 +94,8 @@ def run(force: bool = False) -> int:
         print("not due")
         return 0
     idx = cfbd.load_index()
-    games = slate_cards.notable(slate_cards.upcoming_games(idx, dt.datetime.now(dt.timezone.utc)), idx)
-    games = games[:MAX_GAMES]
+    games = slate_cards.notable(slate_cards.upcoming_games(idx, dt.datetime.now(dt.timezone.utc)), idx,
+                                n=20, movers=True)[:MAX_GAMES]
     if not games:
         print("no upcoming games")
         return 0
@@ -111,6 +111,7 @@ def run(force: bool = False) -> int:
         return 1
     ids = {g["id"] for g in games}
     names = {g["id"]: (g["awayTeam"], g["homeTeam"]) for g in games}
+    prev = (json.loads(CACHE.read_text()).get("games") or {}) if CACHE.exists() else {}
     out = {}
     with httpx.Client() as client:
         for g in raw.get("games") or []:
@@ -127,6 +128,9 @@ def run(force: bool = False) -> int:
             except ValueError:
                 continue
             out[str(gid)] = {"away": names[gid][0], "home": names[gid][1], **secs, "dropped": len(dropped)}
+    for gid, g in prev.items():  # a game Opus skipped this run keeps its last notes until the file ages out
+        if gid not in out and int(gid) in ids:
+            out[gid] = g
     doc = {"fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
            "as_of": now.strftime("%a %b %-d %-I:%M %p CT"), "week": week, "games": out}
     CACHE.parent.mkdir(parents=True, exist_ok=True)
