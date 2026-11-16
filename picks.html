@@ -58,7 +58,7 @@
   <link rel="stylesheet" href="./css/theme-thanksgiving.css?v=e6e45cfb">
   <link rel="stylesheet" href="./css/theme-christmas.css?v=2973ba3d">
   <link rel="stylesheet" href="./css/theme-sickos.css?v=3a9977e5">
-  <link rel="stylesheet" href="./css/theme-playoffs.css?v=b31745c8">
+  <link rel="stylesheet" href="./css/theme-playoffs.css?v=54db1afa">
   <link rel="modulepreload" href="./js/vendor/supabase.js">
   <link rel="modulepreload" href="./js/supabaseClient.js">
   <link rel="modulepreload" href="./js/nav.js">
@@ -766,14 +766,14 @@
         <div id="tiebreaker-games" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
       </section>
 
-      <div class="mt-6 flex items-center gap-3">
+      <div id="save-controls" class="mt-6 flex items-center gap-3">
         <button id="save" class="px-5 py-3 bg-[var(--cfp-gold)] text-black font-semibold ring-gold inline-flex items-center gap-2 transition-all duration-200">
           <span id="saveLabel">Save Picks</span>
         </button>
         <button id="clear" class="px-5 py-3 border border-white/15 hover:border-white/30 transition-colors duration-200">Clear</button>
         <span id="saveStatus" class="text-xs text-gray-300" aria-live="polite"></span>
       </div>
-      <p class="mt-2 text-xs text-gray-400">Picks save automatically a moment after you tap them. If a save ever fails, a red bar at the bottom of the screen will say so &mdash; a pick only counts once it is saved.</p>
+      <p id="save-help" class="mt-2 text-xs text-gray-400">Picks save automatically a moment after you tap them. If a save ever fails, a red bar at the bottom of the screen will say so &mdash; a pick only counts once it is saved.</p>
     </div>
 
   </div>
@@ -1075,14 +1075,19 @@
 
       if (isPlayoffMode) {
         lockBanner.classList.remove('hidden');
-        lockBannerTitle.textContent = 'Playoff mode:';
+        lockBannerTitle.textContent = 'Playoffs:';
         if (!userInPlayoffs) {
-          lockMsg.textContent = 'Your team is not in the playoffs, so you may view games but cannot make picks.';
+          lockMsg.textContent = 'Only the four playoff teams make picks now. You can still follow every game here, and the playoff board is on the Leaderboard.';
         } else {
           lockMsg.textContent = 'You are in the playoffs. Picks lock at each game\'s scheduled start (including tiebreakers).';
         }
         saveBtn.disabled = !userInPlayoffs;
         clearBtn.disabled = !userInPlayoffs;
+        // Eliminated: no Save/Clear and no autosave line, rather than a form
+        // that can't do anything. The database refuses their playoff picks
+        // too (20261116140000_playoff_picks_field_only).
+        document.getElementById('save-controls')?.classList.toggle('hidden', !userInPlayoffs);
+        document.getElementById('save-help')?.classList.toggle('hidden', !userInPlayoffs);
       }
     }
 
@@ -1284,7 +1289,8 @@
      * either side: a tap, a load, a save, a clear, the minute tick.
      */
     function refreshSaveState(){
-      if (!slateIds().length || !session) {
+      // Not in the playoff field: nothing to save, so no "0 of 3 saved" tally.
+      if (!slateIds().length || !session || (isPlayoffMode && !userInPlayoffs)) {
         tallyEl.hidden = true;
         setBar(null);
         return;

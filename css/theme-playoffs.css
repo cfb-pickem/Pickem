@@ -73,28 +73,24 @@ html[data-playoffs="on"] .scoreboard-header {
   background: linear-gradient(180deg, #fff3d6, #ffd27a 45%, #f0a040);
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.playoff-banner .po-sub { margin-top: .15rem; font-size: .8rem; color: #e4d7c4; }
-.playoff-banner .po-seeds {
-  display: flex; flex-wrap: wrap; gap: .4rem .5rem;
-  margin: .55rem 0 0; padding: 0; list-style: none;
-}
-.playoff-banner .po-seed {
-  display: inline-flex; align-items: center; gap: .4rem;
-  padding: .2rem .6rem .2rem .25rem;
-  font-size: .8rem; font-weight: 600; color: #fff4e0;
-  background: rgba(255,170,70,.08);
-  border: 1px solid rgba(255,190,90,.30);
-}
-.playoff-banner .po-seed-n {
-  display: inline-grid; place-items: center;
-  width: 1.3rem; height: 1.3rem;
-  font-family: 'Teko', 'Oswald', sans-serif; font-size: 1rem; line-height: 1;
+.playoff-banner .po-sub { margin-top: .3rem; font-size: .82rem; line-height: 1.4; color: #e4d7c4; max-width: 46rem; }
+.playoff-banner .po-eyebrow { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
+/* Preview: dashed edge and a pill, so nobody mistakes it for the real thing. */
+.playoff-banner.is-preview { border-style: dashed; border-color: rgba(255,190,90,.55); }
+.playoff-banner .po-pill {
+  display: inline-block;
+  padding: .12rem .5rem .1rem;
+  font-family: 'Oswald', sans-serif; font-size: .62rem; font-weight: 700;
+  letter-spacing: .18em; text-transform: uppercase; line-height: 1.3;
   color: #1a1206; background: linear-gradient(180deg, #ffd98a, #e9a23b);
+  border-radius: 999px;
 }
 @media (max-width: 640px) {
-  .playoff-banner { gap: .7rem; padding: .75rem .8rem; }
-  .playoff-banner .po-trophy { width: 40px; height: 40px; align-self: flex-start; }
-  .playoff-banner .po-title { font-size: 1.6rem; }
+  .playoff-banner { gap: .75rem; padding: .8rem .85rem; align-items: flex-start; }
+  .playoff-banner .po-trophy { width: 38px; height: 38px; margin-top: .1rem; }
+  .playoff-banner .po-title { font-size: 1.55rem; }
+  .playoff-banner .po-sub { font-size: .78rem; }
+  .playoff-banner .po-eyebrow { font-size: .6rem; letter-spacing: .16em; }
 }
 
 /* ---- Waiting note (autopilot holding) ----------------------- */
@@ -113,14 +109,53 @@ html[data-playoffs="on"] .scoreboard-header {
 }
 @keyframes po-pulse { 50% { opacity: .35; } }
 
-/* ---- Leaderboard rows -------------------------------------- */
-/* Seed badge before the name, playoff board only. */
+/* ---- Leaderboard rows: the playoff board --------------------- */
+/* Taller rows, a real seed badge, the name over a small "No. 1 seed" line. */
+html[data-playoffs="on"] .table tbody tr[data-seed] td {
+  padding-top: .8rem !important;
+  padding-bottom: .8rem !important;
+  vertical-align: middle;
+}
+.po-team { display: flex; align-items: center; gap: .75rem; min-width: 0; }
 .po-seed-badge {
-  display: inline-grid; place-items: center;
-  width: 1.15rem; height: 1.15rem; margin-right: .45rem;
-  vertical-align: -.15rem;
-  font-family: 'Teko', 'Oswald', sans-serif; font-size: .9rem; line-height: 1;
-  color: #1a1206; background: linear-gradient(180deg, #ffd98a, #e9a23b);
+  flex: none;
+  display: grid; place-items: center;
+  width: 2.1rem; height: 2.1rem;
+  border-radius: .4rem;
+  font-family: 'Teko', 'Oswald', sans-serif; font-size: 1.45rem; font-weight: 700; line-height: 1;
+  padding-top: .12rem;               /* Teko sits high; this centers the digit */
+  letter-spacing: 0; text-shadow: none;
+  color: #1a1206;
+  background: linear-gradient(180deg, #ffe3a3, #f0b44a 55%, #d98a26);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 0 2px rgba(255,200,110,.35), 0 4px 12px -4px rgba(255,140,40,.6);
+}
+tr[data-seed="1"] .po-seed-badge {
+  box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 0 0 2px rgba(255,214,130,.6), 0 0 16px rgba(255,170,60,.55);
+}
+.po-team-text { display: flex; flex-direction: column; min-width: 0; gap: .22rem; }
+.po-team-name { font-size: 1.05rem; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-team-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: .72rem; font-weight: 500; line-height: 1.2;
+  letter-spacing: .01em; text-transform: none; text-shadow: none;
+  color: rgba(240,222,196,.62);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.table tbody td.sticky-col-1 + td.po-pts { font-size: 2rem; white-space: nowrap; }
+.po-flame {
+  display: inline-block; width: .9em; height: .9em; margin-right: .2rem;
+  vertical-align: -.08em; color: #ff8a2a;
+  filter: drop-shadow(0 0 6px rgba(255,120,30,.7));
+}
+.po-flame svg { width: 100%; height: 100%; display: block; }
+@media (max-width: 640px) {
+  .po-team { gap: .6rem; }
+  .po-seed-badge { width: 1.85rem; height: 1.85rem; font-size: 1.3rem; }
+  .po-team-name { font-size: .95rem; }
+  .po-team-meta { font-size: .66rem; }
+  .table tbody td.sticky-col-1 + td.po-pts { font-size: 1.7rem; }
+  /* Once there are game columns, the name column gives them the room. */
+  tr[data-seed]:has(td[data-game]) .po-team-reg { display: none; }
 }
 html[data-playoffs="on"] tr[data-seed] td.sticky-col-1 {
   box-shadow: 3px 0 0 #f0a040 inset, 1px 0 0 rgba(231,231,231,.08) inset;

@@ -71,21 +71,23 @@ const TROPHY = `<svg class="po-trophy" viewBox="0 0 64 64" aria-hidden="true" fo
   <path d="M25 13l3.2 6.4 7 .9-5.1 4.9 1.3 7-6.4-3.4" fill="rgba(0,0,0,.18)"/>
 </svg>`;
 
+// The header over the playoff board. The four teams themselves are the rows
+// of the board right below it, so they aren't repeated up here.
 export function renderPlayoffBanner(el, state, { show }) {
   if (!el) return;
-  if (!show || !state || !state.active) { el.hidden = true; el.innerHTML = ''; return; }
-  const chips = state.seeds.map(s =>
-    `<li class="po-seed"><span class="po-seed-n">${s.seed}</span>${escapeHtml(s.team_name)}</li>`).join('');
+  if (!show || !state || !state.active) { el.hidden = true; el.innerHTML = ''; el.classList.remove('is-preview'); return; }
+  el.classList.toggle('is-preview', !!state.preview);
   el.innerHTML = `
     <div class="po-glow" aria-hidden="true"></div>
     ${TROPHY}
     <div class="po-copy">
-      <div class="po-eyebrow">${state.preview ? 'Preview &middot; if the season ended today' : `${state.season} Playoffs`}</div>
+      <div class="po-eyebrow">${state.preview
+        ? '<span class="po-pill">Preview</span><span>If the season ended today</span>'
+        : `<span>${state.season} Playoffs</span>`}</div>
       <div class="po-title">Four left. Points reset.</div>
       <div class="po-sub">${state.preview
-        ? 'This is what the board turns into once the field is set. Nothing here is official yet.'
-        : 'Pick every playoff game. Each one locks at its own kickoff. Most points takes the trophy.'}</div>
-      <ol class="po-seeds">${chips}</ol>
+        ? 'These four would make the playoffs. Nothing is official until week 15 is graded.'
+        : 'Everyone starts at 0. Each game locks at its own kickoff, and the most points takes the trophy.'}</div>
     </div>`;
   el.hidden = false;
 }
