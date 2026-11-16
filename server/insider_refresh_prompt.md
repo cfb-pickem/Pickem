@@ -23,7 +23,7 @@ Read the whole file first: its format, what's already there, and the newest `[ch
   - `<source>` = `Dellenger, Yahoo` for his reporting, otherwise the outlet (`ESPN`, `CBS`, `AP`, `CFP release`, ...). Use `Dellenger, Yahoo` ONLY for pieces under his byline. No parentheses inside the source.
   - Under 40 words. Paraphrase in your own words. NEVER copy a sentence from an article and NEVER use quotation marks (Picky must never quote Dellenger or anyone else).
   - Plain facts only: who, what, numbers, dates, what's proposed vs decided. No opinions, no jokes, no first person.
-- Today's date goes in `[checked ...]` on notes you add or re-check. Rewrite notes that went stale (a proposal that passed or died, a coach who got fired, a hire that happened); drop ones that no longer matter. Proposals stay labeled as proposals until adopted.
+- Today's date goes in `[checked ...]` on notes you add or re-check. Rewrite notes that went stale (a proposal that passed or died, a coach who got fired, a hire that happened); drop ones that no longer matter. When something newer supersedes a note (a new CFP or AP ranking, a newer report on the same story), replace the old note with the current state; never keep an older ranking alongside a newer one. Proposals stay labeled as proposals until adopted.
 - Each section: 4-12 notes, newest and most important first. 30-60 notes total.
 - Keep the title line, the `Last refreshed` line (the script stamps it), the "How Picky uses this" block and the PRIVATE warning.
 - Under `## Sources`, replace the list with this run's sources (outlet, headline or topic, date) and note anything blocked or skipped.

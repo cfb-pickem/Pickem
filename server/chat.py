@@ -3772,6 +3772,22 @@ _INSIDER_LINE = re.compile(r"^- ([^:]{3,16}): (.+) \(([^()]+)\) \[checked \d{4}-
 # 'Last refreshed' (else the file's mtime) is the notes' fetched_at: refreshes run twice a week, so past
 # INSIDER_STALE_DAYS a reply must say "as of <date>", and past INSIDER_MAX_AGE_DAYS the notes stop riding.
 INSIDER_STALE_DAYS, INSIDER_MAX_AGE_DAYS = 8, 21
+INSIDER_NOTE_MAX_DAYS = 7  # a single dated note older than this stays out of the rider (undated/year-only notes count as 0)
+
+
+def _note_age(when: str) -> int:
+    """Days since a note's 'Nov 8'-style date; 0 for undated/year-only notes (background facts)."""
+    m = re.match(r"([A-Z][a-z]{2})[a-z]*\.? (\d{1,2})$", (when or "").strip())
+    if not m:
+        return 0
+    try:
+        today = _now_ct_naive().date()
+        d = dt.datetime.strptime(f"{m.group(1)} {m.group(2)} {today.year}", "%b %d %Y").date()
+        if d > today:
+            d = d.replace(year=today.year - 1)
+        return (today - d).days
+    except ValueError:
+        return 0
 INSIDER_TOPICS = [  # (section heading starts with, question regex)
     ("Realignment", r"\brealign\w*|\bconference (moves?|switch\w*|changes?|title games?|championship games?)\b|"
                     r"\b(conference |league )?(title|championship) games?\b|\bpac[- ]?12\b|\bsuper ?conference\w*|"
@@ -3858,8 +3874,10 @@ def insider_note(question: str, limit: int = 4) -> str:
         pool = next((v for k, v in secs.items() if k.startswith(head)), [])
         if dl and not heads:  # 'what's Dellenger saying': his own bylined notes only
             pool = [n for n in pool if n["label"] == "Dellenger"]
+        pool = [n for n in pool if _note_age(n["when"]) <= INSIDER_NOTE_MAX_DAYS]  # old news reads as current
         ranked = sorted(range(len(pool)), key=lambda i: (
             -len(words & set(re.findall(r"[a-z0-9]{3,}", pool[i]["text"].lower()))),
+            _note_age(pool[i]["when"]) // 3,  # newest first (Charlie 11-16: a 2-week-old ranking isn't a take)
             (pool[i]["label"] != "Dellenger") if dl else 0, i))  # file order = most important first
         picked += [pool[i] for i in ranked[:per] if pool[i] not in picked]
     picked = picked[:limit]
