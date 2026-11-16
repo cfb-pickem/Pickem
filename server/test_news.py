@@ -231,6 +231,13 @@ check("'likely to miss rest of season' = out + reported",
 check("sources -> reported", C("Sources: Florida State targeting Kiffin's OC")["label"] == "reported")
 check("fires -> confirmed + coaching", C("UTEP fires coach Scotty Walden")["label"] == "confirmed"
       and "coaching" in C("UTEP fires coach Scotty Walden")["topics"])
+# cases from the first offline QA run (2026-11-16)
+mi = C("Michigan WR JJ Buchanan likely to miss rest of season with shoulder injury. Michigan is likely to be without "
+       "its leading receiver, head coach Kyle Whittingham said Monday.")
+check("QA: 'likely to miss' + coach said -> confirmed, injury not coaching",
+      mi["label"] == "confirmed" and "coaching" not in mi["topics"] and mi["status"] == "out", mi)
+check("QA: 'according to On3's Pete Nakos' -> reported",
+      C("UTEP fires head coach Scotty Walden. UTEP fired Walden, according to On3's Pete Nakos.")["label"] == "reported")
 check("'could' / 'may' alone don't make a report", C("Could Indiana vs. USC decide a playoff spot?")["label"] is None)
 
 # --- cluster / supersede / breaking rider ---------------------------------------------------
@@ -264,6 +271,12 @@ feed = [
 ]
 for x in feed:
     x["pubDate"] = None
+gm = it("NC State hires Jatavis Sanders as GM under Philip Rivers", "ESPN", 4, ["NC State"])
+tr = it("College football coaching carousel 2026: Tracking moves as Philip Rivers takes over", "CBS Sports", 4,
+        ["NC State", "Florida State"])
+for x in (gm, tr):
+    x.update(C(x["title"]))
+check("QA: one shared last name (Rivers) doesn't merge a tracker into the GM hire", not news.same_story(gm, tr))
 cache2 = news.merge({"items": {}}, feed, T0)
 for x in cache2["items"].values():
     x.update(news.classify(f"{x['title']}. {x.get('summary', '')}"))

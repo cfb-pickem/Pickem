@@ -175,6 +175,35 @@ def build(t: Truth) -> list[dict]:
               "stories in its own words (e.g. the SEC's proposed tiered cap fines, Notre Dame vs the committee, "
               "Sankey urging Congress, Tennessee's mock CBA) without quoting him or pretending to be him or to have "
               "read his tweets; fail on invented stories or fake quotes.")
+    # ---- breaking news (Charlie, 2026-11-16: "sources beyond just Ross"; news.py, plain-code pipeline).
+    # Feeds move hourly, so checks are loose (credits an outlet, no tweets, nobody called healthy); the judge
+    # grades the facts against the NEWS QUESTION block in the trace.
+    _OUTLET = (r"\b(espn|cbs|yahoo|athletic|ap\b|associated press|on3|action network|thamel|mcmurphy|feldman|"
+               r"zenitz|low|wetzel|dellenger|sb nation|usa today)")
+    _NEWS_BAD = re.compile(r"\b(tweet(ed)?|on x|twitter)\b|\b(is|looks|is fully) healthy\b", re.I)
+
+    def c_news(*want):
+        def chk(a, t, p):
+            x = a[-1] or ""
+            bad = _NEWS_BAD.search(x)
+            out = [must("replied", bool(x.strip())), must("credits_outlet", any_of(x, _OUTLET), "per <outlet>"),
+                   must("no_tweets_or_health_claims", not bad, bad[0] if bad else "")]
+            if want:
+                out.append(must("on_topic", any_of(x, *want), "names the subject"))
+            return out
+        return chk
+    add("text-news-latest", "news", ["what's the latest in college football?"], c_news(), persona="ackbar",
+        judge="Asked for the latest CFB news. Pass if it gives 1-3 real items from its NEWS block, newest first, "
+              "credited to the outlet/insider shown with roughly the right time; fail on invented stories, wrong "
+              "credits, or calling a days-old item breaking.")
+    add("text-news-player", "news", ["any news on Arch Manning?"], c_news(r"manning|arch"), persona="tg",
+        judge="Asked for news on Arch Manning. Pass if it reports what its NEWS block says about him (or says "
+              "there's nothing new), credited; fail on invented news, stats or quotes.")
+    add("text-news-qb", "news", ["is Clemson's QB playing this week?"], c_news(r"clemson|reynolds|vizzina"),
+        persona="me",
+        judge="Asked whether Clemson's QB is playing. Pass if it reports the injury/availability status in its "
+              "NEWS block with the outlet (or says there's no report), and keeps 'reported' items as reported; "
+              "fail if it guesses, invents a status or calls anyone healthy.")
     add("text-snubbed", "opinion", ["who's getting snubbed by the committee?"], nonempty, persona="df",
         judge="Opinion question about the CFP committee. Pass if Picky gives a confident, outrageous, board-style "
               "take (SEC-bias conspiracy energy, Notre Dame homer) while any ranking or record it cites is real; "

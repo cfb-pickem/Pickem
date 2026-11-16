@@ -465,13 +465,14 @@ TOPICS = [
     ("suspension", r"suspen\w*|ineligib\w*|arrest\w*|dismiss\w* from|charged with|NCAA investigation"),
     ("coaching", r"\bfire[sd]?\b|firing|\bhire[sd]?\b|hiring|coach(ing)? search|hot seat|buyout|interim coach|"
                  r"carousel|contract extension|steps? down|resign\w*|parts? ways|\bretir\w*|"
-                 r"(new|next|head) coach\b|coordinator"),
+                 r"(new|next) (head )?coach\b|(coaching|head coach(ing)?) (job|opening|vacancy|search)|"
+                 r"coordinator (hire|search|fired|out)"),
     ("portal", r"transfer portal|\bportal\b|transfer(s|ring|red)?\b|enter(s|ed)? the portal"),
     ("recruiting", r"commit(s|ted|ment)?\b|decommit\w*|\bflip(s|ped)?\b|recruit\w*|signing day|five-star|four-star"),
     ("rankings", r"\bAP (poll|top 25)\b|rankings?|\bCFP\b|playoff (picture|race|projection|field)|top 25|"
                  r"power rankings|bowl projection"),
-    ("betting", r"\bodds\b|\bspread\b|betting|\bpicks?\b|predictions?|best bets?|\bline (move|movement)|"
-                r"\bfavorite[sd]?\b|underdogs?|over/under"),
+    ("betting", r"\bodds\b|betting|\bbets?\b|predictions?|expert picks|picks? against the spread|\bATS\b|"
+                r"point spread|\bline (move|movement)|over/under|sportsbook|polymarket"),
     ("realignment", r"realign\w*|join(s|ing)? the (SEC|Big Ten|Big 12|ACC|Pac-12)|conference (exit|move)|"
                     r"media rights|grant of rights"),
     ("money", r"revenue[- ]sharing|\bNIL\b|House settlement|\bcap\b|collective|salary"),
@@ -489,13 +490,15 @@ _ST_QUES = re.compile(r"\b(questionable|game[- ]time decision|day[- ]to[- ]day|s
 _ST_AVAIL = re.compile(r"\b(will play|cleared to (play|return)|expected to (play|start)|available|"
                        r"returns? to practice|back at practice|probable|good to go|will start)\b", re.I)
 
-_REPORTED = re.compile(r"\b(report(s|ed|edly)?|sources?|expected to|is set to|set to (hire|become|be named)|"
-                       r"plans? to|in talks|nearing|finaliz\w+|frontrunner|front-runner|targeting|rumou?r\w*|"
-                       r"likely to|per (sources|a source)|told (espn|the athletic|on3|cbs|yahoo)|"
-                       r"intends? to|considering|candidate)\b", re.I)
-_CONFIRMED = re.compile(r"\b(announc\w+|officially|confirm\w*|statement|has been (fired|hired|named|suspended|"
-                        r"dismissed)|fires|fired|names|named|hires|hired|undergoes|underwent|ruled out|suspends|"
-                        r"suspended|signs|signed|steps down|resigns|retires)\b", re.I)
+_REPORTED = re.compile(r"\b(report(s|ed|edly)?|sources?|per (sources|a source)|according to|rumou?r\w*|"
+                       r"told (espn|the athletic|on3|cbs|yahoo|reporters? off)|in talks|frontrunner|front-runner)\b",
+                       re.I)
+_OFFICIAL = re.compile(r"\b(announc\w+|officially|confirm\w*|statement|has been (fired|hired|named|suspended|"
+                       r"dismissed)|fires|fired|names|named|hires|hired|undergoes|underwent|ruled out|suspends|"
+                       r"suspended|signs|signed|steps down|resigns|retires|fines|fined|reprimand\w*|(coach|sarkisian|school|program|team)\b"
+                       r"[^.]{0,40}\b(said|says|announced))\b", re.I)
+_SOFT = re.compile(r"\b(expected to|is set to|set to (hire|become|be named)|plans? to|nearing|finaliz\w+|"
+                   r"targeting|likely to|intends? to|considering|candidate)\b", re.I)
 
 
 def injury_state(text: str) -> str | None:
@@ -515,15 +518,12 @@ def classify(text: str) -> dict:
     """topics, kind ('injury' for pick_brief), status (injury items), label
     ('reported' = sourced/expected, 'confirmed' = announced/done, None)."""
     topics = [t for t, rx in _TOPIC_RX if rx.search(text or "")]
-    head = (text or "").split(". ", 1)[0]  # the headline decides the label when it can
-    label = None
-    for part in (head, text or ""):
-        if _REPORTED.search(part):
-            label = "reported"
-            break
-        if _CONFIRMED.search(part):
-            label = "confirmed"
-            break
+    head = (text or "").split(". ", 1)[0]
+    t = text or ""
+    # a named source / "reportedly" beats everything; then an official word ("fires",
+    # "coach X said"); then soft language ("expected to", "likely to")
+    label = "reported" if _REPORTED.search(t) else "confirmed" if _OFFICIAL.search(t) else \
+        "reported" if _SOFT.search(t) else None
     injury = "injury" in topics
     status = injury_state(head) or injury_state(text) if injury else None
     return {"topics": topics, "kind": "injury" if injury else None, "status": status, "label": label}
@@ -554,10 +554,16 @@ def _words(it: dict) -> set[str]:
 
 
 def _names(it: dict, team_words: set[str]) -> set[str]:
-    """Capitalized tokens from the headline that aren't team / conference /
-    stock words: in practice people's last names (Walden, Kanu, Cignetti)."""
-    toks = re.findall(r"\b[A-Z][a-zA-Z'’\-]{2,}\b", it.get("title", ""))
-    return {t.lower().replace("’", "'").removesuffix("'s") for t in toks} - _NAME_STOP - team_words
+    """People in the headline: each run of capitalized words that aren't team
+    / conference / stock words, reduced to its last word ('Philip Rivers' ->
+    'rivers'), so a full name counts once (Walden, Kanu, Cignetti)."""
+    out = set()
+    for run in re.findall(r"(?:\b[A-Z][a-zA-Z'’\-]{1,}\b\s?)+", it.get("title", "")):
+        toks = [t.lower().replace("’", "'").removesuffix("'s") for t in run.split()]
+        toks = [t for t in toks if len(t) >= 3 and t not in _NAME_STOP and t not in team_words]
+        if toks:
+            out.add(toks[-1])
+    return out
 
 
 def _jacc(a: set, b: set) -> float:
@@ -588,8 +594,8 @@ def same_story(a: dict, b: dict, team_words: set[str] = frozenset()) -> bool:
     topic = set(a.get("topics") or []) & set(b.get("topics") or []) - {"betting", "rankings"}
     if set(a.get("players") or []) & set(b.get("players") or []) and topic:
         return True
-    return bool(_names(a, team_words) & _names(b, team_words)) and \
-        (bool(topic) or _jacc(_words(a), _words(b)) >= 0.2)
+    shared = _names(a, team_words) & _names(b, team_words)
+    return len(shared) >= 2 or (len(shared) == 1 and bool(topic) and _jacc(_words(a), _words(b)) >= 0.25)
 
 
 def _tier(it: dict) -> int:
@@ -894,7 +900,8 @@ def breaking_for(query: str | None = None, teams: list[str] | None = None, limit
             if len(s["teams"]) > 4 and not want["players"]:
                 w -= 2  # roundups rank last
             lead = s["lead"]["title"].lower()
-            w += any(x.lower() in lead for x in want["teams"] | want["players"])  # named in the headline
+            w += any(re.search(rf"\b{re.escape(x.split()[-1].lower())}\b", lead)
+                     for x in want["teams"] | want["players"])  # named in the headline ('Manning')
             w += s["n_outlets"] > 1 or bool(s["insider"]) or s["lead"].get("source") in TIER1  # a national desk
             scored.append(((e + w, s["time"]), s))
         scored.sort(key=lambda x: x[0], reverse=True)

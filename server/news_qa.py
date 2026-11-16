@@ -53,8 +53,8 @@ def sample(cache: dict, n: int = SAMPLE) -> list[dict]:
     for i, s in enumerate(sts[:n]):
         lead = s["lead"]
         rows.append({"id": i, "headline": lead["title"], "blurb": lead.get("summary", ""),
-                     "teams": s["teams"], "players": s["players"], "topics": s["topics"],
-                     "status": s["status"], "label": s["label"],
+                     "teams": lead.get("teams", []), "players": lead.get("players", []),
+                     "topics": lead.get("topics", []), "status": s["status"], "label": s["label"],
                      "merged": [x["title"] for x in s["items"][1:]],
                      "superseded": (cache["items"].get(s["superseded_by"]) or {}).get("title")})
     return rows
