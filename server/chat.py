@@ -6134,9 +6134,9 @@ def value_claim_check(ctx: dict):
 
 _RECORD_JAB = re.compile(
     r"\bgo(es|ing)? to (your|his|her|their) head\b|"
-    r"\b(you|you'?re|your|ur)\b.{0,60}\b(\d{1,2}-\d{1,2}\s+(week|weekend|start|run|slate)|first place|"
+    r"\b(you|you'?re|your|ur)\b.{0,60}\b(\d{1,2}-\d{1,2}\s+((this|last) )?(week|weekend|start|run|slate)|first place|"
     r"(perfect|hot|good|great|big) week|your record|that record)\b|"
-    r"\b\d{1,2}-\d{1,2}\s+(week|weekend)\b.{0,60}\b(you|you'?re|your|ur)\b", re.I)
+    r"\b(\d{1,2}-\d{1,2}\s+((this|last) )?(week|weekend)|first place)\b.{0,60}\b(you|you'?re|your|ur)\b", re.I)
 
 
 def advice_jab_check(ctx: dict, question: str):
