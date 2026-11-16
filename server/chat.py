@@ -44,6 +44,7 @@ import espn
 import board_voice
 import freshness
 import game_cards
+import live_flag
 import live_games
 import news
 import rare_bits
@@ -98,8 +99,9 @@ MAX_ANSWER_WORDS = 300
 # The fallback only loads when Claude fails; let it unload afterwards instead
 # of pinning ~6.5 GB next to the VM and the image model.
 OLLAMA_FALLBACK_KEEP_ALIVE = "15m"
-# As the primary model: how long it stays loaded after the last message.
-OLLAMA_KEEP_ALIVE = os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "30m")
+# As the primary model: how long it stays loaded after the last message. 24h so the first text
+# after a quiet spell doesn't pay a cold load (pictures still unload it, see _image_stream).
+OLLAMA_KEEP_ALIVE = os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h")
 # Thinking models (qwen3.5): "false" skips the reasoning pass. Unset = don't send.
 OLLAMA_THINK = os.environ.get("PICKY_OLLAMA_THINK")
 
@@ -558,6 +560,7 @@ def is_test_request(req: Request) -> bool:
 class Gate:
     def __init__(self):
         self.holds: dict[int, float] = {}  # member request id -> monotonic start
+        self.flags: dict[int, str | None] = {}  # member request id -> live_flag token (cross-process)
         self._ids = itertools.count()
         self.last_member = -1e9
         self.test_busy = False
@@ -582,12 +585,14 @@ class Gate:
     def member_in(self) -> int:
         k = next(self._ids)
         self.holds[k] = time.monotonic()
+        self.flags[k] = live_flag.begin()
         if self.preempt is not None and not self.preempt.is_set():
             self.preempt.set()
             self.stats["preemptions"] += 1
         return k
 
     def member_out(self, k: int) -> None:
+        live_flag.end(self.flags.pop(k, None))
         if self.holds.pop(k, None) is not None:
             self.last_member = time.monotonic()
 
@@ -5160,6 +5165,7 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     # client is kept alive by _keepalive pings meanwhile
     timeout = httpx.Timeout(connect=5.0, read=420.0, write=10.0, pool=5.0)
     text = ""
+    await live_flag.wait_clear()  # side sidecars/exams yield to a live text in another process
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
             if prefix:

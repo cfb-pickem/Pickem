@@ -86,6 +86,7 @@ from starlette.requests import Request as StarletteRequest  # noqa: E402
 import callbacks  # noqa: E402
 import chat  # noqa: E402
 import group_outbox  # noqa: E402
+import live_flag  # noqa: E402
 import maintenance  # noqa: E402
 import picky_brain  # noqa: E402
 import picky_zh  # noqa: E402
@@ -832,8 +833,9 @@ async def group(req: Request):
     t0 = time.time()
     recent = body.get("recent") if isinstance(body.get("recent"), list) else None
     callbacks.CHAT.set((chat_id, VIEWER.sender(handle).team, dm))  # for the exam rider (PICKY_CALLBACK_RIDER=1)
-    out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
-                       recent=recent)
+    with live_flag.held():  # side sidecars/exams pause their model calls while a member waits
+        out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
+                           recent=recent)
     if out is None:
         log.info("dm skipped sender=%s: not a mapped member or allowlisted", handle[-4:] or "?")
         return {"reply": None}

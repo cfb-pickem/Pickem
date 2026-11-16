@@ -462,6 +462,7 @@ def _condense(client, it: dict, desc: str) -> str | None:
               f"stated in it, add nothing.\n\nHeadline: {it['title']}\nBlurb: {desc[:1500]}\n\nSummary:")
     r = client.post(f"{OLLAMA}/api/generate", timeout=60, json={
         "model": MODEL, "prompt": prompt, "stream": False, "think": False,
+        "keep_alive": os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h"),  # don't cut chat's keep_alive to 5m
         "options": {"num_ctx": NUM_CTX, "temperature": 0.1, "num_predict": 120}})
     r.raise_for_status()
     return short_summary(r.json().get("response")) or None

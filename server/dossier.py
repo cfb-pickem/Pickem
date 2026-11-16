@@ -524,6 +524,7 @@ def local_summary(client: httpx.Client, g: dict, secs: dict) -> tuple[str, str]:
     try:
         r = client.post(f"{OLLAMA}/api/generate", timeout=90, json={
             "model": LOCAL_MODEL, "prompt": prompt, "stream": False, "think": False,
+            "keep_alive": os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h"),  # don't cut chat's keep_alive to 5m
             "options": {"num_ctx": 16384, "temperature": 0.1, "num_predict": 120}})
         r.raise_for_status()
         s = re.sub(r"\s+", " ", r.json().get("response") or "").strip()

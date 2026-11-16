@@ -55,7 +55,11 @@ _PLIST = Path.home() / "Library/LaunchAgents/com.pickem.chat.plist"
 if _PLIST.exists():
     for k, v in (plistlib.loads(_PLIST.read_bytes()).get("EnvironmentVariables") or {}).items():
         os.environ.setdefault(k, str(v))
+# the exam is side traffic: its in-process model calls (--at) yield to live texts (server/live_flag.py)
+os.environ.setdefault("PICKY_SIDE", "1")
+sys.path.append(str(HERE.parent))
 import checks  # noqa: E402
+import live_flag  # noqa: E402
 import group_items  # noqa: E402
 import questions  # noqa: E402
 from truth import Truth, chat  # noqa: E402
@@ -446,6 +450,9 @@ async def run(args):
                 continue
             history, answers = [], []
             for ti, q in enumerate(it["turns"]):
+                waited = await live_flag.wait_clear(force=True)  # a member's live text goes first
+                if waited > 1:
+                    print(f"  waited {waited:.0f}s for a live text", flush=True)
                 history.append({"role": "user", "content": q})
                 if args.group:
                     now = time.time()
@@ -524,7 +531,7 @@ async def regrade(runrec: dict) -> dict:
 # directly, bypassing the gate: run those only when the league is quiet.)
 NO_MODEL_TESTS = ["test_privacy.py", "test_standings.py", "test_cfbd.py", "test_rules.py", "test_picky_player.py",
                   "test_leader.py", "test_opinions.py", "test_daddyfreeman.py", "test_gate.py", "test_results.py",
-                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "test_callbacks.py", "eval/test_checks.py"]
+                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "test_callbacks.py", "test_live_flag.py", "eval/test_checks.py"]
 
 
 def no_model() -> int:
@@ -532,6 +539,7 @@ def no_model() -> int:
     CFBD cache, rules source). Asks Picky nothing; never touches the GPU."""
     server, failed = HERE.parent, []
     env = {**os.environ, "PICKEM_CHAT_MODEL": "qwen3.5:9b-q4_K_M", "PICKY_OLLAMA_THINK": "false"}
+    env.pop("PICKY_SIDE", None)  # fake-Ollama suites must not stall on a real live text
     for f in NO_MODEL_TESTS:
         p = subprocess.run([sys.executable, "-I", f], cwd=server, env=env, capture_output=True, text=True)
         print(f"{'ok  ' if p.returncode == 0 else 'FAIL'} {f}", flush=True)

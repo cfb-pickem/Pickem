@@ -37,6 +37,7 @@ import httpx
 import banter
 import callbacks
 import chat
+import live_flag
 
 log = logging.getLogger("picky-brain")
 
@@ -219,6 +220,7 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
                "keep_alive": chat.OLLAMA_KEEP_ALIVE}
     if chat.OLLAMA_THINK is not None:
         payload["think"] = chat.OLLAMA_THINK == "true"
+    await live_flag.wait_clear()  # side sidecars yield to a live text
     async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=timeout, write=10.0, pool=5.0)) as c:
         await chat._prime(c, prefix)
         r = await c.post(f"{chat.OLLAMA}/api/chat", json=payload)

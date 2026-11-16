@@ -25,6 +25,7 @@ import httpx
 import opencc
 
 import chat
+import live_flag
 
 log = logging.getLogger("picky-zh")
 
@@ -144,6 +145,7 @@ async def _call(prefix: str | None, tail: str, user: str, key: str, temperature:
                "keep_alive": chat.OLLAMA_KEEP_ALIVE}
     if chat.OLLAMA_THINK is not None:
         payload["think"] = chat.OLLAMA_THINK == "true"
+    await live_flag.wait_clear()  # side sidecars yield to a live text
     async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=timeout, write=10.0, pool=5.0)) as c:
         if prefix:
             await chat._prime(c, prefix)

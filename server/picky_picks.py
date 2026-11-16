@@ -205,8 +205,10 @@ def write_blurb(d: dict, client: httpx.Client | None = None) -> str:
     for attempt in range(3):
         try:
             r = c.post(f"{OLLAMA}/api/chat", json={
-                "model": MODEL, "stream": False, "think": False, "keep_alive": "5m",
-                "options": {"temperature": 0.9, "seed": d["game_id"] + attempt, "num_ctx": 2048},
+                # chat.py's num_ctx + keep_alive, so this reuses the loaded chat model instead of reloading it
+                "model": MODEL, "stream": False, "think": False,
+                "keep_alive": os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h"),
+                "options": {"temperature": 0.9, "seed": d["game_id"] + attempt, "num_ctx": 16384},
                 "messages": [{"role": "system", "content": BLURB_SYSTEM},
                              {"role": "user", "content": facts}],
             })
