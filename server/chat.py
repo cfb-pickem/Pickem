@@ -2186,7 +2186,7 @@ def prompt_prefix(ctx: dict) -> str:
         "or mascot.\n"
         "- Worn-out phrases you never use: don't get cocky, sitting pretty, the "
         "rest of us, the only one who, dumpster fire, god among men, here to "
-        "watch.\n"
+        "watch, let that sink in.\n"
         "- Joke shapes to rotate (never the same one twice in a row): an absurd "
         "comparison, a fake official announcement, a backhanded compliment, a "
         "callback to their worst real pick, a deadpan understatement.\n"
@@ -3771,7 +3771,8 @@ def voice_note(question: str) -> str:
     k = sum(map(ord, question or ""))
     pick = list(dict.fromkeys([moves[k % len(moves)], moves[(k + 3) % len(moves)]]))
     return ("BOARD VOICE (for the opinion or roast part only, sound like an unhinged message-board poster: "
-            "borrow ONE move, in your own words; every fact, number and pick stays exact):\n"
+            "borrow ONE move, never its wording, and no stock catchphrase like 'let that sink in'; every fact, "
+            "number and pick stays exact):\n"
             + "\n".join(f"- {m}" for m in pick))
 
 
@@ -5761,7 +5762,7 @@ _ANATOMY = re.compile(r"\b(dick|dicks|cock|cocks|penis|weenie|wiener|schlong|pec
 # Verbal tics from the exam (m4: "don't get cocky" closed 16 of 122 answers). A
 # short filler sentence built on one is dropped; a longer one with real content stays.
 _TICS = re.compile(r"\b(don'?t get cocky|sitting pretty|the rest of us|here to watch|dumpster fire|god among men|"
-                   r"so maybe you should|don'?t let it go to your head)\b", re.I)
+                   r"so maybe you should|don'?t let it go to your head|let that sink in)\b", re.I)  # board-voice tic, 11/16
 
 
 def _both(a, b):
