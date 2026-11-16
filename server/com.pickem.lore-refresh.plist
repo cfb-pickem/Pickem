@@ -4,8 +4,9 @@
   League lore for Picky (lore.py): records, streaks, best/worst weeks, upsets
   hit, blown picks, lone wolves, head-to-head and past champions, computed
   from Supabase finals (read-only, service key GETs) + js/leagueHistory.js +
-  cfb-genius.html into server/cache/lore.json. Every 3 hours (a few small
-  REST reads; no model, no CFBD). chat.py reads the cache only.
+  cfb-genius.html into server/cache/lore.json. Fires every 30 min; lore.py
+  only refreshes when freshness.due("lore") (hourly on game days, else every
+  3 hours; a few small REST reads; no model, no CFBD). chat.py reads the cache only.
   Install: cp to ~/Library/LaunchAgents and launchctl load it.
 -->
 <plist version="1.0">
@@ -21,7 +22,7 @@
     <key>WorkingDirectory</key>
     <string>/Users/Agent/cfb-pickem/server</string>
     <key>StartInterval</key>
-    <integer>10800</integer>
+    <integer>1800</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>

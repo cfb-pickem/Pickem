@@ -6,12 +6,14 @@ game straight from Supabase (finals only, so no hidden pick is ever touched),
 js/leagueHistory.js (the 2022-24 Splash seasons, weekly wins only) and the
 champions list on cfb-genius.html.
 
-    ./.venv/bin/python3 -I lore.py            # refresh server/cache/lore.json
+    ./.venv/bin/python3 -I lore.py            # refresh server/cache/lore.json when due
+    ./.venv/bin/python3 -I lore.py --force    # refresh now
     ./.venv/bin/python3 -I lore.py show TG    # print one member's lines
 
 Read-only against Supabase (service key, GETs only). chat.py reads the cache
 file (mtime-memoized) and injects only the members a question names.
-LaunchAgent com.pickem.lore-refresh runs this daily.
+LaunchAgent com.pickem.lore-refresh fires every 30 min; freshness.due() runs it
+hourly on game days (Fri noon-Sun 3 AM CT), every 3 hours otherwise.
 """
 
 from __future__ import annotations
@@ -590,6 +592,7 @@ def refresh() -> dict:
     names = {t["team_id"]: t["team_name"] for t in data["teams"] if not t.get("is_exhibition") and t.get("active")}
     if comp["seasons"]:
         out["casino"] = casino(key, names, max(comp["seasons"]))
+    out["fetched_at"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")  # freshness.py
     CACHE.parent.mkdir(exist_ok=True)
     tmp = CACHE.with_suffix(".tmp")
     tmp.write_text(json.dumps(out, indent=1))
@@ -602,6 +605,11 @@ if __name__ == "__main__":
         d = json.loads(CACHE.read_text())
         for ln in d["members"].get(sys.argv[2], ["(no such member)"]):
             print("-", ln)
+        sys.exit(0)
+    sys.path.insert(0, str(HERE))
+    import freshness  # noqa: E402 - every 30 min; runs only when due (hourly on game days, else 3 h)
+    if "--force" not in sys.argv and not freshness.due("lore"):
+        print("not due")
         sys.exit(0)
     d = refresh()
     print(json.dumps({"as_of": d["as_of"], "members": len(d["members"]), "league": d["league"]}, indent=1))

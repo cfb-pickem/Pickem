@@ -139,7 +139,8 @@ def test_news_rider_from_cache_only():
                    "players": [], "link": "y"}}
     with tempfile.TemporaryDirectory() as d:
         f = Path(d) / "news.json"
-        f.write_text(_json.dumps({"items": items, "fetched_at": "2026-11-15T00:00:00+00:00"}))
+        import datetime as _dt  # fresh feed (freshness.py drops a news cache past its hard limit)
+        f.write_text(_json.dumps({"items": items, "fetched_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}))
         real = news.CACHE_PATH
         news.CACHE_PATH = f
         news._mem = None

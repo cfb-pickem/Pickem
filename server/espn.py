@@ -18,6 +18,8 @@ import time
 
 import httpx
 
+import freshness
+
 log = logging.getLogger("picky.espn")
 
 SUMMARY = (
@@ -188,8 +190,10 @@ async def _fetch_one(client: httpx.AsyncClient, event_id: int) -> dict:
         notes = parse_summary(r.json())
     except Exception as e:  # noqa: BLE001 - fail soft on anything ESPN does
         log.warning("espn summary %s failed: %s", event_id, e)
-        if hit:  # stale beats nothing
-            return hit[1]
+        # a stale copy only inside the lines' hard limit, and flagged so chat
+        # says "as of" instead of "now" (freshness.py)
+        if hit and freshness.check("lines", hit[0], refresh=False).use:
+            return dict(hit[1], stale_at=hit[0])
         return {"unavailable": True}
     _cache[event_id] = (time.time(), notes)
     return notes

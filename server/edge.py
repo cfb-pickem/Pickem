@@ -44,6 +44,7 @@ import time
 import httpx
 
 import cfbd
+import freshness
 
 log = logging.getLogger("picky.edge")
 
@@ -260,7 +261,8 @@ async def fetch_splits(client: httpx.AsyncClient, want: list[tuple[str, str]], i
     res = await asyncio.gather(*(page(n) for n in range(1, SPLITS_MAX_PAGES + 1)), return_exceptions=True)
     if isinstance(res[0], Exception):  # page 1 failed: the source is down, keep what we had
         log.warning("dk splits failed: %s", res[0])
-        return _splits_cache[1] if _splits_cache else []
+        ok = _splits_cache and freshness.check("splits", _splits_cache[0], refresh=False).use
+        return _splits_cache[1] if ok else []  # past the hard limit: no splits beats old splits
     rows: list[dict] = []
     for got in res:
         if isinstance(got, Exception) or not got:
@@ -330,7 +332,10 @@ async def fetch_weather(client: httpx.AsyncClient, lat: float, lon: float, start
             return None
     except Exception as e:  # noqa: BLE001 - optional source, fail soft
         log.warning("open-meteo failed: %s", e)
-        return hit[1] if hit else None
+        v = freshness.check("weather", hit[0], refresh=False) if hit else None
+        if not (v and v.use):
+            return None
+        return dict(hit[1], src=f"{hit[1]['src']}, {v.hedge}") if v.hedge else hit[1]
     _weather_cache[key] = (time.time(), w)
     return w
 

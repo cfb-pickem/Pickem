@@ -42,6 +42,7 @@ import dossier
 import edge
 import espn
 import board_voice
+import freshness
 import game_cards
 import news
 import rare_bits
@@ -1500,9 +1501,12 @@ def cfbd_game_lines(away: str, home: str, idx: dict | None) -> list[str]:
     defense/offense, already decided."""
     if not idx:
         return ["  Season stats: not loaded right now (no SP+, ATS or team stats)."]
+    fv = freshness.check("cfbd", idx.get("fetched_at")) if idx.get("fetched_at") else None
+    if fv and not fv.use:
+        return ["  Season stats: not loaded right now (no SP+, ATS or team stats)."]
     out = []
     for t in (away, home):
-        out.append(f"  Season (CFBD): {cfbd.compact_team_summary(t, idx)}")
+        out.append(f"  Season (CFBD{', ' + fv.hedge if fv and fv.hedge else ''}): {cfbd.compact_team_summary(t, idx)}")
         lead = cfbd.team_leaders(t, idx)
         if lead:
             out.append(f"  Season leaders, {t}: {lead}")
@@ -1702,7 +1706,8 @@ def render_context(ctx: dict) -> str:
             L.append("  ESPN data: unavailable right now (no market line, records, injuries or news).")
         else:
             mk = _market(notes, away, home)
-            L.append(f"  ESPN market line now: {mk}" if mk else "  ESPN market line: none posted")
+            old = f"as of {freshness.as_of('lines', notes['stale_at'])}, not current" if notes.get("stale_at") else ""
+            L.append(f"  ESPN market line {old or 'now'}: {mk}" if mk else "  ESPN market line: none posted")
             lv = line_value(notes, away, home, g.get("line"))
             if lv:
                 L.append(f"  Line value: {lv}")
@@ -1715,7 +1720,7 @@ def render_context(ctx: dict) -> str:
                 L.append(f"  ESPN FPI matchup predictor (chance to WIN outright, NOT to cover): "
                          f"{away} {_num(wp['away'])}%, {home} {_num(wp['home'])}%")
             if notes.get("weather"):
-                L.append(f"  Weather forecast: {notes['weather']}")
+                L.append(f"  Weather forecast{f' ({old})' if old else ''}: {notes['weather']}")
             inj_a = (notes.get("away") or {}).get("injuries") or []
             inj_h = (notes.get("home") or {}).get("injuries") or []
             if notes.get("injury_report_available") and (inj_a or inj_h):
@@ -3550,6 +3555,10 @@ def news_note(question: str) -> str:
         else:
             lines = news.news_for(q, limit=3)
         asof = news.as_of()
+        fv = freshness.check("news", news.load_cache().get("fetched_at"))
+        if not fv.use:
+            return ""  # feed down past its hard limit: no news beats old news
+        asof = f"{asof}, last checked {fv.as_of}" if fv.hedge else asof
     except Exception as e:  # noqa: BLE001 - a bad cache never breaks chat
         log.warning("news lookup failed: %s", e)
         return ""
@@ -3614,6 +3623,8 @@ def wants_rankings(ctx: dict, question: str) -> bool:
 def rankings_note(ctx: dict, question: str) -> str:
     polls = ctx.get("rankings") or {}
     if not polls or not wants_rankings(ctx, question):
+        return ""
+    if polls is _rank_memo["data"] and not freshness.usable("rankings", _rank_memo["at"]):
         return ""
 
     def fmt(day):
@@ -3725,6 +3736,8 @@ def load_takes() -> dict:
 def takes_note(question: str) -> str:
     q = question or ""
     secs = load_takes()
+    if secs and not freshness.usable("hot_takes", _takes_memo["mtime"]):
+        return ""
     picks = []
     for head, rx in TAKE_TOPICS:
         if len(picks) >= 2:
@@ -4010,6 +4023,8 @@ def lore_note(ctx: dict, question: str) -> str:
         want = cw - 1 if re.search(r"\blast week\b", q, re.I) else cw if re.search(r"\bthis week\b", q, re.I) else None
         if want is not None:
             lines = [ln for ln in lines if not ln.startswith("Awards for ") or re.search(rf"\bweek {want}:", ln)]
+    if not freshness.usable("lore", lore.get("fetched_at") or _lore_memo["mtime"]):
+        lines = [ln for ln in lines if " so far (through" not in ln and not ln.startswith("Awards for ")]
     lines = list(dict.fromkeys(lines or champ_lines))
     if not lines:
         return ""
@@ -4218,7 +4233,6 @@ def analysis_games(ctx: dict, question: str) -> list[dict]:
 # question about a specific game, only as color: matchup_signals never reads
 # it, so it can't move the lean. URLs stay in the file; members never see them.
 DOSSIER_DIR = Path(os.environ.get("PICKY_DOSSIER_DIR", Path(__file__).resolve().parent / "cache" / "dossiers"))
-DOSSIER_MAX_AGE = dt.timedelta(days=8)
 DOSSIER_MAX_ITEMS = 8
 
 
@@ -4228,7 +4242,7 @@ def load_dossier(week, game_id) -> dict | None:
         gen = dt.datetime.fromisoformat(d["generated_at"])
     except (OSError, ValueError, KeyError):
         return None
-    if dt.datetime.now(gen.tzinfo) - gen > DOSSIER_MAX_AGE:
+    if not freshness.usable("dossier", gen.timestamp()):
         return None
     return d
 
