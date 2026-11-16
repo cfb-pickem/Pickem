@@ -1,0 +1,38 @@
+name: Picky live-game exam (fast replay)
+
+# The 80-question live-game exam on last Saturday's recorded games, model-free:
+# every answer key must be in Picky's LIVE rider or computed answer, the computed
+# answer must be right, and the claim check must cut wrong scores/cover margins.
+# Runs whenever the live code or its fixtures change.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - server/live_games.py
+      - server/eval/live_exam.py
+      - server/eval/live_replay.py
+      - server/eval/fixtures/live-2026-11-14/**
+      - .github/workflows/live-exam.yml
+  pull_request:
+    paths:
+      - server/live_games.py
+      - server/eval/live_exam.py
+      - server/eval/live_replay.py
+      - server/eval/fixtures/live-2026-11-14/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-exam-fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'httpx>=0.27'
+      - name: 80-question live exam, fast replay
+        run: python -I server/eval/live_exam.py fast

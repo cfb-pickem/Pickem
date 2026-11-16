@@ -572,9 +572,19 @@ chat.race_note = _race_note
 # (asserted in _build_context) and chat.pick_claim_check drops a guessed one.
 
 _SENT = re.compile(r"(?<=[.!?])[\"')\]]*\s+(?=\S)")
+ENSURED = "\u2063"  # _collect marks chat._ensure's required fact with it; the trims keep that sentence
+
+
+def _split_ensured(text: str) -> tuple[str, str]:
+    body, _, fact = (text or "").partition(ENSURED)
+    return body, fact.replace(ENSURED, "").strip()
 
 
 def group_trim(text: str) -> str:
+    text, fact = _split_ensured(text)
+    if fact:  # the computed answer (live score, cover margin...) survives the sentence cap
+        body = group_trim(text) if text.strip() else ""
+        return (body + " " + fact).strip()
     text = re.sub(r"\s+", " ", (text or "").replace("**", "")).strip()
     parts = [p for p in _SENT.split(text) if p.strip()]
     out = " ".join(parts[:MAX_SENTENCES]).strip()
@@ -601,6 +611,9 @@ def drop_echo(text: str, question: str) -> str:
 
 def dm_trim(text: str) -> str:
     """iMessage shows markdown literally: drop it, cap the length."""
+    text, fact = _split_ensured(text)
+    if fact:
+        return (dm_trim(text) + " " + fact).strip() if text.strip() else fact
     text = re.sub(r"^\s{0,3}#{1,6}\s*", "", (text or "").replace("**", ""), flags=re.M).strip()
     if len(text) > DM_MAX_CHARS:
         cut = text[:DM_MAX_CHARS]
@@ -623,7 +636,7 @@ async def _collect(resp) -> tuple[str, str | None]:
             except ValueError:
                 continue
             if obj.get("content"):
-                out.append(obj["content"])
+                out.append((ENSURED if obj.get("ensured") else "") + obj["content"])
             if obj.get("image"):
                 image = obj["image"]
     return "".join(out), image

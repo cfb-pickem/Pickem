@@ -205,6 +205,9 @@ _PLAY_TIME = re.compile(r"^\(\d{1,2}:\d{2}\)\s*")
 _FORMATION = re.compile(r"^(No Huddle-|No Huddle )?(Shotgun|Pistol|Under Center)\s+", re.I)
 _NAME = r"[A-Z][A-Za-z'\-]*\.\s?[A-Z][A-Za-z'\-]+(?:[ -][A-Z][A-Za-z'\-]+)*(?:,? (?:Jr\.|Sr\.|II|III|IV))?"
 _INJ = re.compile(r"#(\d{1,2}) (" + _NAME + r") injured on the play")
+# '#2 T.Jackson, #20 Z.Morris injured on the play' names two players (the QB came first and was missed)
+_INJ_LIST = re.compile(r"((?:#\d{1,2} " + _NAME + r"(?:,| and|, and)? ?)+) injured on the play")
+_INJ_ONE = re.compile(r"#(\d{1,2}) (" + _NAME + r")")
 _PASSER = re.compile(r"#(\d{1,2}) (" + _NAME + r") (?:pass\b|sacked\b|scrambles?\b)")
 _PLAYER_IN = re.compile(r"#(\d{1,2}) (" + _NAME + r")")
 TURNOVER_TYPES = {"Fumble Recovery (Opponent)", "Pass Interception Return", "Interception",
@@ -284,6 +287,7 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
     name = {g["away"]["id"]: g["away"]["name"], g["home"]["id"]: g["home"]["name"]}
     plays = _flat_plays(d)
     roster = _roster(d)
+    wall = {p.get("id"): p.get("wallclock") for p in plays}
 
     # scoring plays, oldest first
     scoring = []
@@ -294,10 +298,10 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
                         "abbr": abbr.get(tid, ""), "type": (s.get("type") or {}).get("text") or "Score",
                         "text": re.sub(r"\s{2,}", " ", str(s.get("text") or "")).strip(),
                         "period": per, "clock": clk, "away": _int(s.get("awayScore")),
-                        "home": _int(s.get("homeScore")), "id": s.get("id")})
+                        "home": _int(s.get("homeScore")), "id": s.get("id"), "wallclock": wall.get(s.get("id"))})
     scoring.sort(key=lambda s: (_tkey(s["period"], s["clock"]), (s["away"] or 0) + (s["home"] or 0)))
 
-    key, injuries, passers = [], [], {}
+    key, injuries, passers, turnovers = [], [], {}, {}
     for i, p in enumerate(plays):
         ty = (p.get("type") or {}).get("text") or ""
         text = str(p.get("text") or "")
@@ -320,13 +324,21 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
         if kind:
             key.append({"kind": kind, "team": name.get(off, ""), "period": per, "clock": clk, "text": ct,
                         "wallclock": p.get("wallclock")})
+        if kind == "turnover" and off:  # every giveaway, by the team that had the ball (key plays keep only the last few)
+            who = re.search(r"#\d{1,2} (" + _NAME + r") pass intercepted|fumbled? by #\d{1,2} (" + _NAME + ")", text)
+            what = ("INT" if "intercept" in (text + ty).lower() else "fumble lost" if "fumbl" in (text + ty).lower()
+                    else "blocked kick" if "Blocked" in ty else "turnover")
+            turnovers.setdefault(name.get(off, off), []).append(
+                {"kind": what, "who": (who.group(1) or who.group(2)) if who else None, "period": per, "clock": clk,
+                 "td": "Touchdown" in ty})
         m = _PASSER.search(text)
         if m and ty not in NON_PLAYS and off:
             passers.setdefault(off, []).append({"name": m.group(2), "jersey": m.group(1), "i": i,
                                                 "period": per, "clock": clk})
-        for m in _INJ.finditer(text):
-            injuries.append({"jersey": m.group(1), "name": m.group(2), "i": i, "period": per, "clock": clk,
-                             "wallclock": p.get("wallclock"), "off": off, "text": ct})
+        for ml in _INJ_LIST.finditer(text):
+            for m in _INJ_ONE.finditer(ml.group(1)):
+                injuries.append({"jersey": m.group(1), "name": m.group(2), "i": i, "period": per, "clock": clk,
+                                 "wallclock": p.get("wallclock"), "off": off, "text": ct})
 
     # who's at QB, and any change: a new passer with 2+ straight dropbacks (one
     # trick-play throw isn't a QB change), or the next passer after the starter
@@ -392,6 +404,7 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
     # where the ball is: the last real play's end state
     last = next((p for p in reversed(plays) if (p.get("type") or {}).get("text") not in
                  ("End Period", "End of Half", "End of Game", "End of Regulation")), None)
+    g["receiving"] = None
     if last and g["state"] == "in":
         end = last.get("end") or {}
         g["possession"] = _side_of(g, (end.get("team") or {}).get("id"))
@@ -399,6 +412,15 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
         g["last_play"] = _clean_play(last.get("text"))
         yte = _int(end.get("yardsToEndzone"))
         g["red_zone"] = yte is not None and yte <= 20
+        lty = (last.get("type") or {}).get("text") or ""
+        sc_last = scoring[-1] if scoring and scoring[-1].get("id") == last.get("id") else None
+        if sc_last and ("Touchdown" in lty or lty in ("Field Goal Good", "Safety") or "Touchdown" in sc_last["type"]):
+            # the play that just scored: its end state is the goal line, not who has the ball next
+            scorer = next((t for t in (g["away"], g["home"]) if t["name"] == sc_last["team"]), None)
+            if scorer:
+                other = g["home"] if scorer is g["away"] else g["away"]
+                g["possession"], g["down_distance"], g["red_zone"] = None, None, False
+                g["receiving"] = scorer["name"] if lty == "Safety" else other["name"]
     # headlines naming a team in this game, published after kickoff - 6 h
     news = []
     try:
@@ -415,6 +437,8 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
                                     for t in (g["away"], g["home"]) if len(t["name"]) > 3):
             news.append({"headline": h[:160], "published": a.get("published"), "source": "ESPN"})
     g.update({"scoring": scoring[-KEEP_SCORING:], "scoring_n": len(scoring), "key": key[-KEEP_KEY:],
+              "turnovers": turnovers, "latest_wallclock": next((p.get("wallclock") for p in reversed(plays)
+                                                                if p.get("wallclock")), None),
               "injuries": inj_out[-8:], "qb": qb, "news": news[:3], "detail": True,
               "players": sorted({_abbr_key(m.group(2)).split(".", 1)[-1] for p in plays
                                  for m in _PLAYER_IN.finditer(str(p.get("text") or ""))})[:400]})
@@ -454,6 +478,14 @@ def cover_status(away: str, home: str, line, ap, hp) -> str | None:
     # both numbers spelled out: the 12B said 'covering by 11' (the lead) when the cover margin was 13.5
     return (f"{side_label(cov, home, ln)} covering by {_num(abs(m))} ({how}; "
             f"{side_label(other, home, ln)} not covering)")
+
+
+def cover_side(pool: dict, g: dict) -> str | None:
+    """'home' / 'away': who covers the locked line at this score (dead even goes to away)."""
+    try:
+        return "home" if float(g["home_score"]) + float(pool["line"]) - float(g["away_score"]) > 0 else "away"
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def cover_margin(pool: dict, g: dict) -> float | None:
@@ -782,15 +814,28 @@ _LIVE_ASK = re.compile(
     r"lead|up by|down by|quarter|half(time)?|clock|time left|td|tds|touchdowns?|field goal|fg|pick six|pick-six|"
     r"interception|intercepted|picked off|fumbled?|turnovers?|injur\w*|hurt|limping|carted|helped off|left the game|"
     r"out of the game|leave the game|went down|go down|backup|qb\d?|quarterbacks?|covering|cover|drive|red zone|"
-    r"possession|ball|who has the ball|game|games|update|updates)\b", re.I)
+    r"possession|ball|who has the ball|game|games|update|updates|picks?)\b", re.I)
+# 'how are my picks doing' during games: every pool game (finals, live, not started) with its cover status
+_PICKS_ASK = re.compile(r"\b(my|our) (picks?|week|bets?|sides?|games)\b|\bhow (am|'?m) i doing\b|"
+                        r"\bpicks? (doing|going|looking)\b", re.I)
 _WHAT_HAPPENING = re.compile(r"\b(what'?s happening|what'?s going on|any updates?|what'?s on|games? on|live games?|"
                              r"scores?\b(?! of)|around the country|anything good)\b", re.I)
+
+
+# what people actually text ('Wake', 'Boise'); only short names no other FBS team shares
+ALIASES = {"Wake Forest": ["Wake"], "Boise State": ["Boise"], "Alabama": ["Bama"], "Vanderbilt": ["Vandy"],
+           "Pittsburgh": ["Pitt"], "Missouri": ["Mizzou"], "Syracuse": ["Cuse"]}
+# a name inside a longer team name is that other team ('Texas' in 'Texas A&M' / 'North Texas')
+_PRE = "".join(f"(?<!{w} )" for w in ("North", "South", "East", "West", "Central", "Eastern", "Western", "Northern",
+                                       "Southern", "Coastal", "Middle", "New"))
+_POST = r"(?!\s+(?:A&M|Tech|State|St\b|Southern|Christian|Poly|International)\b)"
 
 
 def _name_keys(t: dict) -> list[tuple[str, bool]]:
     """(text, case_sensitive) ways a question names a team."""
     out = [(t["name"], False)]
     n = t["name"]
+    out += [(x, False) for x in ALIASES.get(n, [])]
     if n.endswith(" State"):
         out.append((n[:-6] + " St", False))
     out.append((n.replace("'", "").replace("’", ""), False))
@@ -801,25 +846,40 @@ def _name_keys(t: dict) -> list[tuple[str, bool]]:
     return out
 
 
-def games_for(question: str, games: dict, pool_ids=()) -> list[dict]:
-    """Games the question touches: named teams (longest names first), then
-    players in a game's feed; a generic live ask gets the live pool games plus
-    the closest ranked live games."""
-    q = question or ""
-    hits, taken = [], q
+_COMMON = {"long", "young", "black", "white", "green", "gray", "grey", "hall", "king", "love", "hope", "will", "west",
+           "north", "south", "east", "little", "small", "short", "price", "rice", "bell", "best", "early", "good", "more",
+           "much", "many", "back", "just", "last", "game", "ball", "down", "over", "under", "half", "what", "when",
+           "with", "that", "this", "they", "them", "then", "than", "have", "been", "doing", "going", "about", "after",
+           "still", "right", "know", "lead", "score", "drive", "time", "play", "says", "said", "news", "week", "picks"}
+
+
+def named_games(question: str, games: dict) -> list[dict]:
+    """Games whose team the question names (longest names first)."""
+    hits, taken = [], question or ""
     pairs = []
     for g in games.values():
         for side in ("away", "home"):
             for k, cs in _name_keys(g[side]):
                 pairs.append((len(k), k, cs, g))
     for _, k, cs, g in sorted(pairs, key=lambda x: -x[0]):
-        rx = re.compile(rf"(?<![\w']){re.escape(k)}(?!\w|'(?!s\b))", 0 if cs else re.I)
+        rx = re.compile(rf"(?<![\w']){_PRE}{re.escape(k)}(?!\w|'(?!s\b)){_POST}", 0 if cs else re.I)
         if rx.search(taken):
             if g not in hits:
                 hits.append(g)
             taken = rx.sub(" | ", taken)
-    if not hits:  # a player the feed knows: last names of 4+ letters
-        words = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z'\-]{3,}", q)}
+    return hits
+
+
+def games_for(question: str, games: dict, pool_ids=()) -> list[dict]:
+    """Games the question touches: named teams (longest names first), then
+    players in a game's feed; 'how are my picks doing' gets every pool game; a
+    generic live ask gets the live pool games plus the closest ranked live games."""
+    q = question or ""
+    hits = named_games(q, games)
+    if not hits and _PICKS_ASK.search(q) and pool_ids:
+        return sorted((g for g in games.values() if g["id"] in set(pool_ids)), key=lambda g: str(g.get("start")))[:6]
+    if not hits:  # a player the feed knows: last names of 4+ letters (not everyday words: 'how LONG ago')
+        words = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z'\-]{3,}", q)} - _COMMON
         for g in games.values():
             names = set(g.get("players") or [])
             for x in (g.get("injuries") or []):
@@ -865,14 +925,24 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
             if pos and "Half" not in clock_text(g) and not clock_text(g).startswith("End"):
                 s += f"; {pos['name']} ball" + (f", {g['down_distance']}" if g.get("down_distance") else "") \
                      + (" (red zone)" if g.get("red_zone") else "")
+            elif g.get("receiving") and "Half" not in clock_text(g):
+                s += f"; kickoff after that score, {g['receiving']} gets the ball next"
         lines.append(s + ".")
     sc = list(reversed(g.get("scoring") or []))
     if sc:
-        lines.append("  Last score: " + _play_desc(sc[0], g) + ".")
+        ago = since(sc[0], g, now) if st == "in" else None
+        lines.append("  Last score: " + _play_desc(sc[0], g) + (f", {ago}" if ago else "") + ".")
         if len(sc) > 1:
             lines.append("  Earlier scores (newest first): " + " | ".join(_play_desc(x, g) for x in sc[1:4]) + ".")
     elif st == "in" and g.get("detail"):
         lines.append("  No points yet.")
+    if g.get("detail") and st in ("in", "post"):
+        to = g.get("turnovers") or {}
+        lines.append("  Turnovers so far (all of them): " + ("; ".join(
+            f"{team} {len(xs)} (" + ", ".join(f"{x.get('who') + ' ' if x.get('who') else ''}{x['kind']}"
+                                               f"{' returned for a TD' if x.get('td') else ''} {period_label(x['period'])} "
+                                               f"{x['clock']}" for x in xs) + ")" for team, xs in to.items())
+                                                                    or "none") + ".")
     key = list(reversed(g.get("key") or []))[:3]
     if key:
         lines.append("  Key plays (newest first): " + " | ".join(
@@ -886,6 +956,10 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
             s += f", back in the game {period_label(x['returned'][0])} {x['returned'][1]}"
         elif st == "in":
             s += ", not seen on a play since"
+            q = (g.get("qb") or {}).get(x.get("team") or "") or {}
+            if x.get("qb") and not any(_tkey(c["period"], c["clock"]) >= _tkey(x["period"], x["clock"])
+                                       for c in q.get("changes") or []):
+                s += "; no replacement QB has taken a snap in the feed yet (don't name one)"
         st_lines.append(s)
     qb_lines = []
     for team, q in (g.get("qb") or {}).items():
@@ -912,6 +986,18 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
     return "\n".join(lines)
 
 
+def since(s: dict, g: dict, now: float | None = None) -> str | None:
+    """'about 4 min ago' for a play: the game's own clock on the wall (newest play's wallclock), so a replay
+    reads the same as a live Saturday."""
+    try:
+        w = dt.datetime.fromisoformat(str(s.get("wallclock")).replace("Z", "+00:00")).timestamp()
+        latest = dt.datetime.fromisoformat(str(g.get("latest_wallclock")).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+    secs = max(0.0, latest - w) + (age(g, now) or 0.0)
+    return "under a minute ago (real time)" if secs < 60 else f"about {int(secs // 60)} min ago (real time)"
+
+
 def _kick_ct(start) -> str:
     try:
         k = dt.datetime.fromisoformat(str(start).replace("Z", "+00:00")).astimezone(CT)
@@ -936,7 +1022,8 @@ def rider(question: str, pool: dict | None = None, refresh: bool = True, now: fl
     if not games:
         return "", []
     hit = games_for(question, games, list(pool) or data.get("pool_ids") or [])
-    hit = [g for g in hit if g.get("state") in ("in", "post") or g["id"] in pool]
+    named = {g["id"] for g in named_games(question, games)}
+    hit = [g for g in hit if g.get("state") in ("in", "post") or g["id"] in pool or g["id"] in named]
     # finals only when the question is about that game or nothing is live; skip stale finals from days ago
     if not hit:
         return "", []
@@ -957,14 +1044,34 @@ def rider(question: str, pool: dict | None = None, refresh: bool = True, now: fl
     if not live_now:
         head = head.replace("These are the CURRENT facts", "No game named here is live; these are the latest facts")
     body = "\n".join(game_block(g, pool.get(g["id"]), now) for g in hit)
-    hit = [{**g, "cover_margin": cover_margin(pool[g["id"]], g)} if g["id"] in pool else g for g in hit]
+    body += no_injury_lines(question, hit)
+    hit = [{**g, "cover_margin": cover_margin(pool[g["id"]], g), "cover_side": cover_side(pool[g["id"]], g)}
+           if g["id"] in pool else g for g in hit]
     return head + "\n" + body, hit
 
 
+def no_injury_lines(question: str, hit: list[dict]) -> str:
+    """'did Kienholz get hurt?' about a player the feed has on plays but never 'injured on the play': say so
+    (the 12B otherwise guesses from the question)."""
+    if not _INJ_WORD.search(question or ""):
+        return ""
+    out = []
+    for g in hit:
+        injured = {_abbr_key(x["player"]).split(".", 1)[-1].lower() for x in g.get("injuries") or []}
+        known = {p.lower() for p in g.get("players") or []}
+        for w in dict.fromkeys(re.findall(r"\b[A-Z][a-z'\-]{3,}\b", question or "")):
+            if w.lower() in known and w.lower() not in injured:
+                out.append(f"  NO injury reported in the live feed for {w} ({g['away']['name']} at {g['home']['name']}): "
+                           f"no 'injured on the play' note for him. Say there's no report; don't confirm the rumor.")
+    return ("\n" + "\n".join(out)) if out else ""
+
+
 _STATUS = {"in": "in_progress", "post": "final"}
+_FOLLOWUP = re.compile(r"\b(that|it|him|he|his|they|them|then|why|when|how long|how come|replaced?)\b|^\s*(and|so|but)\b",
+                       re.I)
 
 
-def apply_to_ctx(ctx: dict, question: str, refresh: bool = True) -> str:
+def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "") -> str:
     """chat.py's one hook (run off the event loop). Builds the LIVE rider for
     the question (refreshing stale live games first) into ctx['live_rider'] /
     ['live_rider_games'], and lays the poller's fresher score over the pool
@@ -973,7 +1080,16 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True) -> str:
     pool = {str(g["id"]): {"away": g["away"], "home": g["home"], "line": g.get("line")}
             for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")}
     try:
-        text, hit = rider(question, pool, refresh=refresh)
+        text, hit = "", []
+        ctx["live_followup"] = False
+        if prev and not named_games(question, load().get("games") or {}) and _FOLLOWUP.search(question or ""):
+            text, hit = rider(f"{prev} {question}", pool, refresh=refresh)  # 'how long ago was that?': last question's game
+            ctx["live_followup"] = bool(text) and bool(named_games(prev, {g["id"]: g for g in hit}))
+        if not text:
+            text, hit = rider(question, pool, refresh=refresh)
+        if not text and prev:  # any other follow-up the feed can't place on its own
+            text, hit = rider(f"{prev} {question}", pool, refresh=refresh)
+            ctx["live_followup"] = bool(text) and bool(named_games(prev, {g["id"]: g for g in hit}))
     except Exception as e:  # noqa: BLE001 - the live rider must never break a reply
         log.warning("live rider failed: %s", e)
         text, hit = "", []
@@ -998,6 +1114,167 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True) -> str:
             r["winner"] = None
             pg["winner"], pg["status"] = None, "in_progress"
     return text
+
+
+# ----------------------------------------------------------------------------
+# the computed answer: chat._ensure adds this sentence when the reply never
+# stated the number/name (and claim_check cuts any wrong one), so a live
+# score, cover margin, scorer or QB can't go out wrong or missing
+# ----------------------------------------------------------------------------
+
+_Q_PICKS = _PICKS_ASK
+_Q_COVER = re.compile(r"\bcover\w*\b|\bspread\b|\bagainst the (line|number)\b", re.I)
+_Q_TOTAL = re.compile(r"\btotal\b|\bcombined\b|\bhow many points\b|\bpace\b|\bover\b|\bunder\b", re.I)
+_Q_SCORER = re.compile(r"\bwho scored\b|\bhow did\b.{0,40}\bscore\b|\bwho (threw|caught|ran)\b|\bwhat (just )?happened\b|"
+                       r"\blast (score|td|touchdown)\b|\bscored (that|the) (last|td)\b", re.I)
+_Q_QB = re.compile(r"\bqb\b|\bquarterback\b", re.I)
+_Q_SCORE = re.compile(r"\bscores?\b|\bwho'?s winning\b|\bwinning\b|\bleading\b|\bhow'?s\b.{0,40}\b(doing|going)\b|"
+                      r"\bupdate\b|\bwhat'?s (happening|going on)\b|\bfinal\b|\bwho won\b|\bhalftime\b", re.I)
+_Q_POSS = re.compile(r"\bwho has the ball\b|\bpossession\b|\bwho'?s got the ball\b", re.I)
+
+
+def _num_rx(x: float) -> str:
+    return rf"(?<![\d.]){re.escape(_num(x))}(?![\d]|\.\d)"
+
+
+def _target(ctx: dict, question: str) -> list[dict]:
+    """The game(s) the question names, or the last question's on a follow-up. Never a generic pick: 'what's the
+    Texas A&M score?' must not get the one live pool game's score as its answer."""
+    hit = ctx.get("live_rider_games") or []
+    games = {g["id"]: g for g in hit}
+    named = [games[g["id"]] for g in named_games(question, games)] if question else []
+    return named or (hit if ctx.get("live_followup") else [])
+
+
+def _pool_rows(ctx: dict) -> dict:
+    return {str(g["id"]): g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")}
+
+
+def _scorer(s: dict) -> str | None:
+    m = re.match(r"([A-Z][A-Za-z.'\- ]+?(?: Jr\.| Sr\.| II| III| IV)?) \d+ Yd", s.get("text") or "")
+    return m.group(1) if m else None
+
+
+def picks_fact(ctx: dict) -> tuple | None:
+    me = (ctx.get("you") or {}).get("team_name")
+    picks = {str(p["game_id"]): p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(me) or []}
+    rows = _pool_rows(ctx)
+    games = {g["id"]: g for g in ctx.get("live_rider_games") or []}
+    if not picks or not games:
+        return None
+    parts, need = [], []
+    for gid, row in sorted(rows.items(), key=lambda kv: str(kv[1].get("start"))):
+        if gid not in picks:
+            continue
+        pick, g = picks[gid], games.get(gid)
+        lab = side_label(row["home"] if _same(pick, row["home"]) else row["away"], row["home"], row["line"])
+        team = lab.rsplit(" ", 1)[0] if not lab.endswith("(pick'em)") else lab[:-10]
+        need.append(re.escape(team.split(" ")[0]))
+        if not g or g.get("state") == "pre" or g.get("away_score") is None:
+            parts.append(f"{lab} not started")
+            continue
+        m = g["home_score"] + float(row["line"]) - g["away_score"]
+        mine = (m > 0) == _same(pick, row["home"]) if m else not _same(pick, row["home"])
+        sc = f"{g['away']['name']} {g['away_score']}-{g['home']['name']} {g['home_score']}"
+        if g.get("state") == "post":
+            parts.append(f"{lab} {'WON, covered' if mine else 'LOST, missed'} by {_num(abs(m))} (final {sc})")
+        else:
+            parts.append(f"{lab} {'covering' if mine else 'NOT covering'} by {_num(abs(m))} ({sc}, {clock_text(g)})")
+            need.append(_num_rx(abs(m)))
+    if not parts:
+        return None
+    return (lambda t, need=need: all(re.search(r, t, re.I) for r in need),
+            " Your picks right now: " + "; ".join(parts) + ".")
+
+
+def _same(a: str, b: str) -> bool:
+    n = lambda x: re.sub(r"[^a-z]", "", str(x or "").lower())  # noqa: E731
+    return n(a) == n(b)
+
+
+def required_fact(ctx: dict, question: str) -> tuple | None:
+    """(check(reply) -> bool, sentence) for a live factual question, else None."""
+    q = question or ""
+    hit = ctx.get("live_rider_games") or []
+    if not hit or not q:
+        return None
+    if _Q_PICKS.search(q) and not named_games(q, {g["id"]: g for g in hit}):
+        return picks_fact(ctx)
+    tg = _target(ctx, q)
+    if len(tg) != 1:
+        return None
+    g = tg[0]
+    rows = _pool_rows(ctx)
+    hd = f"{g['away']['name']} at {g['home']['name']}"
+    st = g.get("state")
+    if st == "pre":
+        if _Q_SCORE.search(q) or _Q_COVER.search(q):
+            return (lambda t: bool(re.search(r"not (started|kicked|underway|on yet|begun)|hasn'?t (started|kicked|begun)|"
+                                             r"kicks? off|kickoff|yet to|later", t, re.I)),
+                    f" {hd} hasn't kicked off yet ({_kick_ct(g.get('start'))}).")
+        return None
+    if g.get("away_score") is None:
+        return None
+    a, h = g["away_score"], g["home_score"]
+    when = clock_text(g)
+    score = f"{g['away']['name']} {a}, {g['home']['name']} {h}"
+    both = (lambda t, a=a, h=h: bool(re.search(_num_rx(a), t)) and bool(re.search(_num_rx(h), t)))
+    if _Q_COVER.search(q):
+        row = rows.get(str(g["id"]))
+        if not row or row.get("line") is None:
+            return (lambda t: bool(re.search(r"pool|league line|no line|spread", t, re.I)),
+                    f" {hd} isn't a pool game this week, so there's no league line to cover.")
+        cs = cover_status(row["away"], row["home"], row["line"], a, h)
+        m = abs(h + float(row["line"]) - a)
+        if not cs:
+            return None
+        return (lambda t, m=m: bool(re.search(_num_rx(m), t)),
+                f" {'Final' if st == 'post' else 'Right now (' + when + ')'}: {cs.replace('covering', 'covered', 1) if st == 'post' else cs}.")
+    if _Q_TOTAL.search(q) and not _Q_PICKS.search(q):
+        tot = a + h
+        return (lambda t, tot=tot: bool(re.search(_num_rx(tot), t)), f" {tot} total points so far ({score}, {when}).")
+    if _Q_QB.search(q):
+        names = [t for t in (g["away"], g["home"]) if any(re.search(rf"(?<![\w']){re.escape(k)}(?!\w)", q, 0 if cs_ else re.I)
+                                                          for k, cs_ in _name_keys(t))]
+        team = names[0]["name"] if len(names) == 1 else None
+        qb = (g.get("qb") or {}).get(team) if team else None
+        if not qb:
+            return None
+        cur = qb.get("current") or qb.get("starter")
+        last = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", cur).split(".")[-1].split(" ")[-1]
+        ch = (qb.get("changes") or [])[-1:]
+        why = ""
+        if ch:
+            inj = any(x.get("qb") and _abbr_key(x["player"]) == _abbr_key(ch[0]["from"]) for x in g.get("injuries") or [])
+            why = (f" (took over from {ch[0]['from']} at {period_label(ch[0]['period'])} {ch[0]['clock']}"
+                   + (f", after {ch[0]['from']} was reported injured" if inj else "") + ")")
+        return (lambda t, last=last: last.lower() in t.lower(), f" {team} QB right now: {cur}{why}.")
+    if _Q_SCORER.search(q) and not re.search(r"\b(pick|int|interception|intercepted|fumbled?|sacked)\b", q, re.I):
+        sc = list(g.get("scoring") or [])
+        teams = [t["name"] for t in (g["away"], g["home"]) if any(
+            re.search(rf"(?<![\w']){re.escape(k)}(?!\w|'(?!s\b))", q, 0 if cs_ else re.I) for k, cs_ in _name_keys(t))]
+        if len(teams) == 1:
+            sc = [x for x in sc if x["team"] == teams[0]]
+        if not sc:
+            return None
+        pick = sc[0] if re.search(r"\bfirst\b", q, re.I) else sc[-1]
+        if re.search(r"\bfirst\b", q, re.I) and g.get("scoring_n", 0) > len(g.get("scoring") or []):
+            return None  # the first score scrolled out of the feed's last 6
+        who = _scorer(pick)
+        if not who:
+            return None
+        last = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", who).split(" ")[-1]
+        return (lambda t, last=last: last.lower() in t.lower(), f" {_play_desc(pick, g)}.")
+    if _Q_POSS.search(q) and st == "in":
+        side = g.get("possession")
+        team = g[side]["name"] if side in ("away", "home") else g.get("receiving")
+        if not team:
+            return None
+        return (lambda t, team=team: team.split(" ")[0].lower() in t.lower(),
+                f" {team} {'has the ball' if side else 'gets the ball next (kickoff after the score)'} ({when}).")
+    if _Q_SCORE.search(q):
+        return (both, f" {'Final' + when[5:] if st == 'post' else 'As of ' + when}: {score}.")
+    return None
 
 
 # ----------------------------------------------------------------------------
@@ -1038,37 +1315,76 @@ def claim_check(games: list[dict]):
         injured |= {(x.get("full_name") or "").split(" ")[-1].lower() for x in g.get("injuries") or []}
         gs.append((g, ok_pairs, names, scorers, known, injured))
 
+    def segments(sent: str) -> list[str]:
+        """Per game, the part of the sentence about it: 'Wake covered by 40.5 and Oregon State is covering by
+        1.5' checks 40.5 against Wake and 1.5 against Oregon State (one game per sentence: the whole sentence)."""
+        ms = []
+        for i, (_, _, names, *_r) in enumerate(gs):
+            for n in names:
+                for m in re.finditer(rf"(?<![\w']){re.escape(n)}(?!\w|'(?!s\b))", sent, 0 if n.isupper() else re.I):
+                    ms.append((m.start(), m.end(), i))
+        ms.sort(key=lambda x: (x[0], -x[1]))
+        keep, last_end = [], -1
+        for st_, en, i in ms:
+            if st_ >= last_end:
+                keep.append((st_, en, i))
+                last_end = en
+        seg = [None] * len(gs)
+        if len({i for _, _, i in keep}) <= 1:
+            for _, _, i in keep:
+                seg[i] = sent
+            return seg
+        for k, (st_, _, i) in enumerate(keep):
+            nxt = next((x[0] for x in keep[k + 1:] if x[2] != i), len(sent))
+            lo = 0 if k == 0 else st_
+            seg[i] = (seg[i] or "") + " " + sent[lo:nxt]
+        return seg
+
     def check(sent: str) -> bool:
-        for g, ok_pairs, names, scorers, known, injured in gs:
-            if not any(re.search(rf"(?<![\w']){re.escape(n)}(?!\w|'(?!s\b))", sent, 0 if n.isupper() else re.I)
-                       for n in names):
+        segs = segments(sent)
+        for (g, ok_pairs, names, scorers, known, injured), seg in zip(gs, segs):
+            if seg is None:
                 continue
-            for a, b in _PAIR.findall(sent):
+            for a, b in _PAIR.findall(seg):
                 pair = tuple(sorted((int(a), int(b))))
                 if pair not in ok_pairs and not (pair[0] == pair[1] == 0 and g.get("state") == "pre"):
                     return False
             tnum = {}
             for side in ("away", "home"):
                 for k, _ in _name_keys(g[side]):
-                    for m in re.finditer(_TEAM_NUM.format(t=re.escape(k)), sent, 0 if k.isupper() else re.I):
+                    for m in re.finditer(_TEAM_NUM.format(t=re.escape(k)), seg, 0 if k.isupper() else re.I):
                         tnum[side] = int(m.group(1))
             if len(tnum) == 2 and tuple(sorted(tnum.values())) not in ok_pairs:
                 return False
             if g.get("cover_margin") is not None:  # 'covering by 11' when it's 13.5 against the line
-                for m in _COVER_BY.finditer(sent):
+                for m in _COVER_BY.finditer(seg):
                     if float(m.group(1)) != g["cover_margin"]:
                         return False
+            if g.get("cover_side") in ("away", "home") and g.get("cover_margin"):  # 'SMU is covering' when Wake is
+                loser = g["home" if g["cover_side"] == "away" else "away"]
+                winner = g[g["cover_side"]]
+                for side_t, wrong_if_neg in ((loser, False), (winner, True)):
+                    for k, _ in _name_keys(side_t):
+                        for m in re.finditer(rf"(?<![\w']){re.escape(k)}(?!\w)([^.?!,;]{{0,30}}?)\bcover(?:ing|s)\b", seg,
+                                             0 if k.isupper() else re.I):
+                            other = loser if side_t is winner else winner
+                            if any(re.search(rf"(?<![\w']){re.escape(k2)}(?!\w)", m.group(1), 0 if k2.isupper() else re.I)
+                                   for k2, _ in _name_keys(other)):
+                                continue  # 'Wake's lead means SMU isn't covering': the verb is the other team's
+                            neg = bool(re.search(r"\bnot\b|n't\b|\bnever\b|\bno longer\b|\bfail", m.group(1), re.I))
+                            if neg == wrong_if_neg and not re.search(r"\?$", sent.strip()):
+                                return False
             if g.get("state") == "in" and g.get("away_score") is not None:
                 cur = abs(g["away_score"] - g["home_score"])
-                for m in _MARGIN.finditer(sent):
-                    if int(m.group(1)) != cur and not re.search(r"\b(cover|spread|line|number)\b", sent, re.I):
+                for m in _MARGIN.finditer(seg):
+                    if int(m.group(1)) != cur and not re.search(r"\b(cover|spread|line|number)\b", seg, re.I):
                         return False
-            words = {w.lower() for w in re.findall(r"[A-Z][a-z'\-]{2,}", sent)}
-            if _SCORE_VERB.search(sent):
+            words = {w.lower() for w in re.findall(r"[A-Z][a-z'\-]{2,}", seg)}
+            if _SCORE_VERB.search(seg):
                 bad = {w for w in words if w in known and w not in scorers}
                 if bad:
                     return False
-            if _INJ_WORD.search(sent):
+            if _INJ_WORD.search(seg):
                 named = {w for w in words if w in known}
                 if named and not (named & injured):
                     return False

@@ -347,5 +347,99 @@ class GroupPings(unittest.TestCase):
         self.assertEqual(gp.live_pings(LG(), {UNC: g}), [])
 
 
+class LiveExam80(unittest.TestCase):
+    """The 80-question live exam's fast replay (eval/live_exam.py fast): every item's facts are in the rider or the
+    computed answer, the computed answer is right and survives the claim check, wrong numbers get cut. Subprocess:
+    it reloads live_games against its own fake ESPN."""
+
+    def test_fast_replay(self):
+        import subprocess
+        r = subprocess.run([sys.executable, "-I", str(HERE / "eval" / "live_exam.py"), "fast"], capture_output=True,
+                           text=True, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-2000:])
+
+
+class Exam80Fixes(unittest.TestCase):
+    def _games(self, t):
+        return {gid: {**state(gid, t), "id": gid} for gid in GAMES}
+
+    def test_short_names_and_wrong_team(self):
+        gs = self._games(R._ts("2026-11-15T03:06:40Z"))
+        ids = lambda q: [g["id"] for g in L.named_games(q, gs)]  # noqa: E731
+        self.assertEqual(ids("is Wake covering?"), ["401858301"])
+        self.assertEqual(ids("Boise score?"), ["401860914"])
+        self.assertEqual(ids("what's the Texas A&M score?"), [])
+        self.assertEqual(ids("how's Oregon doing?"), [])
+        only_tex = {TEX: gs[TEX]}
+        self.assertEqual(L.named_games("North Texas score?", only_tex), [])
+        self.assertEqual([g["id"] for g in L.named_games("Texas LSU score?", gs)], [TEX])
+
+    def test_two_players_hurt_on_one_play(self):
+        g = state(UTSA, at(UTSA, r"T\.Jackson, #20 Z\.Morris injured", after=30))
+        hurt = {x["player"]: x for x in g["injuries"]}
+        self.assertTrue(hurt["T.Jackson"]["qb"])
+        self.assertIn("Z.Morris", hurt)
+
+    def test_turnover_counts_and_ball_after_a_score(self):
+        g = state(TEX, at(TEX, r"D\.Jones rush left for 44 yards", after=45))
+        self.assertEqual([x["who"] for x in g["turnovers"]["Texas"]], ["A.Manning", "A.Manning"])
+        self.assertIsNone(g["possession"])
+        self.assertEqual(g["receiving"], "Texas")
+        txt = L.game_block(g)
+        self.assertIn("Turnovers so far (all of them): ", txt)
+        self.assertIn("Texas gets the ball next", txt)
+        self.assertNotIn("LSU ball", txt)
+
+    def test_claim_check_multi_game_and_side(self):
+        t = R._ts("2026-11-15T02:13:30Z")
+        pool = {"401858301": {"away": "Wake Forest", "home": "SMU", "line": 1.5},
+                "401860914": {"away": "Oregon State", "home": "Boise State", "line": -13.5}}
+        hit = []
+        for gid, pl in pool.items():
+            g = state(gid, t)
+            hit.append({**g, "cover_margin": L.cover_margin(pl, g), "cover_side": L.cover_side(pl, g)})
+        chk = L.claim_check(hit)
+        self.assertTrue(chk("Wake Forest covered by 40.5 and Oregon State is covering by 1.5."))
+        self.assertTrue(chk("Wake won 49-7 and Boise leads 46-34."))
+        self.assertFalse(chk("Wake Forest covered by 40.5 and Oregon State is covering by 3.5."))
+        self.assertFalse(chk("Boise State is covering right now."))
+        self.assertTrue(chk("Boise State is not covering."))
+
+    def test_required_fact(self):
+        import live_exam as X
+        pool, picks = X.load_pool()
+        tr = X.Truth(GAMES, pool)
+        t = R._ts("2026-11-15T03:06:40Z")
+        L._overlay.clear()
+        with L._lock:
+            for gid in GAMES:
+                L._overlay[gid] = {**state(gid, t), "id": gid}
+        try:
+            ctx = X.fake_ctx(pool, picks, GAMES, tr, t)
+            L.apply_to_ctx(ctx, "is UTSA covering?", refresh=False)
+            chk, sent = L.required_fact(ctx, "is UTSA covering?")
+            self.assertIn("covering by 13.5", sent)
+            self.assertFalse(chk("yeah UTSA is rolling"))
+            self.assertTrue(chk("UTSA's covering by 13.5"))
+            ctx = X.fake_ctx(pool, picks, GAMES, tr, t)
+            L.apply_to_ctx(ctx, "what's the Texas A&M score?", refresh=False)
+            self.assertIsNone(L.required_fact(ctx, "what's the Texas A&M score?"))
+            ctx = X.fake_ctx(pool, picks, GAMES, tr, t)
+            L.apply_to_ctx(ctx, "how are my picks doing?", refresh=False)
+            chk, sent = L.required_fact(ctx, "how are my picks doing?")
+            self.assertIn("Wake Forest -1.5 WON", sent)
+            self.assertIn("North Dakota State -6.5 not started", sent)
+        finally:
+            L._overlay.clear()
+
+    def test_ensured_fact_survives_group_trim(self):
+        import group_chat as G
+        raw = "One. Two. Three. Four." + G.ENSURED + " As of 9:14 3Q: Louisville 13, North Carolina 7."
+        out = G.group_trim(raw)
+        self.assertTrue(out.endswith("Louisville 13, North Carolina 7."), out)
+        self.assertNotIn("Four", out)
+        self.assertNotIn(G.ENSURED, G.dm_trim(raw))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

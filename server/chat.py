@@ -6631,7 +6631,7 @@ async def _ensure(stream, need: tuple | None):
         if c.startswith("data: {"):
             text += json.loads(c[6:]).get("content", "")
         elif c.startswith("data: [DONE]") and text and not check(text):
-            yield _sse({"content": fallback})
+            yield _sse({"content": fallback, "ensured": True})  # the group sidecar's trim keeps it
         yield c
 
 
@@ -6833,7 +6833,9 @@ async def _chat(req: Request, test: bool, hold: int | None):
             ctx["picky_player"], _ = await asyncio.gather(
                 picky_player_facts(client, jwt, ctx), load_live(client, jwt, ctx))
             if last.get("role") == "user":  # game-day live feed: rider + fresher pool scores (live_games.py)
-                await asyncio.to_thread(live_games.apply_to_ctx, ctx, last.get("content", ""))
+                prev_q = next((m.get("content", "") for m in reversed(messages[:-1])
+                               if isinstance(m, dict) and m.get("role") == "user"), "")
+                await asyncio.to_thread(live_games.apply_to_ctx, ctx, last.get("content", ""), True, prev_q)
             if last.get("role") == "user" and wants_submission(ctx, last.get("content", "")):
                 ctx["submission"] = await load_submission(client, jwt, ctx)
     if not ctx.get("error"):
@@ -6981,7 +6983,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
                             _both(_both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
                                         _both(picky_claim_check(ctx), picky_claim_check(ctx, "you"))),
                                   _both(value_claim_check(ctx), advice_jab_check(ctx, qtext)))) if not ctx.get("error") else None),
-                looks_bait(qtext)), (submission_fact(ctx, qtext) or required_fact(ctx, qtext) or rankings_fact(rn))
+                looks_bait(qtext)), (submission_fact(ctx, qtext) or live_games.required_fact(ctx, qtext)
+                                     or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),
         media_type="text/event-stream",
