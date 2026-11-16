@@ -432,6 +432,23 @@ class Exam80Fixes(unittest.TestCase):
         finally:
             L._overlay.clear()
 
+    def test_unfinished_pool_games_are_ungraded(self):
+        t = R._ts("2026-11-14T18:50:00Z")  # Wake at halftime, Boise not started
+        L._overlay.clear()
+        with L._lock:
+            for gid in GAMES:
+                L._overlay[gid] = {**state(gid, t), "id": gid}
+        try:
+            wk = [{"GameId": 401858301, "Status": "final", "winner": "Wake Forest"},
+                  {"GameId": 401860914, "Status": "final", "winner": "Oregon State"},
+                  {"GameId": 999, "Status": "final", "winner": "X"}]
+            w2, s2 = L.unfinished_overlay(wk, [dict(g) for g in wk])
+            self.assertEqual([(g["Status"], g["winner"]) for g in w2],
+                             [("in_progress", None), ("scheduled", None), ("final", "X")])
+            self.assertEqual([g["GameId"] for g in s2], [999])
+        finally:
+            L._overlay.clear()
+
     def test_ensured_fact_survives_group_trim(self):
         import group_chat as G
         raw = "One. Two. Three. Four." + G.ENSURED + " As of 9:14 3Q: Louisville 13, North Carolina 7."

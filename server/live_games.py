@@ -1067,6 +1067,24 @@ def no_injury_lines(question: str, hit: list[dict]) -> str:
 
 
 _STATUS = {"in": "in_progress", "post": "final"}
+
+
+def unfinished_overlay(week_games: list[dict], season_games: list[dict]) -> tuple[list[dict], list[dict]]:
+    """chat._build_context, before grading: a pool game the live feed (fresh) has as not started or in progress
+    is ungraded (no winner, out of the finals that feed standings and weekly records), so 'you went 4-0' can't
+    come from a premature or stale final. A no-op when the feed is idle or stale."""
+    try:
+        games = load().get("games") or {}
+    except Exception:  # noqa: BLE001 - never break context building
+        return week_games, season_games
+    now = time.time()
+    open_ = {gid: g["state"] for gid, g in games.items()
+             if g.get("state") in ("pre", "in") and (age(g, now) or 1e9) <= game_max_age()}
+    if not open_:
+        return week_games, season_games
+    wk = [{**g, "Status": "in_progress" if open_[str(g.get("GameId"))] == "in" else "scheduled", "winner": None}
+          if str(g.get("GameId")) in open_ else g for g in week_games]
+    return wk, [g for g in season_games if str(g.get("GameId")) not in open_]
 _FOLLOWUP = re.compile(r"\b(that|it|him|he|his|they|them|then|why|when|how long|how come|replaced?)\b|^\s*(and|so|but)\b",
                        re.I)
 
@@ -1101,10 +1119,16 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "")
     rows = {str(r.get("GameId")): r for r in ctx.get("live_games") or []}
     for pg in ctx.get("games_this_week") or []:
         g = games.get(str(pg["id"]))
-        if not g or g.get("state") not in _STATUS or (age(g, now) or 1e9) > game_max_age():
+        if not g or (age(g, now) or 1e9) > game_max_age():
             continue
         r = rows.get(str(pg["id"]))
         if r is None:
+            continue
+        if g.get("state") == "pre":  # not kicked off: no score, nothing graded
+            r.update({"AwayPts": None, "HomePts": None, "Status": "scheduled", "winner": None})
+            pg["winner"], pg["status"] = None, "scheduled"
+            continue
+        if g.get("state") not in _STATUS:
             continue
         r.update({"AwayPts": g.get("away_score"), "HomePts": g.get("home_score"), "Status": _STATUS[g["state"]],
                   "Period": g.get("period"), "Clock": g.get("clock"), "status_name": g.get("status_name"),

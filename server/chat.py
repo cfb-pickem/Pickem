@@ -1091,6 +1091,8 @@ async def _build_context(
             raise x
     seeds = [] if isinstance(seeds, BaseException) else seeds or []
     autopilot = None if isinstance(autopilot, BaseException) or not autopilot else autopilot[0]
+    # a pool game the live feed (<= 90 s old) says hasn't finished isn't graded yet, whatever an older read said
+    week_games, season_games = live_games.unfinished_overlay(week_games, season_games)
 
     # `picks` has no season column, so scope by game id: `week=eq.N` alone
     # also returns last season's week N. Season picks run past PostgREST's
