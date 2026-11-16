@@ -85,6 +85,7 @@ from starlette.requests import Request as StarletteRequest  # noqa: E402
 
 import chat  # noqa: E402
 import group_outbox  # noqa: E402
+import maintenance  # noqa: E402
 import picky_brain  # noqa: E402
 import rare_bits  # noqa: E402
 import playoff_race  # noqa: E402
@@ -759,6 +760,13 @@ async def group(req: Request):
     chat_id, dm = str(body.get("chat") or ""), bool(body.get("dm"))
     if not dm and not TRIGGER.search(text):  # groups need @Picky; DMs always get a reply
         return {"reply": None}
+    if maintenance.active():  # brain in the shop (flag file or Ollama down): canned line, no model
+        m = load_members().get(norm_handle(handle)) or {}
+        if dm and not (m or body.get("allowlisted")):
+            return {"reply": None}
+        line = maintenance.reply(chat_id or handle, m.get("team"))
+        log.info("maintenance reply sender=%s sent=%s", handle[-4:] or "?", bool(line))
+        return {"reply": line}
     t0 = time.time()
     recent = body.get("recent") if isinstance(body.get("recent"), list) else None
     out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
