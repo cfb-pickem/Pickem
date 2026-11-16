@@ -21,6 +21,7 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -45,12 +46,17 @@ Each claim: text (one sentence, plain facts, <= 300 chars, no URL in the text), 
 GAMES:
 {games}
 
-Return JSON only: {{"games": [{{"game_id": 123, "claims": [...]}}, ...]}}."""
+ALSO list every FBS head-coach change during THIS season (since August 1): firings, resignations, a coach announced as leaving, and who the interim coach is. Each: school (as ESPN names it), text (one sentence: who was fired/left, when, who's interim), source_url, date (YYYY-MM-DD of the article).
+
+Return JSON only: {{"games": [{{"game_id": 123, "claims": [...]}}, ...], "coaching": [{{"school": "...", "text": "...", "source_url": "...", "date": "..."}}, ...]}}."""
 
 SCHEMA = {"type": "object", "properties": {"games": {"type": "array", "items": {
     "type": "object", "properties": {"game_id": {"type": "integer"},
                                      "claims": {"type": "array", "items": {"type": "object"}}},
-    "required": ["game_id", "claims"]}}}, "required": ["games"]}
+    "required": ["game_id", "claims"]}},
+    "coaching": {"type": "array", "items": {"type": "object", "properties": {
+        "school": {"type": "string"}, "text": {"type": "string"}, "source_url": {"type": "string"},
+        "date": {"type": "string"}}, "required": ["school", "text", "source_url", "date"]}}}, "required": ["games"]}
 
 
 def load() -> dict | None:
@@ -69,6 +75,16 @@ def claims_for(game_id) -> tuple[list[dict], str | None]:
         return [], None
     g = (d.get("games") or {}).get(str(game_id)) or {}
     return (g.get("facts") or []) + (g.get("rumors") or [])[:1], d.get("as_of")
+
+
+def coaching_changes() -> dict[str, list[dict]]:
+    """school (normalized) -> sourced in-season coaching changes; {} when stale/missing."""
+    import cfbd
+    d = load() or {}
+    out: dict[str, list[dict]] = {}
+    for c in d.get("coaching") or []:
+        out.setdefault(cfbd.norm(c.get("school")), []).append(c)
+    return out
 
 
 def due(now: dt.datetime) -> bool:
@@ -128,11 +144,28 @@ def run(force: bool = False) -> int:
             except ValueError:
                 continue
             out[str(gid)] = {"away": names[gid][0], "home": names[gid][1], **secs, "dropped": len(dropped)}
+    coaching = []
+    with httpx.Client() as client:
+        rows = [c for c in raw.get("coaching") or [] if isinstance(c, dict)]
+        st = dossier.check_urls(client, sorted({str(c.get("source_url") or "") for c in rows}))
+        for c in rows:
+            url, text = str(c.get("source_url") or ""), re.sub(r"\s+", " ", str(c.get("text") or "")).strip()
+            try:
+                d = dt.date.fromisoformat(str(c.get("date"))[:10])
+            except ValueError:
+                continue
+            if (not dossier._url_ok(url) or dossier._paid(url) or st.get(url) == "dead" or not 10 <= len(text) <= 300
+                    or d > now.date() + dt.timedelta(days=1) or (now.date() - d).days > 150):
+                continue
+            coaching.append({"school": str(c.get("school") or "").strip(), "text": text, "date": d.isoformat(),
+                             "source_name": dossier._domain(url)})
+    if not coaching and CACHE.exists():
+        coaching = json.loads(CACHE.read_text()).get("coaching") or []  # keep the last good list
     for gid, g in prev.items():  # a game Opus skipped this run keeps its last notes until the file ages out
         if gid not in out and int(gid) in ids:
             out[gid] = g
     doc = {"fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-           "as_of": now.strftime("%a %b %-d %-I:%M %p CT"), "week": week, "games": out}
+           "as_of": now.strftime("%a %b %-d %-I:%M %p CT"), "week": week, "games": out, "coaching": coaching}
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     tmp = CACHE.with_suffix(".tmp")
     tmp.write_text(json.dumps(doc, indent=1))

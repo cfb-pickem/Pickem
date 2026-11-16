@@ -41,10 +41,11 @@ _SLATE_ASK = re.compile(
     r"\b(this week'?s?|the slate|slate|key numbers?|hooks?|value (this|on the)|where'?s the value|line moves?|"
     r"lines? (moved|moving)|lookahead|look-ahead|letdown|sandwich|trap games?|best bets?|biggest (line )?moves?)\b", re.I)
 _PICK_WORDS = re.compile(
-    r"\b(line|spread|cover|ats|take|lay|getting|value|pick|who (you|ya|do you) (got|like|taking)|side|"
-    r"points?|total|over|under|injur|qb|quarterback|backup|matchup|defen[cs]e|offen[cs]e|run|pass|rush|weather|"
-    r"wind|cold|travel|altitude|rest|bye|motivation|bowl|revenge|rivalry|history|last time|h2h|trend|record|"
-    r"lookahead|letdown|key number|hook|why|best case|change your mind|playing|starting|out|hurt)\b", re.I)
+    r"\b(lines?|spreads?|cover\w*|ats|take|lay\w*|getting|value|picks?|who (you|ya|do you) (got|like|taking)|side|"
+    r"points?|totals?|over|under|injur\w*|qbs?|quarterbacks?|backups?|matchups?|defen[cs]e|offen[cs]e|run\w*|pass\w*|rush\w*|weather|"
+    r"wind\w*|cold|travel\w*|altitude|rest\w*|bye|motivat\w*|bowl|revenge|rivalry|history|last time|h2h|trends?|records?|"
+    r"lookahead|letdown|key numbers?|hook|why|best case|change your mind|playing|starting|out|hurt|good|"
+    r"chances?|beat|win\w*|lose|losing|score\w*|stop|handle|edge|coach\w*|fired|hot seat)\b", re.I)
 
 
 _ADV: dict = {}
@@ -127,7 +128,7 @@ def upcoming_games(idx: dict, now_utc: dt.datetime) -> list[dict]:
             s = _sd(g)
             if g["id"] in seen or s is None or g.get("homeScore") is not None:
                 continue
-            if now_utc - dt.timedelta(hours=4) <= s <= now_utc + HORIZON:
+            if now_utc <= s <= now_utc + HORIZON:  # kicked off: live_note / the live feed own it
                 seen.add(g["id"])
                 out.append(g)
     return sorted(out, key=lambda g: g["startDate"])
@@ -434,6 +435,98 @@ def player_teams(question: str, idx: dict) -> list[str]:
     return sorted(teams) if len(teams) == 1 else []
 
 
+_COACH_ASK = re.compile(r"\b(coach\w*|hc|head man|fired|firing|hot seat|carousel|interim|hire[sd]?)\b", re.I)
+_COACH_NEWS = re.compile(r"\b(fired|firing|interim|hires?|hired|hot seat|out as|parts ways|resign\w*|steps? down|"
+                         r"buyout|coach)\b", re.I)
+
+
+def _coaches() -> tuple[list, list]:
+    try:
+        db = sqlite3.connect(cfbd.DB_PATH)
+        cur = db.execute("select json from datasets where name='coaches'").fetchone()
+        prev = db.execute("select json from datasets where name='coaches_prev'").fetchone()
+        db.close()
+        return (json.loads(cur[0]) if cur else []), (json.loads(prev[0]) if prev else [])
+    except Exception:  # noqa: BLE001
+        return [], []
+
+
+def coach_note(question: str, idx: dict, teams: list[str]) -> str:
+    """Who coaches whom (CFBD's season list, this year + last) for a question
+    that names a coach or asks about a team's coach, plus in-season firings /
+    interims from the news feed (CFBD's list doesn't drop a coach fired midseason).
+    A name that coached a school last year but not this year gets an explicit
+    'not their coach anymore', so a false premise gets corrected."""
+    q = question or ""
+    cur, prev = _coaches()
+    if not cur:
+        return ""
+    def full(c):
+        return f"{c['firstName']} {c['lastName']}"
+    def schools(c, yr):
+        return [x["school"] for x in c.get("seasons") or [] if x.get("year") == yr]
+    year = max((x.get("year") or 0) for c in cur for x in c.get("seasons") or [])
+    people = {}
+    for c in cur + prev:
+        people.setdefault(full(c).lower(), c)
+    last_count = {}
+    for name in people:
+        last_count[name.split()[-1]] = last_count.get(name.split()[-1], 0) + 1
+    ql = q.lower()
+    named = [n for n in people if n in ql]
+    caps = {w.lower() for w in re.findall(r"\b([A-Z][a-zA-Z'’-]{4,})\b", q)}
+    named += [n for n in people if n not in named and n.split()[-1] in caps and last_count[n.split()[-1]] == 1
+              and not cfbd.resolve_team(n.split()[-1], idx)]
+    if not named and not (teams and _COACH_ASK.search(q)):
+        return ""
+    cur_by_school = {}
+    for c in cur:
+        for sch in schools(c, year):
+            cur_by_school.setdefault(sch, []).append(c)
+    lines, about = [], list(teams)
+    for n in named[:3]:
+        c = people[n]
+        now_at = [x for c2 in cur if full(c2).lower() == n for x in schools(c2, year)]
+        was_at = [x for c2 in prev if full(c2).lower() == n for x in schools(c2, year - 1)]
+        if now_at:
+            lines.append(f"- {full(c)}: head coach at {', '.join(now_at)} in {year}.")
+            about += now_at
+        elif was_at:
+            for sch in was_at:
+                now = cur_by_school.get(sch) or []
+                lines.append(f"- {full(c)} is NOT {sch}'s head coach in {year} (he was in {year - 1}). "
+                             f"{sch}'s coach: {', '.join(full(x) + ' (hired ' + x['hireDate'][:10] + ')' for x in now) or 'unknown'}."
+                             " If they say otherwise, correct them.")
+                about.append(sch)
+    try:
+        import slate_intel
+        changes = slate_intel.coaching_changes()
+    except Exception:  # noqa: BLE001
+        changes = {}
+    for t in teams:
+        ch = changes.get(cfbd.norm(t))
+        if ch:  # sourced in-season change beats CFBD's season-start list
+            lines += [f"- {t}: {c['text']} ({c.get('source_name')}, {c.get('date')})" for c in ch[:2]]
+            continue
+        for c in cur_by_school.get(t, []):
+            hd = c.get("hireDate", "")[:10]
+            first = hd >= f"{year - 1}-08-01"
+            lines.append(f"- {t}: {full(c)} (hired {hd}{', first season' if first else ''}).")
+    news_rows = []
+    try:
+        import news
+        for r in news.news_for(None, teams=list(dict.fromkeys(about))[:3], limit=10):
+            if _COACH_NEWS.search(r):
+                news_rows.append(f"  - {r}")
+    except Exception:  # noqa: BLE001
+        pass
+    if not lines and not news_rows:
+        return ""
+    return ("HEAD COACHES (CFBD's season list; it doesn't drop a coach fired midseason, so in-season firings "
+            "and interims only from the news lines):\n" + "\n".join(dict.fromkeys(lines))
+            + ("\n  Coaching news:\n" + "\n".join(news_rows[:3]) if news_rows else ""))
+
+
 _FOLLOW_UP = re.compile(r"^\W*(why|how come|explain|and\b|what about|best case|what would change|change your mind|"
                         r"other side|you sure|really|the other team|counter|devil'?s advocate|what if)\b", re.I)
 
@@ -459,6 +552,7 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
         return ""
     pool_ids = {int(g["id"]) for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
     named = cfbd.other_teams_named(q, [], idx) or player_teams(q, idx)
+    coach = coach_note(q, idx, named)
     picks = []
     for team in named:
         n = cfbd.norm(team)
@@ -466,10 +560,8 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
         if g and g not in picks and g["id"] not in pool_ids:
             picks.append(g)
     whole = bool(_SLATE_ASK.search(q)) and not picks
-    if not picks and not whole:
-        return ""
-    if picks and not _PICK_WORDS.search(q):
-        return ""
+    if (not picks and not whole) or (picks and not _PICK_WORDS.search(q)):
+        return coach
     import espn
     chosen = picks[:MAX_CARDS] if picks else notable(games, idx)
     try:
@@ -477,6 +569,6 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     except Exception:  # noqa: BLE001
         notes = {}
     if whole:
-        return board(chosen, notes)
+        return board(chosen, notes) + (f"\n{coach}" if coach else "")
     gds = _games_dataset()
-    return "\n".join(card(g, idx, notes.get(g["id"]), gds) for g in picks[:MAX_CARDS])
+    return "\n".join([card(g, idx, notes.get(g["id"]), gds) for g in picks[:MAX_CARDS]] + ([coach] if coach else []))
