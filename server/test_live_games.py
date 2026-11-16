@@ -296,6 +296,19 @@ class Sentences(unittest.TestCase):
         self.assertEqual([m.end() for m in chat._SENT_END.finditer(t)][0], t.index("T.Burgess"))
 
 
+class NewsFilter(unittest.TestCase):
+    def test_live_feed_counts_as_a_source(self):
+        try:
+            import chat
+        except Exception:  # noqa: BLE001
+            return
+        g = state(UNC, at(UNC, r"B\.Edwards Jr\. injured on the play"))
+        txt = "LIVE GAME FEED (ESPN, ...)\n" + L.game_block(g)
+        sent = "Yeah, Billy Edwards Jr. was reported injured on the play at 9:14 in the 3rd quarter."
+        self.assertTrue(chat.news_claim_check(txt)(sent))  # replay r2: was cut as 'no source block'
+        self.assertFalse(chat.news_claim_check("no blocks here")(sent))
+
+
 class Brain(unittest.TestCase):
     def test_understand_pass_sees_the_live_feed(self):
         try:

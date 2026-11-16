@@ -6119,7 +6119,8 @@ def grounded_check(ctx: dict, corpus: str, question: str = ""):
 _NEWSY = re.compile(r"\b(reported(ly)?|reports? (say|said|that|have|are)|sources? (say|said|tell|told|close)|"
                     r"breaking news|insiders?|rumou?r(s|ed)?|leak(ed|s)?|word is|i'?m told)\b", re.I)
 _CREDIT = re.compile(r"\b[Pp]er (?:the )?[A-Z][A-Za-z0-9&+.]*|\b[Aa]ccording to\b")  # also fine on data ('per CFBD')
-_SOURCE_BLOCKS = ("NEWS QUESTION (free", "INSIDER NOTES (", "GAME INTEL,", "CHECKED FACTS (", "CFB RANKINGS (")
+_SOURCE_BLOCKS = ("NEWS QUESTION (free", "INSIDER NOTES (", "GAME INTEL,", "CHECKED FACTS (", "CFB RANKINGS (",
+                  "LIVE GAME FEED (")  # live_games.py: in-game injury reports from ESPN's play-by-play
 _TAKES_HEAD = "HOT TAKES you can riff on"
 
 
