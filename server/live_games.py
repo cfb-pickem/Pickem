@@ -428,7 +428,20 @@ def cover_status(away: str, home: str, line, ap, hp) -> str | None:
     if m == 0:
         return (f"{side_label(away, home, ln)} covering exactly on the number "
                 f"(a dead-even finish goes to {away} in this league)")
-    return f"{side_label(cov, home, ln)} covering by {_num(abs(m))} ({side_label(other, home, ln)} not covering)"
+    lead = (h - a) if cov == home else (a - h)  # the covering side's margin on the scoreboard
+    spread = ln if cov == home else -ln
+    how = (f"{cov} {'leads' if lead > 0 else 'trails' if lead < 0 else 'is tied'}"
+           + (f" by {_num(abs(lead))}" if lead else "") + f", {'+' if spread > 0 else ''}{_num(spread)} on the line")
+    # both numbers spelled out: the 12B said 'covering by 11' (the lead) when the cover margin was 13.5
+    return (f"{side_label(cov, home, ln)} covering by {_num(abs(m))} ({how}; "
+            f"{side_label(other, home, ln)} not covering)")
+
+
+def cover_margin(pool: dict, g: dict) -> float | None:
+    try:
+        return abs(float(g["home_score"]) + float(pool["line"]) - float(g["away_score"]))
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 # ----------------------------------------------------------------------------
@@ -924,6 +937,7 @@ def rider(question: str, pool: dict | None = None, refresh: bool = True, now: fl
     if not live_now:
         head = head.replace("These are the CURRENT facts", "No game named here is live; these are the latest facts")
     body = "\n".join(game_block(g, pool.get(g["id"]), now) for g in hit)
+    hit = [{**g, "cover_margin": cover_margin(pool[g["id"]], g)} if g["id"] in pool else g for g in hit]
     return head + "\n" + body, hit
 
 
@@ -977,6 +991,7 @@ _SCORE_VERB = re.compile(r"\b(scored|scores|scoring|touchdown|td|ran it in|punch
                          r"hauled in|field goal|fg|kicked)\b", re.I)
 _INJ_WORD = re.compile(r"\b(injur\w*|hurt|went down|carted|limp\w*|left the game|out of the game|knocked out|"
                        r"concussion|banged up)\b", re.I)
+_COVER_BY = re.compile(r"\bcover\w*\b[^.]{0,40}?\bby\s+(\d{1,2}(?:\.5)?)(?!\d)", re.I)
 _MARGIN = re.compile(r"\b(?:up|leads?|leading|ahead|down|trails?|trailing|behind)\s+(?:by\s+)?(\d{1,2})\b"
                      r"(?!\s*(?:-|–|to\s+\d|points? to))", re.I)  # 'up 13 to 7' is a score, not a margin
 
@@ -1019,6 +1034,10 @@ def claim_check(games: list[dict]):
                         tnum[side] = int(m.group(1))
             if len(tnum) == 2 and tuple(sorted(tnum.values())) not in ok_pairs:
                 return False
+            if g.get("cover_margin") is not None:  # 'covering by 11' when it's 13.5 against the line
+                for m in _COVER_BY.finditer(sent):
+                    if float(m.group(1)) != g["cover_margin"]:
+                        return False
             if g.get("state") == "in" and g.get("away_score") is not None:
                 cur = abs(g["away_score"] - g["home_score"])
                 for m in _MARGIN.finditer(sent):

@@ -146,7 +146,12 @@ class Rider(unittest.TestCase):
                          refresh=False)
         m = g["home_score"] + 2.5 - g["away_score"]
         self.assertIn("POOL GAME, league line UTSA +2.5: right now", txt)
-        self.assertIn(f"covering by {L._num(abs(m))}", txt)
+        self.assertIn(f"covering by {L._num(abs(m))} (UTSA leads by {g['home_score'] - g['away_score']}, +2.5 on the line", txt)
+        _, hit = L.rider("is UTSA covering?", {UTSA: {"away": "North Texas", "home": "UTSA", "line": 2.5}}, refresh=False)
+        chk = L.claim_check(hit)
+        lead = g["home_score"] - g["away_score"]
+        self.assertTrue(chk(f"Yeah, UTSA is covering the pool line by {L._num(abs(m))} as of 8:49 in the 3rd."))
+        self.assertFalse(chk(f"Yeah, UTSA is currently covering the pool line by {lead} points."))  # replay r2
 
     def test_stale_live_game_is_never_current(self):
         t = at(UNC, r"B\.Edwards Jr\. injured on the play")
