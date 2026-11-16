@@ -83,6 +83,7 @@ import httpx  # noqa: E402
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from starlette.requests import Request as StarletteRequest  # noqa: E402
 
+import callbacks  # noqa: E402
 import chat  # noqa: E402
 import group_outbox  # noqa: E402
 import maintenance  # noqa: E402
@@ -835,6 +836,7 @@ async def group(req: Request):
     if out is None:
         log.info("dm skipped sender=%s: not a mapped member or allowlisted", handle[-4:] or "?")
         return {"reply": None}
+    callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text), out.get("reply_en") or out["reply"], is_dm=dm)
     log.info("%s reply sender=%s mapped=%s %.1fs chars=%d image=%s", out["mode"], handle[-4:] or "?",
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]))
     return {"reply": out["reply"] or None, "image": out["image"]}
