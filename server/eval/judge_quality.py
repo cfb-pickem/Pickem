@@ -74,10 +74,17 @@ SCHEMA = {"type": "object", "properties": {"pairs": {"type": "array", "items": {
 
 def fact_sheet(runs: list[dict]) -> str:
     out = []
-    mat = chat.load_material() or {}
-    if mat.get("facts"):
-        out.append("League (through week %s):" % mat.get("week"))
-        out += [f"- {v}" for v in mat["facts"].values()]
+    try:  # finals, cover margins, lore and material facts (eval/run.py truth_bundle)
+        import asyncio
+        import run as exam
+        from truth import Truth
+        out.append(exam.truth_bundle(asyncio.run(Truth().load())))
+    except Exception as e:  # noqa: BLE001 - no Supabase: fall back to the material facts alone
+        print(f"truth bundle unavailable ({e!r}); material facts only", file=sys.stderr)
+        mat = chat.load_material() or {}
+        if mat.get("facts"):
+            out.append("League (through week %s):" % mat.get("week"))
+            out += [f"- {v}" for v in mat["facts"].values()]
     week = runs[-1].get("week")
     for p in sorted((chat.DOSSIER_DIR / str(week)).glob("*.json")) if week else []:
         if p.name.startswith("_"):

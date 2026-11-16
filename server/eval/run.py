@@ -512,6 +512,140 @@ async def run(args):
     print(render(runrec, judge).split("## Items")[0])
 
 
+# ---- judge truth bundle --------------------------------------------------------------
+# The blind judges (judge_text.py, judge_quality.py) flag a fact as "invented" when it isn't in the fact
+# sheet. The old sheet had only standings, weekly W-L and last week's games, so true margins ("SMU lost
+# 49-7", "missed by 40.5"), older finals and the stats-page lore lines got flagged (research doc, 11/16).
+
+
+def _spread(team: str, pts: float) -> str:
+    return f"{team} {'+' if pts > 0 else '-'}{chat._num(abs(pts))}" if pts else f"{team} (pick'em)"
+
+
+def graded_game_line(g: dict, picks: dict[str, str] | None = None, jackpot: set | None = None) -> str:
+    """One graded final the way the league scores it: the score, the pool line, who covered and by how
+    much, and every member's pick with its own cover margin. `line` is added to the home score
+    (home covers when HomePts + line > AwayPts), the same sum chat.cover_margin uses."""
+    away, home, wk = g.get("Away"), g.get("Home"), g.get("week")
+    try:
+        ap, hp, ln = float(g["AwayPts"]), float(g["HomePts"]), float(g["line"])
+    except (KeyError, TypeError, ValueError):
+        return f"  w{wk}: {away} at {home}, final, covered (league-graded): {g.get('winner')}"
+    n = chat._num
+    su = (f"{away if ap > hp else home} won by {n(abs(ap - hp))}" if ap != hp else "tied")
+    m = hp + ln - ap  # >0: home beat its line by m
+    s = (f"  w{wk}: {away} {n(ap)} at {home} {n(hp)} (final; {su}). Pool line {_spread(away, -ln)} / "
+         f"{_spread(home, ln)}. ")
+    if m == 0:
+        s += f"Landed on the number; the league scored it for {g.get('winner')}."
+    else:
+        cov, miss = (home, away) if m > 0 else (away, home)
+        s += f"{cov} covered by {n(abs(m))}; {miss} missed the cover by {n(abs(m))}."
+    if g.get("winner") and m and not chat.same_team(g["winner"], home if m > 0 else away):
+        s += f" (league-graded winner: {g['winner']})"
+    if picks:
+        side = {away: [], home: []}
+        for member, pk in sorted(picks.items()):
+            k = away if chat.same_team(pk, away) else home if chat.same_team(pk, home) else None
+            if k:
+                side[k].append(member + (" (jackpot pick, counts as a hit)" if member in (jackpot or ()) else ""))
+        for team, spread, mm in ((away, -ln, -m), (home, ln, m)):
+            if side[team]:
+                res = (f"covered by {n(abs(mm))}" if mm > 0 else f"missed by {n(abs(mm))}" if mm < 0 else "push")
+                s += f" Took {_spread(team, spread)} ({res}): {', '.join(side[team])}."
+    return s
+
+
+def season_finals_block(games: list[dict], picks: list[dict], name_by_tid: dict) -> list[str]:
+    """Every graded pool game this season, newest week first, with members' picks and margins."""
+    by_game: dict = collections.defaultdict(dict)
+    jack: dict = collections.defaultdict(set)
+    for p in picks:
+        nm = name_by_tid.get(p.get("team_id"))
+        if nm:
+            by_game[p["game_id"]][nm] = p["pick"]
+            if p.get("jackpot"):
+                jack[p["game_id"]].add(nm)
+    L = ["GRADED POOL GAMES THIS SEASON (all final; members are graded on COVERING the pool line, not on "
+         "winning; 'covered by X' / 'missed by X' = points beyond or short of the line; any true score, "
+         "straight-up margin or cover margin below is a real fact, not an invention):"]
+    for g in sorted(games, key=lambda x: (-(x.get("week") or 0), str(x.get("Away")))):
+        if not g.get("tiebreaker"):
+            L.append(graded_game_line(g, by_game.get(g.get("GameId")), jack.get(g.get("GameId"))))
+    return L
+
+
+def lore_block(lore: dict | None, material: dict | None, season) -> list[str]:
+    """The true league lines Picky is fed for roasts and storylines (server/cache/lore.json from lore.py,
+    the validated league material facts): stats-page oddities, splits, streaks, awards, h2h, casino."""
+    L = []
+    lore = lore or {}
+    mem = lore.get("members") or {}
+    if mem:
+        L += ["", f"LEAGUE LORE (true, computed from the league database, as of {lore.get('as_of')}; Picky may "
+                  "cite any of it: records by school, stats-page oddities, streaks, best/worst weeks):"]
+        for m, lines in mem.items():
+            L += [f"  - {ln}" for ln in lines if isinstance(ln, str)]
+    if lore.get("league"):
+        L += ["", "LEAGUE HISTORY (true):"] + [f"  - {ln}" for ln in lore["league"] if isinstance(ln, str)]
+    h2h = lore.get("h2h") or {}
+    if h2h:
+        L += ["", "HEAD TO HEAD (true; games where the two took opposite sides, multi-season: 'A vs: B w-l' = A's hits-misses in those games):"]
+        for m, opp in h2h.items():
+            if isinstance(opp, dict):
+                L.append(f"  {m} vs: " + ", ".join(f"{o} {r[0]}-{r[1]}" for o, r in opp.items()
+                                                    if isinstance(r, (list, tuple)) and len(r) >= 2))
+    cas = lore.get("casino") or {}
+    cl = [ln for lines in (cas.get("members") or {}).values() for ln in lines if isinstance(ln, str)]
+    cl += [ln for ln in cas.get("league") or [] if isinstance(ln, str)]
+    if cl:
+        L += ["", "THE PIT / SLOTS (true casino facts):"] + [f"  - {ln}" for ln in cl]
+    material = material or {}
+    if isinstance(material.get("facts"), dict) and material.get("season") in (None, season):
+        L += ["", f"LEAGUE MATERIAL FACTS (validated, through week {material.get('week')}):"]
+        L += [f"  - {v}" for v in material["facts"].values() if isinstance(v, str)]
+    return L
+
+
+def truth_bundle(t: Truth, lore: dict | None = None, material: dict | None = None) -> str:
+    """The judge's FACT SHEET: standings, weekly records, every graded final with cover margins and
+    picks, this week's games and revealed picks, Picky's own entry, and the lore lines Picky may cite.
+    Unrevealed picks never appear (season picks are on final games only)."""
+    if lore is None:
+        try:
+            lore = json.loads(Path(chat.LORE_FILE).read_text())
+        except (OSError, ValueError, AttributeError):
+            lore = {}
+    if material is None:
+        try:
+            material = chat.load_material() or {}
+        except Exception:  # noqa: BLE001
+            material = {}
+    L = [f"Season {t.season}, current week {t.week} (all of this week's pool games are in THIS WEEK below).", "",
+         "SEASON STANDINGS (rank team W-L; 1 point per correct pick):"]
+    L += [f"  {r['rank']}. {r['team']} {r['w']}-{r['l']}" for r in t.standings]
+    L += ["", "WEEKLY RECORDS (week: W-L):"]
+    for m, wk in t.weekly.items():
+        L.append(f"  {m}: " + ", ".join(f"w{k} {v[0]}-{v[1]}" for k, v in wk.items()))
+    lw = t.last_week or {}
+    L += ["", f"'LAST WEEK' in the league's sense is week {lw.get('week')} (the pool's current week only moves "
+              "once the next slate is picked, so on a Monday the week that just ended can still be the current one)."]
+    L += [""] + season_finals_block(getattr(t, "season_games", None) or [], getattr(t, "season_picks", None) or [],
+                                    getattr(t, "name_by_tid", {}) or {})
+    L += ["", "THIS WEEK'S POOL GAMES:"]
+    for g in t.games:
+        L.append(f"  {g['away']} at {g['home']}, pool line {chat.pool_line(g['away'], g['home'], g.get('line'))}, "
+                 f"status {g.get('status')}, covered/winner {g.get('winner')}")
+    rp = t.ctx.get("revealed_picks_this_week")
+    if rp:
+        L.append(f"  picks in games that have kicked off: {json.dumps(rp, default=str)[:4000]}")
+    if isinstance(t.picky, dict):
+        L += ["", f"PICKY (the bot's own exhibition entry): season {t.picky.get('season')}; this week: "
+                  + "; ".join(f"{p.get('label')} {p.get('result')}" for p in t.picky.get("this_week") or [])]
+    L += lore_block(lore, material, t.season)
+    return "\n".join(L)
+
+
 async def regrade(runrec: dict) -> dict:
     """Re-run today's graders on a stored run's answers (asks Picky nothing)."""
     t = await Truth().load()
@@ -531,7 +665,7 @@ async def regrade(runrec: dict) -> dict:
 # directly, bypassing the gate: run those only when the league is quiet.)
 NO_MODEL_TESTS = ["test_privacy.py", "test_standings.py", "test_cfbd.py", "test_rules.py", "test_picky_player.py",
                   "test_leader.py", "test_opinions.py", "test_daddyfreeman.py", "test_gate.py", "test_results.py",
-                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "test_callbacks.py", "test_live_flag.py", "eval/test_checks.py"]
+                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "test_callbacks.py", "test_live_flag.py", "eval/test_checks.py", "eval/test_truth_bundle.py"]
 
 
 def no_model() -> int:

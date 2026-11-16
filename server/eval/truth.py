@@ -70,6 +70,15 @@ class Truth:
             # Raw, unfiltered week picks: leak detection only.
             self._all_week_picks = await chat._rest_get(
                 c, f"picks?select=team_id,game_id,pick&game_id=in.{chat._in_ids(ids)}", "x") if ids else []
+            # Every graded game this season and its picks (all final, so all revealed): the judge's
+            # truth bundle needs finals and cover margins beyond last week (eval/run.py truth_bundle).
+            self.season_games = await chat._rest_get(
+                c, f"all_games?select=GameId,Away,Home,AwayPts,HomePts,winner,line,week,tiebreaker"
+                   f"&cfb_season=eq.{self.ctx['season']}&picked=eq.true&Status=eq.final&order=week.asc", "x")
+            fids = [g["GameId"] for g in self.season_games]
+            self.season_picks = await chat._rest_get_all(
+                c, f"picks?select=team_id,game_id,pick,jackpot&game_id=in.{chat._in_ids(fids)}&order=id.asc",
+                "x") if fids else []
         self.ctx["espn"] = await espn.game_notes([g["id"] for g in self.ctx["games_this_week"]])
         self.now = chat._now_ct_naive()
         self.name_by_tid = {t["team_id"]: t["team_name"] for t in self.teams}

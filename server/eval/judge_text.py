@@ -60,31 +60,10 @@ KEYS = ("helpful", "human", "not_bot", "roast")
 
 
 def facts() -> str:
+    """The FACT SHEET: eval/run.py truth_bundle (standings, every graded final with cover margins and
+    picks, this week, Picky's entry, the lore lines Picky may cite)."""
     from truth import Truth  # noqa: E402
-    t = asyncio.run(Truth().load())
-    L = [f"Season {t.season}, current week {t.week} (all of this week's pool games are in THIS WEEK below).", "",
-         "SEASON STANDINGS (rank team W-L; 1 point per correct pick):"]
-    L += [f"  {r['rank']}. {r['team']} {r['w']}-{r['l']}" for r in t.standings]
-    L += ["", "WEEKLY RECORDS (week: W-L):"]
-    for m, wk in t.weekly.items():
-        L.append(f"  {m}: " + ", ".join(f"w{k} {v[0]}-{v[1]}" for k, v in wk.items()))
-    lw = t.last_week or {}
-    L += ["", f"LAST WEEK (week {lw.get('week')}) GAMES:"]
-    for g in lw.get("games") or []:
-        L.append(f"  {g['away']} {g.get('away_pts')} at {g['home']} {g.get('home_pts')}, pool line {g.get('line')} "
-                 f"(home-team adjustment), covered: {g.get('covered')}; picks: {json.dumps(g.get('picks'))}")
-    L += ["", "THIS WEEK'S POOL GAMES:"]
-    for g in t.games:
-        L.append(f"  {g['away']} at {g['home']}, pool line {g.get('line')} (home-team adjustment), status "
-                 f"{g.get('status')}, covered/winner {g.get('winner')}")
-    rp = t.ctx.get("revealed_picks_this_week")
-    if rp:
-        L.append(f"  picks in games that have kicked off: {json.dumps(rp, default=str)[:4000]}")
-    if isinstance(t.picky, dict):
-        L += ["", f"PICKY (the bot's own exhibition entry): season {t.picky.get('season')}; this week: "
-                  + "; ".join(f"{p.get('label')} {p.get('result')}" for p in t.picky.get("this_week") or [])]
-    L += _cfb_notes()
-    return "\n".join(L)
+    return exam.truth_bundle(asyncio.run(Truth().load())) + "\n" + "\n".join(_cfb_notes())
 
 
 def _cfb_notes() -> list[str]:
