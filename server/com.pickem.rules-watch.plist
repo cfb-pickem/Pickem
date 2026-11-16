@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  League rules watcher for Picky (league_rules.py check). Every hour:
+  fetches origin/main (what GitHub Pages serves) and fingerprints the rules
+  sources in it (rules page block, scoring/lock/playoff JS slices, every rules
+  SQL function and RLS policy in supabase/migrations), the live Supabase
+  function + policy definitions (read-only SELECTs via the Management API) and
+  the deployed rules page. Anything that moved since the last verified state:
+  its sections are regenerated from the new code, cross-checked (SQL vs JS vs
+  page, the site's JS run under node), then reviewed offline by Opus
+  (picky_claude, claude -p, no tools, empty MCP config). If Anthropic is off or
+  the review fails, those sections become "RULES CHANGED, VERIFY" in
+  server/cache/league_rules.live.md and Picky hedges / points to the rules page
+  instead of stating them. chat.py reads that live copy (no restart needed).
+  Report: server/cache/league_rules_state.json ("last") and the stdout log.
+  Install: cp to ~/Library/LaunchAgents and launchctl load it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.rules-watch</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/league_rules.py</string>
+        <string>--check</string>
+        <string>--ref</string>
+        <string>origin/main</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/rules-watch.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/rules-watch.stderr.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

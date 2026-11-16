@@ -1072,10 +1072,12 @@ def repo_sources(repo: Repo) -> dict[str, tuple[str | None, list[str]]]:
     out["page:tiebreakers.html"] = (repo.read("tiebreakers.html"), ["TIEBREAKERS"])
     idx = repo.read("index.html") or ""
     for fn, secs in (("computeSeasonWinsThroughWeek", ["FORMAT", "STANDINGS AND PLAYOFFS"]),
-                     ("computePlayoffWins", ["STANDINGS AND PLAYOFFS"]),
-                     ("loadPlayoffWeek", ["STANDINGS AND PLAYOFFS"]),
-                     ("loadTiebreakerWeek", ["TIEBREAKERS"])):
+                     ("computePlayoffWins", ["STANDINGS AND PLAYOFFS"])):
         out[f"js:index.html#{fn}"] = (_slice(repo, "index.html", fn), secs)
+    # The board loaders are mostly UI; only their week cut-offs are rules.
+    cut = sorted({ln.strip() for ln in idx.splitlines()
+                  if re.search(r"week\)?\s*(<=|>=|<|>)\s*\d+|\.(gt|gte|lt|lte)\('week'", ln)})
+    out["js:index.html#week-cutoffs"] = ("\n".join(cut) or None, ["STANDINGS AND PLAYOFFS", "TIEBREAKERS"])
     m = re.search(r"const pointsArray = .*?const shouldInsertDivider[^;]*;", idx, re.S)
     out["js:index.html#cut-line"] = (m.group(0) if m else None, ["STANDINGS AND PLAYOFFS"])
     m = re.search(r"\(function renderRace\(\)\{.{0,400}", repo.read("stats.html") or "", re.S)
@@ -1084,11 +1086,15 @@ def repo_sources(repo: Repo) -> dict[str, tuple[str | None, list[str]]]:
                       ("js/seasonHistory.js", ["FORMAT"]), ("js/seasonRace.js", ["STANDINGS AND PLAYOFFS"]),
                       ("js/playoffOdds.js", ["STANDINGS AND PLAYOFFS"]), ("js/pickSave.js", ["DEADLINE AND PRIVACY"])):
         out[f"js:{rel}"] = (repo.read(rel), secs)
+    # playoff mode = seed rows (the rest of playoffState.js is theme/banner UI)
+    out["js:js/playoffState.js#fetchState"] = (_slice(repo, "js/playoffState.js", "fetchState"), ["STANDINGS AND PLAYOFFS"])
+    m = re.search(r".{0,300}Only the four playoff teams.{0,200}", repo.read("picks.html") or "", re.S)
+    out["js:picks.html#playoff-field"] = (m.group(0) if m else None, ["STANDINGS AND PLAYOFFS"])
     com = repo.read("commissioner.html") or ""
     m = re.search(r"const seeds = \[[^\]]*\];", com)
     out["js:commissioner.html#seeds"] = (m.group(0) if m else None, ["STANDINGS AND PLAYOFFS", "COMMISSIONER"])
     # Any other site JS whose name says it's about rules (a new playoff module, say).
-    known = {"js/playoffOdds.js", "js/seasonRace.js"}
+    known = {"js/playoffOdds.js", "js/seasonRace.js", "js/playoffState.js", "js/playoffAutopilot.js"}
     for rel in repo.ls("js"):
         nm = Path(rel).stem
         if rel.endswith(".js") and rel not in known and (secs := [s for rx, ss in KEYWORD_SECTIONS[:4]
