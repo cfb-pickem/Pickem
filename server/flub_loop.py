@@ -964,6 +964,12 @@ def report(date: str, dry: bool = False) -> str:
                  f"{f.get('leaks')}; flub items {b.get('flub_pass')}/{b.get('flub_n')} vs {f.get('flub_pass')}/{f.get('flub_n')}")
     if fx.get("sha"):
         L.append(f"- shipped {fx['sha']}; reload {fx.get('reload')}; health {fx.get('health')}")
+    rp = read_json(FLUB_DIR / f"replay-{date}.json") or {}
+    if rp:  # real_replay.py nightly (after the fix round)
+        L += ["", f"## Real-traffic replay: {rp.get('status')}" + (f" ({_clip(rp['error'], 100)})" if rp.get("error") else "")]
+        if rp.get("n"):
+            L.append(f"- pass {rp['pass']}/{rp['n']} {rp.get('by_status')}; flipped to pass {rp.get('flipped') or 'none'}; "
+                     f"newly broken {rp.get('newly_broken') or 'none'} (queued for tomorrow: {len(rp.get('queued') or [])})")
     text = "\n".join(L) + "\n"
     write_private(FLUB_DIR / f"report-{date}.md", text)
     return text
@@ -973,11 +979,25 @@ def report(date: str, dry: bool = False) -> str:
 # CLI
 # ---------------------------------------------------------------------------------------------------
 
+def replay_after_fix(date: str, dry: bool = False) -> dict:
+    """Real-traffic replay (real_replay.py nightly, takes the exam lock itself) on whatever the fix round
+    left on main; fixtures that passed last time and fail now go to the flag queue for the NEXT night.
+    Off: PICKY_REPLAY_NIGHTLY=0 or --dry."""
+    if dry or os.environ.get("PICKY_REPLAY_NIGHTLY", "1") == "0":
+        return {"status": "skipped"}
+    try:
+        p = _sh([PY, "-I", str(HERE / "real_replay.py"), "nightly", "--date", date], timeout=5 * 3600)
+        return {"status": "ok" if p.returncode == 0 else f"rc {p.returncode}"}
+    except Exception as e:  # noqa: BLE001  (never sinks the report)
+        return {"status": f"error {e!r}"[:200]}
+
+
 def nightly(date: str, dry: bool = False) -> str:
     harvest(date, dry)
     classify(date, dry)
     items(date, dry)
     fix_round(date, dry)
+    replay_after_fix(date, dry)
     return report(date, dry)
 
 

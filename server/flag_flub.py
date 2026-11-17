@@ -33,7 +33,7 @@ CT = ZoneInfo("America/Chicago")
 PRIVATE = Path("/Users/Agent/cfb-pickem-private")
 CONTEXT_N = 6
 CONTEXT_AGE = 2 * 3600
-SOURCES = ("coordinator", "group", "dm")
+SOURCES = ("coordinator", "group", "dm", "replay")  # replay = real_replay.py nightly regressions
 
 # a whole-message flag ("@Picky that's wrong", "bad picky", "bad bot lol"); longer corrections
 # ("that's wrong, Clam is first") go through the normal pipeline and the harvester's pushback scan
