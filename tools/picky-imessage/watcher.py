@@ -62,6 +62,7 @@ POLL_SECONDS = 3.0
 MIN_GAP = 10.0          # seconds between replies
 MAX_PER_HOUR = 60
 MAX_AGE = 600           # ignore messages older than this (watcher was down)
+DELIVERY_EVERY = 60.0   # seconds between failed-send checks
 EMPTY_WAIT = 10.0       # re-read a row with no text yet for this long before skipping it
 PREVIEW = 40
 
@@ -197,6 +198,41 @@ def recent_messages(db: sqlite3.Connection | None, chat_guid: str, rowid: int) -
 
 def connect() -> sqlite3.Connection:
     return sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True, timeout=5)
+
+
+# Picky's own sends that Messages marked failed (error != 0), last 26 h
+FAILED_SENDS = """
+SELECT m.ROWID, c.chat_identifier, m.error, m.date FROM message m
+JOIN chat_message_join j ON j.message_id = m.ROWID
+JOIN chat c ON c.ROWID = j.chat_id
+WHERE m.is_from_me = 1 AND m.error != 0 AND m.date > ?
+ORDER BY m.ROWID
+"""
+
+
+def new_failures(rows: list, logged: dict) -> tuple[list[dict], dict]:
+    """Pure: failed-send rows (rowid, handle, error, apple date) -> the ones not yet
+    reported, one per handle per (message) day. `logged`: handle -> last day reported."""
+    logged, events = dict(logged), []
+    for rowid, handle, error, date in rows:
+        day = time.strftime("%Y-%m-%d", time.localtime(msg_unix_time(date)))
+        if day <= logged.get(handle, ""):
+            continue
+        logged[handle] = day
+        events.append({"rowid": rowid, "handle": handle or "", "error": error, "day": day})
+    return events, logged
+
+
+def check_deliveries(db: sqlite3.Connection, state: dict, now: float) -> None:
+    """Log each handle whose send failed, once a day (the watchdog copies these lines to
+    cfb-pickem-private/picky_delivery_failures.jsonl). Report only, never a resend."""
+    since = int((now - 26 * 3600 - APPLE_EPOCH) * 1e9)
+    events, state["delivery_logged"] = new_failures(db.execute(FAILED_SENDS, (since,)).fetchall(),
+                                                    state.get("delivery_logged", {}))
+    for e in events:
+        log.warning("delivery failed handle=...%s error=%s", e["handle"][-4:], e["error"])
+    if events:
+        save_state(state)
 
 
 def max_rowid(db: sqlite3.Connection) -> int:
@@ -424,7 +460,7 @@ def main() -> int:
     rate = RateLimit()
     db = None
     pending: dict[int, float] = {}  # rowid -> first time seen with no text
-    last_outbox, last_groups = 0.0, 0.0
+    last_outbox, last_groups, last_delivery = 0.0, 0.0, 0.0
     log.info("watcher up, last_rowid=%s", state.get("last_rowid"))
     while True:
         try:
@@ -451,6 +487,9 @@ def main() -> int:
                 if time.time() - last_groups >= GROUPS_EVERY:
                     last_groups, groups = time.time(), group_chats(db)
                 drain_outbox(db, secret, rate, groups)
+            if time.time() - last_delivery >= DELIVERY_EVERY:
+                last_delivery = time.time()
+                check_deliveries(db, state, last_delivery)
         except sqlite3.OperationalError as e:
             # most often: Full Disk Access not granted yet
             log.error("chat.db unreadable (Full Disk Access?): %s", e)

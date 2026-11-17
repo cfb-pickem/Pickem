@@ -62,21 +62,13 @@ def test_bad_automation_rc_alerts_while_up():
     assert any(a.startswith("alert:automation:") for a in acts)
 
 
-def _apple_ns(y, m, d, hh=12):
-    import datetime as dt
-    return int((dt.datetime(y, m, d, hh).timestamp() - w.APPLE_EPOCH) * 1e9)
-
-
-def test_delivery_failure_reported_once_per_handle_per_day():
-    rows = [(124, "+15550001951", 22, _apple_ns(2026, 11, 17)),
-            (126, "+15550001951", 22, _apple_ns(2026, 11, 17, 13)),
-            (127, "+15550002222", 4, _apple_ns(2026, 11, 17))]
-    ev, logged = w.new_failures(rows, {})
-    assert [(e["rowid"], e["error"]) for e in ev] == [(124, 22), (127, 4)], ev
-    ev2, logged = w.new_failures(rows, logged)  # next watchdog pass sees the same rows
-    assert ev2 == []
-    ev3, _ = w.new_failures(rows + [(140, "+15550001951", 22, _apple_ns(2026, 11, 18))], logged)
-    assert [e["rowid"] for e in ev3] == [140]  # new day, reported again
+def test_watcher_failure_lines_copied_once():
+    lines = ["2026-11-17 12:05:47,837 INFO dm rowid=123 from=...1951 preview='<8 chars>'",
+             "2026-11-17 14:31:02,100 WARNING delivery failed handle=...1951 error=22",
+             "2026-11-18 09:00:00,000 WARNING delivery failed handle=...2222 error=4"]
+    ev = w.watcher_failures(lines, "")
+    assert [(e["handle"], e["error"]) for e in ev] == [("...1951", 22), ("...2222", 4)], ev
+    assert w.watcher_failures(lines, ev[-1]["logged"]) == []  # next pass: nothing new
 
 
 if __name__ == "__main__":

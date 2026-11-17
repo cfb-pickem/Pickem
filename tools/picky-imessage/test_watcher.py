@@ -59,6 +59,23 @@ def test_attachment_and_tapback_rows_dont_wait():
     assert not w.wait_for_text(row(amt=2000), {}, 100.0)
 
 
+def _apple_ns(y, m, d, hh=12):
+    import datetime as dt
+    return int((dt.datetime(y, m, d, hh).timestamp() - w.APPLE_EPOCH) * 1e9)
+
+
+def test_delivery_failure_reported_once_per_handle_per_day():
+    rows = [(124, "+15550001951", 22, _apple_ns(2026, 11, 17)),
+            (126, "+15550001951", 22, _apple_ns(2026, 11, 17, 13)),
+            (127, "+15550002222", 4, _apple_ns(2026, 11, 17))]
+    ev, logged = w.new_failures(rows, {})
+    assert [(e["rowid"], e["error"]) for e in ev] == [(124, 22), (127, 4)], ev
+    ev2, logged = w.new_failures(rows, logged)  # next check sees the same rows
+    assert ev2 == []
+    ev3, _ = w.new_failures(rows + [(140, "+15550001951", 22, _apple_ns(2026, 11, 18))], logged)
+    assert [e["rowid"] for e in ev3] == [140]  # new day, reported again
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
