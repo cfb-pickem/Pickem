@@ -1173,6 +1173,9 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                 if route.why.startswith("brief") or "brief" in route.why:
                     text = undodge(st, text, last_reply)  # a real question the brief misread as banter
                 text = fresh_jab(st, text, recent_picky or [])
+                import no_repeat
+                if no_repeat.banned_tic(text):  # one-line banter keeps its tic past debot ('...go to your head')
+                    text = banter_fallback(st, text) or text
                 log.info("banter reply (%.0fs, %s): %r", time.time() - t0, route.label(), text[:160])
                 _trace(st, q, sender, route, [Draft(text, drops, 0)], [0], 0, st.get("banter_how") or "banter", t0)
                 return text, None

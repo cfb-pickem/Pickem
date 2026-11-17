@@ -475,6 +475,23 @@ RULES_EXTRA = re.compile(
     r"|\bcan (chuck|the commish|the commissioner|commish) (fix|change|enter|edit|redo)\b|\bovertime\b|\b(ot|2ot|3ot)\b(?=[^?.!]*\b(count|cover|spread|matter)\b)", re.I)
 
 
+JACKPOT_HIT = re.compile(r"\b(ever )?(hit|won|popped|cashed) (it|the jackpot|the football|the slots)\b|\bjackpot\b[^?.!]*\b(hit|won|popped)\b"
+                         r"|\b(who|anyone|anybody)( has| ever)? (hit|won|popped)\b", re.I)
+
+
+def jackpot_hit_text(ctx: dict, q: str) -> str | None:
+    """Who's hit the jackpot this season, from the site's jackpot state (keeper k1: 'have i ever hit it' got an
+    invented 'You've hit it plenty of times')."""
+    jp = ctx.get("jackpot")
+    if not isinstance(jp, dict):
+        return None
+    if not jp.get("last_pop_at"):
+        n = jp.get("pulls_since_pop")
+        return "Nobody's hit it this season" + (f": {n} slots pulls and the football hasn't popped." if n else ".")
+    when = str(jp["last_pop_at"])[:10]
+    return f"{jp.get('last_pop_team') or 'Somebody'} hit it ({when}). It only pops once a regular season."
+
+
 def rules2_text(ctx: dict, q: str) -> str | None:
     t = q or ""
     if re.search(r"\b(jackpot|slots?)\b", t, re.I) and league_rules is not None:
@@ -595,6 +612,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "slate", "SLATE_READ"
     if chat.wants_rules(t) and rules_answer(t):
         return "rules", "league_rules.answer"
+    if JACKPOT_HIT.search(t):
+        return "jackpot_hit", "JACKPOT_HIT"
     if RULES_EXTRA.search(t):
         return "rules2", "RULES_EXTRA"
     if RECORD_Q.search(t):
@@ -1852,7 +1871,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
               "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text,
               "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text,
-              "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text}.get(kind)
+              "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text,
+              "jackpot_hit": jackpot_hit_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

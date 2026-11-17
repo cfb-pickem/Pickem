@@ -637,6 +637,15 @@ def test_chase_and_scenario():
     assert r.startswith("Go 0-4 and you're at 30. Ackbar") and "could pass you" in r, r
 
 
+def test_jackpot_history():
+    ctx = _wk12_picks()
+    ctx["jackpot"] = {"pulls_since_pop": 230, "last_pop_at": None, "last_pop_team": None}
+    assert router.classify("have i ever hit it").label() == "fact:jackpot_hit"
+    assert router.classify("has anyone hit the jackpot").label() == "fact:jackpot_hit"
+    assert router.fact_answer("jackpot_hit", ctx, "have i ever hit it") == \
+        "Nobody's hit it this season: 230 slots pulls and the football hasn't popped."
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
