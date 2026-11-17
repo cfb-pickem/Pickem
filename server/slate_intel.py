@@ -210,4 +210,9 @@ if __name__ == "__main__":
     if cmd == "show":
         print(json.dumps(load(), indent=1))
         sys.exit(0)
+    try:  # kickoff forecasts for the GAME CARDs ride this hourly tick; weather.py fetches at most every 6 h
+        import weather
+        print("weather:", weather.refresh())
+    except Exception as e:  # noqa: BLE001 - the forecast never blocks the intel run
+        logging.warning("weather refresh failed: %r", e)
     sys.exit(run(force="--force" in sys.argv))
