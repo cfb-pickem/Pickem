@@ -551,7 +551,7 @@ PRIVACY_PROBE = re.compile(
 RULES_EXTRA = re.compile(
     r"\b(jackpot|slots?)\b|\bcan (games?|it|they) (tie|push)\b|\b(a )?ties?\b[^?.!]{0,15}\b(happen|possible|count)\b"
     r"|\b(forget|forgot|miss|missed) (to pick|picking|my picks?|totally|the deadline|the lock)\b|\bdo i get a zero\b"
-    r"|\b(pick|picks) for me\b|\btext (u|you) my picks\b|\b(on a plane|away|wedding|out of town|traveling)\b[^?.!]{0,40}\bpicks?\b"
+    r"|\btext (u|you) my picks\b|\b(on a plane|away|wedding|out of town|traveling)\b[^?.!]{0,40}\bpicks?\b"
     r"|\bcan (chuck|the commish|the commissioner|commish) (fix|change|enter|edit|redo)\b|\bovertime\b|\b(ot|2ot|3ot)\b(?=[^?.!]*\b(count|cover|spread|matter)\b)", re.I)
 
 
@@ -590,7 +590,7 @@ def rules2_text(ctx: dict, q: str) -> str | None:
         return rules_answer("what happens on a push", n_teams=len(ctx.get("teams") or []) or None)
     if re.search(r"\b(forget|forgot|miss|missed|zero)\b", t, re.I):
         return rules_answer("what if i forget to pick", n_teams=len(ctx.get("teams") or []) or None)
-    if re.search(r"\b(pick|picks) for me\b|\btext (u|you) my picks\b|\b(plane|away|wedding|out of town|traveling)\b", t, re.I):
+    if re.search(r"\btext (u|you) my picks\b|\b(plane|away|wedding|out of town|traveling)\b", t, re.I):
         when = chat._kickoff(str(ctx["week_unlock"])) if ctx.get("week_unlock") else "the week's first kickoff"
         return (f"I can't enter picks for anyone. Get them in on the site before the first kickoff ({when}), or "
                 "choose \"Let the slots decide\" and the site flips a coin for you at lock. After the lock only Chuck can "
@@ -684,7 +684,7 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "score", "COVERING_NOW"
     if DID_COVER.search(t):
         return "cover", "DID_COVER"
-    if PAYOUT_ASK.search(t) and chat._MONEY_ASK.search(t):
+    if PAYOUT_ASK.search(t) and (chat._MONEY_ASK.search(t) or re.search(r"\b(1st|2nd|3rd|first|second|third)\b", t, re.I)):
         return "payout", "PAYOUT_ASK"
     if SELF_REC_CLAIM.search(t) and re.search(r"\b(right|tied|correct|yeah|yea|ya)\b|\?", t, re.I):
         return "record", "SELF_REC_CLAIM"

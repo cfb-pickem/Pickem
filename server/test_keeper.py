@@ -758,6 +758,12 @@ def test_k2a_more():
         assert r is None or "Marshall" not in r[1], r
 
 
+def test_pick_for_me_and_third_place():
+    assert router.classify("ok just pick for me now then").label() != "fact:rules2"
+    assert router.classify("im on a plane sat morning can u pick for me").label() == "fact:rules2"
+    assert router.classify("ok and what does 3rd get").label() == "fact:payout"
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
