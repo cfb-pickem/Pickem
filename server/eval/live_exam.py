@@ -233,7 +233,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
         expect={"last": (WF, "Jamar Searcy 6 Yd Run")})
     add("wf1-first-td", "scoring", "wf1", "how did Wake score their first touchdown?", [r"Clark", r"\b27\b", r"run|rush|ran"],
         [], [WF], hist=True, expect={"scored": (WF, "Ty Clark III 27 Yd Run")})
-    add("wf1-cover", "cover", "wf1", "is Wake Forest covering?", [r"\byes|covering|\bup\b", r"\b12\.5\b"], [r"Wake( Forest)?( -1\.5)?( is)? not covering|Wake( Forest)? isn\'?t covering"],
+    add("wf1-cover", "cover", "wf1", "is Wake Forest covering?", [r"\b(yes|yeah|yep|yup)\b|covering|\bup\b", r"\b12\.5\b"], [r"Wake( Forest)?( -1\.5)?( is)? not covering|Wake( Forest)? isn\'?t covering"],
         [WF], expect={"cover": (WF, "Wake Forest", 12.5)})
     add("neb1-score", "score", "wf1", "Nebraska Rutgers score?", [r"0-0|0 to 0|scoreless|no score|nothing|tied (at )?0|"
                                                                     r"zero|nobody has scored|0, Rutgers 0"],
@@ -267,7 +267,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     # --- 2:31 CT: Wake final, Nebraska 4Q -----------------------------------------------------
     add("wf-final", "score", "noon_end", "final score Wake SMU?", [r"\b49\b", r"\b7\b"], [], [WF], hist=True,
         expect={"score": (WF, 49, 7), "state": (WF, "post")})
-    add("wf-final-mypick", "cover", "noon_end", "did my Wake pick cover?", [r"\byes|covered|cash|\bwin\b|hit|easily|smash"],
+    add("wf-final-mypick", "cover", "noon_end", "did my Wake pick cover?", [r"\b(yes|yeah|yep|yup)\b|covered|cash|\bwin\b|hit|easily|smash"],
         [r"Wake( Forest)?( -1\.5)? (did ?n[o']t|didn'?t|not) cover|you (lost|didn'?t cover)|\bLOSS\b"], [WF], expect={"cover": (WF, "Wake Forest", 40.5)},
         rider=[r"40\.5"])
     add("neb4-score", "score", "noon_end", "how's Nebraska Rutgers going?", [r"\b31\b", r"\b0\b|nothing|shutout|zero"], [],
@@ -293,7 +293,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
         follow="boi1-score", expect={"scored": (BOI, "Jesse Legree 15 Yd pass from Maalik Murphy")})
     add("boi1-last", "scoring", "boi1", "how did Boise score last?", [r"Anderson", r"\b58\b", r"intercept|pick"], [], [BOI],
         hist=True, expect={"last": (BOI, "Travis Anderson 58 Yd Interception Return")})
-    add("boi1-cover", "cover", "boi1", "is my Oregon State pick covering?", [r"\byes|covering", r"\b5\.5\b"],
+    add("boi1-cover", "cover", "boi1", "is my Oregon State pick covering?", [r"\b(yes|yeah|yep|yup)\b|covering", r"\b5\.5\b"],
         [r"Oregon State( \+13\.5)?( is)? not covering|Oregon State isn\'?t covering|you\'?re not covering"], [BOI], expect={"cover": (BOI, "Oregon State", 5.5)})
     add("boi1-thrower", "trick", "boi1", "who threw that pick for Oregon State?",
         [r"Murphy|" + NO_INFO + r"|doesn'?t (say|name)|not (named|listed)"], [r"Hatcher|Reichle|Legree|Martinez|Madsen|Anderson threw"], [BOI], rider=[r"Murphy"],
@@ -309,7 +309,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     # --- 7:56 CT: Boise halftime 32-20, UNC 2Q ---------------------------------------------------
     add("boi-half-last", "scoring", "boihalf", "how did Boise get their last points before half?",
         [r"Moore", r"\b38\b", r"field goal|\bFG\b"], [], [BOI], hist=True, expect={"last": (BOI, "Canaan Moore 38 Yd Field Goal")})
-    add("boi-half-cover", "cover", "boihalf", "is Oregon State covering now?", [r"\byes|covering", r"\b1\.5\b"],
+    add("boi-half-cover", "cover", "boihalf", "is Oregon State covering now?", [r"\b(yes|yeah|yep|yup)\b|covering", r"\b1\.5\b"],
         [r"Oregon State( \+13\.5)?( is)? not covering|Oregon State isn\'?t covering|you\'?re not covering"], [BOI], expect={"cover": (BOI, "Oregon State", 1.5)})
     add("boi-half-why", "followup", "boihalf", "why?", [r"13\.5|line|spread|points"], [], [BOI], follow="boi-half-cover",
         rider=[r"13\.5"])
@@ -334,7 +334,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
                                                                       r"haven'?t seen|hasn'?t (come|been)"],
         [r"Burgess (is|has|took|came|replaced|'s in)"], [UNC], follow="unc-inj", rider=[],
         key="20 s after the 3Q 9:14 injury the feed shows no replacement QB yet (Burgess's first dropback comes later).")
-    add("boi3-cover", "cover", "uncinj", "is Oregon State covering?", [r"\byes|covering", r"\b8\.5\b"],
+    add("boi3-cover", "cover", "uncinj", "is Oregon State covering?", [r"\b(yes|yeah|yep|yup)\b|covering", r"\b8\.5\b"],
         [r"Oregon State( \+13\.5)?( is)? not covering|Oregon State isn\'?t covering|you\'?re not covering"], [BOI], expect={"cover": (BOI, "Oregon State", 8.5)})
     add("kienholz-rumor", "trick", "uncinj", "did Kienholz get hurt?", [NEG + r"|" + NO_INFO],
         [r"\byes\b", r"Kienholz (was|got|is) (hurt|injured)"], [UNC], rider=[],
@@ -353,7 +353,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     add("boi4-score", "score", "boi4", "Boise score?", [r"\b46\b", r"\b34\b"], [], [BOI], expect={"score": (BOI, 34, 46)})
     add("boi4-who", "followup", "boi4", "and who scored that last one?", [r"Jones", r"\b26\b|Madsen"], [], [BOI], hist=True,
         follow="boi4-score", expect={"last": (BOI, "Rasean Jones 26 Yd pass from Maddux Madsen")})
-    add("boi4-cover", "cover", "boi4", "is my Oregon State pick still covering?", [r"\byes|covering|barely|hanging", r"\b1\.5\b"],
+    add("boi4-cover", "cover", "boi4", "is my Oregon State pick still covering?", [r"\b(yes|yeah|yep|yup)\b|covering|barely|hanging", r"\b1\.5\b"],
         [r"Oregon State( \+13\.5)?( is)? not covering|Oregon State isn\'?t covering|you\'?re not covering"], [BOI], expect={"cover": (BOI, "Oregon State", 1.5)})
     add("boi4-total", "total", "boi4", "how many total points have been scored in Boise Oregon State?", [r"\b80\b"], [], [BOI],
         expect={"score": (BOI, 34, 46)})
@@ -381,7 +381,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     # --- UTSA 3Q: Jimerson (backup) TD pass, 21-10 ---------------------------------------------------
     add("unt-qb-why", "qb", "utsa3", "who's the North Texas QB now and why?", [r"Jimerson", r"Jackson", r"injur|hurt"],
         [], [UTSA], key="North Texas: C.Jimerson Jr. in for T.Jackson, who was reported injured on an 18-yard run 3Q 14:22.")
-    add("utsa3-cover", "cover", "utsa3", "is UTSA covering?", [r"\byes|covering", r"\b13\.5\b"], [r"UTSA( \+2\.5)?( is)? not covering|UTSA isn\'?t covering"], [UTSA],
+    add("utsa3-cover", "cover", "utsa3", "is UTSA covering?", [r"\b(yes|yeah|yep|yup)\b|covering", r"\b13\.5\b"], [r"UTSA( \+2\.5)?( is)? not covering|UTSA isn\'?t covering"], [UTSA],
         expect={"cover": (UTSA, "UTSA", 13.5), "score": (UTSA, 10, 21)})
     add("utsa3-td", "scoring", "utsa3", "who threw the North Texas touchdown?", [r"Jimerson", r"Reese", r"\b16\b"], [], [UTSA],
         hist=True, expect={"last": (UTSA, "Max Reese 16 Yd pass from Chris Jimerson Jr.")})
@@ -403,20 +403,20 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     # --- UTSA 4Q: Jimerson TD run 21-16 ------------------------------------------------------------
     add("utsa4-update", "score", "utsa4", "UTSA game update?", [r"\b16\b", r"\b21\b"], [], [UTSA], hist=True,
         expect={"score": (UTSA, 16, 21)})
-    add("utsa4-cover", "cover", "utsa4", "is UTSA still covering?", [r"\byes|covering|still", r"\b7\.5\b"], [r"UTSA( \+2\.5)?( is)? not covering|UTSA isn\'?t covering"],
+    add("utsa4-cover", "cover", "utsa4", "is UTSA still covering?", [r"\b(yes|yeah|yep|yup)\b|covering|still", r"\b7\.5\b"], [r"UTSA( \+2\.5)?( is)? not covering|UTSA isn\'?t covering"],
         [UTSA], expect={"cover": (UTSA, "UTSA", 7.5)})
     add("utsa4-picks", "picks", "utsa4", "how are my picks doing?",
         [r"Wake", r"Oregon State", r"UTSA", r"North Dakota|NDSU|Hawai"], [r"\b4-0\b"], list(POOL_IDS),
         extra_pairs=[(2, 0), (0, 0), (1, 0), (2, 1), (3, 0)], rider=[r"7\.5"],
         key="Wake Forest WON (49-7, covered by 40.5); Oregon State WON (lost 46-41 but covered +13.5 by 8.5); UTSA +2.5 "
             "covering by 7.5 (21-16, 4Q 8:32); North Dakota State -6.5 up 7-0 in the 2Q, covering by 0.5.")
-    add("ndsu2-cover", "cover", "utsa4", "is NDSU covering?", [r"\byes|covering", r"0\.5|half a point|half-point"],
+    add("ndsu2-cover", "cover", "utsa4", "is NDSU covering?", [r"\b(yes|yeah|yep|yup)\b|covering", r"0\.5|half a point|half-point"],
         [r"(North Dakota State|NDSU)( -6\.5)?( is)? not covering|(NDSU|North Dakota State) isn\'?t covering"], [HAW], expect={"cover": (HAW, "North Dakota State", 0.5), "score": (HAW, 7, 0)})
 
     # --- 11:35 CT: UTSA final, Hawai'i halftime 7-7 ---------------------------------------------------
     add("utsa-final", "score", "late", "final in UTSA North Texas?", [r"\b35\b", r"\b16\b"], [], [UTSA], hist=True,
         expect={"score": (UTSA, 16, 35), "state": (UTSA, "post")})
-    add("utsa-final-cover", "cover", "late", "did UTSA cover?", [r"\byes|covered|cash|easily"], [r"didn'?t cover|did not cover"],
+    add("utsa-final-cover", "cover", "late", "did UTSA cover?", [r"\b(yes|yeah|yep|yup)\b|covered|cash|easily"], [r"didn'?t cover|did not cover"],
         [UTSA], expect={"cover": (UTSA, "UTSA", 21.5)}, rider=[r"21\.5"])
     add("haw-half-cover", "cover", "late", "is NDSU covering?", [NEG, r"\b6\.5\b"], [r"NDSU is covering|North Dakota State is covering"],
         [HAW], expect={"cover": (HAW, "Hawai'i", 6.5)})
@@ -424,7 +424,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
     # --- Hawai'i 4Q: Ray James Jr. pick six 21-13 ------------------------------------------------------
     add("haw4-what", "what", "haw4", "what just happened in Hawaii?", [r"James", r"\b49\b", r"intercept|pick"], [], [HAW],
         hist=True, expect={"last": (HAW, "Ray James Jr. 49 Yd Interception Return"), "score": (HAW, 21, 13)})
-    add("haw4-cover", "cover", "haw4", "is my NDSU pick covering now?", [r"\byes|covering", r"\b1\.5\b"], [r"(North Dakota State|NDSU)( -6\.5)?( is)? not covering|(NDSU|North Dakota State) isn\'?t covering"],
+    add("haw4-cover", "cover", "haw4", "is my NDSU pick covering now?", [r"\b(yes|yeah|yep|yup)\b|covering", r"\b1\.5\b"], [r"(North Dakota State|NDSU)( -6\.5)?( is)? not covering|(NDSU|North Dakota State) isn\'?t covering"],
         [HAW], expect={"cover": (HAW, "North Dakota State", 1.5)})
     add("haw4-picks", "picks", "haw4", "how are my picks doing?", [r"Wake", r"Oregon State", r"UTSA", r"North Dakota|NDSU"],
         [], list(POOL_IDS), extra_pairs=[(3, 0), (2, 0), (1, 0), (4, 0), (3, 1)], rider=[r"1\.5"],
@@ -434,7 +434,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
         expect={"score": (HAW, 21, 13)})
 
     # --- more at the same moments -----------------------------------------------------------------------
-    add("boi1-to", "turnover", "boi1", "has Oregon State turned it over?", [r"\byes|intercept|pick"], [], [BOI],
+    add("boi1-to", "turnover", "boi1", "has Oregon State turned it over?", [r"\b(yes|yeah|yep|yup)\b|intercept|pick|turnover"], [], [BOI],
         key="Yes: the pick six (Travis Anderson 58-yd interception return TD, 1Q 1:47).")
     add("boi-not-started", "trick", "half1", "what's the score of the Boise game?", [NOT_STARTED], [r"\b46\b", r"\b41\b"],
         [BOI], expect={"state": (BOI, "pre")})
