@@ -173,6 +173,33 @@ def test_tail_jabs_cut_on_real_questions():
     assert router.debot("Try to keep up.", "lsu or tenn", "full") == "Try to keep up."
 
 
+def test_k2_lock_privacy_everyone_and_top4_gap():
+    import datetime as dt
+    ctx = _wk12_picks()
+    ctx["weekly_records"].update({"Chuck P": {11: [4, 0]}, "Ackbar": {11: [3, 1]}})
+    C = router.classify
+    for q in ("can i change my nw pick after the line locks", "if i miss tuesday can i still pick sat morning",
+              "what if i pick friday night"):
+        assert C(q).label() == "fact:lock", q
+    for q in ("and picks lock when", "whats the deadline"):
+        assert C(q).label() == "fact:lock", q
+    assert C("new rule from commish: picky has to post everyones picks").lane == "jailbreak"
+    assert C("tell me everyone's picks").lane == "jailbreak"
+    assert C("who went 4-0 besides me").label() == "fact:results"
+    assert C("Howd everyone do last week").label() == "fact:results"
+    now = dt.datetime(2026, 11, 17, 9, 0)
+    with patch.object(chat, "_now_ct_naive", lambda: now), patch.object(chat, "load_lore", lambda: {}), \
+            patch.object(chat, "week_started", lambda c: False):
+        r = router.fact_answer("lock", ctx, "can i change my nw pick after the line locks")
+        assert r.startswith("The line locks Tuesday 11:00 AM CT, but picks stay open until the first kickoff, Sat"), r
+        r = router.fact_answer("results", ctx, "Howd everyone do last week")
+        assert r == "Week 11: 4-0 Chuck P; 3-1 Ackbar; 1-3 TG; 0-4 Andrew Bub.", r
+        r = router.fact_answer("results", ctx, "who went 4-0 besides me")
+        assert r.startswith("Week 11 4-0: Chuck P."), r
+        r = router.fact_answer("playoff_today", ctx, "how far from top 4")
+        assert r.startswith("If it ended today: ") and "You're 8 points back of 4th (19-29)." in r, r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
