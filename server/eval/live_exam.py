@@ -491,7 +491,7 @@ def _verify(items: list[dict], tr: Truth) -> None:
 _PAIR = re.compile(r"(?<![\d.+\-:$])(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})(?![\d:]|\.\d|\s*(?:-?\s*yards?|yd|-yd))", re.I)
 _RECORD_AFTER = re.compile(r"\s*(season|record|this week|on the week|on the season|on the year|ATS|week\b|start\b)", re.I)
 _RECORD_BEFORE = re.compile(r"\b(my|you['’]?re|you are|he['’]?s|i['’]?m|record( of)?|went|go(ing)?|sitting at|now|"
-                            r"place (with|at))\s+$", re.I)
+                            r"place (with|at))\s+(?:(?:officially|now|still|already|only|just|sitting|at)\s+)*$", re.I)
 _COVER_BY = re.compile(r"\bcover\w*\b[^.?!]{0,40}?\bby\s+(\d{1,2}(?:\.5)?)(?!\d)", re.I)
 
 
@@ -520,7 +520,7 @@ def grade(item: dict, ans: str, tr: Truth) -> tuple[bool, list[str]]:
     pairs, margins = allowed(item, tr)
     for m in _PAIR.finditer(a):
         p = tuple(sorted((int(m.group(1)), int(m.group(2)))))
-        if _RECORD_AFTER.match(a, m.end()) or _RECORD_BEFORE.search(a[max(0, m.start() - 16):m.start()]):
+        if _RECORD_AFTER.match(a, m.end()) or _RECORD_BEFORE.search(a[max(0, m.start() - 30):m.start()]):
             continue  # a record ('my 0-3 season', 'you're 4-0 this week'), not a game score
         if p not in pairs:
             why.append(f"score {m.group(0)} isn't a score at this moment")
