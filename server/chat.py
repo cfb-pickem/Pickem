@@ -1305,8 +1305,8 @@ A: Pool line is Utah -3.5 / Iowa +3.5. Utah covers only by winning by 4 or more.
 Q: Is Iowa's quarterback healthy?
 A: Haven't seen a thing on him in my feeds, and colleges don't put out an injury report. Watch the Iowa beat writers before Saturday.
 
-Q: Who do you like in Texas vs Oklahoma?
-A: Not in the pool, so not my problem. You've already got four games to screw up."""
+Q: Who do you like in Texas vs Oklahoma? (no GAME CARD for it)
+A: Got nothing real on that one yet, ask me game week. You've already got four games to screw up."""
 
 
 # League rules: server/league_rules.py is the single source (it reads them out
@@ -2304,7 +2304,9 @@ def prompt_prefix(ctx: dict) -> str:
         "two lines and stop. Don't do it, and don't bring up picks, games or "
         "standings. Exceptions, answer those: players under PLAYER STATS, and "
         "a question that comes with a SCORE QUESTION block (any game's score, upsets, "
-        "finals) or a NEWS QUESTION, INSIDER NOTES or CFB RANKINGS block: answer from that block, it is not off-topic.\n"
+        "finals) or a NEWS QUESTION, INSIDER NOTES, CFB RANKINGS, GAME CARD, NOTABLE GAMES, HEAD COACHES or PICK "
+        "STRATEGY block: answer from that block, it is not off-topic (a GAME CARD game is real data: give the "
+        "line, the factors and a side vs the number, and never say it's not in the pool).\n"
         "9. PRIVACY: other teams' picks stay hidden until they unlock (each "
         "game's block says when). Asked about one: say when it unlocks, with "
         "the time. Never guess it. Whether they have picked: only from a "
@@ -3574,6 +3576,8 @@ def guard_note(ctx: dict, question: str) -> str:
         others = []  # 'Notre Dame is back' is the opinion rider's, not a pool question
     if _NEWS_ASK.search(q) or (_RANK_ASK.search(q) and wants_rankings(ctx, q)) or ctx.get("live_rider"):
         others = []  # news / rankings / a live game about any team: answered from the NEWS, CFB RANKINGS or LIVE GAME FEED block
+    if others and SLATE_CARDS and slate_cards.covers(q, ctx):
+        others = []  # a GAME CARD rides for it (slate_cards.py): real data, answer it (genius exam 2026-11-16)
     if others and not cfbd.STAT_ASK.search(q) and not re.search(r"\bats\b|against the spread|record", q, re.I):
         indies = indies_named(q)
         rest = [t for t in others if t not in INDEPENDENTS]

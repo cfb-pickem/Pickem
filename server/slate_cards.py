@@ -434,6 +434,24 @@ def board(top: list[dict], notes: dict) -> str:
     return "THIS WEEK'S NOTABLE GAMES (current market, computed):\n" + "\n".join(rows)
 
 
+def covers(question: str, ctx: dict) -> bool:
+    """Cheap, sync (no network): would slate_note put a GAME CARD on this text?
+    chat.guard_note uses it to skip its 'NOT IN THE POOL: no spread, no pick' rider."""
+    try:
+        idx = cfbd.load_index()
+    except Exception:  # noqa: BLE001
+        return False
+    if not idx or not _PICK_WORDS.search(question or ""):
+        return False
+    games = upcoming_games(idx, dt.datetime.now(dt.timezone.utc))
+    pool_ids = {int(g["id"]) for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
+    for team in cfbd.other_teams_named(question, [], idx) or player_teams(question, idx):
+        n = cfbd.norm(team)
+        if any(n in (cfbd.norm(g["homeTeam"]), cfbd.norm(g["awayTeam"])) and g["id"] not in pool_ids for g in games):
+            return True
+    return False
+
+
 def player_teams(question: str, idx: dict) -> list[str]:
     """'Is Sayin playing?': a capitalized surname that belongs to exactly one
     team's regular (QB/RB/WR with real volume) -> that team."""
@@ -561,7 +579,9 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
         return ""
     ask = q
     if prior and len(q.split()) <= 12 and _FOLLOW_UP.search(q) and not cfbd.other_teams_named(q, [], idx):
-        q = f"{prior[-1]} {q}"
+        base = next((p for p in reversed(prior) if cfbd.other_teams_named(p, [], idx)), None)
+        if base:  # 'why?' then 'best case for the other side?': the game is in the earlier text
+            q = f"{base} {q}"
     try:
         idx = cfbd.load_index()
     except Exception:  # noqa: BLE001
