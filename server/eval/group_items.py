@@ -35,7 +35,7 @@ CEREALS = (r"cheerios|frosted flakes|froot loops|fruit loops|cap'?n crunch|lucky
            r"frosted mini.?wheats|mini.?wheats|life cereal|\blife\b|reese'?s puffs|golden grahams|trix|apple jacks|"
            r"honey bunches|kix|wheaties|chex|count chocula|grape.?nuts|crunch berries|oatmeal crisp|cookie crisp|"
            r"froot|krave|cracklin|basic 4|granola|frosted|fruity")
-BEERS = (r"coors|bud(weiser)?|bud light|miller|lite|michelob|ultra|busch|pabst|pbr|yuengling|modelo|corona|"
+BEERS = (r"spaten|oktoberfest|coors|bud(weiser)?|bud light|miller|lite|michelob|ultra|busch|pabst|pbr|yuengling|modelo|corona|"
          r"guinness|heineken|stella|blue moon|sam adams|lagunitas|sierra nevada|dos equis|pacifico|natty|"
          r"natural light|keystone|high life|old style|hamm'?s|banquet|ipa|lager|pilsner|stout|hazy|three floyds|"
          r"zombie dust|spotted cow|goose island|312|revolution|half acre|bell'?s|two hearted|founders|light beer")

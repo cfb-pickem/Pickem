@@ -96,8 +96,29 @@ RECORD_Q = re.compile(rf"\b(what'?s|what is|whats) (my|({_T})'s) record\b|\bmy r
 PAYOUT_ASK = re.compile(r"\b(payouts?|buy.?in|the pot|how much (does|do|is|will)|prize money|what does (first|second|"
                         r"third|1st|2nd|3rd)( place)? (get|win|pay)|(first|second|third|1st|2nd|3rd) place (get|gets|win|"
                         r"wins|pays?))\b", re.I)
+# 'if the season ended today, who makes the playoffs?' (the field, not the rule; full exam 2026-11-16)
+PLAYOFF_TODAY = re.compile(r"\b(ended today|ends today|if the season ended|as it stands)\b"
+                           r"|\bwho('?s| is| would| will)? (make|makes|making|get|gets|be) (in(to)? )?(the )?playoffs?\b"
+                           r"|\bwho'?s in the playoffs\b|\bprojected (playoff )?(field|seeds?)\b"
+                           r"|\bcurrent (playoff )?(seeds?|field)\b|\bwho are the (4|four) (seeds|playoff teams)\b", re.I)
+# 'who you got in Northwestern at Minnesota?': a side + line from the game card
+PICK_ASK = re.compile(r"\bwho (you|ya|u|do you|would you|d'?you) (got|like|taking|take|have|pick|picking)\b"
+                      r"|\bwho should i (take|pick|go with|ride)\b|\b(your|ur) (pick|play|lean) (in|for|on)\b"
+                      r"|\bwho'?s (your|ur) pick\b|\bwhat'?s the play (in|for|on)\b|\bwhich side (in|of|on)\b", re.I)
+# 'gimme a read on this week's games': every open game, one call each
+SLATE_READ = re.compile(r"\b(read|reads|picks?|calls?|leans?|thoughts?|take|takes|breakdown|rundown|who do you like)\b",
+                        re.I)
+# who a member-question is about: 'Big Tuna Tony's record', 'how'd X do', 'where does X rank'
+_NAME_ASK = re.compile(rf"\b(?:what'?s|what is|whats|how'?s|how is)\s+({_T})'s (?:record|season|week)\b"
+                       rf"|\bhow(?:'d| did| is| was|'s)\s+({_T})\s+(?:do|doing|done|go|going|look|looking)\b"
+                       rf"|\bwhere (?:does|is)\s+({_T})\s+(?:rank|stand|sit)\b"
+                       rf"|\bhow far (?:behind|back|ahead) is\s+({_T})\b", re.I)
+_NOT_A_NAME = re.compile(r"^(i|we|me|my|you|u|ya|he|she|they|it|that|this|everyone|everybody|anyone|somebody|picky|"
+                         r"my picks?|my week|my team|our|the league|the pool|things|the week|this week|last week|"
+                         r"my season|the season|people|yall|y'all)$", re.I)
 # 'who's even winning this thing?' (chat._STANDINGS_Q wants the words back to back)
 STANDINGS_EXTRA = re.compile(r"\bwho('?s| is)? (even|actually|really|currently|still) (winning|leading|in first)\b"
+                             rf"|\bwhere (does|is) ({_T}) (rank|stand|sit)\b"
                              r"|\bwho('?s| is) winning (this|the) (thing|league|pool)\b", re.I)
 _BOTWORD = re.compile(r"\b(bot|robot|ai|toaster|chat ?gpt|computer)\b", re.I)
 # a real question mark plus a question word: a mixed text with a question we don't have a rule for
@@ -130,6 +151,12 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "cover", "DID_COVER"
     if PAYOUT_ASK.search(t) and chat._MONEY_ASK.search(t):
         return "payout", "PAYOUT_ASK"
+    if PLAYOFF_TODAY.search(t):
+        return "playoff_today", "PLAYOFF_TODAY"
+    if PICK_ASK.search(t):
+        return "pick", "PICK_ASK"
+    if chat.slate_ask(t) and SLATE_READ.search(t):
+        return "slate", "SLATE_READ"
     if chat.wants_rules(t) and rules_answer(t):
         return "rules", "league_rules.answer"
     if RECORD_Q.search(t):
@@ -347,11 +374,24 @@ def _cap(s: str) -> str:
 
 
 def nick_names(text: str, nicks: dict[str, str] | None) -> str:
-    """Full team names (two+ words, e.g. 'Andrew Bub') become what the group calls them."""
-    for team, nick in sorted((nicks or {}).items(), key=lambda x: -len(x[0])):
-        if nick and team != nick and " " in team:
-            text = re.sub(rf"(?<!\w){re.escape(team)}(?!\w)", nick, text)
-    return text
+    """Members by their league team name only (orchestrator, full exam 2026-11-16: 'You obviously did,
+    Charlie' must be 'Chuck P'): a name from the private handle map that isn't the member's team name
+    ('Charlie', 'Liam', 'Bub') becomes the team name. Team names already in the text are left alone;
+    capitalized matches only ('wedge' the golf club stays)."""
+    pairs = [(t, n) for t, n in (nicks or {}).items() if t and n and t != n]
+    if not pairs:
+        return text
+    teams = sorted({t for t, _ in pairs} | set((nicks or {}).keys()), key=len, reverse=True)
+    keep: list[str] = []
+
+    def stash(m):
+        keep.append(m.group(0))
+        return f"\x00{len(keep) - 1}\x00"
+    for t in teams:
+        text = re.sub(rf"(?<![\w']){re.escape(t)}(?!\w)", stash, text)
+    for t, n in sorted(pairs, key=lambda x: -len(x[1])):
+        text = re.sub(rf"(?<![\w']){re.escape(n)}(?!\w)", t, text)
+    return re.sub(r"\x00(\d+)\x00", lambda m: keep[int(m.group(1))], text)
 
 
 def shape_banter(text: str, q: str = "", nicks: dict[str, str] | None = None, max_words: int = 25,
@@ -675,6 +715,113 @@ def payout_answer(ctx: dict, q: str) -> str | None:
             f"third ${m['third']} (the buy-in back).")
 
 
+def unknown_member(ctx: dict, q: str) -> str | None:
+    """The name a member question asks about when nobody in the league goes by it ('Big Tuna Tony'),
+    else None. Known: a team name, a name from the handle map, a pool team, Picky, pronouns."""
+    m = _NAME_ASK.search(q or "")
+    name = next((g for g in (m.groups() if m else ()) if g), None)
+    if not name or _NOT_A_NAME.match(name.strip()):
+        return None
+    low = name.lower().strip()
+    known = [r["team"] for r in ctx.get("standings_ytd") or []] + list(chat.member_nicknames().values())
+    known += [x for g in ctx.get("games_this_week") or [] for x in (g.get("away"), g.get("home")) if x]
+    known += [(ctx.get("leader") or {}).get("team_name") or ""]
+    for k in known:
+        kl = (k or "").lower()
+        if kl and (kl == low or kl in low.split() or re.search(rf"(?<!\w){re.escape(kl)}(?!\w)", low)
+                   or (len(low) > 3 and low in kl)):
+            return None
+    if chat._LEADER_ALIAS.search(name) or chat._BLINKS_ASK.search(name) or chat._ACKBAR_ASK.search(name):
+        return None
+    if chat.games_named(name, [{"Away": g["away"], "Home": g["home"], "id": g["id"]}
+                               for g in ctx.get("games_this_week") or []]):
+        return None
+    return name.strip()
+
+
+def playoff_today_text(ctx: dict, q: str) -> str | None:
+    """Who's in if it ended today: the playoff board once seeded, else the site's own playoff_compute
+    preview, else the week<=15 standings' top 4, with the tie at 4th called out."""
+    board = ctx.get("playoff_board") or []
+    if board:
+        return ("We're in the playoffs: " + ", ".join(f"{r['seed']}. {r['team']}" for r in
+                                                     sorted(board, key=lambda r: r["seed"])) + ". Scores reset.")
+    pv = ctx.get("playoff_preview") or {}
+    if pv.get("qualifiers"):
+        out = "If it ended today: " + ", ".join(f"{x['team']} ({x['points']})" for x in pv["qualifiers"]) + "."
+        cut = pv.get("cut_tie") or {}
+        if cut.get("teams"):
+            how = (f"{cut['decided_by']} breaks it" if cut.get("decided_by") else
+                   f"it waits on {cut['waiting_on']}" if cut.get("waiting_on") else "a coin flip, the commissioner's call")
+            out += f" Tied at the cut: {', '.join(cut['teams'])} at {cut.get('points')}, {how}."
+        return out
+    st = ctx.get("standings_ytd") or []
+    if len(st) < 4:
+        return None
+    cut_w = sorted((r["w"] for r in st), reverse=True)[3]
+    above = [r for r in st if r["w"] > cut_w]
+    at = [r for r in st if r["w"] == cut_w]
+    if len(above) + len(at) <= 4:
+        return "If it ended today: " + ", ".join(f"{r['team']} ({r['w']})" for r in above + at) + "."
+    out = "If it ended today: " + ", ".join(f"{r['team']} ({r['w']})" for r in above)
+    left = 4 - len(above)
+    out += (f", then {left} of {', '.join(r['team'] for r in at)} (all {cut_w})" if above else
+            f"{left} of {', '.join(r['team'] for r in at)} (all {cut_w})")
+    return out + ". The tie at the cut goes to the tiebreakers: conference title picks, Army-Navy, then Pit chips."
+
+
+def _card_for(ctx: dict, g: dict):
+    import game_cards
+    c = game_cards.load_card(ctx.get("current_week"), g["id"])
+    if not c or c["league_line"]["home"] != float(g.get("line") or 0) or not c["lean"].get("side"):
+        return None
+    return c
+
+
+def pick_text(ctx: dict, q: str) -> str | None:
+    """'who you got in X at Y?': the card's side + line, the confidence, one reason."""
+    import game_cards
+    games = [g for g in chat.take_games(ctx, q)][:2]
+    if not games:
+        return None
+    out = []
+    for g in games:
+        c = _card_for(ctx, g)
+        if not c:
+            return None  # no card (or the line moved since): the full brain's live breakdown takes it
+        locked = game_cards.is_locked(c)
+        rs = [r for r in game_cards._reasons(c, locked) if r]
+        why = rs[0] if rs else ""
+        out.append(f"I'd take {c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
+                   + (f": {why[0].lower() + why[1:]}" if why else "") + ".")
+    return " ".join(out)
+
+
+def slate_text(ctx: dict, q: str) -> str | None:
+    """'gimme a read on this week's games': every open game gets a call, then the strongest play."""
+    import game_cards
+    if chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]):
+        return pick_text(ctx, q)  # 'should I take Boise this week?' names a game: that game's call
+    now = chat._now_ct_naive()
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("winner") and not g.get("tiebreaker")
+             and not chat._game_is_locked({"Start (CT)": g.get("start"), "Status": g.get("status")}, now)]
+    if not games or chat.week_locked(ctx):
+        return None
+    calls, cards = [], []
+    for g in games:
+        c = _card_for(ctx, g)
+        if c:
+            cards.append(c)
+            calls.append(f"{c['lean']['label']} ({c['confidence'].get('word') or 'lean'})")
+        else:
+            calls.append(f"{g['away']} at {g['home']}: no read yet")
+    if not cards:
+        return None
+    best = game_cards.strongest(cards)
+    return (f"My {len(games)} calls: " + ", ".join(calls) + "."
+            + (f" Best play: {best['lean']['label']}." if best and len(cards) > 1 else ""))
+
+
 def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     """The complete answer in code for a fact intent, or None (no data / not this lane's question)."""
     if not ctx or ctx.get("error"):
@@ -687,8 +834,13 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
                 pf = lg.picks_fact(ctx)                                                  # with its cover margin
                 if pf:
                     return pf[1].strip()
+        if kind in ("standings", "record", "results"):
+            who = unknown_member(ctx, q)
+            if who:  # never the sender's numbers for a name nobody goes by (full exam 2026-11-16)
+                return f"Nobody in this league goes by {who}."
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
-              "score": score_text, "lock": lock_text, "payout": payout_answer}.get(kind)
+              "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
+              "pick": pick_text, "slate": slate_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

@@ -68,13 +68,15 @@ def test_mixed_texts_answer_first():
     r = router.classify("you suck, who's even winning this thing?")
     assert r.lane == "fact" and r.kind == "standings" and r.mixed and r.ptype == "insult", r
     r = router.classify("you're trash picky, should I take Boise this week?")
+    assert r.lane == "fact" and r.mixed, r  # the game card answers it first, then the jab
+    r = router.classify("you're trash picky, is Notre Dame getting screwed?")
     assert r.lane == "full" and r.mixed, r  # a real question with no code answer: full brain, answer first
     assert router.classify("why are you so bad?").lane == "banter"  # rhetorical, nothing to answer
     assert router.classify("are you a bot or what?").lane == "banter"
 
 
 def test_full_brain_for_the_rest():
-    for q in ("who should I take in the Boise game?", "what did you think of this weekend's games?",
+    for q in ("what did you think of this weekend's games?",
               "is Notre Dame getting screwed by the committee?", "what's the latest news from ross"):
         assert router.classify(q).lane == "full", (q, router.classify(q))
 
@@ -85,7 +87,7 @@ def test_brief_fallback():
     nr = router.from_brief(r, "insult", "a shot at me", "ugh whatever man")
     assert nr.lane == "banter" and nr.why == "brief", nr
     assert router.from_brief(r, "question", "x", "ugh whatever man") is r
-    q = "ugh, who should I pick in the Boise game?"
+    q = "ugh, is Notre Dame getting screwed by the committee?"
     assert router.from_brief(router.classify(q), "banter", "x", q).lane == "full"  # a real question stays full
 
 
@@ -102,7 +104,7 @@ def test_shape_rules():
     S = router.shape_banter
     assert S("That's not a pick; that's a donation.") == "That's not a pick. That's a donation."
     assert S("Look, you're 1-3 this week, right?") == "You're 1-3 this week."
-    assert S("Honestly, Andrew Bub picks like a raccoon.", nicks=NICKS) == "Bub picks like a raccoon."
+    assert S("Honestly, Bub picks like a raccoon.", nicks=NICKS) == "Andrew Bub picks like a raccoon."
     assert S("Let's be real, nobody fears you.") == "Nobody fears you."
     out = S("Big talk. For the record: Boise State -13.5 was a LOSS; North Texas -2.5 was a LOSS.")
     assert "record" not in out.lower() and out == "Big talk.", out
@@ -576,6 +578,107 @@ def test_fact_lane_wraps_with_one_voice_line_and_keeps_facts_verbatim():
         raise RuntimeError("should have gone to the full brain")
     except AssertionError as e:
         assert "no understand pass" in str(e)
+
+
+def test_unknown_member_never_gets_the_senders_numbers():
+    """Full exam 2026-11-16: "What's Big Tuna Tony's record in the pool?" -> "You're 30-18 on the season"."""
+    from unittest.mock import patch
+    import chat
+    ctx = _wk11("Chuck P")
+    with patch.object(chat, "load_lore", lambda: {}), patch.object(chat, "member_nicknames", lambda: NICKS):
+        F = router.fact_answer
+        for q in ("What's Big Tuna Tony's record in the pool?", "how did Big Tuna Tony do this week",
+                  "where does Big Tuna rank", "how far behind is Tony Soprano"):
+            assert F(router.classify(q).kind, ctx, q) == f"Nobody in this league goes by {router.unknown_member(ctx, q)}.", q
+            assert "30-18" not in F(router.classify(q).kind, ctx, q)
+        # real members, nicknames, Picky and pool teams still resolve
+        assert F("record", ctx, "whats Ackbar's record").startswith("Ackbar is 28-20")
+        assert router.unknown_member(ctx, "how did Bub do") is None
+        assert router.unknown_member(ctx, "how'd Boise do") is None
+        assert router.unknown_member(ctx, "how did my picks do") is None
+        assert router.unknown_member(ctx, "how'd Charlie do") is None
+
+
+def test_if_it_ended_today_names_the_field():
+    from unittest.mock import patch
+    import chat
+    ctx = _wk11("TG")
+    q = "If the season ended today, who makes the playoffs?"
+    assert router.classify(q).label() == "fact:playoff_today"
+    with patch.object(chat, "member_nicknames", lambda: NICKS):
+        out = router.fact_answer("playoff_today", ctx, q)
+        # week-11 standings: Chuck P 30, Ackbar 28, then Blinkstradamus and DaddyFreeman tied at 27 for 3rd/4th
+        assert out == "If it ended today: Chuck P (30), Ackbar (28), Blinkstradamus (27), DaddyFreeman (27).", out
+        ctx2 = dict(ctx, standings_ytd=ctx["standings_ytd"][:4] + [dict(ctx["standings_ytd"][4], w=27)])
+        out = router.fact_answer("playoff_today", ctx2, q)
+        assert "then 2 of Blinkstradamus, DaddyFreeman, Liam Bryson (all 27)" in out and "tiebreakers" in out, out
+        pv = {"qualifiers": [{"seed": i, "team": t, "points": p} for i, (t, p) in
+                             enumerate([("Chuck P", 30), ("Ackbar", 28), ("Blinkstradamus", 27), ("DaddyFreeman", 27)], 1)],
+              "cut_tie": {"teams": ["DaddyFreeman", "Liam Bryson"], "points": 27, "decided_by": "Pit chips"}}
+        out = router.fact_answer("playoff_today", dict(ctx, playoff_preview=pv), q)
+        assert out.startswith("If it ended today: Chuck P (30), Ackbar (28)") and "Pit chips breaks it" in out, out
+        board = [{"seed": 1, "team": "Ackbar", "rank": 1, "w": 2, "l": 0}, {"seed": 2, "team": "Chuck P", "rank": 2, "w": 1, "l": 1}]
+        assert router.fact_answer("playoff_today", dict(ctx, playoff_board=board), q).startswith("We're in the playoffs: 1. Ackbar")
+
+
+def _cards(ctx, lean_by_id):
+    import datetime as dt
+    out = {}
+    for g in ctx["games_this_week"]:
+        if g["id"] not in lean_by_id:
+            continue
+        side, label, word = lean_by_id[g["id"]]
+        out[g["id"]] = {"game": {"away": g["away"], "home": g["home"]}, "generated_at": dt.datetime.now().isoformat(),
+                        "league_line": {"home": float(g["line"]), "locked": False, "lock_at": "2099-01-01T11:00:00",
+                                        "text": "x"},
+                        "lean": {"side": side, "label": label, "score": {}},
+                        "confidence": {"word": word, "say": word}, "reasons": [f"{side} is 3-0 ATS on the road"],
+                        "market": None, "value": None}
+    return out
+
+
+def test_pick_and_slate_questions_name_a_side_and_line_for_every_open_game():
+    import datetime as dt
+    from unittest.mock import patch
+    import chat
+    import game_cards
+    ctx = _wk11("TG")
+    for i, g in enumerate(ctx["games_this_week"]):
+        g.update(winner=None, status="scheduled", start=f"2099-11-21T{11 + i}:00:00")
+    cards = _cards(ctx, {1: ("Wake Forest", "Wake Forest -1.5", "lean"), 2: ("Oregon State", "Oregon State +13.5", "best play"),
+                         3: ("UTSA", "UTSA +2.5", "slight lean"), 4: ("Hawai'i", "Hawai'i +6.5", "coin flip")})
+    with patch.object(game_cards, "load_card", lambda w, gid, base=None: cards.get(gid)), \
+            patch.object(chat, "_now_ct_naive", lambda: dt.datetime(2026, 11, 17, 9, 0)):
+        q = "who you got in Oregon State at Boise State?"
+        assert router.classify(q).label() == "fact:pick"
+        out = router.fact_answer("pick", ctx, q)
+        assert out == "I'd take Oregon State +13.5 (best play): oregon State is 3-0 ATS on the road.", out
+        q = "Gimme a read on this weeks games"
+        assert router.classify(q).label() == "fact:slate"
+        out = router.fact_answer("slate", ctx, q)
+        for lab in ("Wake Forest -1.5", "Oregon State +13.5", "UTSA +2.5", "Hawai'i +6.5"):
+            assert lab in out, (lab, out)
+        assert out.startswith("My 4 calls: ") and out.endswith("Best play: Oregon State +13.5."), out
+        cards.pop(3)
+        out = router.fact_answer("slate", ctx, q)
+        assert "North Texas at UTSA: no read yet" in out, out  # every open game still gets named
+        assert router.fact_answer("pick", ctx, "who you got in North Texas at UTSA?") is None  # no card: full brain
+
+
+def test_team_names_only_never_real_names():
+    N = dict(NICKS, **{"Liam Bryson": "Liam"})
+    assert router.nick_names("You obviously did, Charlie, going 4-0.", N) == "You obviously did, Chuck P, going 4-0."
+    assert router.nick_names("Andrew Bub and Bub, Liam Bryson and Liam.", N) == \
+        "Andrew Bub and Andrew Bub, Liam Bryson and Liam Bryson."
+    import group_chat as gc
+    from unittest.mock import patch
+    tok = gc.SENDER.set(gc.Sender(handle="+1", team="Chuck P", name="Charlie"))
+    try:
+        with patch.object(gc, "_orig_system_tail", lambda ctx: "TAIL"):
+            tail = gc._system_tail({})
+        assert "Charlie" not in tail and '"Chuck P"' in tail, tail
+    finally:
+        gc.SENDER.reset(tok)
 
 
 if __name__ == "__main__":

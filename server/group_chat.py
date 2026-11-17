@@ -387,9 +387,9 @@ def _system_tail(ctx: dict) -> str:
             " This person isn't matched to a team: treat them as a league member and don't guess who.")
     who = ""
     s = SENDER.get()
-    if s and s.team and s.name:
-        who = f" In the group, \"{s.team}\" goes by {s.name}."
-    elif not (s and s.team):
+    if s and s.team:  # team names only: the handle map's real names never reach the model (full exam 2026-11-16)
+        who = f" Call them \"{s.team}\" (their league team name), never a real first name."
+    if not (s and s.team):
         who = " This group member isn't matched to a team: treat them as a league member and don't guess who."
     return _orig_system_tail(ctx) + GROUP_RIDER + who + RECENT.get()
 
@@ -953,6 +953,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             if not image:
                 reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
                                      group=mode == "group", recall=callbacks.is_recall(q))
+                reply = router.nick_names(reply, chat.member_nicknames())  # team names, never real names
                 reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
                 reply = live_games.final_guard(reply) if route.lane != "fact" else reply
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
