@@ -122,6 +122,15 @@ def test_hedged_qb_report_is_questionable_not_out():
     assert pick_brief._QB_RANK["out"] > pick_brief._QB_RANK["questionable"]
 
 
+def test_league_line_move_makes_the_card_due():
+    c = build(SLATE[1])
+    g = {"GameId": 401858527, "Away": "Iowa", "Home": "Illinois", "line": 6.5, "Status": None,
+         "Start (CT)": "2026-11-21T13:30:00"}
+    c["generated_at"] = at(MON).isoformat()
+    assert gc.due_reason(g, c, None, at("2026-11-16T18:00")) is None
+    assert gc.due_reason({**g, "line": 8.5}, c, None, at("2026-11-16T18:00")) == "line"
+
+
 # ---- 2. pre-lock vs post-lock ---------------------------------------------------------------------
 
 def test_pre_lock_gap_is_conditional_post_lock_is_value():

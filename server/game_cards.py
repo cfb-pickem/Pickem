@@ -339,6 +339,11 @@ def due_reason(g: dict, card: dict | None, dossier: dict | None, now: dt.datetim
             return name
     if (dossier or {}).get("generated_at") and dossier["generated_at"] != card.get("dossier_at"):
         return "dossier"
+    try:  # the league line moved before the lock (Iowa -6.5 -> -8.5, 2026-11-16): the card is stale
+        if float(g.get("line")) != float(card["league_line"]["home"]):
+            return "line"
+    except (TypeError, ValueError, KeyError):
+        pass
     return None
 
 
@@ -703,8 +708,9 @@ def card_note(ctx: dict, question: str) -> str:
 
 PRE_LOCK_SAY = ("Before Tuesday's 11 AM CT lock a line gap is NOT value yet: say it with 'if it holds through "
                 "Tuesday' and never call anything 'the only value side'. ")
-SLATE_SAY = ("Text it like a buddy, phone-length (about 100 words): one short line per game in this order, 'I'd "
-             "take X (line)' plus one or two of its reasons in plain words (no stat labels like SP+ or EPA, no "
+SLATE_SAY = ("Text it like a buddy, phone-length (about 100 words): one short line for EVERY game above, in this "
+             "order, none skipped (the coin flip too, said as a coin flip), even if you covered the slate a moment "
+             "ago: 'I'd take X (line)' with the line exactly as written above, plus one or two of its reasons in plain words (no stat labels like SP+ or EPA, no "
              "sources, no per-line citations, round the numbers), then one line on the strongest play. " + PRE_LOCK_SAY
              + "No jab about their record or the standings: it's pick advice.")
 
