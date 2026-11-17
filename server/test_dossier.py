@@ -122,19 +122,24 @@ check("rule summary with nothing", "No verified" in dossier.rule_summary({"facts
 NEWS = [
     {"title": "Miami QB Carson Beck questionable with a shoulder injury", "date": "2026-11-17T12:00:00+00:00",
      "link": "https://www.miamiherald.com/sports/college/beck-shoulder", "source": "Miami Herald", "teams": ["Miami"],
-     "players": ["Carson Beck"], "kind": "injury", "topics": ["injury"], "status": "questionable", "summary": ""},
+     "players": ["Carson Beck"], "kind": "injury", "topics": ["injury"], "status": "questionable", "summary": "",
+     "story": "beck"},
     {"title": "Virginia Tech names a new defensive coordinator", "date": "2026-11-16T12:00:00+00:00",
      "link": "https://www.espn.com/college-football/story/_/id/1/vt-dc", "source": "ESPN",
      "teams": ["Virginia Tech"], "players": [], "kind": None, "topics": ["coaching"], "status": None, "summary": ""},
     {"title": "Miami's secret plan for the Hokies, inside", "date": "2026-11-17T12:00:00+00:00",
      "link": "https://www.on3.com/teams/miami/news/secret-plan/", "source": "On3", "teams": ["Miami"],
      "players": [], "kind": None, "topics": [], "status": None, "summary": "This is premium content."},
+    {"title": "Hurricanes QB Beck questionable, per the team report", "date": "2026-11-17T11:00:00+00:00",
+     "link": "https://www.espn.com/college-football/story/_/id/3/miami-dup", "source": "ESPN", "teams": ["Miami"],
+     "players": ["Carson Beck"], "kind": "injury", "topics": ["injury"], "status": "questionable", "summary": "",
+     "story": "beck"},
     {"title": "Ohio State beats Michigan in a rout", "date": "2026-11-17T12:00:00+00:00",
      "link": "https://www.espn.com/college-football/story/_/id/2/osu", "source": "ESPN",
      "teams": ["Ohio State", "Michigan"], "players": [], "kind": None, "topics": [], "status": None, "summary": ""},
 ]
 leads = dossier.news_leads("Virginia Tech", "Miami", items=NEWS)
-check("leads: only items about either team", len(leads) == 3 and not any("Ohio State" in x["title"] for x in leads),
+check("leads: only items about either team", len(leads) == 4 and not any("Ohio State" in x["title"] for x in leads),
       [x["title"] for x in leads])
 cs, cdrop = dossier.validate(dossier.code_research(G, leads, [{"title": "Miami QB looked hurt at practice?",
                                                                 "url": "https://www.reddit.com/r/CFB/comments/x/y/",
@@ -143,6 +148,8 @@ check("code claims: headline as the text, status from news.py, side from the tea
       [c["text"] for c in cs["facts"]] == [NEWS[0]["title"], NEWS[1]["title"]]
       and cs["facts"][0]["status"] == "questionable" and cs["facts"][0]["team"] == "home"
       and cs["facts"][1]["team"] == "away", cs["facts"])
+check("code claims: one per story, and only headlines that name a team (tag-only Hurricanes item skipped)",
+      len(cs["facts"]) == 2, [c["text"] for c in cs["facts"]])
 check("code claims: paid outlet dropped, reddit only a rumor",
       any("paid source" in x for x in cdrop) and len(cs["rumors"]) == 1 and cs["rumors"][0]["confidence"] == "low",
       (cdrop, cs["rumors"]))

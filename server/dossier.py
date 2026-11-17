@@ -259,7 +259,8 @@ def news_leads(away: str, home: str, limit: int = MAX_LEADS, items: list[dict] |
     return [{"title": it["title"], "url": it["link"], "date": (it.get("date") or "")[:10],
              "source": it.get("source"), "summary": it.get("summary") or "", "author": it.get("author"),
              "teams": it.get("teams") or [], "players": it.get("players") or [], "kind": it.get("kind"),
-             "topics": it.get("topics") or [], "status": it.get("status")} for it in hits[:limit]]
+             "topics": it.get("topics") or [], "status": it.get("status"), "story": it.get("story")}
+            for it in hits[:limit]]
 
 
 def parse_reddit_rss(xml_text: str) -> list[dict]:
@@ -497,13 +498,19 @@ def _side(x: dict, away: str, home: str) -> str:
 
 
 def code_research(g: dict, leads: list[dict], rleads: list[dict]) -> dict:
-    """The research step without a model: one claim per cached lead, worded by its own
-    headline, with the lead's URL, outlet and date. Same shape as the Opus researcher's
+    """The research step without a model: one claim per cached story whose headline names
+    either team, worded by that headline, with the lead's URL, outlet and date. Same shape as the Opus researcher's
     output, so validate() treats both alike."""
     away, home = g["Away"], g["Home"]
-    claims = []
+    claims, stories = [], set()
     for x in leads:
         title = re.sub(r"\s+", " ", str(x.get("title") or "")).strip()
+        bare = re.sub(r"['’]s\b", "", title)  # "Utah's defense" names Utah
+        if not (_mentions(bare, away) or _mentions(bare, home)):
+            continue  # tagged by the feed but not about this game in its own headline
+        if x.get("story") and x["story"] in stories:
+            continue  # the same story from another outlet
+        stories.add(x.get("story"))
         injury = x.get("kind") == "injury" or "injury" in (x.get("topics") or [])
         c = {"text": title, "kind": "injury" if injury else "fact", "team": _side(x, away, home),
              "players": list(x.get("players") or []), "source_url": x.get("url") or "",
