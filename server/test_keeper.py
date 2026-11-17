@@ -419,6 +419,22 @@ def test_no_value_clause_is_cut_not_the_reason():
     assert R("Iowa has the edge, but there's no value at -8.5, so lean Illinois.") == "Iowa has the edge, so lean Illinois."
 
 
+def test_confidence_from_the_card_and_thread():
+    ctx = _wk12_picks()
+    assert router.classify("fine whats ur confidence 1-10").label() == "fact:conf"
+    assert router.classify("how sure are you").label() == "fact:conf"
+    cards = {11: {"lean": {"side": "Northwestern", "label": "Northwestern -2.5"}, "confidence": {"word": "lean"}},
+             12: {"lean": {"side": "Illinois", "label": "Illinois +8.5"}, "confidence": {"word": "slight lean"}}}
+    import game_cards
+    with patch.object(router, "_card_for", lambda c, g: cards.get(g["id"])), \
+            patch.object(game_cards, "_reasons", lambda c, lk: ["SP+ (ratings + 2.5 home field): projects Iowa by 8, so x"]), \
+            patch.object(game_cards, "is_locked", lambda c, now=None: False):
+        r = router.fact_answer("conf", ctx, "fine whats ur confidence 1-10 ||| Maybe, but Iowa's defense is ranked #1.")
+        assert r == "About a 5 on Illinois +8.5. Slight lean: SP+ has Iowa by 8.", r
+        r = router.fact_answer("conf", ctx, "whats ur confidence 1-10 ||| ")
+        assert r.startswith("Depends on the game: Northwestern -2.5 6, Illinois +8.5 5."), r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

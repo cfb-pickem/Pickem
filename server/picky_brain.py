@@ -892,7 +892,8 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             yield x
         return
     if prefix and st.get("brief") is None and rt is not None and rt.lane == "fact":
-        ans = router.fact_answer(rt.kind, st.get("ctx"), st["q"])
+        qf = st["q"] + (" ||| " + (st.get("last_reply") or "") if rt.kind in router.CTX_KINDS else "")
+        ans = router.fact_answer(rt.kind, st.get("ctx"), qf)
         if ans:
             st["prefix"], st["brief"], st["fact_answer"] = prefix, Brief(intent="question"), ans
             st["fact_text"] = await fact_reply(st, prefix, ans)
@@ -1061,7 +1062,7 @@ def undodge(st: dict, text: str, last_reply: str = "", prior_q: str = "") -> str
         return text
     ctx = st.get("ctx") or {}
     gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]
-    for src in (st.get("q") or "", last_reply or "", prior_q or ""):
+    for src in (re.sub(r"['’]s\b", "", x) for x in (st.get("q") or "", last_reply or "", prior_q or "")):
         if gl and chat.games_named(src, gl):
             try:
                 call = router.pick_text(ctx, src)
@@ -1121,6 +1122,8 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                         SAFE_LINES.get(st.get("ptype"), SAFE_LINES[""]) if bad_claim or bad_run else text)
                 text = router.shape_banter(text, q, chat.member_nicknames(),
                                            max_words=10 if st.get("ptype") == "spiral2" else 25)
+                if route.why.startswith("brief") or "brief" in route.why:
+                    text = undodge(st, text, last_reply)  # a real question the brief misread as banter
                 log.info("banter reply (%.0fs, %s): %r", time.time() - t0, route.label(), text[:160])
                 _trace(st, q, sender, route, [Draft(text, drops, 0)], [0], 0, st.get("banter_how") or "banter", t0)
                 return text, None

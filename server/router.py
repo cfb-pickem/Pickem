@@ -187,6 +187,36 @@ MY_PICKS = re.compile(r"\bwhat (did|'?d) i (pick|picked|take|took|get|go with)\b
                       r"|\bwho do i have (in|for)\b|\bdid i (already )?(make|submit|do|put in) my picks\b", re.I)
 # 'im 25-23 tied w poncho right' (k3, wrong: 24-24): a record the sender claims for himself gets his real one
 SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{0,15}\b(this|last) (week|wk)\b)", re.I)
+# 'whats ur confidence 1-10' (k1 live: briefed as banter -> 'I do picks, not paperwork'): the card's confidence for the
+# game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
+CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
+CTX_KINDS = {"conf"}
+CONF_NUM = {"best play": 7, "lean": 6, "slight lean": 5, "coin flip": 3}
+
+
+def conf_text(ctx: dict, q: str) -> str | None:
+    import game_cards
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    text, _, last = re.sub(r"['’]s\b", "", q or "").partition(" ||| ")
+    named = chat.games_named(text, gl) or chat.games_named(last, gl)
+    if not named:
+        cards = [c for g in games if (c := _card_for(ctx, g))]
+        if not cards:
+            return None
+        parts = [f"{c['lean']['label']} {CONF_NUM.get(c['confidence'].get('word'), 4)}" for c in cards]
+        return "Depends on the game: " + ", ".join(parts) + ". Nothing on this slate is better than a 7."
+    g = next(x for x in games if x["id"] == named[0]["id"])
+    c = _card_for(ctx, g)
+    if not c:
+        return None
+    w = c["confidence"].get("word") or "lean"
+    lk = game_cards.is_locked(c)
+    rs = [r for r in game_cards._reasons(c, lk) if r]
+    why = say_reason(rs[0], c, lk) if rs else ""
+    return (f"About a {CONF_NUM.get(w, 4)} on {c['lean']['label']}. {w[0].upper() + w[1:]}" + (f": {why}." if why else "."))
+
+
 # 'should i flip any before lock' (k1 live run: 'You're sitting in first place, so don't go making rookie mistakes'):
 # his own picks (DM) against the card calls, game by game
 FLIP_ASK = re.compile(r"\bshould i (flip|change|switch)( any| anything| something| one)?\b(?!\s+(it|that|this|him|them|to)\b)"
@@ -244,6 +274,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if (LINE_MOVE.search(t) or LINE_MOVE_BARE.search(t)) and not re.search(r"\b(gonna|going to|will it|keep moving|before (11|the lock|lock|tuesday))\b"
                                             r"(?![^?.!]*\bafter\b)", t, re.I):
         return "line_move", "LINE_MOVE"
+    if CONF_ASK.search(t):
+        return "conf", "CONF_ASK"
     if FLIP_ASK.search(t):
         return "flip", "FLIP_ASK"
     if MY_PICKS.search(t) and not re.search(r"\blast (week|wk)\b|\bweek \d+\b", t, re.I):
@@ -1267,7 +1299,8 @@ def upset_text(ctx: dict, q: str) -> str | None:
     """An underdog, never a favorite: the dog the numbers like best (SP+ projects it to win outright, else the dog
     with the smallest projected loss), from the cards."""
     import game_cards
-    best = None
+    best, big = None, None
+    real = re.search(r"\b(real|bigger|actual|another|other|different|legit)\b", q or "", re.I)
     for g in ctx.get("games_this_week") or []:
         if g.get("tiebreaker") or g.get("line") in (None, 0, 0.0) or g.get("winner"):
             continue
@@ -1276,6 +1309,9 @@ def upset_text(ctx: dict, q: str) -> str | None:
             continue
         ln = float(c["league_line"]["home"])
         dog = g["away"] if ln < 0 else g["home"]
+        if real and abs(ln) >= 3 and chat.same_team((c.get("lean") or {}).get("side") or "", dog) \
+                and (big is None or abs(ln) > big[0]):
+            big = (abs(ln), dog, ln, g, c)
         for r in (c.get("reasons") or []) + (c.get("against") or []):
             m = re.match(r"SP\+(?!\w)[^:]*: projects (.+?) by ([\d.]+)", r)
             if m:
@@ -1283,6 +1319,11 @@ def upset_text(ctx: dict, q: str) -> str | None:
                 if best is None or proj > best[0]:
                     best = (proj, dog, ln, g)
                 break
+    if big:  # 'thats not an upset its a 1.5 line' / 'give me a real dog': the biggest dog the cards lean to
+        _, dog, ln, g, c = big
+        rs = [r for r in game_cards._reasons(c, game_cards.is_locked(c)) if r]
+        why = say_reason(rs[0], c, game_cards.is_locked(c)) if rs else ""
+        return f"Fine, a real one: {chat._side_label(dog, g['home'], ln)}." + (f" {why[0].upper() + why[1:]}." if why else "")
     if not best:
         return None
     proj, dog, ln, g = best
@@ -1495,7 +1536,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
               "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
               "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
-              "qb": qb_text, "flip": flip_text}.get(kind)
+              "qb": qb_text, "flip": flip_text, "conf": conf_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
