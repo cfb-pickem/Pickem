@@ -141,6 +141,17 @@ def test_injury_rule_and_news_typos():
     assert not chat._INJ_LINE.search("UTEP fired Scotty Walden after a 6-28 run")
 
 
+def test_picky_and_full_standings():
+    ctx = _wk12_picks()
+    with patch.object(chat, "load_lore", lambda: {}):
+        r = router.fact_answer("results", ctx, "how did picky do")
+        assert r is None or not r.startswith("You went"), r
+        r = router.fact_answer("results", ctx, "how'd you do last week")
+        assert r is None or not r.startswith("You went"), r
+        r = router.fact_answer("standings", ctx, "full standings")
+        assert r.startswith("Standings: 1. Chuck P 30-18, 2. Ackbar 28-20") and "TG 19-29" in r, r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

@@ -614,6 +614,9 @@ def standings_text(ctx: dict, q: str) -> str | None:
                        if gap else "") + ".")
         return (f"{'You' + chr(39) + 're' if who == 'You' else who + ' is'} {chat._ordinal(r['rank'])} at "
                 f"{r['w']}-{r['l']}, {_pts(lead_w - r['w'])} back of first.")
+    if re.search(r"\b(full|all|whole|entire|complete)\b[^?.!]{0,12}\b(standings|table|leaderboard)\b"
+                 r"|\bstandings\b[^?.!]{0,8}\b(top to bottom|1 through 14|everybody|everyone)\b", q or "", re.I):
+        return "Standings: " + ", ".join(f"{r['rank']}. {r['team']} {r['w']}-{r['l']}" for r in st) + "."
     if named:
         return " ".join(place(r, r["team"]) for r in named[:2])
     if row and _SELF_ASK.search(q) and not re.search(r"\bwho\b", q, re.I):
@@ -1011,7 +1014,12 @@ def last_week_text(kind: str, ctx: dict, q: str) -> str | None:
                         + ", ".join(f"{x['away']} at {x['home']}" for x in games) + ".")
         return None
     if kind == "results" and (says_lw or not chat.week_started(ctx)):
+        if re.search(r"\b(season|this year|this yr|on the year|all year)\b", q or "", re.I):
+            return None
         team = _subject_team(ctx, q)
+        me_ = (ctx.get("you") or {}).get("team_name")
+        if team == me_ and re.search(r"\b(picky|you|u|ya|your|ur)\b", q or "", re.I):
+            return None  # 'how did picky do' / 'how'd you do last week': Picky's own picks (results_text)
         rows = []
         for g in games:
             p = (g.get("picks") or {}).get(team)
