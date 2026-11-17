@@ -248,7 +248,7 @@ def _team_in(x: str, away: str, home: str) -> str | None:
 def answer(ctx: dict | None, q: str) -> str | None:
     text, _, rest = (q or "").partition(" ||| ")
     wk = why_kind(text)
-    replies = [r for r in rest.split(" ||| ") if r.strip()]
+    replies = list(dict.fromkeys(r.strip() for r in rest.split(" ||| ") if r.strip()))  # newest first, deduped
     if not wk or not replies or not ctx:
         return None
     import slate_cards
