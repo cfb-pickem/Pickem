@@ -263,6 +263,14 @@ def wait_for_text(row: dict, pending: dict, now: float) -> bool:
     return False
 
 
+def stale_ref(busy_since: float | None, now: float) -> float:
+    """When a row's age is judged: the start of the current unbroken stretch of work. Rows are handled one
+    at a time, so in a burst the later asks wait behind Picky's own replies; judged at their turn they
+    went 'stale' past MAX_AGE and got no reply (Saturday drill 2026-11-17). A real backlog (already old
+    when the watcher picked it up, e.g. after it was down) is still skipped."""
+    return now if busy_since is None else min(now, busy_since)
+
+
 def should_act(row: dict, now: float) -> tuple[bool, str]:
     text = row["text"] or decode_attributed_body(row["attributedBody"])
     if row.get("associated_message_type"):
@@ -461,6 +469,7 @@ def main() -> int:
     db = None
     pending: dict[int, float] = {}  # rowid -> first time seen with no text
     last_outbox, last_groups, last_delivery = 0.0, 0.0, 0.0
+    busy_since = None  # start of the current stretch of new rows (stale_ref)
     log.info("watcher up, last_rowid=%s", state.get("last_rowid"))
     while True:
         try:
@@ -470,13 +479,17 @@ def main() -> int:
                     state["last_rowid"] = max_rowid(db)
                     save_state(state)
             rows = db.execute(NEW_MESSAGES, (state["last_rowid"],)).fetchall()
+            if not rows:
+                busy_since = None
+            elif busy_since is None:
+                busy_since = time.time()
             cols = ["ROWID", "text", "attributedBody", "date", "handle", "chat_guid", "style",
                     "associated_message_type", "cache_has_attachments"]
             for raw in rows:
                 row = dict(zip(cols, raw))
                 if wait_for_text(row, pending, time.time()):
                     break  # not written yet: re-read from this row next poll
-                ok, why = should_act(row, time.time())
+                ok, why = should_act(row, stale_ref(busy_since, time.time()))
                 if ok:
                     handle_one(row, secret, rate, db)
                 state["last_rowid"] = row["ROWID"]
