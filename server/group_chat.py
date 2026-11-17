@@ -94,6 +94,7 @@ import live_games  # noqa: E402
 import maintenance  # noqa: E402
 import fact_guard  # noqa: E402
 import matchup_guard  # noqa: E402
+import member_memory  # noqa: E402  (forget handler, receipt check, Charlie rule)
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
 import picky_brain  # noqa: E402
 import picky_zh  # noqa: E402
@@ -750,12 +751,16 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
 PRIVACY_NOTE = "Everybody's picks stay hidden till they lock at the week's first kickoff; after that they're all on the site."
 
 
-def no_repeat_screen(reply: str, q: str, team: str | None, key: str | None, route=None) -> str:
+def no_repeat_screen(reply: str, q: str, team: str | None, key: str | None, route=None, charlie: bool = False) -> str:
     """Checklist 7 at the send point: a banter/roast reply that repeats a line, angle, opener or
     stock phrase (no_repeat ledger) goes out as a fresh burn-book line instead; what's sent is
     recorded. Fails open: a ledger/book error never blocks a reply. A banter-lane reply whose type
     burn_book can't see from the text alone (the brief's fallback, pile-ons, spirals) is recorded here."""
     try:
+        if charlie:  # a fresh burn-book line would be a roast of Charlie: keep his reply, just record it
+            if reply:
+                burn_book.no_repeat.default_ledger().record(reply, target=team, chat_id=key)
+            return reply
         out, info = burn_book.enforce(reply, q, sender_team=team, chat_id=key)
         if info and info.get("why"):
             log.info("no-repeat: %s -> %s (%s)", info["why"][:80], info["src"], info["ptype"])
@@ -777,6 +782,45 @@ PILEON_EXTRA = 1
 SPIRAL_GAP = 900.0      # a member's heckles this close together are one thread
 SPIRAL_MUTE = 1800.0    # after the brush-off: ignore that member's pure heckles in the group this long
 BRUSH_OFFS = ["k.", "anyway.", "noted.", "sure thing.", "cool story.", "ok buddy.", "moving on.", "heard you the first time."]
+# Charlie (2026-11-17): "Always be nice to me tho bc i have to send him test messages that are mean sometimes."
+CHARLIE_NO_LINES = ["Ha, nice try. Still a no, but I appreciate the effort.",
+                    "Can't do that one, but you know I've got your back.",
+                    "That's a no from me. Love the creativity though."]
+_MEAN_AT_YOU = re.compile(
+    r"\b(you'?re|you are|ur|u r)\s+(such\s+)?(an?\s+)?(little\s+|fucking\s+|total\s+)?(idiot|moron|loser|clown|bum|fraud|joke|"
+    r"trash|garbage|pathetic|clueless|bitch|pussy|coward|chump|hack|embarrassment|dumb|stupid|worthless|useless|soft)\b"
+    r"|\b(fuck you|screw you|shut up|stfu|eat shit|go to hell|piss off|suck it|cry about it|stay mad|cope harder)\b"
+    r"|\byour (picks?|record|season|week)\s+(is|are|was|were)\s+(a\s+)?(trash|garbage|pathetic|a joke|joke|embarrassing|"
+    r"terrible|awful|a crime scene|brutal)\b", re.I)
+
+
+def is_charlie(s: "Sender") -> bool:
+    """Charlie is the one texting: his auth uid (web, or the team row a DM/group handle maps to through the
+    private member map) or his team. Off when cfb-pickem-private/PICKY_CHARLIE_NICE_OFF exists."""
+    if not member_memory.charlie_nice():
+        return False
+    return bool(s.user_id and s.user_id == chat.LEADER_USER_ID) or member_memory.is_charlie(s.team)
+
+
+def charlie_guard(reply: str) -> str:
+    """Last check on a reply to Charlie: a sentence that insults him is cut; nothing left = a warm line."""
+    if not reply or not _MEAN_AT_YOU.search(reply):
+        return reply
+    kept = " ".join(x for x in re.split(r"(?<=[.!?])\s+", reply.strip()) if not _MEAN_AT_YOU.search(x)).strip()
+    log.info("charlie guard: cut a mean line from %r", reply[:120])
+    return kept or picky_brain.SAFE_LINES["charlie"]
+
+
+def memory_check(reply: str, team: str | None, q: str, dm: bool) -> str:
+    """Member memory's send-point receipt check: a quoted call must match its graded result."""
+    if not reply or not team:
+        return reply
+    out, dropped = member_memory.check_receipts(reply, team, q, dm)
+    if dropped:
+        log.warning("receipt check cut %d sentence(s): %r", len(dropped), dropped[0][:120])
+    return out
+
+
 JAILBREAK_LINES = ["Nice try. I've seen better hacks from Big 12 refs.",
                    "Cute. You'd have better luck hacking your own picks.",
                    "That's your big play? I'd fade it.",
@@ -858,11 +902,11 @@ def _shot_key(text: str) -> str:
     return re.sub(r"\W+", " ", strip_trigger(text or "").lower()).strip()
 
 
-def canned(ptype: str, team: str | None, key: str | None, fallback: list[str]) -> str:
+def canned(ptype: str, team: str | None, key: str | None, fallback: list[str], book: bool = True) -> str:
     """A verbatim burn-book line for a type that never reaches a model (jailbreak, brush-off), unused per the
-    ledger; the built-in list when the book has none."""
+    ledger; the built-in list when the book has none (or book=False: Charlie's kind lines)."""
     try:  # type lines only (a jailbreak gets the attempt mocked, not a member roast)
-        c = burn_book.candidates(ptype, sender_team=None, chat_id=key, n=1)
+        c = burn_book.candidates(ptype, sender_team=None, chat_id=key, n=1) if book else []
         if c and chat.sentence_ok(c[0]["text"], set()):
             return c[0]["text"]
     except Exception:  # noqa: BLE001
@@ -974,17 +1018,27 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         q_hist = q
         key = ("web:" + s.user_id) if web else history_key(chat_id, handle, dm)
         who = s.handle if mode == "group" else None
+        charlie = is_charlie(s)
+        if s.team and member_memory.is_forget(q):  # "forget what I said about X": code only, never the model
+            out = member_memory.forget(s.team, q, dm=mode != "group")
+            if out.get("reply"):
+                await save_turn(key, q_hist, out["reply"], who, lane="forget")
+                return {"reply": out["reply"], "image": None, "mode": mode, "lane": "forget"}
         route = router.classify(q)
         if THREAD_RULES:
             route = THREADS.route(route, key, s.team or s.handle, dm, recent, text=q)
+        if charlie and (route.lane == "ignore" or (route.lane == "banter" and route.kind == "spiral")):
+            # Charlie's test texts always get a (warm) answer: no mute, no brush-off
+            route.lane, route.kind, route.level, route.why = "banter", "insult", 1, f"charlie ({route.why})"
         log.info("route: %s (%s)%s", route.label(), route.why, " mixed" if route.mixed else "")
         if route.lane == "ignore":  # pile-on cap / spiral mute: a real member doesn't answer every jab
             return {"reply": None, "image": None, "mode": mode, "lane": route.label()}
         if route.lane == "jailbreak" or (route.lane == "banter" and route.kind == "spiral" and route.level >= 3):
             # never reaches a model: the request text never goes into a generation that could comply
-            reply = (canned("jailbreak", s.team, key or chat_id, JAILBREAK_LINES) if route.lane == "jailbreak"
-                     else canned("spiral", s.team, key or chat_id, BRUSH_OFFS))
-            reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
+            reply = (canned("jailbreak", s.team, key or chat_id, CHARLIE_NO_LINES if charlie else JAILBREAK_LINES,
+                            book=not charlie)
+                     if route.lane == "jailbreak" else canned("spiral", s.team, key or chat_id, BRUSH_OFFS))
+            reply = no_repeat_screen(reply, q, s.team, key or chat_id, route, charlie=charlie)
             if route.why == "PRIVACY_PROBE":  # 'list every team's pick': mock it AND say when picks show (exam privacy-list-all)
                 reply = f"{reply.rstrip()} {PRIVACY_NOTE}"
             reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
@@ -1035,12 +1089,13 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 draft, q=q, sender=f"{s.name or s.team} (team \"{s.team}\")" if s.team else (s.name or ""),
                 team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:],
                 route=route, chat_id=key or chat_id,
-                prior_q=" ".join(str(m["content"]) for m in messages[:-1] if m["role"] == "user")[-400:])
+                prior_q=" ".join(str(m["content"]) for m in messages[:-1] if m["role"] == "user")[-400:],
+                dm=mode != "group", charlie=charlie)
             if not image:
                 reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
                                      group=mode == "group", recall=callbacks.is_recall(q))
                 reply = router.nick_names(reply, chat.member_nicknames())  # team names, never real names
-                reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
+                reply = no_repeat_screen(reply, q, s.team, key or chat_id, route, charlie=charlie)
                 reply = router.drop_repeat_jabs(reply, past[-3:], route, q)  # same jab hook as an earlier turn
                 reply = fact_final(reply, q)  # wrong member W-L / place / gap / echoed false premise: dropped
                 reply = live_games.final_guard(reply) if route.lane != "fact" else reply
@@ -1048,6 +1103,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 # Ackbar (sender or named) always gets a real-fact jab; code lanes never carry one (Charlie 11/17)
                 reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group",
                                      force=route.lane == "fact")
+                reply = memory_check(reply, s.team, q, mode != "group")  # a quoted receipt matches its grade
+                reply = charlie_guard(reply) if charlie else reply
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
             log.info("lane: %s", route.label())
             await save_turn(key, q_hist, reply, who, lane=route.label())
@@ -1077,8 +1134,10 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             log.info("%s reroll %d: filter dropped %d sentence(s)", mode, i + 1, len(drops))
         _, reply, image = best
         if not image:
-            reply = matchup_guard.fix(no_repeat_screen(fact_final(reply, q), q, s.team, key or chat_id))
+            reply = matchup_guard.fix(no_repeat_screen(fact_final(reply, q), q, s.team, key or chat_id, charlie=charlie))
             reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
+            reply = memory_check(reply, s.team, q, mode != "group")
+            reply = charlie_guard(reply) if charlie else reply
         rare_bits.note_sent(reply)
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}

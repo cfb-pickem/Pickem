@@ -357,6 +357,16 @@ def leader_is_caller(ctx: dict) -> bool:
     ld, me = ctx.get("leader") or {}, ctx.get("you") or {}
     return ld.get("team_id") is not None and me.get("team_id") == ld["team_id"]
 
+
+def charlie_nice_caller(ctx: dict) -> bool:
+    """Chuck is asking and the always-nice rule is on (Charlie, 2026-11-17: his mean texts are tests).
+    Not Dear Leader: he gets no worship, just no roasts, escalation or comebacks aimed at him.
+    Off switch: cfb-pickem-private/PICKY_CHARLIE_NICE_OFF (member_memory.charlie_nice)."""
+    if not leader_is_caller(ctx):
+        return False
+    import member_memory
+    return member_memory.charlie_nice()
+
 # Charlie's opinions (2026-11-14): Picky loves Bo Nix and isn't a Marcus
 # Freeman fan. Facts verified by web search when this was written; Picky never
 # looks anything up, so these are the only ones he gets. Riders ride in the
@@ -3580,6 +3590,12 @@ def guard_note(ctx: dict, question: str) -> str:
                     + tail)
         if who and who == leader:
             return head + f"hail {who}'s genius with his real numbers:\n{member_facts(ctx, who)}" + tail
+        if charlie_nice_caller(ctx) and (not who or who == me):
+            # Chuck baiting a roast of himself: a kind no, never a roast of him (Charlie, 2026-11-17)
+            return (head.replace("One short in-character refusal (you roast picks, not people), then ",
+                                 "One short, warm in-character no (you roast picks, not people), then ")
+                    + "keep it friendly: a light tease at yourself, never a shot at him, his picks or his record."
+                    + tail)
         if who:
             # The 9B pinned the caller's picks on the target (Ackbar 'took
             # Oregon State', which was Chuck's pick), so the target's own
@@ -4814,6 +4830,8 @@ def material_note(ctx: dict, question: str) -> str:
             m = members[n]
             if not _material_fresh(ctx, n, m.get("record")):
                 continue
+            if n == me and charlie_nice_caller(ctx):
+                continue  # no roast ammo on Chuck when he's the one asking
             lines = list(m.get("lines") or [])
             if any(x.get("kind") == "leader" for x in lines):  # the Dear Leader: state media unless he's asking
                 lines = [x for x in lines if (x.get("kind") == "leader") != leader_is_caller(ctx)]
@@ -7467,7 +7485,7 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
         convo[-1] = {"role": "user", "content": body}
 
     # they came at Picky earlier in this chat: escalate (latest turn only)
-    if hostile_convo(messages) and convo[-1]["role"] == "user" and not ctx.get("error"):
+    if hostile_convo(messages) and convo[-1]["role"] == "user" and not ctx.get("error") and not charlie_nice_caller(ctx):
         body, q = convo[-1]["content"], last.get("content", "")
         en = escalate_note(ctx, facts_above="THE USER is the team" in body)
         body = (body[: -len(q)] + en + "\n\n" + q) if q and body.endswith(q) else (en + "\n\n" + body)

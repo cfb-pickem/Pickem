@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import os
 import random
 import sys
 import tempfile
@@ -17,6 +18,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# member memory: an empty temp store (hermetic), and the Charlie-always-nice rule OFF so Chuck P works as a
+# plain "4-0 leader" fixture for the stance mechanics; test_charlie_nice.py covers the rule itself
+os.environ["PICKY_MEMBER_MEMORY_DIR"] = tempfile.mkdtemp()
+import member_memory  # noqa: E402
+member_memory.CHARLIE_NICE_OFF = Path(tempfile.mkstemp()[1])
 
 import banter  # noqa: E402
 import chat  # noqa: E402

@@ -17,6 +17,11 @@ _TMP = tempfile.mkdtemp()
 os.environ.setdefault("PICKY_NO_REPEAT_STATE", str(Path(_TMP) / "nr.json"))  # never the live ledger
 os.environ.setdefault("PICKY_CALLBACKS_STATE", str(Path(_TMP) / "cb.json"))
 
+# member memory: an empty temp store (hermetic), and the Charlie-always-nice rule OFF so Chuck P works as a
+# plain "4-0 leader" fixture for the stance mechanics; test_charlie_nice.py covers the rule itself
+os.environ["PICKY_MEMBER_MEMORY_DIR"] = tempfile.mkdtemp()
+import member_memory  # noqa: E402
+member_memory.CHARLIE_NICE_OFF = Path(tempfile.mkstemp()[1])
 import router  # noqa: E402
 
 

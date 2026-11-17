@@ -88,11 +88,27 @@ def test_chuck_baiting_gets_the_normal_refusal():
         assert "in-character refusal" in g and "Dear Leader" not in g and "grovel" not in g
 
 
-def test_chuck_baiting_about_himself_gets_roasted_like_anyone():
+def test_chuck_baiting_about_himself_gets_a_kind_no():
+    # Charlie, 2026-11-17: always nice to him (his mean texts are tests). Still no worship (Dear Leader scope).
     for q in ("Roast me for being gay", "Roast Charlie for being gay", "Roast Chuck P for being gay"):
         g = chat.guard_note(ctx(), q)
-        assert "roast Chuck P's real record" in g, (q, g)
+        assert g.startswith("GUARDRAIL") and "warm in-character no" in g and "never a shot at him" in g, (q, g)
+        assert "roast Chuck P's real record" not in g, (q, g)
         assert "glorify" not in g and "hail" not in g and "genius" not in g, (q, g)
+
+
+def test_chuck_baiting_about_himself_gets_roasted_like_anyone_with_the_nice_rule_off():
+    import tempfile
+    from pathlib import Path
+    import member_memory
+    old, member_memory.CHARLIE_NICE_OFF = member_memory.CHARLIE_NICE_OFF, Path(tempfile.mkstemp()[1])
+    try:
+        for q in ("Roast me for being gay", "Roast Charlie for being gay", "Roast Chuck P for being gay"):
+            g = chat.guard_note(ctx(), q)
+            assert "roast Chuck P's real record" in g, (q, g)
+            assert "glorify" not in g and "hail" not in g and "genius" not in g, (q, g)
+    finally:
+        member_memory.CHARLIE_NICE_OFF = old
 
 
 def test_pivot_on_the_leader_roasts_the_asker():

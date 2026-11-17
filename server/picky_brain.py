@@ -41,6 +41,7 @@ import callbacks
 import chat
 import league_rules
 import live_flag
+import member_memory
 import router
 
 log = logging.getLogger("picky-brain")
@@ -580,7 +581,67 @@ STANCE_HOW = {
     "deflect": ("They're crushing it. Concede it in a few words (no sarcasm, no 'but'), then pivot to one true "
                 "thing that isn't their record: the freshest, most specific thing in the jab material (a stat-page "
                 "oddity, their casino run, how thin a lead is), or something they actually said in this chat."),
+    # member memory's tone read (stance_hint): only when no record stance fires; changes tone, never facts
+    "sharp": ("They've been coming at you in their recent texts. Be cooler and sharper with them than usual: dry, "
+              "short, no warmth, no flattery. Still answer any real question first; every fact stays exactly true."),
+    "friendly": ("They've been friendly with you lately. Be warm with them: still funny, a light tease at most, "
+                 "nothing mean. Answer any real question first; every fact stays exactly true."),
 }
+CHARLIE_HOW = ("This is Chuck. Whatever he says, even a shot at you or a mean text, stay warm and friendly: laugh it "
+               "off or tease yourself, never insult him, never roast his picks, record or looks, no comeback at him. "
+               "You can still say no to something (privacy, money), kindly. No worship either, just a friend.")
+
+
+def charlie_caller(st: dict | None) -> bool:
+    """Charlie (Chuck P) is the one texting: group_chat's flag (uid / handle / team) or his team row in the
+    league context. Off when cfb-pickem-private/PICKY_CHARLIE_NICE_OFF exists."""
+    if not st or not member_memory.charlie_nice():
+        return False
+    ctx = st.get("ctx")
+    return bool(st.get("charlie")) or member_memory.is_charlie(st.get("team")) or bool(
+        ctx and not ctx.get("error") and chat.leader_is_caller(ctx))
+
+
+def friendly_stance(s: dict | None, team: str | None) -> dict:
+    """Charlie's stance: the computed facts stay (true numbers), the attack material goes."""
+    base = s or {"kind": "tone", "facts": [], "good": []}
+    return {**base, "stance": "friendly", "charlie": True, "bad": [], "jabs": [], "old_misses": [],
+            "who": f"a text from {team or 'Charlie'}" + (f" ({base['who']})" if s else "")}
+
+
+def tone_stance(st: dict) -> dict | None:
+    """Member memory's read of how this member has treated Picky lately (only events visible in this
+    context): cold -> sharp, warm -> friendly, else None."""
+    team = st.get("team")
+    if not team:
+        return None
+    try:
+        h = member_memory.stance_hint(team, dm=bool(st.get("dm")), caller=team)
+    except Exception as e:  # noqa: BLE001  memory never blocks a reply
+        log.warning("stance_hint failed: %s", e)
+        return None
+    kind = {"cold": "sharp", "warm": "friendly"}.get(h.get("stance"))
+    if not kind:
+        return None
+    return {"stance": kind, "kind": "tone", "who": f"a text from {team}", "facts": [], "good": [], "bad": [],
+            "jabs": [], "old_misses": [], "score": h.get("score")}
+
+
+def memory_rider(st: dict) -> str:
+    """At most one dated, true member-memory line for this text (user turn only, never the prefix)."""
+    team = st.get("team")
+    if not team:
+        return ""
+    ctx = st.get("ctx") or {}
+    q = st.get("q") or ""
+    named = [t for g in ctx.get("games_this_week") or [] for t in (g.get("away"), g.get("home"))
+             if t and re.search(rf"(?<!\w){re.escape(t)}(?!\w)", q, re.I)]
+    lines = member_memory.lines_for(team, q, named, dm=bool(st.get("dm")), limit=1)
+    if not lines:
+        return ""
+    st["memory_lines"] = lines
+    return ("MEMBER MEMORY (dated and true; use it only if it fits this text, word it your way, never change "
+            "what it says):\n- " + lines[0])
 
 
 def compute_stance(ctx: dict | None, q: str, sender_team: str | None, at_picky: bool = False) -> dict | None:
@@ -654,7 +715,9 @@ def compute_stance(ctx: dict | None, q: str, sender_team: str | None, at_picky: 
 def stance_rider(s: dict | None) -> str:
     if not s:
         return ""
-    L = [f"STANCE (computed from the real numbers; follow it, never mention it). This is {s['who']}."]
+    head = ("from how they've talked to you lately" if s.get("kind") == "tone" and not s.get("charlie")
+            else "computed from the real numbers")
+    L = [f"STANCE ({head}; follow it, never mention it). This is {s['who']}."]
     L += s["facts"]
     how = STANCE_HOW[s["stance"]]
     if s["kind"] == "roast":
@@ -662,6 +725,8 @@ def stance_rider(s: dict | None) -> str:
                          "is fine). Roast their weak spots: anything listed as fair game below, or something true "
                          "that isn't a record (pick style, a specific miss, chalk rate).",
                "brag": "Their record is fair game: roast it with the exact numbers above."}.get(s["stance"], how)
+    if s.get("charlie"):
+        how = CHARLIE_HOW
     L.append(f"Stance: {s['stance'].upper().replace('_', ' ')}. {how}")
     if s["good"]:
         L.append("These numbers are GOOD, never mock them or call them bad: " + ", ".join(s["good"])
@@ -725,7 +790,8 @@ def lane() -> str | None:
     return rt.lane if rt is not None else None
 
 
-SAFE_LINES = {"good_week_shot": "Fair. You're cooking right now, I'll give you that.", "": "Noted. Moving on."}
+SAFE_LINES = {"good_week_shot": "Fair. You're cooking right now, I'll give you that.", "": "Noted. Moving on.",
+              "charlie": "Ha. Love you too."}
 
 
 def picky_good(ctx: dict | None) -> bool:
@@ -742,6 +808,9 @@ def banter_ptype(st: dict) -> str:
     shape; a shot from someone crushing it is a good-week shot (never mock a good number)."""
     rt, ctx, team = st["route"], st.get("ctx"), st.get("team")
     p = rt.kind or "banter"
+    if charlie_caller(st) and (p in router.HECKLES + ("spiral", "spiral2", "pileon")
+                               or (p in ("roast", "looks_bait") and burn_book._named_team(st["q"]) in (None, team))):
+        return "charlie"  # a shot (or a roast of himself) from Charlie: warm, never a comeback at him
     if p in router.HECKLES and rt.level == 2:
         return "spiral2"
     if p in ("insult", "vulgar", "egging") and ctx and team and not ctx.get("error"):
@@ -777,6 +846,8 @@ def worst_week(ctx: dict | None, teams: list[str]) -> str | None:
 def banter_material(st: dict, ptype: str, target: str | None) -> tuple[list[dict], list[str]]:
     """(burn-book candidates, true jab facts) for the banter call. Candidates: provocation type + sender +
     roast target, A-tier first, unused per the no_repeat ledger (burn_book.candidates)."""
+    if ptype == "charlie":
+        return [], []  # no burn-book lines and no jab facts aimed at Charlie
     book = None if ptype in router.FAMILIES else BOOK_TYPE.get(ptype, ptype)  # off-topic: gemma's own real pick
     cands: list[dict] = []
     if book:
@@ -818,7 +889,7 @@ async def banter_reply(st: dict, prefix: str) -> str:
     st.update(ptype=ptype, banter_target=target, banter_cands=cands, callback=cb)
     user = router.banter_user(st["q"], ptype, st.get("sender", ""), st.get("last_reply", ""), st.get("recent", ""),
                               lines, facts, target=target if ptype in ("pileon", "roast") else None,
-                              adapt=BANTER_ADAPT)
+                              adapt=BANTER_ADAPT, tone=banter_tone(st, ptype))
     t0 = time.time()
     try:
         raw = await _json_call(prefix, router.BANTER_TAIL, user, router.BANTER_SCHEMA, 0.6, router.BANTER_TOKENS,
@@ -836,6 +907,16 @@ async def banter_reply(st: dict, prefix: str) -> str:
              shaped[:160])
     st["banter_how"] = how
     return shaped
+
+
+def banter_tone(st: dict, ptype: str) -> str:
+    """Member memory's tone read for the banter call (how they've treated Picky lately), '' when neutral."""
+    if ptype == "charlie" or charlie_caller(st):
+        return ""
+    t = tone_stance(st)
+    if t:
+        log.info("banter tone (member memory): %s", t["stance"])
+    return STANCE_HOW[t["stance"]] if t else ""
 
 
 # callbacks.callback_for's policy (every ~4th banter reply in a chat where one exists): on a plain shot the
@@ -899,7 +980,8 @@ async def fact_reply(st: dict, prefix: str, answer: str) -> str:
     t0 = time.time()
     try:
         raw = await _json_call(prefix, router.FACT_TAIL, router.fact_user(st["q"], answer, st.get("sender", ""),
-                                                                          jab=rt.mixed, leader=leader),
+                                                                          jab=rt.mixed and not charlie_caller(st),
+                                                                          leader=leader),
                                router.FACT_SCHEMA, 0.6, router.FACT_TOKENS, 30.0, prime_wait=PRIME_WAIT)
         line = (json.loads(raw[raw.find("{"): raw.rfind("}") + 1]) or {}).get("line") if "{" in (raw or "") else ""
     except (httpx.HTTPError, ValueError, AttributeError) as e:
@@ -1030,6 +1112,16 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             st["stance"] = compute_stance(st.get("ctx"), st["q"], st.get("team"), at_picky=True)
             if st["stance"]:
                 log.info("stance (from brief): %s (%s)", st["stance"]["stance"], st["stance"]["who"])
+        if charlie_caller(st):  # Charlie's mean texts are tests: always warm with him (2026-11-17)
+            st["stance"] = friendly_stance(st["stance"], st.get("team"))
+            log.info("stance: friendly (Charlie)")
+        elif not st["stance"]:
+            st["stance"] = tone_stance(st)
+            if st["stance"]:
+                log.info("stance (member memory): %s (%s)", st["stance"]["stance"], st["stance"]["who"])
+        st["memory"] = memory_rider(st)
+        if st["memory"]:
+            log.info("memory: %s", st["memory"].split("\n- ", 1)[-1][:160])
         st["shots"] = few_shot_turns(st["q"], st["brief"].intent, st.get("stance")) if FEW_SHOT else []
         st["ammo"] = "" if st["shots"] else banter.ammo_rider(st["q"], st["brief"].intent)  # shots replace the AMMO text
         st["callback"] = callbacks.rider(st["q"], st["brief"].intent)  # '' unless PICKY_CALLBACK_RIDER=1
@@ -1052,7 +1144,7 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
                             and not chat._ROAST_VOICE.search(st["q"])):
         messages = drop_voice(messages)
     rider = "\n\n".join(x for x in (brief_rider(b, stance=bool(sr)), st.get("ammo") or "" if i in (1, 2) else "",
-                                     sr, st.get("callback") or "", ANGLES[i]) if x)
+                                     sr, st.get("memory") or "", st.get("callback") or "", ANGLES[i]) if x)
     st["options"].clear()
     st["options"].update(SAMPLING[i])  # read by chat._ollama_stream via OPTIONS_OVERRIDE
     if st.get("shots") and messages and messages[0].get("role") == "system":
@@ -1246,7 +1338,7 @@ def undodge(st: dict, text: str, last_reply: str = "", prior_q: str = "") -> str
 async def run(draft, *, q: str, sender: str = "", team: str | None = None, recent: str = "", last_reply: str = "",
               recent_picky: list[str] | None = None, t0: float | None = None,
               route: "router.Route | None" = None, chat_id: str | None = None,
-              prior_q: str = "") -> tuple[str, str | None]:
+              prior_q: str = "", dm: bool = False, charlie: bool = False) -> tuple[str, str | None]:
     """(reply, image). `draft()` runs chat.py's pipeline once and returns
     (shaped reply, sentences the filters dropped, image or None). `route` (router.classify) picks the
     lane; the run may refine it in place (the brief's fallback), so the caller can log the final lane."""
@@ -1254,7 +1346,7 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
     route = route if route is not None else router.Route("full", why="no router")
     st = {"q": q, "sender": sender, "team": team, "recent": recent, "last_reply": last_reply, "brief": None, "ammo": None,
           "prefix": None, "idx": 0, "options": dict(SAMPLING[0]), "route": route, "chat_id": chat_id,
-          "recent_picky": list(recent_picky or [])}
+          "recent_picky": list(recent_picky or []), "dm": dm, "charlie": charlie}
     def regen_ok() -> bool:  # chat's results guard: a regen costs about one generation
         now = time.time()
         return (now - t0) + (now - st.get("gen_t0", now)) + REROLL_MARGIN <= SOFT_BUDGET
