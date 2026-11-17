@@ -218,6 +218,17 @@ def pick_ctx_text(ctx: dict, q: str) -> str | None:
     return pick_text(ctx, f"who you got in {g['away']} at {g['home']}")
 
 
+FADE_ASK = re.compile(r"\bfade (all )?(of )?(those|them|em|you|ur picks|your picks|picky|the bot)\b", re.I)
+
+
+def fade_text(ctx: dict, q: str) -> str | None:
+    w = worst_text(ctx, q)
+    if not w:
+        return None
+    return ("Your call, but my picks are mostly slight leans this week, so fading them is close to a coin flip too. "
+            "If you flip one, flip my shakiest: " + w[0].lower() + w[1:])
+
+
 def worst_text(ctx: dict, q: str) -> str | None:
     import game_cards
     cards = [c for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker") and (c := _card_for(ctx, g))]
@@ -635,8 +646,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "line_move", "LINE_MOVE"
     if LOCK_PICK.search(t) and not re.search(r"\b(when|what time|lines? lock|locks? at|time)\b", t, re.I):
         return "lock_pick", "LOCK_PICK"
-    if VALUE_ASK.search(t):
+    if VALUE_ASK.search(t) or re.search(r"\bbooks? (have|got|has|at) (it )?(at )?-?\d", t, re.I):
         return "value", "VALUE_ASK"
+    if FADE_ASK.search(t):
+        return "fade", "FADE_ASK"
     if CONF_ASK.search(t):
         return "conf", "CONF_ASK"
     if OTHERS_ASK.search(t):
@@ -1113,11 +1126,19 @@ _JAB_MARK = re.compile(
     r"for once|your (bad )?(record|misses|taste|luck|season|week)|\d{1,2} misses|\d-\d (week|record|season)|"
     r"lose more|bottom[- ]tier|in the basement|cry for help|wouldn'?t know|overthink|\d+(st|nd|rd|th) place|"
     r"last week|choke\w*|brain cell|collapse|your \w+ pick|you went \d|terrible taste|dignity|whin\w+|"
-    r"points? (behind|back)|behind the leader|top of the leaderboard|think for once|actually think|guts|struggl\w+)\b", re.I)
+    r"points? (behind|back)|behind the leader|top of the leaderboard|think for once|actually think|guts|struggl\w+|"
+    r"handout|desperat\w+|chasing the lead(er)?|time of day|better hobby|lucky i'?m|giving you (my|the) time|charity|donat\w+)\b", re.I)
 _LINE_TOKEN = re.compile(r"(?<![\w-])[+-]\d{1,2}(\.5)?\b|\b(spread|kickoff|lock(s|ed)?)\b", re.I)
 
 
+def _jab_sentence(x: str) -> bool:
+    return bool((_YOU.search(x) or re.match(r"\s*(try|just try|don'?t|maybe)\b", x, re.I)) and _JAB_MARK.search(x.strip())
+                and not _LINE_TOKEN.search(x))
+
+
 def cut_tail_jabs(sents: list[str]) -> list[str]:
+    # any jab sentence after the first goes (keeper k2a: mid-reply 'you're out here looking for a handout' too)
+    sents = [sents[0]] + [x for x in sents[1:] if not _jab_sentence(x)] if sents else sents
     out = list(sents)
     while len(out) > 1 and (_YOU.search(out[-1]) or re.match(r"\s*(try|just try|don'?t|maybe)\b", out[-1], re.I)) \
             and _JAB_MARK.search(out[-1].strip()) and not _LINE_TOKEN.search(out[-1]):
@@ -1987,7 +2008,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text,
               "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text,
               "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text, "pick_ctx": pick_ctx_text,
-              "worst": worst_text}.get(kind)
+              "worst": worst_text, "fade": fade_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

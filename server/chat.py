@@ -6831,7 +6831,9 @@ def repair_value_clause(sent: str) -> str:
 def required_fact(ctx: dict, question: str) -> tuple | None:
     q = question or ""
     me = (ctx.get("you") or {}).get("team_name")
-    if _FREEMAN_ASK.search(q):
+    if _FREEMAN_ASK.search(q) and me != "DaddyFreeman" and not re.search(
+            r"\bfreeman (needs|here|is (the goat|locked)|locked|wants|went|has|says|said|agrees)\b", q, re.I):
+        # the member DaddyFreeman ('freeman needs a lock before 11', keeper k2) isn't Marcus Freeman
         return (lambda t: bool(re.search(r"marshall|stanford|niu|northern illinois", t, re.I)),
                 " Still: Marshall, Stanford and NIU, all at home in South Bend.")
     if _CHAMP_ASK.search(q) and not re.search(r"\bnational|title game|\bcfp\b|heisman|\bplayoff", q, re.I):

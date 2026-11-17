@@ -747,6 +747,17 @@ def test_lock_rewrite_and_not_kicked_tail():
     assert "kicked off" in router.debot(a, "whats the score", "full")
 
 
+def test_k2a_more():
+    a = ("I'm actually going with Illinois +8.5. You're out here looking for a handout. SP+ only has Iowa by 8.")
+    assert router.debot(a, "so u like iowa?", "full") == "I'm actually going with Illinois +8.5. SP+ only has Iowa by 8."
+    assert router.classify("why tho books have it 3").label() == "fact:value"
+    assert router.classify("so now i fade all of those?").label() == "fact:fade"
+    ctx = {"you": {"team_name": "DaddyFreeman"}, "games_this_week": [], "standings_ytd": []}
+    with patch.object(chat, "guard_note", lambda c, q: ""), patch.object(chat, "load_lore", lambda: {}):
+        r = chat.required_fact(ctx, "freeman needs a lock before 11 and dont say northwestern")
+        assert r is None or "Marshall" not in r[1], r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
