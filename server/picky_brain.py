@@ -809,6 +809,22 @@ def banter_callback(st: dict, ptype: str) -> str | None:
     return line
 
 
+def fresh_jab(st: dict, text: str, recent_picky: list[str]) -> str:
+    """A banter line that reuses a jab hook from Picky's recent replies in this chat ('0-4' three turns running,
+    keeper k1) swaps to a book candidate that doesn't; none left: the line stays."""
+    used = set().union(*(router._jab_hooks(p, True) for p in recent_picky)) if recent_picky else set()
+    if not used or not (router._jab_hooks(text, True) & used):
+        return text
+    good = picky_good(st.get("ctx"))
+    for c in st.get("banter_cands") or []:
+        if c["text"] != text and not (router._jab_hooks(c["text"], True) & used) and chat.sentence_ok(c["text"], set()) \
+                and not router.false_picky_claim(c["text"], good):
+            log.info("banter: %r reused a jab hook, sending a fresh book line", text[:60])
+            st["banter_pick"] = c
+            return router.shape_banter(c["text"], st["q"], chat.member_nicknames())
+    return text
+
+
 def banter_fallback(st: dict, bad: str = "") -> str | None:
     """A verbatim candidate the filters keep, for when the model's line got cut."""
     good = picky_good(st.get("ctx"))
@@ -1156,6 +1172,7 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                                            max_words=10 if st.get("ptype") == "spiral2" else 25)
                 if route.why.startswith("brief") or "brief" in route.why:
                     text = undodge(st, text, last_reply)  # a real question the brief misread as banter
+                text = fresh_jab(st, text, recent_picky or [])
                 log.info("banter reply (%.0fs, %s): %r", time.time() - t0, route.label(), text[:160])
                 _trace(st, q, sender, route, [Draft(text, drops, 0)], [0], 0, st.get("banter_how") or "banter", t0)
                 return text, None

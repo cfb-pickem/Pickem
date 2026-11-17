@@ -586,6 +586,16 @@ def test_rules_extra():
     assert router.fact_answer("rules2", ctx, "can chuck fix it").startswith("Yep, the commissioner can")
 
 
+def test_banter_swaps_a_repeated_jab_hook():
+    import picky_brain as pb
+    st = {"q": "if i go 0-4 again im blaming u", "ctx": {}, "banter_cands": [
+        {"text": "Your 0-4 says otherwise."}, {"text": "Blame the guy who picked SMU, chief."}]}
+    with patch.object(chat, "sentence_ok", lambda t, b: True), patch.object(chat, "member_nicknames", lambda: {}):
+        out = pb.fresh_jab(st, "Blame your 0-4 record on your own terrible taste.", ["Your 0-4 is a lifestyle now."])
+    assert out.startswith("Blame the guy who picked SMU"), out
+    assert pb.fresh_jab({"q": "x", "ctx": {}}, "Nice try.", ["Your 0-4 is a lifestyle."]) == "Nice try."
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
