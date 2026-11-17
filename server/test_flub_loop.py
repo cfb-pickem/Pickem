@@ -232,6 +232,9 @@ res = chk(["Per Ross Dellenger, the SEC wants tiered fines."], None, {})
 check(all(ok for _n, ok, _d in res), "item check passes a good answer")
 res = chk(["I don’t have any info on Dellenger."], None, {})
 check([n for n, ok, _d in res if not ok] == ["flub_must_not"], "item check fails the flub (curly apostrophe too)")
+check(not fl._same_chat({"mode": "group", "team": "A", "chat": "g"}, {"mode": "group", "team": "B", "chat": "g"})
+      and fl._same_chat({"mode": "group", "team": "A", "chat": "g"}, {"mode": "group", "team": "A", "chat": "g"}),
+      "pushback: the same member in the same chat, not anyone in the group")
 check(fl.norm_q("@Picky  What's the LATEST news??") == fl.norm_q("whats the latest news"), "norm_q")
 src = (HERE / "eval" / "group_items.py").read_text()
 check("flub_loop.load_items()" in src and '"flub"' in (HERE / "eval" / "questions.py").read_text(),
