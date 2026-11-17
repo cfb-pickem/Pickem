@@ -2016,6 +2016,9 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
             lwt = last_week_text(kind, ctx, q)
             if lwt:
                 return lwt
+        if kind in POOL_GAME_KINDS and slate_cards.covers(q, ctx) and not chat.games_named(
+                q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]):
+            return None  # names a non-pool game: the full brain answers from its GAME CARD (genius exam 2026-11-17)
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
@@ -2038,6 +2041,9 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
         logging.getLogger("picky-router").warning("fact answer %s failed", kind, exc_info=True)
     return None
 
+
+# code lanes built from the POOL games' cards: a text about another game goes to the full brain + slate card
+POOL_GAME_KINDS = {"value", "qb", "line_move", "spread", "flip", "pick", "defend", "others", "short", "compare", "upset"}
 
 FACT_TAIL = """
 
