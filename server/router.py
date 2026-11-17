@@ -790,7 +790,7 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
     if not picky_asked and len(sents) > 1:
         last = sents[-1]
         drop(lambda s: bool(OWN_RECORD.search(s)) and s is not last)
-    if lane == "full" and q and not provocation(q):
+    if lane in ("full", "fact") and q and not provocation(q):  # fact: the voice line after the code answer too
         sents = cut_tail_jabs(sents)
     return " ".join(sents)
 
@@ -804,13 +804,15 @@ _JAB_MARK = re.compile(
     r"|\b(keep up|backbone|chalk|terrified|scared|hurt your feelings|your feelings|get your act together|your nerves|"
     r"for once|your (bad )?(record|misses|taste|luck|season|week)|\d{1,2} misses|\d-\d (week|record|season)|"
     r"lose more|bottom[- ]tier|in the basement|cry for help|wouldn'?t know|overthink|\d+(st|nd|rd|th) place|"
-    r"last week|choke\w*|brain cell|collapse|your \w+ pick|you went \d|terrible taste|dignity)\b", re.I)
+    r"last week|choke\w*|brain cell|collapse|your \w+ pick|you went \d|terrible taste|dignity|whin\w+|"
+    r"points? (behind|back)|behind the leader|top of the leaderboard|think for once|actually think|guts|struggl\w+)\b", re.I)
 _LINE_TOKEN = re.compile(r"(?<![\w-])[+-]\d{1,2}(\.5)?\b|\b(spread|kickoff|lock(s|ed)?)\b", re.I)
 
 
 def cut_tail_jabs(sents: list[str]) -> list[str]:
     out = list(sents)
-    while len(out) > 1 and _YOU.search(out[-1]) and _JAB_MARK.search(out[-1].strip()) and not _LINE_TOKEN.search(out[-1]):
+    while len(out) > 1 and (_YOU.search(out[-1]) or re.match(r"\s*(try|just try|don'?t|maybe)\b", out[-1], re.I)) \
+            and _JAB_MARK.search(out[-1].strip()) and not _LINE_TOKEN.search(out[-1]):
         out.pop()
     return out
 

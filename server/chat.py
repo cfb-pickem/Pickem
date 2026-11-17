@@ -3703,7 +3703,8 @@ def leader_note(ctx: dict, question: str) -> str:
 # the cache only, on news-type questions, into the latest user turn. His X
 # posts are not available (no free, ToS-clean source), so Picky says so.
 _NEWS_ASK = re.compile(
-    r"\b(news|headlines?|latest|lat(?:es|st|set)|lastest|latests|nees|neews|newz|anything new|what'?s the word|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
+    r"\b(news|headlines?|latest|lat(?:es|st|set)|lastest|latests|nees|neews|newz|anything new|what'?s the word|"
+    r"what happened|whats happened|brawl|fight(?! me)|[a-z]{4,} gone|gone yet|still employed|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
     r"hot seat|buyout|transfer\w*|portal|decommit\w*|what('?s| is) (going on|happening|new)|going on in|happening in|dellenger|"
     r"tweet\w*|twitter|recruit\w*|suspend\w*|any updates?|breaking|questionable|doubtful|injury report|"
     r"availability|game[- ]time decision|(is|are|will)\b[^?.!]{0,30}\b(qb|quarterback|starter)s?\b[^?.!]{0,20}"
@@ -3730,7 +3731,10 @@ def news_note(question: str, teams: list[str] | None = None) -> str:
         if teams and not any(tags.values()) and _INJURY_ASK.search(q):
             lines = news.breaking_for(q, teams=teams, limit=5)
         elif not any(tags.values()) and len(rest.split()) >= 2:
-            lines = []  # names something the feeds can't place (a fake team?): no keyword guessing
+            # names something the tagger can't place: keyword search, but only stories that contain EVERY 5+ letter
+            # word left ('who got suspended', 'riley gone?' found nothing, keeper k1; a fake team still finds nothing)
+            kws = [w[:6] for w in rest.split() if len(w) >= 5 and w not in ("tonight", "anyone", "anybody")]
+            lines = [ln for ln in news.breaking_for(q, limit=8) if kws and all(k in ln.lower() for k in kws)][:5]
         elif not any(tags.values()):  # a general ask ("what's the latest nees", a typo): the top stories
             lines = news.breaking_for("latest news", limit=5)
         else:
@@ -6383,6 +6387,19 @@ def card_side_check(ctx: dict):
     return ok
 
 
+_SET_CLAIM = re.compile(r"\b(set in stone|locked in|already locked|are locked|is locked|locked to the market|aren'?t budging|"
+                        r"isn'?t budging|won'?t (move|budge|change)|not (moving|budging|changing)|can'?t move|final number)\b", re.I)
+_SET_OK = re.compile(r"\b(until|till|before|tuesday|tues|11|after (the )?lock|once (it|they) locks?|at the lock|when it locks)\b", re.I)
+
+
+def line_set_check(ctx: dict):
+    """Before Tuesday's 11 AM CT line lock no line is 'set in stone' or 'locked' (keeper k1: 'The pool lines for Iowa,
+    LSU, and Texas Tech are currently locked to the market, so those aren't budging')."""
+    if ctx.get("error") or not ctx.get("games_this_week") or lines_locked(ctx):
+        return None
+    return lambda sent: not (_SET_CLAIM.search(sent or "") and not _SET_OK.search(sent or ""))
+
+
 _FAV_WORD = re.compile(r"\b(favou?rites?|favou?red|chalk|laying (the )?points|lay(ing)? \d)\b", re.I)
 _DOG_WORD = re.compile(r"\b(underdogs?|dogs?|getting (the )?points|getting \d|plus the points)\b", re.I)
 _CLAUSE = re.compile(r"[,;:()]|\s(?:but|while|and|whereas|though)\s", re.I)
@@ -7268,7 +7285,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
                             _both(_both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
                                         _both(picky_claim_check(ctx), picky_claim_check(ctx, "you"))),
                                   _both(_both(value_claim_check(ctx), advice_jab_check(ctx, qtext)),
-                                        _both(fav_claim_check(ctx), card_side_check(ctx))))) if not ctx.get("error") else None),
+                                        _both(_both(fav_claim_check(ctx), card_side_check(ctx)), line_set_check(ctx))))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or live_games.required_fact(ctx, qtext)
                                      or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")

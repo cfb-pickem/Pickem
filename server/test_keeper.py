@@ -526,6 +526,40 @@ def test_k1b_fixes():
     assert r.startswith("Latest I've got: Texas Tech QB Thomas Castellanos was checked after a fourth-quarter collision"), r
 
 
+def test_fact_lane_voice_jab_cut():
+    a = "You're 5th at 26-22, 4 points back of first. Maybe if you spent less time whining and more time picking."
+    assert router.debot(a, "how far back am i from him", "fact") == "You're 5th at 26-22, 4 points back of first."
+    a = "Lines lock Tuesday 11:00 AM CT (noon Eastern). Try to use that extra time to actually think for once."
+    assert router.debot(a, "does the line lock tmrw or sat", "fact") == "Lines lock Tuesday 11:00 AM CT (noon Eastern)."
+    a = ("It doesn't matter if the market moves later. You're already 3 points behind the leader, so don't let a "
+         "missed deadline be the reason.")
+    assert router.debot(a, "what if it moves after 11", "full") == "It doesn't matter if the market moves later."
+
+
+def test_no_set_in_stone_before_the_line_lock():
+    ctx = _wk12_picks()
+    with patch.object(chat, "lines_locked", lambda c: False):
+        ok = chat.line_set_check(ctx)
+        assert not ok("The pool lines for Iowa, LSU, and Texas Tech are currently locked to the market, so those aren't budging.")
+        assert not ok("You can wait on Northwestern, but the rest are set in stone.")
+        assert ok("Nothing's locked until Tuesday at 11 AM CT.")
+        assert ok("Once it locks Tuesday, the line won't move for us.")
+        assert ok("Iowa -8.5 is my pick.")
+    with patch.object(chat, "lines_locked", lambda c: True):
+        assert chat.line_set_check(ctx) is None
+
+
+def test_news_keyword_fallback_and_triggers():
+    for q in ("riley gone?", "louisville unc fight lol what happened"):
+        assert chat._NEWS_ASK.search(q), q
+    with patch.object(chat.news, "breaking_for", lambda q, teams=None, limit=5: [
+            "Nov 15, per AP: ACC suspends Louisville LB Stanquan Clark and UNC DB Greg Smith III after a brawl.",
+            "8h ago, per On3: Texas Tech rolls."]):
+        n = chat.news_note("who got suspended")
+        assert "Stanquan Clark" in n and "Texas Tech rolls" not in n, n
+        assert "nothing in your news feed" in chat.news_note("whats the latest on springfield tech")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
