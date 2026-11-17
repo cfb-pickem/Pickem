@@ -1730,6 +1730,507 @@
    "det": {
     "ats_frame": true
    }
+  },
+  {
+   "id": "un-nw-minn-run",
+   "cat": "matchups",
+   "games": [
+    401858530
+   ],
+   "turns": [
+    "Can Minnesota run the ball on Northwestern?"
+   ],
+   "key": {
+    "must_include": [
+     "Answers with the run game vs the run defense, not overall SP+: Minnesota's run game is near the bottom of FBS (#132 in rushing EPA/play, runs only ~41% of plays) vs a middling Northwestern run defense (#64): edge Northwestern, Minnesota can't count on running it",
+     "Optional other side: Northwestern's run game (#15) vs Minnesota's run defense (#71) is an edge for Northwestern"
+    ],
+    "must_not_claim": [
+     "Minnesota has a strong run game",
+     "answers only with overall SP+ ranks"
+    ],
+    "lean": "No side required; the unit answer is the point.",
+    "lean_side": "any",
+    "facts": [
+     "Minnesota's run game (#132 in rushing EPA/play, bottom-20, runs 41% of plays) vs Northwestern's run defense (#64, middling, stuffs 18% of runs): edge Northwestern's run defense",
+     "Northwestern's run game (#15 in rushing EPA/play, top-20, runs 51% of plays) vs Minnesota's run defense (#71, middling, stuffs 17% of runs): edge Northwestern's run game"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "un-osu-neb-trenches",
+   "cat": "matchups",
+   "games": [
+    401858531
+   ],
+   "turns": [
+    "Who wins the trenches in Ohio State-Nebraska?"
+   ],
+   "key": {
+    "must_include": [
+     "Run game vs run D, both ways: Nebraska's run defense (#18, top-20) beats Ohio State's run game (#50); Nebraska's run game (#9) vs Ohio State's run defense (#13) is strength on strength, no clear edge",
+     "Pass rush vs protection: Nebraska's pass rush (#21 in sack rate, front-seven havoc #10) has the edge on Ohio State's protection (#59); Ohio State's pass rush is weak (#104), so Nebraska wins the trenches on paper"
+    ],
+    "must_not_claim": [
+     "Ohio State dominates the line of scrimmage",
+     "answers only with overall SP+ ranks"
+    ],
+    "lean": "Any side or none; the trench call (Nebraska on paper) is the point.",
+    "lean_side": "any",
+    "facts": [
+     "Ohio State's run game (#50 in rushing EPA/play, middling, runs 49% of plays) vs Nebraska's run defense (#18, top-20, stuffs 24% of runs): edge Nebraska's run defense",
+     "Nebraska's run game (#9 in rushing EPA/play, top-20, runs 48% of plays) vs Ohio State's run defense (#13, top-20, stuffs 23% of runs): strength on strength, no clear edge",
+     "Nebraska's pass rush (#21 in sack rate, good, sacks on 8% of dropbacks, front-seven havoc #10) vs Ohio State's pass protection (#59, middling, allows a sack on 6% of dropbacks): edge Nebraska's pass rush",
+     "Ohio State's pass rush (#104 in sack rate, weak, sacks on 5% of dropbacks, front-seven havoc #45) vs Nebraska's pass protection (#41, good, allows a sack on 5% of dropbacks): edge Nebraska's pass protection"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "un-ttu-bay-passrush",
+   "cat": "matchups",
+   "games": [
+    401856871
+   ],
+   "turns": [
+    "Will Baylor's pass rush get home against Texas Tech?"
+   ],
+   "key": {
+    "must_include": [
+     "Yes, on paper: Baylor's pass rush is top-20 (#7 in sack rate, sacks on ~10% of dropbacks, front-seven havoc #9) vs a middling Texas Tech pass protection (#57, allows a sack on ~6% of dropbacks): edge Baylor's pass rush"
+    ],
+    "must_not_claim": [
+     "Texas Tech's line has the edge",
+     "Baylor can't rush the passer"
+    ],
+    "lean": "No side required.",
+    "lean_side": "any",
+    "facts": [
+     "Baylor's pass rush (#7 in sack rate, top-20, sacks on 10% of dropbacks, front-seven havoc #9) vs Texas Tech's pass protection (#57, middling, allows a sack on 6% of dropbacks): edge Baylor's pass rush",
+     "Texas Tech's pass rush (#46 in sack rate, middling, sacks on 7% of dropbacks, front-seven havoc #65) vs Baylor's pass protection (#56, middling, allows a sack on 6% of dropbacks): close, no clear edge"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "un-hou-wvu-pace",
+   "cat": "matchups",
+   "games": [
+    401856868
+   ],
+   "turns": [
+    "Houston-West Virginia: is this a shootout? Who plays faster?"
+   ],
+   "key": {
+    "must_include": [
+     "Pace: both play fast (West Virginia ~69 plays a game, #6; Houston ~67, #18): more snaps and possessions, shootout-friendly; West Virginia is the faster team",
+     "Big plays: West Virginia's big-play offense (#15) vs Houston's leaky big-play defense (#100) is the explosive edge; Houston's offense is not explosive (#119)"
+    ],
+    "must_not_claim": [
+     "both teams play slow",
+     "Houston is the explosive offense"
+    ],
+    "lean": "An over lean is fine if framed on pace/big plays vs the high total.",
+    "lean_side": "any",
+    "facts": [
+     "Houston runs 67 plays a game (#18, fast), West Virginia 69 (#6, fast): both play fast: more snaps and possessions, shootout-friendly (over lean on pace alone)",
+     "Houston's big-play offense (#119 in explosiveness, bottom-20) vs West Virginia's big-play defense (#116, bottom-20): both weak, no clear edge",
+     "West Virginia's big-play offense (#15 in explosiveness, top-20) vs Houston's big-play defense (#100, weak): edge West Virginia's big-play offense"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "un-iowa-ill-turnovers",
+   "cat": "matchups",
+   "games": [
+    401858527
+   ],
+   "turns": [
+    "Who wins the turnover battle in Iowa-Illinois?"
+   ],
+   "key": {
+    "must_include": [
+     "No clear turnover edge: Iowa 10 takeaways / 10 giveaways in 10 games, Illinois 7 takeaways / 9 giveaways; Iowa forces a few more (and creates more havoc, #51 vs #108), Illinois protects the ball slightly better"
+    ],
+    "must_not_claim": [
+     "Illinois forces a lot of turnovers",
+     "a big turnover edge either way"
+    ],
+    "lean": "No side required.",
+    "lean_side": "any",
+    "facts": [
+     "Iowa has 10 takeaways (#97) and 10 giveaways (#42 fewest) in 10 games; Illinois has 7 takeaways (#127) and 9 giveaways (#27 fewest) in 10 games; defensive havoc Iowa #51, Illinois #108: no clear turnover edge"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "un-mich-pass-ucla",
+   "cat": "matchups",
+   "games": [
+    401858528
+   ],
+   "turns": [
+    "Can Michigan throw it on UCLA's secondary?"
+   ],
+   "key": {
+    "must_include": [
+     "No: Michigan's passing game is weak (#107 in passing EPA/play) vs UCLA's pass defense, #3 in FBS: edge UCLA's pass defense (and Michigan just lost its leading WR, per the card's availability notes)"
+    ],
+    "must_not_claim": [
+     "Michigan has a good passing attack",
+     "UCLA's secondary is a weakness"
+    ],
+    "lean": "No side required.",
+    "lean_side": "any",
+    "facts": [
+     "Michigan's passing game (#107 in passing EPA/play, weak) vs UCLA's pass defense (#3, top-20): edge UCLA's pass defense",
+     "UCLA's passing game (#68 in passing EPA/play, middling) vs Michigan's pass defense (#21, good): edge Michigan's pass defense"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "un-vt-run-miami",
+   "cat": "matchups",
+   "games": [
+    401858302
+   ],
+   "turns": [
+    "Can Virginia Tech run the ball on Miami?"
+   ],
+   "key": {
+    "must_include": [
+     "Unlikely: Virginia Tech's run game is middling (#79 in rushing EPA/play) vs Miami's top-20 run defense (#16): edge Miami",
+     "Optional: the reverse favors Miami too (Miami run game #24 vs Virginia Tech run defense #82)"
+    ],
+    "must_not_claim": [
+     "Virginia Tech has the edge on the ground"
+    ],
+    "lean": "No side required.",
+    "lean_side": "any",
+    "facts": [
+     "Virginia Tech's run game (#79 in rushing EPA/play, middling, runs 46% of plays) vs Miami's run defense (#16, top-20, stuffs 18% of runs): edge Miami's run defense",
+     "Miami's run game (#24 in rushing EPA/play, good, runs 46% of plays) vs Virginia Tech's run defense (#82, middling, stuffs 26% of runs): edge Miami's run game"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "sq-iowa-lookahead",
+   "cat": "situational",
+   "games": [
+    401858527
+   ],
+   "turns": [
+    "Is Iowa looking ahead to Nebraska?"
+   ],
+   "key": {
+    "must_include": [
+     "Answers the lookahead question directly: yes, it's a lookahead spot on paper: Iowa is the favorite here and hosts Nebraska (SP+ #18, the Heroes Game rivalry) next week",
+     "Illinois is coming off a loss to UCLA, so no letdown angle for Illinois"
+    ],
+    "must_not_claim": [
+     "Iowa has a bye next week",
+     "Illinois is the favorite"
+    ],
+    "lean": "Illinois +8.5 is a fair lean off the lookahead (the pool card leans Illinois); Iowa defensible via Illinois' QB uncertainty.",
+    "lean_side": "any",
+    "facts": [
+     "  Lookahead / letdown: Iowa: last beat Purdue (SP+ #91) 28-7; next vs Nebraska (SP+ #18), a rivalry game (Heroes Game); Illinois: last lost to UCLA (SP+ #12) 14-22; next at Northwestern (SP+ #32), a rivalry game (Land of Lincoln Trophy). Verdict: lookahead spot for Iowa (favored here, SP+ #18 Nebraska next); Illinois has rivalry game vs Northwestern (Land of Lincoln Trophy) next but is the underdog here, so lookahead matters less."
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "sq-osu-lookahead",
+   "cat": "situational",
+   "games": [
+    401858531
+   ],
+   "turns": [
+    "Lookahead spot for Ohio State?"
+   ],
+   "key": {
+    "must_include": [
+     "Yes on paper: Ohio State is favored at Nebraska and plays Michigan (The Game) next week, the classic lookahead/rivalry spot, even though Michigan is only SP+ #43 this year",
+     "Nebraska also has a rivalry game next (at Iowa) but is the underdog here, so lookahead matters less for them"
+    ],
+    "must_not_claim": [
+     "Ohio State plays a cupcake next week",
+     "Nebraska is favored"
+    ],
+    "lean": "Nebraska +3 off the lookahead is fine; Ohio State is fine with a reason.",
+    "lean_side": "any",
+    "facts": [
+     "  Lookahead / letdown: Ohio State: last beat Northwestern (SP+ #32) 28-19; next vs Michigan (SP+ #43), a rivalry game (The Game); Nebraska: last beat Rutgers (SP+ #114) 31-0; next at Iowa (SP+ #16), a rivalry game (Heroes Game). Verdict: lookahead spot for Ohio State (favored here, rivalry game vs Michigan (The Game) next); Nebraska has SP+ #16 Iowa next but is the underdog here, so lookahead matters less."
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "sq-ucla-timezones",
+   "cat": "situational",
+   "games": [
+    401858528
+   ],
+   "turns": [
+    "How many time zones is UCLA crossing for Michigan, and what's kickoff on their body clock?"
+   ],
+   "key": {
+    "must_include": [
+     "Three time zones east (Pacific to Eastern, ~1,940 miles); kickoff 3:30 PM local (2:30 PM CT) = 12:30 PM on UCLA's body clock: early-ish, a mild edge at most"
+    ],
+    "must_not_claim": [
+     "two time zones",
+     "a night kickoff",
+     "a 9 AM body-clock kick"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [
+     "  Travel: UCLA flies about 1,940 miles, 3 time zones east (Pacific to Eastern); kickoff 3:30 PM local = 12:30 PM on UCLA's body clock: early-ish on their body clock after flying east: a mild edge at most"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "sq-sdsu-boise-altitude",
+   "cat": "situational",
+   "games": [
+    401860925
+   ],
+   "turns": [
+    "Does Boise's altitude hurt San Diego State?"
+   ],
+   "key": {
+    "must_include": [
+     "Not really: Albertsons Stadium is only ~2,700 ft (San Diego State lives near sea level, ~200 ft), well below where altitude matters (~4,000+ ft); it's a real factor in places like Laramie or Air Force, not Boise"
+    ],
+    "must_not_claim": [
+     "Boise is at high altitude like Denver",
+     "altitude is a big edge for Boise"
+    ],
+    "lean": "n/a",
+    "lean_side": "any",
+    "facts": [
+     "  Altitude: Albertsons Stadium sits at 2,701 ft; San Diego State's home field is at 203 ft: no altitude factor (under 4,000 ft)"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "sq-byu-kansas-altitude",
+   "cat": "situational",
+   "games": [
+    401856866
+   ],
+   "turns": [
+    "BYU lives at altitude. Does that help or hurt them at Kansas?"
+   ],
+   "key": {
+    "must_include": [
+     "Neither, really: Kansas' stadium is ~900 ft, so there's no altitude factor in Lawrence (BYU's home field is ~4,600 ft, which only matters when opponents come to Provo)"
+    ],
+    "must_not_claim": [
+     "Kansas plays at altitude",
+     "BYU gets an altitude edge in Lawrence"
+    ],
+    "lean": "n/a",
+    "lean_side": "any",
+    "facts": [
+     "  Altitude: Memorial Stadium sits at 902 ft; BYU's home field is at 4,633 ft: no altitude factor (under 4,000 ft)"
+    ],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "wy-iowa-ill",
+   "cat": "pushback",
+   "games": [
+    401858527
+   ],
+   "turns": [
+    "Iowa or Illinois, who you got?",
+    "how come?",
+    "why not Iowa?"
+   ],
+   "key": {
+    "must_include": [
+     "Turn 1: a side against the league line with reasons (the pool card: Illinois +8.5, slight lean)",
+     "Turn 2: NEW reasons not given in turn 1 (card reasons in order: SP+ (ratings + 2.5 home field): projects Iowa by 8, so Illinois +8.5 covers by 0.5 / lookahead: Iowa (favored) plays SP+ #18 Nebraska next / EPA (season PPA per play): projects Iowa by 4, so Illinois +8.5 covers by 4.5 / ESPN FPI: projects Iowa by 5.4, so Illinois +8.5 covers by 3.1); repeating turn 1's reason is a fail",
+     "Turn 3: the case against Iowa / for the call with a reason not already given in turns 1-2, or says plainly there's nothing new; consistent side across turns"
+    ],
+    "must_not_claim": [
+     "turn 2 or 3 just restates turn 1's reasons",
+     "flips sides without a reason"
+    ],
+    "lean": "Illinois +8.5 (the pool card's lean); Iowa is acceptable if argued with new reasons each turn.",
+    "lean_side": "Illinois|Iowa",
+    "facts": [],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT",
+     "server/cache/game_cards/12/401858527.json (pool card reasons)"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "wy-nw-minn",
+   "cat": "pushback",
+   "games": [
+    401858530
+   ],
+   "turns": [
+    "Northwestern at Minnesota, who covers?",
+    "why?",
+    "why?"
+   ],
+   "key": {
+    "must_include": [
+     "Turn 1: a side against the league line (Northwestern -2.5 per the pool card) with reasons",
+     "Turn 2: a reason not used in turn 1 (card reasons in order: the league has Northwestern -2.5 and the market's at Northwestern -3 (DraftKings); if that holds through Tuesday's 11 AM CT line lock, that's half a point of value on Northwestern, and it's on the good side of the key number 3. Not banked yet: the league line can still move before the lock / SP+ (ratings + 2.5 home field): projects Northwestern by 9.7, so Northwestern -2.5 covers by 7.2 / EPA (season PPA per play): projects Northwestern by 5.6, so Northwestern -2.5 covers by 3.1; the film room: Minnesota fired its OC; unit edges: Northwestern's run game #15 vs Minnesota's run D #71, Minnesota's run game #132)",
+     "Turn 3: yet another new reason, or a plain 'that's the whole case'; never turn 1's or turn 2's reason again"
+    ],
+    "must_not_claim": [
+     "turn 3 repeats turn 1 or turn 2"
+    ],
+    "lean": "Northwestern -2.5; consistent across turns.",
+    "lean_side": "Northwestern|Minnesota",
+    "facts": [],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT",
+     "server/cache/game_cards/12/401858530.json (pool card reasons)"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "wy-ucla-mich",
+   "cat": "pushback",
+   "games": [
+    401858528
+   ],
+   "turns": [
+    "UCLA -3.5 at Michigan, who you got?",
+    "why?",
+    "why else?"
+   ],
+   "key": {
+    "must_include": [
+     "Turn 1: a side against the spread (UCLA -3.5 is data-supported: SP+ #12 vs #43, UCLA 9-1 ATS and 4-0 ATS on the road, Michigan 3-7 ATS; Michigan +3.5 is defensible via the move from -5.5 and UCLA's backup-QB situation)",
+     "Turn 2: reasons not given in turn 1 (e.g. UCLA's defense vs Michigan's weak offense by unit: Michigan's passing game #107 vs UCLA's pass D #3, Michigan's run game #103 vs UCLA's run D #4; Michigan's injuries at WR/OL)",
+     "Turn 3: another new reason or 'that's the whole case', never a repeat"
+    ],
+    "must_not_claim": [
+     "a reason repeated across turns as if new",
+     "Michigan has the better defense by a lot"
+    ],
+    "lean": "UCLA -3.5 or Michigan +3.5 with real reasons; consistent across turns.",
+    "lean_side": "UCLA|Michigan",
+    "facts": [],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "wy-clem-duke",
+   "cat": "pushback",
+   "games": [
+    401858303
+   ],
+   "turns": [
+    "Give me a side in Clemson-Duke.",
+    "how come?"
+   ],
+   "key": {
+    "must_include": [
+     "Turn 1: a side against the spread (Duke ~-13.5, moved from ~-8.5)",
+     "Turn 2: reasons beyond turn 1's (from the card: ATS records, SP+, unit edges, the move), no repeat of turn 1"
+    ],
+    "must_not_claim": [
+     "turn 2 restates turn 1"
+    ],
+    "lean": "Any side with real reasons; consistent.",
+    "lean_side": "any",
+    "facts": [],
+    "sources": [
+     "CFBD cache server/cache/cfbd.sqlite (advanced + team_stats, venues, games), computed by server/units.py / travel.py / slate_cards.py at 2026-11-17 07:57 CT"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
   }
  ]
 }
