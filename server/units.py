@@ -92,7 +92,8 @@ def table(idx: dict | None = None, adv: list | None = None) -> dict:
             return _MEMO["table"]
     out = {}
     for r in adv or []:
-        t = cfbd.resolve_team(r.get("team") or "", idx)
+        nm = r.get("team") or ""  # 'App State', 'UConn', 'UL Monroe': the alias table, so ranks match the cards' (138, not 134)
+        t = cfbd.resolve_team(nm, idx)
         if not t or not t.get("sp"):
             continue
         s = t.get("stats") or {}

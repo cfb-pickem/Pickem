@@ -978,6 +978,9 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 req = StarletteRequest({"type": "http", "method": "POST", "path": "/chat", "headers": [],
                                         "query_string": b""}, receive)
                 raw, image = await _collect(await chat.chat(req))
+                st = picky_brain.STATE.get(None)
+                if st is not None:  # the reroll budget looks at what got cut (picky_brain.fact_cut)
+                    st["drop_texts"] = list(drops)
                 return shape(raw), len(drops), image
             finally:
                 DROPS.reset(dtok)

@@ -78,6 +78,21 @@ def test_reroll_ok():
         with patch.object(pb, "UNUSABLE_BUDGET", 60.0):
             go, why = pb.reroll_ok(40.0, 20.0, ["Next question."])
             check("PICKY_UNUSABLE_BUDGET caps the unusable reroll", not go, why)
+        with patch.object(pb, "FACT_BUDGET", 90.0):
+            real = ["A real answer with enough words here."]
+            go, why = pb.reroll_ok(40.0, 20.0, real, cut_facts=True)
+            check("a cut fact sentence earns the reroll past the soft budget", go, why)
+            go, why = pb.reroll_ok(62.0, 30.0, real, cut_facts=True)
+            check("...but not past FACT_BUDGET", not go, why)
+
+
+def test_fact_cut():
+    check("record jab at the sender is flavor", not pb.fact_cut(["Don't let your 2-2 week turn into a 0-4 disaster."]))
+    check("a tic is flavor", not pb.fact_cut(["I'm just here to watch the chaos."]))
+    check("a true last-meeting result is the answer", pb.fact_cut(["Duke won 46-45 at Clemson, covered the -4 by 5."]))
+    check("a QB status is the answer", pb.fact_cut(["Also, TCU QB Jaden Craig is questionable with an ankle injury."]))
+    check("the results guard's fallback counts", pb.fact_cut(["facts_sentence"]))
+    check("nothing cut", not pb.fact_cut([]) and not pb.fact_cut(None))
 
 
 async def _run_brain(drafts: list[tuple[float, str, int]], soft: float = 50.0, brief_secs: float = 0.0):
@@ -394,6 +409,7 @@ def test_log_levels():
 async def main():
     test_unusable()
     test_reroll_ok()
+    test_fact_cut()
     await test_run_budget()
     await test_regen_budget_hook()
     await test_guard_regen_skipped()

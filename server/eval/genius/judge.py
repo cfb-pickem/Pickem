@@ -64,6 +64,9 @@ def _market_line(market: dict, gid) -> str:
     return s
 
 
+_CACHE: dict = {}
+
+
 def verified(games: list, facts: dict) -> str:
     """Per-game verified data (the fact pack + sourced availability notes): true claims Picky makes from his
     data sources that the key doesn't list must not count as invented."""
@@ -99,6 +102,21 @@ def verified(games: list, facts: dict) -> str:
                             f"{((a.get('offense') or {}).get('rushingPlays') or {}).get('rate', 0):.0%}, pts per scoring chance "
                             f"{(a.get('offense') or {}).get('pointsPerOpportunity', 0):.1f} (allows "
                             f"{(a.get('defense') or {}).get('pointsPerOpportunity', 0):.1f})")
+        except Exception:  # noqa: BLE001
+            pass
+        try:  # unit edges + travel/altitude/weather the cards now carry (units/travel/weather, code over the cache):
+            import slate_cards  # true card facts the key doesn't list ('UCLA red-zone defense #7') aren't invented
+            import travel
+            import units
+            import weather
+            tab = units.table()
+            for u in ("rush", "pass", "protect", "redzone", "explosive", "eff", "turnovers", "pace"):
+                bits += ["unit: " + e["text"] for e in units.edges(u, g["away"], g["home"], tab)]
+            if "_gds" not in _CACHE:
+                _CACHE["_gds"] = slate_cards._games_dataset()
+            cg = _CACHE["_gds"].get(int(gid))
+            if cg:
+                bits += [x.strip() for x in (travel.travel_line(cg), travel.altitude_line(cg), weather.line(gid)) if x]
         except Exception:  # noqa: BLE001
             pass
         if g.get("h2h_2025"):

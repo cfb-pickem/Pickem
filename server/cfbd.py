@@ -394,9 +394,9 @@ def load_index(db_path: Path | str | None = None) -> dict | None:
 
 
 def resolve_team(name: str, idx: dict) -> dict | None:
-    key = norm(name)
-    key = ALIASES.get(key, key)
-    t = idx["teams"].get(key)
+    raw = norm(name)
+    key = ALIASES.get(raw, raw)
+    t = idx["teams"].get(key) or idx["teams"].get(raw)  # CFBD now spells 'UConn', 'UL Monroe', 'App State': the alias's long form misses
     if t:
         return t
     m = difflib.get_close_matches(key, list(idx["teams"]), n=1, cutoff=0.88)

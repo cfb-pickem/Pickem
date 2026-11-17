@@ -254,5 +254,13 @@ check(router.fact_answer("why", ctx, "why? ||| Standings: you're in 3rd, 2 back.
 check(router.classify("why?").label() == "fact:why" and "why" in router.CTX_KINDS,
       "router: 'why?' is the fact lane and gets Picky's last reply")
 
+check(router.say_reason("SRS: projects Memphis by 5.3, so Memphis -3.5 covers by 1.8") == "SRS has Memphis by about 5",
+      "an SRS projection keeps its source (pb-navy read 'also, projects Memphis by 5.3')")
+check(router.say_reason("Massey (composite): projects X by 4, so X -3.5 covers by 0.5").startswith("Massey projects X by 4"),
+      "any labeled projection keeps the label")
+tab = U.table()
+check(tab.get("_n", 0) >= 138 and all(cfbd.resolve_team(n, cfbd.load_index()) for n in ("UConn", "UL Monroe", "App State", "Southern Miss")),
+      "renamed CFBD teams resolve (alias long forms missed them), so unit ranks match the cards' 138-team ranks")
+
 print(f"\n{len(FAILS)} failed" if FAILS else "\nall ok")
 sys.exit(1 if FAILS else 0)

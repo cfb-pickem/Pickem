@@ -59,6 +59,8 @@ SOFT_BUDGET = float(os.environ.get("PICKY_SOFT_BUDGET", "50"))
 UNUSABLE_BUDGET = float(os.environ.get("PICKY_UNUSABLE_BUDGET", str(DRAFT_BUDGET)))
 REROLL_MARGIN = 3.0
 UNUSABLE_WORDS = 4
+# a cut sentence that carried the answer (fact_cut) earns the reroll up to here (genius exam 2026-11-17)
+FACT_BUDGET = float(os.environ.get("PICKY_FACT_BUDGET", "90"))
 # fact wrap / banter line: wait this long for the prefix prime; a cold one (~60 s prefill) means the code
 # answer / book line goes out alone while the prime finishes in the background for the next text
 PRIME_WAIT = float(os.environ.get("PICKY_PRIME_WAIT", "10"))
@@ -1158,13 +1160,36 @@ def unusable(text: str) -> bool:
     return not t or bool(_BARE_DODGE.match(t)) or len(re.findall(r"[a-z0-9']+", t.lower())) < UNUSABLE_WORDS
 
 
-def reroll_ok(elapsed: float, draft_secs: float, texts: list[str]) -> tuple[bool, str]:
+_YOU = re.compile(r"\b(you|your|you're|youre|ya|u)\b", re.I)
+
+
+def fact_cut(dropped: list[str] | None) -> bool:
+    """A filter cut a sentence that carried the answer (a number, or names: 'Duke won 46-45 at Clemson',
+    'TCU QB Jaden Craig is questionable'), not flavor (a tic, a mascot gag, a jab at the sender's record).
+    The results guard's own fallbacks count as answer cuts. Genius exam 2026-11-17: skipping the reroll
+    after true card facts got cut (record/grounded false positives) cost 6 items."""
+    for t in dropped or []:
+        t = str(t)
+        if t in ("facts_sentence", "templated_answer"):
+            return True
+        if _YOU.search(t):
+            continue
+        caps = [w for w in t.split()[1:] if re.match(r"[A-Z][A-Za-z]", w) and not re.match(r"I'|I$", w)]
+        if re.search(r"\d", t) or len(caps) >= 2:
+            return True
+    return False
+
+
+def reroll_ok(elapsed: float, draft_secs: float, texts: list[str], cut_facts: bool = False) -> tuple[bool, str]:
     """(run the extra draft?, why). It costs about what the last draft did (the understand pass isn't
-    redone): run it when the projected finish fits SOFT_BUDGET, or when every draft so far is unusable
-    and the finish fits DRAFT_BUDGET (and UNUSABLE_BUDGET)."""
+    redone): run it when the projected finish fits SOFT_BUDGET, when a cut sentence carried the answer
+    and the finish fits FACT_BUDGET, or when every draft so far is unusable and the finish fits
+    DRAFT_BUDGET (and UNUSABLE_BUDGET)."""
     proj = elapsed + draft_secs + REROLL_MARGIN
     if proj <= SOFT_BUDGET:
         return True, f"projected {proj:.0f}s <= soft {SOFT_BUDGET:.0f}s"
+    if cut_facts and proj <= min(DRAFT_BUDGET, FACT_BUDGET):
+        return True, f"a cut sentence carried the answer, projected {proj:.0f}s <= {min(DRAFT_BUDGET, FACT_BUDGET):.0f}s"
     bad = all(unusable(t) for t in texts)
     cap = min(DRAFT_BUDGET, UNUSABLE_BUDGET)
     if bad and proj <= cap:
@@ -1224,7 +1249,8 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
             if i and time.time() - t0 > DRAFT_BUDGET:
                 break
             if i == N_DRAFTS:  # a dodge undodge() turns into the card call isn't unusable: the code answer exists
-                go, why = reroll_ok(time.time() - t0, dsecs, [undodge(st, d.text, last_reply, prior_q) for d in drafts])
+                go, why = reroll_ok(time.time() - t0, dsecs, [undodge(st, d.text, last_reply, prior_q) for d in drafts],
+                                    cut_facts=fact_cut(st.get("drop_texts")))
                 log.info("reroll %s: %s", "runs" if go else "skipped", why)
                 if not go:
                     break

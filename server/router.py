@@ -1530,9 +1530,9 @@ def say_reason(r: str, c: dict | None = None, locked: bool = False) -> str:
     """A card reason the way a person texts it (keeper k1: 'SP+ (ratings + 2.5 home field): projects Tennessee by 1.9,
     so Tennessee +1.5 covers by 3.4' read like a report). Same facts, fewer words; unknown shapes pass through."""
     r = (r or "").strip()
-    m = re.match(r"(SP\+|EPA|ESPN FPI)(?!\w)[^:]*: projects (.+?) by ([\d.]+)", r)
+    m = re.match(r"(SP\+|EPA|ESPN FPI|SRS)(?!\w)[^:]*: projects (.+?) by ([\d.]+)", r)
     if m:
-        who = {"SP+": "SP+ has", "EPA": "the EPA numbers have", "ESPN FPI": "FPI has"}[m.group(1)]
+        who = {"SP+": "SP+ has", "EPA": "the EPA numbers have", "ESPN FPI": "FPI has", "SRS": "SRS has"}[m.group(1)]
         return f"{who} {m.group(2)} by {_by(float(m.group(3)))}"
     m = re.match(r"the league (?:line is locked at|has) (.+?) and the market's at (.+?) \(", r)
     if m:
@@ -1553,9 +1553,9 @@ def say_reason(r: str, c: dict | None = None, locked: bool = False) -> str:
     m = re.match(r"revenge: (.+?) lost this game last season by (\d+)", r)
     if m:
         return f"{m.group(1)} lost this one by {m.group(2)} last year, revenge spot"
-    m = re.match(r"[\w +()&'#.-]{2,40}?: (.+)", r)
-    if m:
-        return m.group(1)
+    m = re.match(r"([\w +()&'#.-]{2,40}?): (.+)", r)
+    if m:  # a projection keeps who projects it ('projects Memphis by 5.3' alone read garbled, genius pb-navy)
+        return f"{m.group(1).split(' (')[0]} {m.group(2)}" if m.group(2).startswith("projects ") else m.group(2)
     return r
 
 
