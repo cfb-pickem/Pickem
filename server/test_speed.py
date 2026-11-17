@@ -182,9 +182,10 @@ ASKS = [  # (id, text): picks, a game read, news, rules, record, trash talk, sta
 ]
 # after-prefix token budgets per text (chars/4). Main before the speed lane, on this snapshot (group/DM):
 # picks 1585/1634, read 2086/2445, news 2441/2345, read2 3629/3682, lastweek 3889/3942 (every old turn
-# re-rendered with its riders, live blocks for games 5 days out, full intel next to the card).
+# re-rendered with its riders, live blocks for games 5 days out, full intel next to the card). 'lastweek'
+# is a code-written fact-lane answer since the router's Monday last-week lane (e76c807).
 BUDGET = {"picks": 1650, "read": 1600, "news": 1150, "rules": 250, "record": 200, "trash": 350,
-          "standings": 200, "offtopic": 350, "read2": 1450, "lastweek": 1700}
+          "standings": 200, "offtopic": 350, "read2": 1450, "lastweek": 300}
 
 RESULTS: dict[bool, dict] = {}
 
@@ -271,8 +272,8 @@ def test_old_turns_go_bare_and_follow_ups_keep_the_last():
         out, _ = chat.history_turns(ctx, convo[:-1] + [{"role": "user", "content": "why?"}])
         assert out[3]["content"] != convo[3]["content"] and "FOCUS:" in out[3]["content"]  # follow-up: kept
         assert out[1]["content"] == convo[1]["content"]
-    # in the live pipeline: five texts into a DM, the old turns are just the questions
-    hist = _final(results(True)["lastweek"])["messages"][1:-1]
+    # in the live pipeline: eight texts into a DM, the old turns are just the questions
+    hist = _final(results(True)["read2"])["messages"][1:-1]
     assert len(hist) >= 6 and all(est(m["content"]) < 60 for m in hist), [est(m["content"]) for m in hist]
 
 
