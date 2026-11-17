@@ -29,6 +29,9 @@ import sqlite3
 from zoneinfo import ZoneInfo
 
 import cfbd
+import travel
+import units
+import weather
 
 log = logging.getLogger("slate_cards")
 CT = ZoneInfo("America/Chicago")
@@ -96,6 +99,33 @@ def run_game_line(away: str, home: str) -> str | None:
         if ppo and dppo:
             bits.append(f"{team} scores {ppo:.1f} pts per scoring chance, allows {dppo:.1f}")
     return "  Run game / finishing drives: " + "; ".join(bits) if bits else None
+
+
+def unit_edges_line(away: str, home: str) -> str | None:
+    """The clearest unit-vs-unit edges (units.py: ranked across FBS, decided in code), compact."""
+    try:
+        ls = units.card_lines(away, home)
+    except Exception as e:  # noqa: BLE001
+        log.warning("unit edges: %r", e)
+        return None
+    return ("  Unit edges (ranks among FBS, 1 = best; decided): " + "; ".join(ls)) if ls else None
+
+
+def notable_trip(g: dict) -> str | None:
+    """Travel / altitude only when it could matter (2+ time zones, a long trip, a stadium at altitude)."""
+    out = []
+    try:
+        t = travel.tables()
+        v, neutral = travel.game_venue(g.get("id"), g["homeTeam"], t)
+        tr = travel.trip(g["awayTeam"], v, _sd(g), t)
+        if tr and not tr.get("same_venue") and (abs(tr.get("zones") or 0) >= 2 or (tr.get("miles") or 0) >= 1500):
+            out.append(travel.travel_line(g, t))
+        if (travel.elev_ft(v) or 0) >= travel.HIGH_FT:
+            out.append(travel.altitude_line(g, t))
+    except Exception as e:  # noqa: BLE001
+        log.warning("trip facts: %r", e)
+    out = [x for x in out if x]
+    return "\n".join(out) or None
 
 
 def _games_dataset() -> dict:
@@ -378,6 +408,134 @@ def lean_lines(g: dict, idx: dict, espn_notes: dict | None, ask: str = "") -> li
     return out
 
 
+SUB_ASK = {  # the situational sub-question a text asks (genius exam: answer exactly this, not a general read)
+    "lookahead": re.compile(r"\b(look ?-?ahead|letdown|let down|sandwich|trap game|trap spot|next week|looking ahead|"
+                            r"overlook\w*|peek\w* ahead|after (this|that) (game|week)|on deck)\b", re.I),
+    "travel": re.compile(r"\b(body clock|time zones?|timezone|travel\w*|flying|fly\w*|flight|cross.country|jet ?lag|"
+                         r"long trip|road trip|west coast|east coast|early kick\w*|noon kick\w*|11 ?am kick\w*|"
+                         r"miles|trip)\b", re.I),
+    "altitude": re.compile(r"\b(altitude|elevation|thin air|mile high|high altitude|feet above|oxygen|laramie)\b", re.I),
+    "weather": re.compile(r"\b(weather|wind\w*|rain\w*|snow\w*|cold|freez\w*|temperature|temps?|forecast|storm\w*|"
+                          r"sleet|wet|elements|gusts?|dome|indoors)\b", re.I),
+    "rest": re.compile(r"\b(rest(ed)?|bye( week)?|short week|extra week|days off|fresh(er)?|tired|fatigue)\b", re.I),
+}
+
+
+def sub_asks(q: str) -> list[str]:
+    t = (q or "").replace("’", "'")
+    return [k for k, rx in SUB_ASK.items() if rx.search(t)]
+
+
+def _sp_rank(team: str, idx: dict) -> int | None:
+    return ((cfbd.resolve_team(team, idx) or {}).get("sp") or {}).get("rank")
+
+
+def lookahead_line(g: dict, idx: dict, home_now: float | None = None) -> str | None:
+    """Lookahead / letdown / sandwich in decided words: each team's last and next game (with SP+ ranks), who's
+    favored here, and whether the spot is real. Big game = SP+ top 25 (pick_brief's BIG_GAME_SP_RANK)."""
+    s = _sd(g)
+    if s is None:
+        return None
+    away, home = g["awayTeam"], g["homeTeam"]
+    if home_now is None:
+        home_now = (_line(g) or {}).get("spread")
+    fav = (home if home_now < 0 else away if home_now > 0 else None) if home_now is not None else None
+    bits, flags = [], []
+    for team in (away, home):
+        t = cfbd.resolve_team(team, idx)
+        if not t:
+            continue
+        opp_now = home if team == away else away
+        rn = _sp_rank(opp_now, idx)
+        gs = [x for x in t.get("games") or [] if _sd(x)]
+        played = [x for x in gs if x.get("homeScore") is not None and _sd(x) < s]
+        nxt = sorted((x for x in gs if _sd(x) > s), key=lambda x: x["startDate"])
+        b = team
+        if played:
+            x = max(played, key=lambda x: x["startDate"])
+            at_home = cfbd.norm(x["homeTeam"]) == cfbd.norm(team)
+            mine, theirs = (x["homeScore"], x["awayScore"]) if at_home else (x["awayScore"], x["homeScore"])
+            lo = x["awayTeam"] if at_home else x["homeTeam"]
+            ln = _line(x)
+            my_sp = ((ln["spread"] if at_home else -ln["spread"]) if ln and ln.get("spread") is not None else None)
+            rl = _sp_rank(lo, idx)
+            won = mine > theirs
+            b += (f": last {'beat' if won else 'lost to'} {lo}{f' (SP+ #{rl})' if rl else ''} {mine}-{theirs}"
+                  + (f" as a {my_sp:g}-point underdog" if won and my_sp and my_sp > 0 else ""))
+            if team == fav and won and ((my_sp or 0) > 0 or (rl and rl <= 25)):
+                flags.append(f"letdown spot for {team} (favored here after "
+                             + (f"an outright upset as a {my_sp:g}-point dog" if (my_sp or 0) > 0 else f"beating SP+ #{rl} {lo}") + ")")
+        if nxt:
+            n = nxt[0]
+            no = n["awayTeam"] if cfbd.norm(n["homeTeam"]) == cfbd.norm(team) else n["homeTeam"]
+            rx = _sp_rank(no, idx)
+            b += (f"; next {'vs' if cfbd.norm(n['homeTeam']) == cfbd.norm(team) else 'at'} {no}"
+                  + (f" (SP+ #{rx})" if rx else ""))
+            if rx and rx <= 25 and (rn is None or rn > rx):
+                if team == fav:
+                    flags.append(f"lookahead spot for {team} (favored here, SP+ #{rx} {no} next)")
+                else:
+                    flags.append(f"{team} has SP+ #{rx} {no} next but is the underdog here, so lookahead matters less")
+        else:
+            b += "; no game after this one on the schedule"
+        bits.append(b)
+    if not bits:
+        return None
+    verdict = "; ".join(flags) if flags else "no lookahead or letdown setup on paper"
+    return "  Lookahead / letdown: " + "; ".join(bits) + f". Verdict: {verdict}."
+
+
+def sub_lines(q: str, g: dict, idx: dict, games_ds: dict, home_now: float | None = None) -> list[str]:
+    """The fact(s) for the exact situational sub-question asked, decided in code."""
+    out = []
+    for k in sub_asks(q):
+        try:
+            if k == "lookahead":
+                x = lookahead_line(g, idx, home_now)
+            elif k == "travel":
+                x = travel.travel_line(g) or "  Travel: no trip data for this game."
+            elif k == "altitude":
+                x = travel.altitude_line(g)
+            elif k == "weather":
+                x = weather.line(g["id"]) or ("  Weather: no forecast on file for this game yet (it refreshes every "
+                                              "6 hours inside the forecast window); say you don't have one, never guess.")
+            else:
+                x = rest_line(g, idx, games_ds)
+        except Exception as e:  # noqa: BLE001 - a bad fact never breaks the card
+            log.warning("sub-question %s failed: %r", k, e)
+            x = None
+        if x and x.strip() not in (y.strip() for y in out):
+            out.append(x)
+    return out[:3]
+
+
+def ask_block(q: str, g: dict, idx: dict, games_ds: dict, home_now: float | None = None) -> tuple[list[str], list[str]]:
+    """(lines that go FIRST on the card, the reminder labels) for a unit or situational sub-question."""
+    away, home = g["awayTeam"], g["homeTeam"]
+    top, labels = [], []
+    try:
+        us = units.ask_units(q)
+        ul = units.question_lines(q, away, home, units=us) if us else []
+    except Exception as e:  # noqa: BLE001
+        log.warning("unit edges failed: %r", e)
+        us, ul = [], []
+    if ul:
+        top.append("  UNIT QUESTION (answer with this, not overall SP+; ranks among FBS, 1 = best, edges decided in code):")
+        top += ["    " + x for x in ul]
+        labels += [units.LABEL[u] for u in us]
+    sl = sub_lines(q, g, idx, games_ds, home_now)
+    if sl:
+        top.append("  SUB-QUESTION (they asked exactly this: answer it first, from these facts):")
+        top += ["    " + x.strip() for x in sl]
+        labels += sub_asks(q)
+    return top, labels
+
+
+def _closer(labels: list[str]) -> str:
+    return (f"  THEY ASKED ABOUT {', '.join(dict.fromkeys(labels)).upper()}: lead with the UNIT QUESTION / SUB-QUESTION "
+            "lines at the top of this card, in decided words; the rest only if it adds something.")
+
+
 def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str = "",
          league_home: float | None = None) -> str:
     away, home = g["awayTeam"], g["homeTeam"]
@@ -388,24 +546,30 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str =
     head = (f"GAME CARD (computed from CFBD + ESPN; answer their football question from it, straight, and don't "
             f"bring up whether it's a pool game): "
             f"{away} at {home}{' (neutral site)' if meta.get('neutralSite') else ''}, {when}{', ' + where if where else ''}.")
+    mk_home = ((espn_notes or {}).get("market") or {}).get("home_now")
+    top, labels = ask_block(ask, g, idx, games_ds, league_home if league_home is not None else mk_home)
     if league_home is not None:  # pool game: the pool's game card has the market, factors and lean; add only what it lacks
-        L = [f"GAME CARD extras (CFBD/ESPN): {away} at {home}."] + league_vs_market(g, league_home, (espn_notes or {}).get("market"))
+        # a unit / sub-question: 'GAME CARD (' so the understand pass sees it too (picky_brain.slate_block)
+        L = [f"GAME CARD (extras, CFBD/ESPN): {away} at {home}." if top else
+             f"GAME CARD extras (CFBD/ESPN): {away} at {home}."] + top
+        L += league_vs_market(g, league_home, (espn_notes or {}).get("market"))
         for team in (away, home):
             L.append("  " + ats_line(team, team_rows(team, idx, g["startDate"]), cfbd.resolve_team(team, idx), short=True))
         lm = last_meeting(g)
         if lm:
             L.append(lm)
         nl = news_lines(away, home, g["id"])
-        return "\n".join(L + [x for x in nl if not x.startswith("  These are")][:3])
-    L = [head] + market_line(g, (espn_notes or {}).get("market"))
+        return "\n".join(L + [x for x in nl if not x.startswith("  These are")][:3] + ([_closer(labels)] if labels else []))
+    L = [head] + top + market_line(g, (espn_notes or {}).get("market"))
     for team in (away, home):
         t = cfbd.resolve_team(team, idx)
         L.append("  " + ats_line(team, team_rows(team, idx, g["startDate"]), t))
         sp = (t or {}).get("sp") or {}
         if sp.get("rank"):
             L[-1] += f"; SP+ #{sp['rank']} (off #{sp.get('off_rank')}, def #{sp.get('def_rank')})"
-    for extra in (style_line(away, home, idx), run_game_line(away, home), rest_line(g, idx, games_ds), last_meeting(g)):
-        if extra:
+    for extra in (style_line(away, home, idx), unit_edges_line(away, home), rest_line(g, idx, games_ds), last_meeting(g),
+                  None if set(labels) & {"travel", "altitude"} else notable_trip(g)):
+        if extra and extra.strip() not in "\n".join(top):
             L.append(extra)
     if league_home is None:  # pool games: the PICK BRIEF / game card owns the lean (vs the league line)
         L += lean_lines(g, idx, espn_notes, ask)
@@ -414,8 +578,11 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str =
         L.append(f"  ESPN FPI: {home} {wp['home']:.0f}% to win")
     if (espn_notes or {}).get("weather"):
         L.append(f"  Weather (ESPN): {espn_notes['weather']}")
+    wl = weather.line(g["id"])
+    if wl and "weather" not in labels:
+        L.append(wl)
     L += news_lines(away, home, g["id"])
-    return "\n".join(L)
+    return "\n".join(L + ([_closer(labels)] if labels else []))
 
 
 def _pool_line(pg: dict | None) -> float | None:
