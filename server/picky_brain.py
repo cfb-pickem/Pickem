@@ -1070,6 +1070,8 @@ def football_thread(st: dict) -> bool:
     q = st.get("q") or ""
     if router.provocation(q) or router.BARE_INSULT.search(q):
         return False
+    if "?" in q and len(q.split()) <= 6:  # 'nd?', 'over nd?', 'usc?', 'riley gone?': a question, not banter
+        return True
     ctx = st.get("ctx") or {}
     gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]
     if not gl:

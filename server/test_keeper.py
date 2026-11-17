@@ -510,6 +510,22 @@ def test_more_tail_jabs_and_voice_lines():
     assert not router.voice_line_ok("Just try not to choke these like you did last week, man.", "x", {})
 
 
+def test_k1b_fixes():
+    import picky_brain as pb, game_cards
+    assert router.classify("locks tmrw right").label() == "fact:lines_locked"
+    assert router.classify("when do picks lock tmrw").label() != "fact:lines_locked"
+    assert router.debot("I don't have any info on USC in the league data.", "usc?", "full") == "I don't have any info on USC."
+    assert pb.football_thread({"q": "nd?", "ctx": {}, "last_reply": "x"})
+    assert not pb.football_thread({"q": "you suck?", "ctx": {}, "last_reply": "x"})
+    assert router.classify("anything on castellanos").label() == "fact:qb"
+    ctx = _wk12_picks()
+    cards = {11: {"move": {"cause": "cause of the move: lines up with Texas Tech news: Texas Tech QB Thomas Castellanos was "
+                                    "checked after a fourth-quarter collision at Oklahoma State. (KCBD)"}}}
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: cards.get(gid)):
+        r = router.fact_answer("qb", ctx, "anything on castellanos")
+    assert r.startswith("Latest I've got: Texas Tech QB Thomas Castellanos was checked after a fourth-quarter collision"), r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

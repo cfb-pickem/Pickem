@@ -161,6 +161,9 @@ QB_ASK = re.compile(r"\b(qb|quarterback)s?\b[^?.!]{0,25}\b(situation|status|news
                     r"|^\W*[a-z]{3,} (even )?healthy\W*$", re.I)
 
 
+PLAYER_ASK = re.compile(r"^\W*(anything|any updates?|update|status|word) on [a-z]{5,}\W*$|^\W*[a-z]{5,} (status|update|hurt)\W*$", re.I)
+
+
 # spar r1 handoff: 'whats -2.5 mean' / 'explain like im 5' / 'so if nw wins by 2 i lose?' (non-answers, 'just pick a
 # winner'), and 'whats ur upset pick' named the favorite LSU -1.5
 SPREAD_EXPLAIN = re.compile(
@@ -174,7 +177,8 @@ UPSET_ASK = re.compile(r"\b(upset|dog|underdog|sleeper)s?\b[^?.!]{0,15}\b(pick|s
 
 # Tuesday morning (k2): 'is it locked yet', 'are the lines locked', 'what are the lines', 'whats the line on iowa'
 LINES_LOCKED_Q = re.compile(r"\b(is|are|r)\s+(it|the lines?|lines|the spreads?|spreads|the numbers?|they|things)\s+(locked|locked in|frozen|final|set)( yet| now| in)?\b"
-                            r"|\bhas (it|the line|the lines) locked\b|\blocked yet\b", re.I)
+                            r"|\bhas (it|the line|the lines) locked\b|\blocked yet\b"
+                            r"|\b(lines? )?locks? (tmrw|tmr|tomorrow|today|tuesday|tues|tue)\b(?![^?.!]*\bpicks?\b)", re.I)
 LINES_NOW = re.compile(r"\bwhat('?s| are| is|s)? (the |this week'?s |this wks? |our |the current )?(lines?|spreads?|numbers)\b(?! lock)"
                        r"|\bwhat'?s the (line|spread) (on|for|in)\b|\bwhats the (line|spread) (on|for|in)\b"
                        r"|\b(lines?|spreads?) (this week|for the week|rn|right now)\b", re.I)
@@ -343,13 +347,13 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if playoff_race.is_need_question(t):
         return "playoff", "playoff_race.is_need_question"
-    if QB_ASK.search(t) and not re.search(r"\b(news|latest|lates|report\w*|rumou?r\w*|update\w*|word on|anything on|any news)\b", t, re.I):
+    if (QB_ASK.search(t) or PLAYER_ASK.search(t)) and not re.search(r"\b(news|latest|lates|report\w*|rumou?r\w*|any news)\b", t, re.I):
         return "qb", "QB_ASK"  # a news-style ask keeps the news feed (NEWS QUESTION rider)
     if SPREAD_EXPLAIN.search(t):
         return "spread", "SPREAD_EXPLAIN"
     if UPSET_ASK.search(t) and not re.search(r"\b(natty|national|title|cfp|playoff|heisman|bowl)\b", t, re.I):
         return "upset", "UPSET_ASK"
-    if LINES_LOCKED_Q.search(t):
+    if LINES_LOCKED_Q.search(t) and not re.search(r"\bpicks?\b", t, re.I):
         return "lines_locked", "LINES_LOCKED_Q"
     if LINES_NOW.search(t) and not re.search(r"\b(lock|locks|move|moved|moving|value|why)\b", t, re.I):
         return "lines_now", "LINES_NOW"
@@ -750,6 +754,9 @@ _STARTERS = {"the", "they", "they're", "he", "he's", "she", "it", "it's", "that"
              "playing", "right", "just", "look", "listen", "man", "dude", "buddy", "sure", "oh", "ok", "okay"}
 
 
+_DATA_TALK = re.compile(r"\s+(in|from|according to) (the|my) (league |pool |news )?(data|feed data|context)\b", re.I)
+
+
 def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False, group: bool = False,
           recall: bool = False) -> str:
     """W5 on any reply: preachy and stock-phrase sentences out, no 5+ word echo of the sender (not on
@@ -764,6 +771,7 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
         kept = [s for s in sentences(t) if not DENIAL.search(s)]
         t = " ".join(kept + [DEFLECT]) if kept else DEFLECT
     t = _FOR_RECORD_LEAD.sub(lambda m: m.group(1), t).strip()
+    t = _DATA_TALK.sub("", t)  # 'No Riley is mentioned in the league data' (keeper k1): bot voice
     t = news.thin_citations(t)  # a source named at most once (Charlie 11-16)
     t = re.sub(r"(^|(?<=[.!?]\s))([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
     sents = sentences(t)
@@ -1335,9 +1343,15 @@ def qb_text(ctx: dict, q: str) -> str | None:
     for short, full in chat._TEAM_SHORT.items():
         qx = qx.replace(f" {short} ", f" {full} ")
     words = {w.lower() for w in re.findall(r"[A-Za-z]{4,}", q or "")}
-    hits = []
+    hits, seen_names, notes = [], set(), []
     for g in games:
         c = game_cards.load_card(ctx.get("current_week"), g["id"])
+        # any other card line that names the player ('Castellanos was checked after a fourth-quarter collision')
+        for r in [((c or {}).get("move") or {}).get("cause") or ""] + ((c or {}).get("reasons") or []) + ((c or {}).get("against") or []):
+            if r and not r.startswith("QB status:"):
+                for w in words:
+                    if len(w) >= 5 and re.search(rf"\b{re.escape(w)}\b", r, re.I) and re.search(r"\b(QB|WR|RB|TE|quarterback|receiver)\b", r):
+                        notes.append((w, re.sub(r"^(cause of the move: lines up with [^:]+ news: |key injuries \([^)]*\): )", "", r)))
         for r in ((c or {}).get("reasons") or []) + ((c or {}).get("against") or []):
             m = re.match(r"QB status: (.+?) QB (.+?) is (out|doubtful|questionable|probable|expected to start|cleared|back)"
                          r"\s*(?:\((.*)\))?$", r)
@@ -1346,12 +1360,17 @@ def qb_text(ctx: dict, q: str) -> str | None:
             team, name, status, detail = m.groups()
             team_hit = g["id"] in named and f" {chat._match_key(team)} " in qx
             if name.split()[-1].lower() in words or team_hit:
+                seen_names.add(name.split()[-1].lower())
                 d = re.sub(r"\.\.\..*$", "", re.sub(r",\s*[^,]*$", "", detail or "")).strip().rstrip(" .,")
                 ends = list(re.finditer(r"(?<!\bvs)(?<!\bSt)(?<!\bNo)\.\s", d))
                 if "..." in (detail or "") and ends:  # the report was cut mid-sentence: keep whole ones
                     d = d[:ends[-1].start()]
                 d = " ".join(d.split()[:22])
                 hits.append(f"{name} ({team}) is {status}." + (f" Latest report: {d}." if d else ""))
+    for w, n in notes:
+        if w not in seen_names and not hits:
+            n = re.sub(r"\.\.\..*$", "", n).strip().rstrip(" .")
+            return f"Latest I've got: {n}. Nothing newer on his status, and colleges don't put out injury reports."
     if not hits:
         return None
     return "Latest I've got: " + " ".join(hits[:2])
