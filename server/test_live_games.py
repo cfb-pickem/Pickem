@@ -481,6 +481,12 @@ class Exam80Fixes(unittest.TestCase):
         finally:
             L._overlay.clear()
 
+    def test_debot_keeps_an_answer_that_echoes_the_question(self):
+        import router
+        q = "who's playing QB for North Carolina right now?"
+        out = router.debot("T.Burgess is the guy under center for North Carolina right now. They're hanging on.", q, "full")
+        self.assertIn("T.Burgess", out)
+
     def test_ensured_fact_survives_group_trim(self):
         import group_chat as G
         raw = "One. Two. Three. Four." + G.ENSURED + " As of 9:14 3Q: Louisville 13, North Carolina 7."

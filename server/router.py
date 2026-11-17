@@ -414,6 +414,11 @@ DENIAL = re.compile(r"\bi (never|haven'?t|have not|didn'?t|did not)\b[^.!?]{0,20
 DEFLECT = "Not reopening old calls in front of the whole group. Scoreboard's right there."
 
 
+_STARTERS = {"the", "they", "they're", "he", "he's", "she", "it", "it's", "that", "that's", "this", "yeah", "yes", "no",
+             "nope", "nah", "honestly", "well", "so", "and", "but", "i", "i'm", "you", "you're", "we", "who", "what",
+             "playing", "right", "just", "look", "listen", "man", "dude", "buddy", "sure", "oh", "ok", "okay"}
+
+
 def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False, group: bool = False,
           recall: bool = False) -> str:
     """W5 on any reply: preachy and stock-phrase sentences out, no 5+ word echo of the sender (not on
@@ -437,8 +442,11 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
         if kept:
             sents = kept
     drop(lambda s: bool(PREACHY.search(s) or no_repeat.banned_tic(s)))
-    if q and lane != "fact":
-        drop(lambda s: echo_runs(s, q))
+    if q and lane != "fact":  # an echo that adds a number or a new name is the answer ('T.Burgess is ... right now')
+        qw = {w.lower() for w in re.findall(r"[A-Za-z][\w.'\-]*", q)}
+        drop(lambda s: echo_runs(s, q) and not re.search(r"\d", s)
+             and not any(w.lower() not in qw and w.lower() not in _STARTERS
+                         for w in re.findall(r"\b[A-Z][\w.'\-]*[a-z][\w.'\-]*", s)))
     if not picky_asked and len(sents) > 1:
         last = sents[-1]
         drop(lambda s: bool(OWN_RECORD.search(s)) and s is not last)
