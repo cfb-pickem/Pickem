@@ -376,6 +376,15 @@ def test_qb_status_from_cards():
     assert router.classify("any news on the LSU quarterback?").label() != "fact:qb"
 
 
+def test_k123_followup_and_week_scoping():
+    ctx = _wk12_picks()
+    with patch.object(chat, "load_lore", lambda: {}):
+        assert router.fact_answer("results", ctx, "how did ackbar go 4-0 in week 10") is None or \
+            "week 11" not in router.fact_answer("results", ctx, "how did ackbar go 4-0 in week 10")
+    assert router.fact_answer("spread", ctx, "and if they win by 9") is None
+    assert router.classify("3 back w 4 weeks left, doable or nah").label() != "fact:weeks_left"
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

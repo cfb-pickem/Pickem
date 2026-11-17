@@ -253,7 +253,7 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "record", "SELF_REC_CLAIM"
     if PLAYOFF_TODAY.search(t) or (TOP4.search(t) and TOP4_LEAGUE.search(t) and not _NATIONAL.search(t)):
         return "playoff_today", "PLAYOFF_TODAY"
-    if WEEKS_LEFT.search(t):
+    if WEEKS_LEFT.search(t) and not re.search(r"\b(back|doable|chance|catch|need|make it|alive|dead|shot)\b", t, re.I):
         return "weeks_left", "WEEKS_LEFT"
     if WENT_REC.search(t):
         return "results", "WENT_REC"
@@ -1236,6 +1236,8 @@ def spread_text(ctx: dict, q: str) -> str | None:
     sp = abs(ln)
     need = int(sp) + 1
     m = re.search(r"\bif (?:(\w+(?:\s\w+){0,2})\s)?(wins?|loses?) by (\d{1,2})\b", q or "", re.I)
+    if m and not named:
+        return None  # 'and if they win by 9': a follow-up, the full brain has the thread
     if m and named:
         by = int(m.group(3))
         who = f" {chat._match_key(m.group(1) or q)} "
@@ -1397,6 +1399,9 @@ def last_week_text(kind: str, ctx: dict, q: str) -> str | None:
     if kind == "results" and (says_lw or not chat.week_started(ctx)):
         if re.search(r"\b(season|this year|this yr|on the year|all year)\b", q or "", re.I):
             return None
+        wm = re.search(r"\bweek (\d{1,2})\b", q or "", re.I)
+        if wm and int(wm.group(1)) != wk:
+            return None  # 'how did ackbar go 4-0 in week 10': not last week
         team = _subject_team(ctx, q)
         me_ = (ctx.get("you") or {}).get("team_name")
         if team == me_ and re.search(r"\b(picky|you|u|ya|your|ur)\b", q or "", re.I):
