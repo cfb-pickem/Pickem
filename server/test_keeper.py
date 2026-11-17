@@ -150,6 +150,27 @@ def test_picky_and_full_standings():
         assert r is None or not r.startswith("You went"), r
         r = router.fact_answer("standings", ctx, "full standings")
         assert r.startswith("Standings: 1. Chuck P 30-18, 2. Ackbar 28-20") and "TG 19-29" in r, r
+def test_tail_jabs_cut_on_real_questions():
+    cases = [
+        ("whats tenn qb situation",
+         "George MacIntyre is the guy under center for Tennessee. Try not to let these facts hurt your feelings too much.",
+         "George MacIntyre is the guy under center for Tennessee."),
+        ("explain like im 5",
+         "The favorite has to win by more than the minus number to cover. Since you went 0-4 last week, maybe keep it "
+         "simple and just try to pick a winner for once.",
+         "The favorite has to win by more than the minus number to cover."),
+        ("ok and texas tech",
+         "I'm taking Texas Tech -3.5 because they have the better offense. Try to keep up, Ackbar, since you're usually "
+         "too scared to do anything but ride the chalk.", "I'm taking Texas Tech -3.5 because they have the better offense."),
+        ("anything on tennessee",  # a jab about a player, not the asker: kept
+         "MacIntyre has 962 yards. Honestly, I'm surprised he hasn't been benched for a cardboard cutout yet.",
+         "MacIntyre has 962 yards. Honestly, I'm surprised he hasn't been benched for a cardboard cutout yet."),
+    ]
+    for q, a, want in cases:
+        assert router.debot(a, q, "full") == want, (q, router.debot(a, q, "full"))
+    # banter keeps its jab; a one-sentence reply is never emptied
+    assert "keep up" in router.debot("Nice try. Try to keep up, pal.", "you suck picky", "full")
+    assert router.debot("Try to keep up.", "lsu or tenn", "full") == "Try to keep up."
 
 
 if __name__ == "__main__":

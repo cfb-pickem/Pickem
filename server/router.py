@@ -570,7 +570,28 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
     if not picky_asked and len(sents) > 1:
         last = sents[-1]
         drop(lambda s: bool(OWN_RECORD.search(s)) and s is not last)
+    if lane == "full" and q and not provocation(q):
+        sents = cut_tail_jabs(sents)
     return " ".join(sents)
+
+
+# A real question (picks, news, rules, line moves) gets the answer, not a stock jab tacked on the end
+# (spar r1 2026-11-16: 'Try to keep up, Ackbar...', 'Since you went 0-4 last week, maybe...', 'Try not to let
+# these facts hurt your feelings...' closed almost every helpful reply). Trailing sentences only, never the first.
+_YOU = re.compile(r"\b(you|your|you'?re|youre|ur|u|ya)\b", re.I)
+_JAB_MARK = re.compile(
+    r"^(try|just try|maybe|don'?t|good luck|honestly|unless you|since you|after your|pick your poison|you'?re (probably|so|usually|just))\b"
+    r"|\b(keep up|backbone|chalk|terrified|scared|hurt your feelings|your feelings|get your act together|your nerves|"
+    r"for once|your (bad )?(record|misses|taste|luck|season|week)|\d{1,2} misses|\d-\d (week|record|season)|"
+    r"lose more|bottom[- ]tier|in the basement|cry for help|wouldn'?t know|overthink)\b", re.I)
+_LINE_TOKEN = re.compile(r"(?<![\w-])[+-]\d{1,2}(\.5)?\b|\b(covers?|spread|kickoff|lock(s|ed)?)\b", re.I)
+
+
+def cut_tail_jabs(sents: list[str]) -> list[str]:
+    out = list(sents)
+    while len(out) > 1 and _YOU.search(out[-1]) and _JAB_MARK.search(out[-1].strip()) and not _LINE_TOKEN.search(out[-1]):
+        out.pop()
+    return out
 
 
 # -----------------------------------------------------------------------------
