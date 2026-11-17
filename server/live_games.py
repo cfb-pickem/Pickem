@@ -1053,6 +1053,12 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
         if cs:
             lines.append(f"  POOL GAME, league line {side_label(pool['home'], pool['home'], pool['line'])}: "
                          f"{'right now ' if st == 'in' else 'final: '}{cs}.")
+            if pool.get("mine"):
+                side = pool["home"] if _same(pool["mine"], pool["home"]) else pool["away"]
+                m = float(g.get("home_score")) + float(pool["line"]) - float(g.get("away_score"))
+                ok = (m > 0) == (side == pool["home"]) if m else side == pool["away"]
+                lines.append(f"  THE ASKER PICKED {side_label(side, pool['home'], pool['line'])}: they want {side} to cover; "
+                             f"{'it is covering' if ok else 'it is NOT covering'} {'right now' if st == 'in' else 'at the final'}.")
     return "\n".join(lines)
 
 
@@ -1177,7 +1183,9 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "")
     ['live_rider_games'], and lays the poller's fresher score over the pool
     rows chat already read from all_games (so live_block, cover status and the
     results guard all see the same, newest score). Returns the rider."""
-    pool = {str(g["id"]): {"away": g["away"], "home": g["home"], "line": g.get("line")}
+    me = (ctx.get("you") or {}).get("team_name")
+    mine = {str(p["game_id"]): p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(me) or []}
+    pool = {str(g["id"]): {"away": g["away"], "home": g["home"], "line": g.get("line"), "mine": mine.get(str(g["id"]))}
             for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")}
     try:
         text, hit = "", []
@@ -1598,10 +1606,37 @@ def claim_check(games: list[dict]):
             seg[i] = (seg[i] or "") + " " + sent[lo:nxt]
         return seg
 
+    last_team = {"g": None, "side": None}
+
+    def pronoun_side_ok(sent: str, segs: list) -> bool:
+        """'They're trailing by 12' right after a Boise sentence, with Boise up 12: a sentence-opening 'they' is the
+        team the previous sentence named first; its lead/trail claim (up to the next team name) must fit the score."""
+        mentions = []
+        for g in [x[0] for x in gs]:
+            for side in ("away", "home"):
+                for k, _ in _name_keys(g[side]):
+                    for mm in re.finditer(rf"(?<![\w']){re.escape(k)}(?!\w)", sent, 0 if k.isupper() else re.I):
+                        mentions.append((mm.start(), g, side))
+        mentions.sort(key=lambda x: x[0])
+        ok = True
+        g, side = last_team["g"], last_team["side"]
+        if g and g.get("state") == "in" and re.match(r"\s*(they|they're|they are|they've)\b", sent, re.I):
+            clause = sent[:mentions[0][0]] if mentions else sent
+            lead = (g["home_score"] - g["away_score"]) * (1 if side == "home" else -1)
+            if re.search(r"\b(trail\w*|behind|down by|losing)\b", clause, re.I) and lead > 0:
+                ok = False
+            if re.search(r"\b(lead\w*|ahead|up by|winning)\b", clause, re.I) and lead < 0 and not re.search(r"\bcover", clause, re.I):
+                ok = False
+        if mentions:
+            last_team.update(g=mentions[0][1], side=mentions[0][2])
+        return ok
+
     def check(sent: str) -> bool:
         if re.search(r"\b(\d+|a|one|few) seconds? ago\b", sent, re.I):
             return False  # the feed never knows the second ('about 1 second ago')
         segs = segments(sent)
+        if not pronoun_side_ok(sent, segs):
+            return False
         for (g, ok_pairs, names, scorers, known, injured), seg in zip(gs, segs):
             if seg is None:
                 continue

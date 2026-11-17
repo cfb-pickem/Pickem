@@ -489,6 +489,15 @@ class Exam80Fixes(unittest.TestCase):
         out = router.debot("T.Burgess is the guy under center for North Carolina right now. They're hanging on.", q, "full")
         self.assertIn("T.Burgess", out)
 
+    def test_pronoun_trailing_after_the_leader(self):
+        g = state("401860914", R._ts("2026-11-15T00:56:00Z"))  # Boise 32-20 at halftime
+        c = L.claim_check([g])
+        self.assertTrue(c("Boise State got their last points with a 38-yard field goal."))
+        self.assertFalse(c("They're currently trailing by 12, so Oregon State is still covering."))
+        c = L.claim_check([g])
+        self.assertTrue(c("Oregon State is hanging around."))
+        self.assertTrue(c("They're trailing by 12."))
+
     def test_final_guard_readds_a_cut_fact(self):
         tok = L.LIVE_NEED.set({})
         try:
