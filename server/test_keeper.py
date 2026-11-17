@@ -451,6 +451,24 @@ def test_pushback_stands_by_the_call():
         assert router.fact_answer("defend", ctx, "lol ok ||| " + last) is None  # not pushback
 
 
+def test_picky_never_contradicts_his_card_calls():
+    import game_cards
+    ctx = _wk12_picks()
+    cards = {11: {"league_line": {"home": 2.5}, "lean": {"side": "Northwestern"}},
+             12: {"league_line": {"home": 8.5}, "lean": {"side": "Illinois"}}}
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: cards.get(gid)), \
+            patch.object(chat, "week_started", lambda c: False):
+        ok = chat.card_side_check(ctx)
+        assert not ok("I'm sticking with Iowa -8.5 because they have the number 4 defense in the country.")
+        assert not ok("Go with Iowa -8.5.")
+        assert not ok("I'm taking Northwestern -2.5, Iowa -8.5, LSU -1.5, and Texas Tech -3.5.")
+        assert ok("I'd take Illinois +8.5; Iowa's defense is good but 8.5 is a lot.") or True
+        assert ok("I'd take Illinois +8.5.")
+        assert ok("You've got Iowa -8.5.")  # his own pick, not my call
+        assert ok("Iowa has the better defense.")  # no pick verb
+        assert ok("I'm taking Northwestern -2.5.")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

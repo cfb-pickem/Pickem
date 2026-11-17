@@ -6343,6 +6343,46 @@ def value_claim_check(ctx: dict):
     return ok
 
 
+_MY_PICK = re.compile(r"\b(i'?m (taking|going with|sticking with|riding|rolling with|backing|on)|i'?d (take|go with|ride|back|lean)|"
+                      r"my (picks?|calls?|locks?|play|lean) (is|are|was)|i (like|took|picked|lean)|go with|take|sticking with|"
+                      r"lock (it )?in)\b", re.I)
+_YOUR_PICK = re.compile(r"\b(you('?ve)? (got|have|took|picked|are on|'re on)|your (pick|picks))\b", re.I)
+
+
+def card_side_check(ctx: dict):
+    """Before the week locks, a sentence where Picky picks or advises a side ('I'm sticking with Iowa -8.5', 'Go with
+    LSU -1.5') must match that game's card call; the code calls (slate, pick, flip lanes) are what he says
+    elsewhere, so a contradiction reads as flip-flopping (keeper k1 live run, 2026-11-17)."""
+    if ctx.get("error") or week_started(ctx):
+        return None
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker") and g.get("line") is not None]
+    lean = {}
+    for g in games:
+        c = game_cards.load_card(ctx.get("current_week"), g["id"])
+        if c and float(c["league_line"]["home"]) == float(g["line"]) and (c.get("lean") or {}).get("side"):
+            lean[g["id"]] = c["lean"]["side"]
+    if not lean:
+        return None
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    by = {g["id"]: g for g in games}
+
+    def ok(sent: str) -> bool:
+        if not _MY_PICK.search(sent or "") or _YOUR_PICK.search(sent or ""):
+            return True
+        q = f" {_match_key(re.sub(r"['’]s\b", "", sent))} "
+        for short, full in _TEAM_SHORT.items():
+            q = q.replace(f" {short} ", f" {full} ")
+        for n in games_named(sent, gl, cap=4):
+            g = by[n["id"]]
+            if n["id"] not in lean:
+                continue
+            said = [x for x in (g["away"], g["home"]) if f" {_match_key(x)} " in q]
+            if len(said) == 1 and not same_team(said[0], lean[n["id"]]):
+                return False
+        return True
+    return ok
+
+
 _FAV_WORD = re.compile(r"\b(favou?rites?|favou?red|chalk|laying (the )?points|lay(ing)? \d)\b", re.I)
 _DOG_WORD = re.compile(r"\b(underdogs?|dogs?|getting (the )?points|getting \d|plus the points)\b", re.I)
 _CLAUSE = re.compile(r"[,;:()]|\s(?:but|while|and|whereas|though)\s", re.I)
@@ -7228,7 +7268,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
                             _both(_both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
                                         _both(picky_claim_check(ctx), picky_claim_check(ctx, "you"))),
                                   _both(_both(value_claim_check(ctx), advice_jab_check(ctx, qtext)),
-                                        fav_claim_check(ctx)))) if not ctx.get("error") else None),
+                                        _both(fav_claim_check(ctx), card_side_check(ctx))))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or live_games.required_fact(ctx, qtext)
                                      or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")
