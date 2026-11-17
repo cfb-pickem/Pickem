@@ -359,6 +359,22 @@ def test_spread_explainer_and_upset():
     assert r.startswith("Illinois +8.5, the live dog. SP+ has Iowa by just 8"), r
 
 
+def test_qb_status_from_cards():
+    import game_cards
+    ctx = _wk12_picks()
+    cards = {11: {"against": ["QB status: Northwestern QB Aidan Chiles is out (Northwestern QB Aidan Chiles missed his "
+                              "second straight game with an upper-body injury. David Braun said his status is..., "
+                              "dailynorthwestern.com)"]}, 12: {"reasons": []}}
+    for q in ("is chiles playing saturday?", "nw qb status", "hows iowa qb", "castellanos even healthy?"):
+        assert router.classify(q).label() == "fact:qb", q
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: cards.get(gid)):
+        r = router.fact_answer("qb", ctx, "is chiles playing saturday?")
+        assert r == ("Latest I've got: Aidan Chiles (Northwestern) is out. Latest report: Northwestern QB Aidan Chiles "
+                     "missed his second straight game with an upper-body injury."), r
+        assert router.fact_answer("qb", ctx, "nw qb status").startswith("Latest I've got: Aidan Chiles")
+        assert router.fact_answer("qb", ctx, "hows iowa qb") is None  # nothing on file: the full brain
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

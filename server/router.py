@@ -153,6 +153,14 @@ LINE_MOVE = re.compile(
 LINE_MOVE_BARE = re.compile(r"\b(move|moved|moving)\?\s*$", re.I)  # 'nw minny move?': only with a pool game named
 
 
+# 'is chiles playing saturday', 'hows iowa qb', 'is houser playing', 'whats tenn qb situation' (spar r1 'not your personal
+# medical ticker'; Charlie's reg-chiles): the card's QB status line, newest report wins (pick_brief)
+QB_ASK = re.compile(r"\b(qb|quarterback)s?\b[^?.!]{0,25}\b(situation|status|news|hurt|healthy|playing|play|starting|start|out|"
+                    r"injur\w*|update|ok|okay|good|back)\b|\b(hows?|how'?s|what'?s|whats|any news on|anything on)\s+(\w+\s){0,2}(qb|quarterback)\b"
+                    r"|\b(is|will)\s+[a-z]{3,}\s+(playing|play|starting|start|suiting up|out|back|good to go|healthy|even healthy)\b"
+                    r"|^\W*[a-z]{3,} (even )?healthy\W*$", re.I)
+
+
 # spar r1 handoff: 'whats -2.5 mean' / 'explain like im 5' / 'so if nw wins by 2 i lose?' (non-answers, 'just pick a
 # winner'), and 'whats ur upset pick' named the favorite LSU -1.5
 SPREAD_EXPLAIN = re.compile(
@@ -216,6 +224,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if playoff_race.is_need_question(t):
         return "playoff", "playoff_race.is_need_question"
+    if QB_ASK.search(t):
+        return "qb", "QB_ASK"
     if SPREAD_EXPLAIN.search(t):
         return "spread", "SPREAD_EXPLAIN"
     if UPSET_ASK.search(t) and not re.search(r"\b(natty|national|title|cfp|playoff|heisman|bowl)\b", t, re.I):
@@ -1181,6 +1191,38 @@ def lines_now_text(ctx: dict, q: str) -> str | None:
     return ("Our line: " if len(rows) == 1 else "This week's lines: ") + ", ".join(rows) + tail
 
 
+def qb_text(ctx: dict, q: str) -> str | None:
+    """A pool team's QB status from its card ('QB status: Northwestern QB Aidan Chiles is out (detail, source)'),
+    matched by team or by the player's name. Nothing on file: None (the full brain answers from the feeds)."""
+    import game_cards
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    named = {n["id"] for n in chat.games_named(q, gl)}
+    qx = f" {chat._match_key(q)} "
+    for short, full in chat._TEAM_SHORT.items():
+        qx = qx.replace(f" {short} ", f" {full} ")
+    words = {w.lower() for w in re.findall(r"[A-Za-z]{4,}", q or "")}
+    hits = []
+    for g in games:
+        c = game_cards.load_card(ctx.get("current_week"), g["id"])
+        for r in ((c or {}).get("reasons") or []) + ((c or {}).get("against") or []):
+            m = re.match(r"QB status: (.+?) QB (.+?) is (out|doubtful|questionable|probable|expected to start|cleared|back)"
+                         r"\s*(?:\((.*)\))?$", r)
+            if not m:
+                continue
+            team, name, status, detail = m.groups()
+            team_hit = g["id"] in named and f" {chat._match_key(team)} " in qx
+            if name.split()[-1].lower() in words or team_hit:
+                d = re.sub(r"\.\.\..*$", "", re.sub(r",\s*[^,]*$", "", detail or "")).strip().rstrip(" .,")
+                if "..." in (detail or "") and ". " in d:  # the report was cut mid-sentence: keep whole ones
+                    d = d.rsplit(". ", 1)[0]
+                d = " ".join(d.split()[:22])
+                hits.append(f"{name} ({team}) is {status}." + (f" Latest report: {d}." if d else ""))
+    if not hits:
+        return None
+    return "Latest I've got: " + " ".join(hits[:2])
+
+
 def spread_text(ctx: dict, q: str) -> str | None:
     games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker") and g.get("line") not in (None, 0, 0.0)]
     gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
@@ -1403,7 +1445,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
               "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
-              "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text}.get(kind)
+              "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
+              "qb": qb_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
