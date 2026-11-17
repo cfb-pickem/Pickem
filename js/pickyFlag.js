@@ -7,7 +7,7 @@
 // everyone. While off, add ?picky=on to any page URL to preview the chat in
 // this browser (remembered in localStorage); ?picky=off clears it.
 const PICKY_PLAYER_ENABLED = true;
-const PICKY_ENABLED = false;
+const PICKY_ENABLED = true;
 
 export function pickyPlayerOn() {
   return PICKY_PLAYER_ENABLED;
