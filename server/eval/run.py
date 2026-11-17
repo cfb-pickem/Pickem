@@ -665,7 +665,7 @@ async def regrade(runrec: dict) -> dict:
 # directly, bypassing the gate: run those only when the league is quiet.)
 NO_MODEL_TESTS = ["test_privacy.py", "test_standings.py", "test_cfbd.py", "test_rules.py", "test_picky_player.py",
                   "test_leader.py", "test_opinions.py", "test_daddyfreeman.py", "test_gate.py", "test_results.py",
-                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "test_router.py", "test_callbacks.py", "test_live_flag.py", "test_anthropic_down.py", "eval/test_checks.py", "eval/test_truth_bundle.py", "test_scorecard.py", "test_picks_slate.py", "test_keeper.py", "test_speed.py"]
+                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "test_router.py", "test_callbacks.py", "test_live_flag.py", "test_anthropic_down.py", "eval/test_checks.py", "eval/test_truth_bundle.py", "test_scorecard.py", "test_picks_slate.py", "test_keeper.py", "test_speed.py", "test_nemesis.py"]
 
 
 def no_model() -> int:

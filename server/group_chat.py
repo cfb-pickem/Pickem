@@ -93,6 +93,7 @@ import live_flag  # noqa: E402
 import live_games  # noqa: E402
 import maintenance  # noqa: E402
 import matchup_guard  # noqa: E402
+import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
 import picky_brain  # noqa: E402
 import picky_zh  # noqa: E402
 import rare_bits  # noqa: E402
@@ -943,18 +944,21 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
             if route.why == "PRIVACY_PROBE":  # 'list every team's pick': mock it AND say when picks show (exam privacy-list-all)
                 reply = f"{reply.rstrip()} {PRIVACY_NOTE}"
+            reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
             await save_turn(key, q_hist, reply, who, lane=route.label())
             return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
         if playoff_race.is_need_question(q) or chat._RACE_ASK.search(q):
             exact = race_answer(q, s, await race_data())
             if exact:
                 route.lane, route.kind = "fact", "playoff"
+                exact = nemesis.tail(exact, q, s.team, key or chat_id, group=mode == "group", force=True)
                 await save_turn(key, q_hist, exact, who, lane=route.label())
                 return {"reply": exact, "image": None, "mode": mode, "lane": route.label()}
         if route.lane == "fact" and route.kind == "recall":  # his own logged call (W6), code-written
             line = callbacks.callback_for(chat_id, s.team, dm, text=q) if s.team else None
             if line:
                 reply = line[:1].upper() + line[1:]
+                reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group", force=True)
                 await save_turn(key, q_hist, reply, who, lane=route.label())
                 return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
             route.lane, route.kind, route.why = "full", "", "recall: nothing callable in this chat"
@@ -994,6 +998,9 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 reply = router.drop_repeat_jabs(reply, past[-3:], route)  # same jab hook as an earlier turn
                 reply = live_games.final_guard(reply) if route.lane != "fact" else reply
                 reply = matchup_guard.fix(reply)  # a flipped "Home at Away" of a known game, swapped back
+                # Ackbar (sender or named) always gets a real-fact jab; code lanes never carry one (Charlie 11/17)
+                reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group",
+                                     force=route.lane == "fact")
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
             log.info("lane: %s", route.label())
             await save_turn(key, q_hist, reply, who, lane=route.label())
@@ -1024,6 +1031,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         _, reply, image = best
         if not image:
             reply = matchup_guard.fix(no_repeat_screen(reply, q, s.team, key or chat_id))
+            reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
         rare_bits.note_sent(reply)
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}

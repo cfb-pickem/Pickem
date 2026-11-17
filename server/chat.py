@@ -184,15 +184,21 @@ def ackbar_note(ctx: dict, question: str) -> str:
     me = (ctx.get("you") or {}).get("team_name")
     if me != "Ackbar" and not _ACKBAR_ASK.search(question or ""):
         return ""
-    fav = next((m.group(1) for ln in (load_lore() or {}).get("members", {}).get("Ackbar") or []
+    lore_lines = (load_lore() or {}).get("members", {}).get("Ackbar") or []
+    fav = next((m.group(1) for ln in lore_lines
                 if "2026 so far" in ln for m in [re.search(r"takes the favorite (\d+)%", ln)] if m), None)
     who = "the user, Ackbar" if me == "Ackbar" else "Ackbar"
     side = _CASINO_ASK.search(question or "") or _TIE_ASK.search(question or "")
     lines = "" if side else roast_pick_lines(ctx, "Ackbar", chalk=True)
-    return (f"RUNNING BIT: {who} is your league nemesis. Be openly antagonistic: roast him for always taking "
-            "the favorite (chalk merchant, no guts, never takes a real swing). Friendly league roast: no slurs, "
-            "family, bodies or threats. Only Ackbar gets this."
+    # one real shot to land (11/17: 'still looking for a win that isn't a total fluke' was too soft and
+    # mocked a good 28-20): his favorites that lost outright, his bad splits
+    ammo = [ln.split(": ", 1)[1] for ln in lore_lines if not side and ("worst blown picks" in ln or "oddity" in ln)]
+    return (f"RUNNING BIT: {who} is your league nemesis. Be openly antagonistic: land one specific shot about him "
+            "always taking the favorite (all chalk, no guts, never takes a real swing). A good number of his gets "
+            "spun, never mocked ('28-20 riding favorites like training wheels'). Answer first, the shot after. "
+            "Friendly league roast: no slurs, family, bodies or threats. Only Ackbar gets this."
             + (f"\nAckbar takes the favorite {fav}% of the time this season." if fav else "")
+            + ("\nAckbar's worst: " + " | ".join(ammo[:3]) if ammo else "")
             + ("\n" + lines if lines else ""))
 
 
