@@ -1,5 +1,7 @@
 # Picky style LoRA (MLX, 16GB M4)
 
+> **RETIRED 2026-11-16.** The cycle trained and shipped onto `qwen3.5:9b`, which was deleted; gemma4:12b-it-qat is the only model on the box. LaunchAgent `com.pickem.picky-lora` was booted out and its plist moved to `~/Library/LaunchAgents/disabled/` (repo copy: `com.pickem.picky-lora.plist.retired` here). `PICKY_LORA_PAUSE` stays in place. The code is kept for reference only: don't reload it, and don't pull or create a model for it; reviving it means retargeting the base model, the Ollama `FROM` in `to_ollama.py` and the exam setup.
+
 A style-only LoRA for text Picky on `mlx-community/Qwen3.5-9B-MLX-4bit`. It trains his voice: answer first, league-buddy banter, jabs, the Ackbar nemesis and Dear Leader bits as behavior. It never trains league facts. Every training reply takes its numbers and names from a randomized fact block in its own prompt, so the model learns to copy facts from context. Fine-tuning on new facts raises hallucination (Gekhman et al., 2024).
 
 Code lives here. Data, weights, the venv and logs live in `/Users/Agent/picky-lora/` (private, never committed). `scripts/` and `lora_config.yaml` there are symlinks to this directory.

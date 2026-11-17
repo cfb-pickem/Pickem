@@ -1,5 +1,10 @@
 """Picky's nightly style-LoRA cycle (Charlie, 2026-11-15: "you can train him every
-night and all day Monday"). Launched by LaunchAgent com.pickem.picky-lora.
+night and all day Monday"). Was launched by LaunchAgent com.pickem.picky-lora.
+
+RETIRED 2026-11-16: it targets qwen3.5 (deleted; gemma4:12b-it-qat is the only model).
+The LaunchAgent is booted out and its plist sits in ~/Library/LaunchAgents/disabled/
+(repo copy: com.pickem.picky-lora.plist.retired). Kept for reference; don't reload it
+and don't pull or create a model for it. See README.md.
 
 Window: 22:00-08:30 CT nightly; Sunday 22:00 runs through Tuesday 08:30 (all of Monday).
 One cycle per launch (an unfinished one resumes from its checkpoint next window):
