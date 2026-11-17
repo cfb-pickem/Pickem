@@ -819,7 +819,7 @@ def pick_text(ctx: dict, q: str) -> str | None:
         rs = [r for r in game_cards._reasons(c, locked) if r]
         why = rs[0] if rs else ""
         out.append(f"I'd take {c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
-                   + (f": {why[0].lower() + why[1:]}" if why else "") + ".")
+                   + (f": {(why[0].lower() + why[1:] if why[1:2].islower() else why)}" if why else "") + ".")
     return " ".join(out)
 
 
@@ -841,7 +841,7 @@ def slate_text(ctx: dict, q: str) -> str | None:
             rs = [r for r in game_cards._reasons(c, game_cards.is_locked(c)) if r]
             why = " ".join(rs[0].split(";")[0].split()[:25]).rstrip(".,") if rs else ""
             calls.append(f"{c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
-                         + (f": {why[0].lower() + why[1:]}" if why else ""))
+                         + (f": {(why[0].lower() + why[1:] if why[1:2].islower() else why)}" if why else ""))
         else:
             calls.append(f"{g['away']} at {g['home']}: no read yet")
     if not cards:
