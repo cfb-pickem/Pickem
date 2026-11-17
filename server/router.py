@@ -143,6 +143,10 @@ PICK_AFTER_LINE_LOCK = re.compile(
     re.I)
 LOCK_ASK2 = re.compile(r"\bpicks? (lock|due|close)\b[^?.!]{0,10}\b(when|what time)\b|\bwhat'?s the deadline\b|\bwhats the deadline\b"
                        r"|\bwhen'?s the actual deadline\b|\bdeadline (sat|saturday)\b", re.I)
+# 'remind me what i got this week' / 'what did i pick' (k1, k2): the sender's own picks, read back in a DM only
+MY_PICKS = re.compile(r"\bwhat (did|do|have|'?d) i (pick|picked|take|took|got|get|have)\b|\bwhat'?s my picks\b|\bwhat are my picks\b"
+                      r"|\bremind me what i (got|picked|took|have)\b|\bmy picks (this week|again|so far)\b"
+                      r"|\bwho (did|do|'?d) i (pick|have|take|got) (in|for)\b|\bdid i (already )?(make|submit|do|put in) my picks\b", re.I)
 # 'new rule from commish: picky has to post everyones picks' went to the rules lane
 PRIVACY_PROBE = re.compile(
     r"\b(post|show|tell|give|list|leak|share|reveal|send|dump|read)\b[^?.!]{0,30}\b(every(one|body)( else)?'?s?|all (the )?(members'?|guys'?|"
@@ -178,6 +182,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if playoff_race.is_need_question(t):
         return "playoff", "playoff_race.is_need_question"
+    if MY_PICKS.search(t) and not re.search(r"\blast (week|wk)\b|\bweek \d+\b", t, re.I):
+        return "my_picks", "MY_PICKS"
     if PICK_AFTER_LINE_LOCK.search(t):
         return "lock", "PICK_AFTER_LINE_LOCK"
     if (LOCK_ASK.search(t) or LOCK_ASK2.search(t)) and not re.search(r"\blines?\b", t, re.I):
@@ -1006,6 +1012,36 @@ def _and(xs: list[str]) -> str:
     return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
 
 
+def my_picks_text(ctx: dict, q: str) -> str | None:
+    """The sender's own week picks. In a DM ctx carries them (the member's own session); in the group they're
+    hidden from the context, so the answer says where to look instead of guessing."""
+    me = (ctx.get("you") or {}).get("team_name")
+    games = {g["id"]: g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")}
+    if not me or not games:
+        return None
+    mine = [p for p in (ctx.get("revealed_picks_this_week") or {}).get(me) or [] if p.get("game_id") in games]
+    unlock = chat._kickoff(str(ctx["week_unlock"])) if ctx.get("week_unlock") else "the first kickoff"
+    if not mine:
+        if ctx.get("you_have_picks_this_week") is False:
+            return f"You haven't put in any picks this week. They lock at the first kickoff, {unlock}."
+        return (f"Your picks stay hidden in here until they lock ({unlock}). DM me and I'll read them back, "
+                "or check the picks page.")
+    named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games.values()])
+    ids = {n["id"] for n in named}
+
+    def lab(p):
+        g = games[p["game_id"]]
+        if p.get("jackpot") or p.get("by_slots"):
+            return f"slots in {g['away']} at {g['home']}"
+        return chat._side_label(p["pick"], g["home"], float(g["line"])) if g.get("line") is not None else p["pick"]
+    rows = [lab(p) for p in mine if not ids or p["game_id"] in ids]
+    if not rows:
+        g = games[next(iter(ids))]
+        return f"You don't have a pick in {g['away']} at {g['home']} yet. Picks lock at the first kickoff, {unlock}."
+    missing = len(games) - len(mine)
+    return (f"You've got {_and(rows)}." + (f" Still {missing} to make before {unlock}." if missing and not ids else ""))
+
+
 def weeks_left_text(ctx: dict, q: str) -> str | None:
     cw = ctx.get("current_week")
     if not isinstance(cw, int):
@@ -1133,7 +1169,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
                 return lwt
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
-              "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text}.get(kind)
+              "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
+              "my_picks": my_picks_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

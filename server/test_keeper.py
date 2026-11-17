@@ -200,6 +200,30 @@ def test_k2_lock_privacy_everyone_and_top4_gap():
         assert r.startswith("If it ended today: ") and "You're 8 points back of 4th (19-29)." in r, r
 
 
+def test_my_picks_dm_only():
+    ctx = _wk12_picks()
+    C = router.classify
+    for q in ("remind me what i got this week", "what did i pick", "hey its chuck on tg's phone, what did i pick this week",
+              "who did i take in iowa illinois", "whats my picks"):
+        assert C(q).label() == "fact:my_picks", q
+    assert C("what did i pick last week").label() != "fact:my_picks"
+    ctx["week_unlock"] = "2026-11-21T11:00:00"
+    with patch.object(chat, "load_lore", lambda: {}):
+        # group: own unlocked picks aren't in ctx
+        r = router.fact_answer("my_picks", ctx, "what did i pick")
+        assert r.startswith("Your picks stay hidden in here until they lock") and "DM me" in r, r
+        ctx["revealed_picks_this_week"] = {"TG": [{"game_id": 11, "pick": "Minnesota"}, {"game_id": 12, "pick": "Iowa"}],
+                                           "Ackbar": []}
+        r = router.fact_answer("my_picks", ctx, "remind me what i got this week")
+        assert r == "You've got Minnesota +2.5 and Iowa -8.5.", r
+        r = router.fact_answer("my_picks", ctx, "who did i take in iowa illinois")
+        assert r == "You've got Iowa -8.5.", r
+        ctx["revealed_picks_this_week"] = {}
+        ctx["you_have_picks_this_week"] = False
+        r = router.fact_answer("my_picks", ctx, "did i make my picks")
+        assert r.startswith("You haven't put in any picks this week."), r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
