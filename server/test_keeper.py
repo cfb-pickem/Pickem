@@ -660,6 +660,13 @@ def test_k1c_fixes():
     assert r.startswith('Pick "Let the slots decide"') and "Nobody's hit it this season" in r, r
 
 
+def test_hidden_repeat_is_short():
+    ctx = _wk12_picks()
+    with patch.object(chat, "week_started", lambda c: False):
+        r = router.fact_answer("hidden", ctx, "is chuck on iowa ||| Hidden, even from me, till picks lock.")
+    assert r == "Same answer: nobody's picks show till the first kickoff, me included.", r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

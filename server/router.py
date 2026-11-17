@@ -194,7 +194,7 @@ SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{
 # 'whats ur confidence 1-10' (k1 live: briefed as banter -> 'I do picks, not paperwork'): the card's confidence for the
 # game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
 CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
-CTX_KINDS = {"conf", "defend", "others", "short", "value"}
+CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden"}
 # 'so illinois got value now?' -> 'Nah.' (k1b); 'so nw is the value side?' -> a chalk jab (k1a)
 VALUE_ASK = re.compile(r"\b(value|free points?|better number|any edge|edge on)\b(?![^?.!]*\b(bet|meal|menu)\b)", re.I)
 
@@ -457,6 +457,8 @@ PAYOUT_FOLLOW = re.compile(r"^\W*(and |so |what about |ok )?(1st|2nd|3rd|first|s
 def hidden_text(ctx: dict, q: str) -> str | None:
     if chat.week_started(ctx):
         return None  # picks are out: the full brain has them
+    if "Hidden, even from me" in (q or "").partition(" ||| ")[2]:  # asked again in the same thread: short
+        return "Same answer: nobody's picks show till the first kickoff, me included."
     when = chat._kickoff(str(ctx["week_unlock"])) if ctx.get("week_unlock") else "the week's first kickoff"
     return (f"Hidden, even from me, till picks lock at the first kickoff ({when}). Not even a count. After that the site "
             "shows everybody's.")
