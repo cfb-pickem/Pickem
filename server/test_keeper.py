@@ -673,6 +673,14 @@ def test_long_live_signoff_only_when_chuck_comes_up():
     assert router.debot(a, "is chuck the goat", "full") == a
 
 
+def test_more_reason_phrasings():
+    S = router.say_reason
+    assert S("lookahead: Iowa (favored) plays SP+ #18 Nebraska next") == "Iowa has SP+ #18 Nebraska on deck, classic lookahead spot"
+    assert S("letdown: Texas Tech (favored) won outright as a 4.5-point underdog vs Oklahoma State last time out (52-27)") == \
+        "Texas Tech is coming off an outright upset of Oklahoma State, letdown spot"
+    assert S("revenge: Minnesota lost this game last season by 3") == "Minnesota lost this one by 3 last year, revenge spot"
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

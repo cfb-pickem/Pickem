@@ -1423,6 +1423,15 @@ def say_reason(r: str, c: dict | None = None, locked: bool = False) -> str:
     m = re.match(r"line move: opened (.+?), now (.+?), ", r)
     if m:
         return f"the line's gone from {m.group(1)} to {m.group(2)}"
+    m = re.match(r"lookahead: (.+?) \(favou?red\) plays (.+?) next", r)
+    if m:
+        return f"{m.group(1)} has {m.group(2)} on deck, classic lookahead spot"
+    m = re.match(r"letdown: (.+?) \(favou?red\) won outright as a ([\d.]+)-point underdog vs (.+?) last time out", r)
+    if m:
+        return f"{m.group(1)} is coming off an outright upset of {m.group(3)}, letdown spot"
+    m = re.match(r"revenge: (.+?) lost this game last season by (\d+)", r)
+    if m:
+        return f"{m.group(1)} lost this one by {m.group(2)} last year, revenge spot"
     m = re.match(r"[\w +()&'#.-]{2,40}?: (.+)", r)
     if m:
         return m.group(1)
