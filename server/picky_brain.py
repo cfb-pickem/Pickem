@@ -54,6 +54,9 @@ DRAFT_BUDGET = 105.0   # seconds: no new draft starts after this
 # (elapsed + the last draft's own time + margin) fits SOFT_BUDGET, or when the draft is unusable (empty,
 # a bare dodge, < UNUSABLE_WORDS words) and the finish still fits DRAFT_BUDGET. Draft 1 wins 3 rerolls in 5.
 SOFT_BUDGET = float(os.environ.get("PICKY_SOFT_BUDGET", "50"))
+# the unusable-draft reroll's cap. Replay 2026-11-17: those rerolls were the >60 s replies left (62 s, 81 s);
+# PICKY_UNUSABLE_BUDGET=60 trades them for the dodge going out (undodge's card call when a pool game is named)
+UNUSABLE_BUDGET = float(os.environ.get("PICKY_UNUSABLE_BUDGET", str(DRAFT_BUDGET)))
 REROLL_MARGIN = 3.0
 UNUSABLE_WORDS = 4
 # fact wrap / banter line: wait this long for the prefix prime; a cold one (~60 s prefill) means the code
@@ -1155,14 +1158,15 @@ def unusable(text: str) -> bool:
 def reroll_ok(elapsed: float, draft_secs: float, texts: list[str]) -> tuple[bool, str]:
     """(run the extra draft?, why). It costs about what the last draft did (the understand pass isn't
     redone): run it when the projected finish fits SOFT_BUDGET, or when every draft so far is unusable
-    and the finish fits DRAFT_BUDGET."""
+    and the finish fits DRAFT_BUDGET (and UNUSABLE_BUDGET)."""
     proj = elapsed + draft_secs + REROLL_MARGIN
     if proj <= SOFT_BUDGET:
         return True, f"projected {proj:.0f}s <= soft {SOFT_BUDGET:.0f}s"
     bad = all(unusable(t) for t in texts)
-    if bad and proj <= DRAFT_BUDGET:
-        return True, f"draft unusable, projected {proj:.0f}s <= {DRAFT_BUDGET:.0f}s"
-    return False, f"projected {proj:.0f}s > {DRAFT_BUDGET if bad else SOFT_BUDGET:.0f}s" + (" (unusable)" if bad else "")
+    cap = min(DRAFT_BUDGET, UNUSABLE_BUDGET)
+    if bad and proj <= cap:
+        return True, f"draft unusable, projected {proj:.0f}s <= {cap:.0f}s"
+    return False, f"projected {proj:.0f}s > {cap if bad else SOFT_BUDGET:.0f}s" + (" (unusable)" if bad else "")
 
 
 REACTIONS = ["Fair.", "Can't argue with that.", "Yep.", "Ha. Fair enough.", "Tough to argue.", "That's about right."]
@@ -1215,8 +1219,8 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                 break  # the extra draft only when every draft so far was cut by the filters
             if i and time.time() - t0 > DRAFT_BUDGET:
                 break
-            if i == N_DRAFTS:
-                go, why = reroll_ok(time.time() - t0, dsecs, [d.text for d in drafts])
+            if i == N_DRAFTS:  # a dodge undodge() turns into the card call isn't unusable: the code answer exists
+                go, why = reroll_ok(time.time() - t0, dsecs, [undodge(st, d.text, last_reply, prior_q) for d in drafts])
                 log.info("reroll %s: %s", "runs" if go else "skipped", why)
                 if not go:
                     break

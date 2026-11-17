@@ -75,6 +75,9 @@ def test_reroll_ok():
         check("an unusable draft past DRAFT_BUDGET doesn't", not go, why)
         go, why = pb.reroll_ok(40.0, 20.0, ["Next question.", "A real answer with enough words here."])
         check("one usable draft among several: soft budget applies", not go, why)
+        with patch.object(pb, "UNUSABLE_BUDGET", 60.0):
+            go, why = pb.reroll_ok(40.0, 20.0, ["Next question."])
+            check("PICKY_UNUSABLE_BUDGET caps the unusable reroll", not go, why)
 
 
 async def _run_brain(drafts: list[tuple[float, str, int]], soft: float = 50.0, brief_secs: float = 0.0):
@@ -108,6 +111,11 @@ async def test_run_budget():
     check("run: a bare dodge at 40 s rerolls (unusable, fits DRAFT_BUDGET)", n == 2, str(n))
     _, n = await _run_brain([(40.0, good1, 0), (20.0, good2, 0)])
     check("run: an uncut draft never rerolls", n == 1, str(n))
+    card = "Still Texas Tech -3.5. SP+ has Texas Tech by about 6."
+    with patch.object(pb, "undodge", lambda st, text, *a, **k: card if pb._DODGE.match(text or "") else text):
+        reply, n = await _run_brain([(40.0, "Next question.", 2), (20.0, good2, 0)])
+    check("run: a dodge the card call replaces doesn't reroll past the soft budget", n == 1, str(n))
+    check("run: ... and the card call goes out", reply == card, reply)
     # draft 1 took 40 s but 25 of it was the understand pass, which a reroll doesn't redo: 40 + 15 + 3 = 58
     _, n = await _run_brain([(40.0, good1, 1), (15.0, good2, 0)], soft=60.0, brief_secs=25.0)
     check("run: the understand pass isn't counted in the reroll's cost", n == 2, str(n))
