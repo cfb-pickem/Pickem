@@ -115,7 +115,7 @@ def main() -> int:
     pack = F.build(ids)
     pack["pool_games"] = [g for g, v in G.market_now(set(ids)).items() if v.get("pool_game")]
     G.PRIVATE.mkdir(parents=True, exist_ok=True)
-    (G.PRIVATE / f"facts-w{week}.json").write_text(json.dumps(pack, indent=1, default=str))
+    (G.PRIVATE / f"facts-w{week}-auto.json").write_text(json.dumps(pack, indent=1, default=str))  # never clobbers a curated pack
     print(f"week {week}: fact pack for {len(ids)} games ({len(pack['pool_games'])} pool)")
     if a.facts_only:
         return 0

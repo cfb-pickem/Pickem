@@ -64,8 +64,14 @@ def load_items(include_private: bool = True) -> tuple[dict, list[dict]]:
 
 
 def load_facts(week: int) -> dict:
-    f = PRIVATE / f"facts-w{week}.json"
-    return json.loads(f.read_text()) if f.exists() else {"games": {}}
+    """The week's fact pack: the curated one (facts-w<N>.json) plus the weekly refresh's (-auto), curated wins."""
+    out = {"games": {}}
+    for f in (PRIVATE / f"facts-w{week}-auto.json", PRIVATE / f"facts-w{week}.json"):
+        if f.exists():
+            d = json.loads(f.read_text())
+            out["games"].update(d.get("games") or {})
+            out.update({k: v for k, v in d.items() if k != "games"})
+    return out
 
 
 def market_now(game_ids: set[int]) -> dict:
