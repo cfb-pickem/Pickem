@@ -69,7 +69,11 @@ check(out.startswith("GAME CARD") and "Ohio State at Nebraska" in out, "a pick q
 check(asyncio.run(S.slate_note("best cereal?", {})) == "", "no card for off-topic texts")
 check(asyncio.run(S.slate_note("why?", {}, prior=["Ohio State or Nebraska, who you got?"])).startswith("GAME CARD"),
       "a 'why?' follow-up keeps the card of the game just discussed")
-check(asyncio.run(S.slate_note("Ohio State or Nebraska?", {"games_this_week": [{"id": 1}]})) == "",
-      "pool games are skipped (the pool's own riders cover them)")
+S.lean_lines = lambda *a, **k: ["  COMPUTED ATS LEAN (stub)"]
+pc = asyncio.run(S.slate_note("Ohio State or Nebraska, who you got?", {"games_this_week": [{"id": 1, "line": 2.5}]}))
+check("LEAGUE LINE" in pc and "Ohio State -2.5" in pc and "better number" in pc and "3-point Ohio State win covers the league line" in pc,
+      "a pool game's card compares the league line to the market (key number 3 between them)")
+check("COMPUTED ATS LEAN" not in pc, "a pool game's card leaves the lean to the pick brief (no second lean)")
+check("COMPUTED ATS LEAN" in asyncio.run(S.slate_note("Ohio State or Nebraska, who you got?", {})), "non-pool card carries the lean")
 print(f"\n{len(FAILS)} failed" if FAILS else "\nall ok")
 sys.exit(1 if FAILS else 0)

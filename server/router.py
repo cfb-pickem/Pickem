@@ -1563,7 +1563,7 @@ def pick_text(ctx: dict, q: str) -> str | None:
             return None  # no card (or the line moved since): the full brain's live breakdown takes it
         locked = game_cards.is_locked(c)
         rs = [r for r in game_cards._reasons(c, locked) if r]
-        why = say_reason(rs[0], c, locked) if rs else ""
+        why = "; ".join(say_reason(r, c, locked) for r in rs[:2])  # two reasons (genius exam: one was too thin)
         out.append(f"I'd take {c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
                    + (f": {why}" if why else "") + ".")
     return " ".join(out)

@@ -45,7 +45,8 @@ _PICK_WORDS = re.compile(
     r"points?|totals?|over|under|injur\w*|qbs?|quarterbacks?|backups?|matchups?|defen[cs]e|offen[cs]e|run\w*|pass\w*|rush\w*|weather|"
     r"wind\w*|cold|travel\w*|altitude|rest\w*|bye|motivat\w*|bowl|revenge|rivalry|history|last time|h2h|trends?|records?|"
     r"lookahead|letdown|key numbers?|hook|why|best case|change your mind|playing|starting|out|hurt|good|"
-    r"chances?|beat|win\w*|lose|losing|score\w*|stop|handle|edge|coach\w*|fired|hot seat)\b", re.I)
+    r"chances?|beat|win\w*|lose|losing|score\w*|stop|handle|edge|coach\w*|fired|hot seat|mov(e|ed|ing)|happened|"
+    r"open(ed)?)\b|(?<![\w.])[+-]\d{1,2}(\.5)?\b", re.I)
 
 
 _ADV: dict = {}
@@ -228,6 +229,32 @@ def market_line(g: dict, espn_market: dict | None) -> list[str]:
     return out
 
 
+def league_vs_market(g: dict, league_home: float, espn_market: dict | None) -> list[str]:
+    """A pool game: the league's line (scored against it, locks Tue 11 AM CT) vs the market,
+    who gets the better number and any key number in between, decided here."""
+    away, home = g["awayTeam"], g["homeTeam"]
+    m = (espn_market or {}).get("home_now")
+    if m is None:
+        m = (_line(g) or {}).get("spread")
+    L = float(league_home)
+    lfav, lsp = (home, L) if L < 0 else (away, -L)
+    out = [f"  LEAGUE LINE (pool game; graded against this, locks Tue 11 AM CT): {_fmt_spread(lfav, lsp)}"]
+    if m is None or float(m) == L:
+        out[0] += " = the market right now (it can still move until the lock)."
+        return out
+    m = float(m)
+    mfav, msp = (home, m) if m < 0 else (away, -m)
+    value = home if m < L else away
+    out[0] += f" vs the market {_fmt_spread(mfav, msp)}: {value} backers get the better number by {abs(L - m):g}."
+    lo, hi = sorted((abs(L), abs(m)))
+    keys = [k for k in KEY_NUMBERS if lo < k <= hi] if lfav == mfav else []
+    if keys:
+        k = keys[0]
+        out.append(f"  Key number: {k} sits between the league line and the market, so a {k}-point {lfav} win "
+                   f"{'covers the league line but only pushes the market' if value == lfav else 'is a loss vs the league line'}.")
+    return out
+
+
 def style_line(away: str, home: str, idx: dict) -> str | None:
     """Unit-vs-unit mismatches, as decided words (raw floats confuse a 12B)."""
     a, h = cfbd.resolve_team(away, idx), cfbd.resolve_team(home, idx)
@@ -344,7 +371,8 @@ def lean_lines(g: dict, idx: dict, espn_notes: dict | None, ask: str = "") -> li
     return out
 
 
-def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str = "") -> str:
+def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str = "",
+         league_home: float | None = None) -> str:
     away, home = g["awayTeam"], g["homeTeam"]
     meta = games_ds.get(g["id"]) or {}
     s = _sd(g)
@@ -354,6 +382,8 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str =
             f"bring up whether it's a pool game): "
             f"{away} at {home}{' (neutral site)' if meta.get('neutralSite') else ''}, {when}{', ' + where if where else ''}.")
     L = [head] + market_line(g, (espn_notes or {}).get("market"))
+    if league_home is not None:
+        L += league_vs_market(g, league_home, (espn_notes or {}).get("market"))
     for team in (away, home):
         t = cfbd.resolve_team(team, idx)
         L.append("  " + ats_line(team, team_rows(team, idx, g["startDate"]), t))
@@ -363,7 +393,8 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str =
     for extra in (style_line(away, home, idx), run_game_line(away, home), rest_line(g, idx, games_ds), last_meeting(g)):
         if extra:
             L.append(extra)
-    L += lean_lines(g, idx, espn_notes, ask)
+    if league_home is None:  # pool games: the PICK BRIEF / game card owns the lean (vs the league line)
+        L += lean_lines(g, idx, espn_notes, ask)
     wp = (espn_notes or {}).get("espn_win_prob")
     if wp:
         L.append(f"  ESPN FPI: {home} {wp['home']:.0f}% to win")
@@ -371,6 +402,13 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str =
         L.append(f"  Weather (ESPN): {espn_notes['weather']}")
     L += news_lines(away, home, g["id"])
     return "\n".join(L)
+
+
+def _pool_line(pg: dict | None) -> float | None:
+    try:
+        return float(pg["line"]) if pg and pg.get("line") is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def notable(games: list[dict], idx: dict, n: int = BOARD_ROWS, movers: bool = False) -> list[dict]:
@@ -601,10 +639,10 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     games = upcoming_games(idx, now)
     if not games:
         return ""
-    pool_ids = {int(g["id"]) for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
+    pool = {int(g["id"]): g for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
     named = cfbd.other_teams_named(q, [], idx) or player_teams(q, idx)
     coach = coach_note(q, idx, named)
-    picks = match_games(named, games, pool_ids)
+    picks = match_games(named, games, set())  # pool games too: the card adds the move, splits, h2h, news
     whole = bool(_SLATE_ASK.search(q)) and not picks
     if (not picks and not whole) or (picks and not _PICK_WORDS.search(q)):
         return coach
@@ -617,4 +655,4 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     if whole:
         return board(chosen, notes) + (f"\n{coach}" if coach else "")
     gds = _games_dataset()
-    return "\n".join([card(g, idx, notes.get(g["id"]), gds, ask) for g in picks[:MAX_CARDS]] + ([coach] if coach else []))
+    return "\n".join([card(g, idx, notes.get(g["id"]), gds, ask, _pool_line(pool.get(g["id"]))) for g in picks[:MAX_CARDS]] + ([coach] if coach else []))
