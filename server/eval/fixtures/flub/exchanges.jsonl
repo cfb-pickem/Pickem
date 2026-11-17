@@ -1,0 +1,8 @@
+{"ts": 1794794400, "mode": "dm", "team": "Alpha", "q": "yesterday q", "a": "yesterday a"}
+{"ts": 1794816000, "mode": "group", "team": "Delta", "q": "best cereal?", "a": "Cheerios."}
+{"ts": 1794852000, "mode": "dm", "team": "Alpha", "q": "who should I pick this week", "a": "Iowa -6.5, the only value side.", "lane": "full"}
+{"ts": 1794852180, "mode": "dm", "team": "Alpha", "q": "who should I pick this week", "a": "My 4 calls: Northwestern -2.5, Illinois +8.5, Tennessee +1.5, Texas Tech -3.5.", "lane": "fact:pick"}
+{"ts": 1794852300, "mode": "dm", "team": "Alpha", "q": "thats wrong, iowa isnt even favored", "a": "Iowa is favored by 8 on SP+, the pool has them -8.5.", "lane": "full"}
+{"ts": 1794855600, "mode": "group", "team": "Beta", "q": "whats the latest news", "a": "I don't have any info on that. Keep crying.", "lane": "full", "chat": "abc123def0", "secs": 30.5}
+{"ts": 1794859200, "mode": "dm", "team": null, "q": "test handle q", "a": "test a"}
+{"ts": 1794862800, "mode": "group", "team": "Gamma", "q": "side q", "a": "side a", "chat": "eeee000011", "side": 1, "secs": 9.0}

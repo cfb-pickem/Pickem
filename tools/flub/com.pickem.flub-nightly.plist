@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Picky's nightly flub loop (server/flub_loop.py nightly), 23:00 CT: harvest the day's real
+  exchanges + the "bad picky" queue, one offline Opus classify pass (picky_claude), verified
+  regression items for the text exam, an optional gated Opus fix round, and the private report
+  /Users/Agent/cfb-pickem-private/flubs/report-<date>.md. Never texts anyone.
+  Kill switches: cfb-pickem-private/FLUB_AUTOFIX_OFF (no fix round), PICKY_NO_ANTHROPIC=1 (code-only).
+  Install: see tools/flub/README.md.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.flub-nightly</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/flub_loop.py</string>
+        <string>nightly</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>23</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/flub-nightly.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/flub-nightly.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/Agent</string>
+        <key>TERM</key>
+        <string>dumb</string>
+        <key>DISABLE_AUTOUPDATER</key>
+        <string>1</string>
+    </dict>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

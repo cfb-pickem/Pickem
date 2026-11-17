@@ -451,6 +451,13 @@ def build(t: Truth) -> list[dict]:
             return [res for n in names for res in REG_CHECKS[n](a[-1] or "", t_, p)]
         add(r["id"], "regress", r["turns"], c_reg, persona=r.get("persona", "me"), judge=r.get("judge"))
 
+    # ---- the nightly flub loop's items (flub_loop.py): public ones in eval/flub_items.json, member-specific
+    # ones in cfb-pickem-private/flubs/items-private.json (only when present); same question twice = the first
+    import flub_loop
+    for r in flub_loop.load_items():
+        add(r["id"], "flub", r["turns"], flub_loop.item_check(r), persona=r.get("persona") or "mid",
+            judge=r.get("judge") or None, skip=r.get("skip"))
+
     return items
 
 
