@@ -230,6 +230,19 @@ def test_slate_note_one_line_per_game_and_strongest_play():
     assert "THE PLAY: I'd take Iowa -6.5" in single and "Line gap (NOT value yet)" in single
 
 
+def test_lock_ask_gets_only_the_strongest_play():
+    # spar r1 2026-11-16: 'ok whats ur lock then' got all four of Picky's own exhibition picks called 'my locks'
+    for q in ("ok whats ur lock then", "whos ur lock", "best bet this wk", "lock of the week?", "whats the play this week"):
+        assert chat.slate_ask(q) and chat.best_ask(q), q
+    for q in ("whats the lock time", "when do picks lock", "can i change my pick", "gimme all 4 picks rn"):
+        assert not chat.best_ask(q), q
+    assert chat.slate_ask("gimme all 4 picks rn")
+    write_slate()
+    with Clock("2026-11-16T17:00"):
+        note = gc.card_note(ctx(), "ok whats ur lock then")
+    assert "STRONGEST PLAY: Iowa -6.5" in note and "ONE play" in note and "Don't list the other games" in note, note
+
+
 def test_strongest_prefers_confidence_then_margin():
     a = {"game": {"away": "A", "home": "B"}, "lean": {"side": "A", "label": "A -3", "score": {"A": 9, "B": 1}},
          "confidence": {"word": "lean"}}

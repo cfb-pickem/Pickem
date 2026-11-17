@@ -4534,11 +4534,25 @@ _SLATE_ASK = re.compile(
     r"today'?s|saturday'?s|week'?s|weekend'?s)\s+(weeks?'?s?\s+|weekends?'?s?\s+)?(games?|slate|board|week|weekend)\b"
     r"|\bwho (should|do|would|will) (i|we|you|u) (pick|take|go with|play|like|back)\b"
     r"|\bwhat (do|would|should) (you|u|i|we) (like|take|pick|play)\b(?!.{0,25}\b(in|on|with|for)\b)"
-    r"|\b(gimme|give me|got any|any|your|ur) (picks?|plays?|leans?)\b|^\W*(picks?|plays?|leans?)\W*$", re.I)
+    r"|\b(gimme|give me|got any|any|your|ur) (picks?|plays?|leans?)\b|^\W*(picks?|plays?|leans?)\W*$"
+    r"|\b(gimme|give me|what are|whats|what'?s) (all|your|ur|the)? ?(4|four)? ?(picks|plays|leans)\b"
+    , re.I)
+# 'whats ur lock' / 'best bet this wk' / 'lock of the week': ONE play, the slate's strongest (spar r1 2026-11-16:
+# 'ok whats ur lock then' got all four of Picky's own exhibition picks, all favorites, called 'my locks')
+_BEST_ASK = re.compile(
+    r"\b(what'?s|whats|who'?s|whos|gimme|give me|got a|your|ur|you got a|u got a|any)\s+(best )?(lock|bet|play)\b"
+    r"(?!\s*(time|deadline|date|at|is at|happen))"
+    r"|\block of the (week|wk|weekend)\b|\bbest (bet|play|pick)\b|\b(top|favorite|fav) (play|pick)\b"
+    r"|\bwhat'?s the (lock|play)\b(?!\s*(time|deadline|date|at))|\bsafest (pick|play|bet)\b", re.I)
 
 
 def slate_ask(question: str) -> bool:
-    return bool(_SLATE_ASK.search(question or ""))
+    return bool(_SLATE_ASK.search(question or "") or _BEST_ASK.search(question or ""))
+
+
+def best_ask(question: str) -> bool:
+    """A single-play ask ('whats ur lock', 'best bet this wk'): the slate rider names only the strongest play."""
+    return bool(_BEST_ASK.search(question or ""))
 
 
 def take_games(ctx: dict, question: str) -> list[dict]:

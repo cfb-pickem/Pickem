@@ -758,7 +758,7 @@ def card_note(ctx: dict, question: str) -> str:
     if not cards:
         return ""
     if len(games) >= 3 and chat.slate_ask(question):
-        return "\n".join(slate_lines(cards)) + "\n" + SLATE_SAY
+        return "\n".join(slate_lines(cards)) + "\n" + (BEST_SAY if chat.best_ask(question) else SLATE_SAY)
     out = []
     for c in cards:
         out += card_lines(c, asker, full)
@@ -777,6 +777,10 @@ SLATE_SAY = ("Text it like a buddy, phone-length (about 100 words): one short li
              "ago: 'I'd take X (line)' with the line exactly as written above, plus one or two of its reasons in plain words (no stat labels like SP+ or EPA, no "
              "sources, no per-line citations, round the numbers), then one line on the strongest play. " + PRE_LOCK_SAY
              + "No jab about their record or the standings: it's pick advice.")
+BEST_SAY = ("They asked for ONE play (a lock / best bet): give only the STRONGEST PLAY above, 'I'd take X (line)' plus "
+            "its one or two best reasons in plain words, 2 sentences max, confidence exactly as the card words it (a "
+            "'lean' is not a lock: say so with some swagger). Don't list the other games. " + PRE_LOCK_SAY
+            + "No jab about their record or the standings: it's pick advice.")
 
 
 # -----------------------------------------------------------------------------
