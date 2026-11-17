@@ -3,9 +3,11 @@
 <!--
   Picky's game dossiers (dossier.py). Fires every 30 minutes; dossier.py
   decides if anything is due (new pool game / Fri 5 PM / Sat 7 AM CT) and
-  exits after two Supabase GETs when not. claude -p runs on Charlie's
-  subscription (dossier.py strips ANTHROPIC_API_KEY), web tools only, zero
-  MCP servers. Logs: server/logs/dossier.log.
+  exits after two Supabase GETs when not. Every run is pure code over the
+  news cache + r/CFB (no model). Opus web research + the analyst take run at
+  most once a week per game (Fri 5 PM - Sun window, or dossier.py run --opus)
+  via picky_claude (ANTHROPIC_API_KEY stripped, web tools only, zero MCP
+  servers). Logs: server/logs/dossier.log.
   Install: cp to ~/Library/LaunchAgents and launchctl load it.
 -->
 <plist version="1.0">
@@ -39,8 +41,6 @@
         <string>dumb</string>
         <key>DISABLE_AUTOUPDATER</key>
         <string>1</string>
-        <key>PICKEM_CHAT_MODEL</key>
-        <string>gemma4:12b-it-qat</string>
     </dict>
     <key>ProcessType</key>
     <string>Background</string>

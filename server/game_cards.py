@@ -19,10 +19,18 @@ One JSON card per pool game in cache/game_cards/<week>/<game_id>.json:
     (lore.load reads picks only for graded games, so unrevealed picks can't
     get in) + the member's standings need (chase vs protect)
   - confidence worded from the edge size and the backtest below
-  - the written case / counter-case from Opus via analyst.py's prompt and
-    validator (claude -p, picky_claude.MODEL, --strict-mcp-config with the
-    empty MCP config, no tools). Anthropic down = the previous case, else the
-    dossier's analyst take, else none: the card still works from code.
+  - the written case / counter-case: code first (the reasons / against / flags
+    above are the card's case on every run). Opus (analyst.py's prompt and
+    validator via claude -p, picky_claude.MODEL, --strict-mcp-config with the
+    empty MCP config, no tools) writes one case per game per week, at the
+    first run after the Tue 11:00 AM CT line lock (the league line is frozen,
+    so the case stays true), retried at most once a day, or on demand
+    (`run --opus`). Later runs keep it while it's fresh (enrich.py, 6 days),
+    the league line is the one it was written for, and every number in a
+    reason still appears in the card's brief; lines whose numbers moved drop
+    out. No Opus case yet = the dossier's (fresh) analyst take, else none:
+    the card stands on the code factors, and PICKY_NO_ANTHROPIC=1 never
+    spawns anything.
 
 Live chat never computes or calls anything here: chat.py reads the card and
 puts card_note() in the LATEST user turn (never prompt_prefix), and gemma only
@@ -40,7 +48,7 @@ cards and the last one is over 6 days old): every graded 2025-26 pool game
 Written to cache/game_cards/backtest.json; the card's confidence wording
 reads it.
 
-CLI: game_cards.py run [--force] [--week N] [--now ISO] [--no-opus]
+CLI: game_cards.py run [--force] [--week N] [--now ISO] [--opus | --no-opus]
      game_cards.py backtest
      game_cards.py show [--week N]
 """
@@ -63,6 +71,7 @@ from zoneinfo import ZoneInfo
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))  # launchd runs python3 -I (no script dir on the path)
+import enrich  # noqa: E402
 import pick_brief  # noqa: E402
 
 log = logging.getLogger("picky.game_cards")
@@ -72,6 +81,7 @@ BACKTEST_FILE = CARD_DIR / "backtest.json"
 NEWS_FILE = HERE / "cache" / "news.json"
 CARD_MAX_AGE = dt.timedelta(days=8)
 BACKTEST_MAX_AGE = dt.timedelta(days=6)
+CASE_RETRY = dt.timedelta(hours=20)  # a failed weekly Opus case is retried at most once a day
 MAX_REASONS, MIN_REASONS = 4, 2
 SEASON_WEEKS = 15
 # wording thresholds (points of line value; backtest bucket win rate and size)
@@ -274,36 +284,78 @@ def case_items(card: dict, dossier: dict | None) -> dict[str, str]:
     return items
 
 
-def add_case(card: dict, dossier: dict | None, prev: dict | None, research) -> None:
-    """card['case']: a fresh Opus case, else the previous one (same inputs) or a stale one, else the
-    dossier's analyst take, else None. Never raises."""
+def keep_case(pc: dict | None, card: dict, items: dict[str, str], prev: dict | None = None) -> dict | None:
+    """The last good Opus case, trimmed to what's still true, or None: fresh (enrich.py), written
+    for today's league line, and only the parts whose numbers all still appear in the brief."""
+    if not pc or pc.get("by") != "opus" or pc.get("stale"):
+        return None
+    if not enrich.fresh(pc.get("generated_at"), dt.datetime.fromisoformat(card["generated_at"])):
+        return None
+    lh = pc.get("league_home", ((prev or {}).get("league_line") or {}).get("home"))
+    if lh is None or float(lh) != float(card["league_line"]["home"]):
+        return None
+    facts = " ".join(items.values()) + f" {card['game']['away']} {card['game']['home']}"
+    reasons = [r for r in pc.get("reasons") or [] if enrich.numbers_hold(r.get("text", ""), facts)]
+    if not reasons:
+        return None
+    out = dict(pc, reasons=reasons)
+    for k in ("counter", "market_missing"):
+        if out.get(k) and not enrich.numbers_hold(out[k].get("text", ""), facts):
+            out[k] = None
+    if out.get("quotable") and not enrich.numbers_hold(out["quotable"], facts):
+        out["quotable"] = None
+    return out
+
+
+def opus_due(card: dict, prev: dict | None, now: dt.datetime) -> bool:
+    """One Opus case per game per week: once the league line is locked, never twice inside
+    CASE_RETRY, never with the kill switch on."""
+    if not enrich.available() or not is_locked(card, now):
+        return False
+    try:
+        return now - dt.datetime.fromisoformat((prev or {})["case_tried_at"]) >= CASE_RETRY
+    except (KeyError, TypeError, ValueError):
+        return True
+
+
+def add_case(card: dict, dossier: dict | None, prev: dict | None, research, now: dt.datetime | None = None,
+             force: bool = False) -> None:
+    """card['case']: the last good Opus case while still true, else this week's Opus case when
+    due (or forced), else the dossier's fresh analyst take, else None. research None = no Opus.
+    Never raises."""
     import analyst
-    pc = (prev or {}).get("case")
-    if pc and prev.get("inputs_hash") == card["inputs_hash"] and pc.get("by") == "opus":
-        card["case"] = pc
+    now = now or dt.datetime.fromisoformat(card["generated_at"])
+    items = case_items(card, dossier)
+    kept = keep_case((prev or {}).get("case"), card, items, prev)
+    if kept and not force:
+        card["case"] = kept
         return
     cg = card["game"]
-    m = {"lean": card["lean"]["side"] if card["lean"]["strength"] != "none" else None,
-         "strength": card["lean"]["strength"]}
-    try:
-        if research is None:
-            raise RuntimeError("opus off for this run")
-        items = case_items(card, dossier)
-        if len(items) < 3:
-            raise RuntimeError("brief too thin for a case")
-        raw = research(analyst.build_prompt(cg, cg["season"], cg["week"], items, m, str(cg.get("start") or "TBD")))
-        take, probs = analyst.validate_take(raw, items, cg, m)
-        if not take:
-            raise RuntimeError("case rejected: " + "; ".join(probs)[:300])
-        take.update({"by": "opus", "generated_at": card["generated_at"], "dropped": probs})
-        card["case"] = take
+    if (prev or {}).get("case_tried_at"):
+        card["case_tried_at"] = prev["case_tried_at"]
+    if research is not None and (opus_due(card, prev, now) or (force and enrich.available())):
+        card["case_tried_at"] = now.isoformat(timespec="seconds")
+        m = {"lean": card["lean"]["side"] if card["lean"]["strength"] != "none" else None,
+             "strength": card["lean"]["strength"]}
+        try:
+            if len(items) < 3:
+                raise RuntimeError("brief too thin for a case")
+            raw = research(analyst.build_prompt(cg, cg["season"], cg["week"], items, m, str(cg.get("start") or "TBD")))
+            take, probs = analyst.validate_take(raw, items, cg, m)
+            if not take:
+                raise RuntimeError("case rejected: " + "; ".join(probs)[:300])
+            take.update({"by": "opus", "generated_at": card["generated_at"], "dropped": probs,
+                         "league_home": card["league_line"]["home"]})
+            card["case"] = take
+            return
+        except Exception as e:  # noqa: BLE001 - the card stands on the code factors
+            log.warning("game %s case: %s", cg["id"], str(e)[:300])
+    if kept:
+        card["case"] = kept
         return
-    except Exception as e:  # noqa: BLE001 - the card stands on the code factors
-        log.warning("game %s case: %s", cg["id"], str(e)[:300])
-    if pc:
-        card["case"] = dict(pc, stale=True)
-    elif (dossier or {}).get("analyst_take"):
-        card["case"] = dict(dossier["analyst_take"], by="dossier")
+    t = (dossier or {}).get("analyst_take")
+    if t and enrich.fresh(t.get("generated_at"), now):
+        card["case"] = dict(t, by="dossier")
 
 
 def opus_research(prompt: str) -> dict:
@@ -353,7 +405,8 @@ def gather(games: list[dict]) -> tuple[dict, dict | None, dict]:
 
 
 def run(force: bool = False, week: int | None = None, base: Path | None = None, db=None, data=None,
-        research=opus_research, now: dt.datetime | None = None, inputs=None) -> dict:
+        research=opus_research, now: dt.datetime | None = None, inputs=None, opus: bool = False) -> dict:
+    """research None = code only; opus=True = on demand: a fresh Opus case for every built card."""
     import dossier as dz
     import lore
     base = base or CARD_DIR
@@ -394,7 +447,7 @@ def run(force: bool = False, week: int | None = None, base: Path | None = None, 
             card = build_card(g, season, wk, notes=(notes or {}).get(gid), idx=idx, extras=extras, dossier=dos,
                               news=news, table=table, tend=tend, bt=bt, now=now)
             card["trigger"] = reason
-            add_case(card, dos, prev, research)
+            add_case(card, dos, prev, research, now, force=opus)
             dz.write_atomic(path_for(wk, gid, base), card)
             built.append(gid)
             log.info("week %s game %s (%s at %s) %s: lean %s (%s), case %s", wk, gid, g["Away"], g["Home"], reason,
@@ -506,6 +559,8 @@ def load_card(week, gid, base: Path | None = None) -> dict | None:
         return None
     if dt.datetime.now(gen.tzinfo) - gen > CARD_MAX_AGE:
         return None
+    if (c.get("case") or {}).get("by") == "opus" and not enrich.fresh(c["case"].get("generated_at")):
+        c["case"] = None  # an Opus case past its freshness window never reaches a reply
     return c
 
 
@@ -727,14 +782,15 @@ def main(argv=None) -> int:
     r.add_argument("--force", action="store_true")
     r.add_argument("--week", type=int)
     r.add_argument("--now")
-    r.add_argument("--no-opus", action="store_true")
+    r.add_argument("--opus", action="store_true", help="on demand: a fresh Opus case for every built card")
+    r.add_argument("--no-opus", action="store_true", help="code only")
     sub.add_parser("backtest")
     s = sub.add_parser("show")
     s.add_argument("--week", type=int)
     a = ap.parse_args(argv)
     if a.cmd == "run":
         now = dt.datetime.fromisoformat(a.now).replace(tzinfo=CT) if a.now else None
-        res = run(force=a.force, week=a.week, now=now, research=None if a.no_opus else opus_research)
+        res = run(force=a.force, week=a.week, now=now, research=None if a.no_opus else opus_research, opus=a.opus)
         print(json.dumps(res))
         return 0 if res["ok"] else 1
     if a.cmd == "backtest":

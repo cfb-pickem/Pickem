@@ -194,21 +194,81 @@ def test_case_from_opus_validated_and_cached_by_inputs():
     assert len(calls) == 1 and c2["case"]["by"] == "opus"
 
 
+GOOD_CASE = {"pick": "Oklahoma", "confidence": "medium",
+             "reasons": [{"text": "The market has Oklahoma at 10.5, so laying 7.5 here is a gift.", "refs": ["S2"]},
+                         {"text": "The line moved three points toward Oklahoma since it opened.", "refs": ["S5"]}],
+             "counter": {"text": "Oklahoma at 7.5 still has to win by eight.", "refs": ["S1"]},
+             "market_missing": {"text": "The league line is stale by three points.", "refs": ["S3"]},
+             "quotable": "Free points, take them."}
+
+
+def test_opus_case_weekly_after_the_lock_only():
+    calls = []
+    before = card(now="2026-11-16T09:00")  # Monday: league line not locked yet
+    gc.add_case(before, None, None, lambda p: calls.append(p) or GOOD_CASE)
+    assert not calls and before["case"] is None and before["reasons"]  # code card stands alone
+    c = card()  # Wednesday, locked: the week's one Opus case
+    gc.add_case(c, None, None, lambda p: calls.append(p) or GOOD_CASE)
+    assert len(calls) == 1 and c["case"]["league_home"] == -7.5
+    later = card(now="2026-11-20T17:05")  # Friday refresh: kept, no second call
+    gc.add_case(later, None, c, lambda p: calls.append(p) or GOOD_CASE)
+    assert len(calls) == 1 and later["case"]["by"] == "opus"
+
+
+def test_kept_case_only_while_true_and_fresh():
+    c = card()
+    gc.add_case(c, None, None, lambda p: GOOD_CASE)
+    moved = card(now="2026-11-19T09:00", notes={"market": dict(NOTES["market"], home_now=-9.5)})
+    kept = gc.keep_case(c["case"], moved, gc.case_items(moved, None), c)
+    assert [r["text"] for r in kept["reasons"]] == [GOOD_CASE["reasons"][1]["text"]]  # '10.5' is gone from the brief
+    assert kept["counter"]["text"].startswith("Oklahoma at 7.5")  # the pool line still says 7.5
+    relined = gc.build_card(dict(G, line=-8.5), 2026, 12, notes=NOTES, idx=None, extras=None, dossier=None, news=None,
+                            table=[], tend={}, bt=None, now=at("2026-11-19T09:00"))
+    assert gc.keep_case(c["case"], relined, gc.case_items(relined, None), c) is None  # new league line
+    old = card(now="2026-11-25T09:00")
+    assert gc.keep_case(c["case"], old, gc.case_items(old, None), c) is None  # past 6 days
+
+
+def test_failed_opus_case_retried_once_a_day():
+    calls = []
+
+    def boom(p):
+        calls.append(p)
+        raise RuntimeError("claude exit 1")
+    c = card()
+    gc.add_case(c, None, None, boom)
+    c2 = card(now="2026-11-18T15:00")
+    gc.add_case(c2, None, c, boom)
+    assert len(calls) == 1 and c2["case"] is None and c2["case_tried_at"] == c["case_tried_at"]
+    c3 = card(now="2026-11-19T09:30")
+    gc.add_case(c3, None, c2, boom)
+    assert len(calls) == 2
+
+
 def test_anthropic_down_card_still_works():
     os.environ["PICKY_NO_ANTHROPIC"] = "1"
     try:
         c = card()
+        calls = []
 
         def research(prompt):
+            calls.append(prompt)
             picky_claude.guard()  # what dossier.run_claude does first
         gc.add_case(c, None, None, research)
-        assert c["case"] is None and c["lean"]["label"] == "Oklahoma -7.5" and c["reasons"]
-        prev = dict(card(), inputs_hash="old", case={"pick": "Oklahoma", "reasons": [{"text": "x"}], "by": "opus"})
+        assert c["case"] is None and c["lean"]["label"] == "Oklahoma -7.5" and c["reasons"] and not calls
+        gc.add_case(c, None, None, research, force=True)  # on demand: the kill switch still wins
+        assert not calls and c["case"] is None
+        prev = dict(card(), case=dict(GOOD_CASE, by="opus", generated_at=c["generated_at"], league_home=-7.5))
         gc.add_case(c, None, prev, research)
-        assert c["case"]["stale"] is True
+        assert c["case"]["by"] == "opus"  # the last good case, still true, needs no Anthropic
         c3 = card()
-        gc.add_case(c3, {"analyst_take": {"pick": "Oklahoma", "reasons": [{"text": "y"}]}}, None, research)
+        gc.add_case(c3, {"analyst_take": {"pick": "Oklahoma", "reasons": [{"text": "y"}],
+                                          "generated_at": c3["generated_at"]}}, None, research)
         assert c3["case"]["by"] == "dossier"
+        c4 = card()
+        gc.add_case(c4, {"analyst_take": {"pick": "Oklahoma", "reasons": [{"text": "y"}],
+                                          "generated_at": "2026-11-01T09:00:00-06:00"}}, None, research)
+        assert c4["case"] is None  # an old take never rides
         assert gc.card_lines(c3, None, False)[0].startswith("GAME CARD")
     finally:
         os.environ.pop("PICKY_NO_ANTHROPIC", None)
