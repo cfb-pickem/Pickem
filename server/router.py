@@ -805,9 +805,11 @@ def _card_for(ctx: dict, g: dict):
 def pick_text(ctx: dict, q: str) -> str | None:
     """'who you got in X at Y?': the card's side + line, the confidence, one reason."""
     import game_cards
+    named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]}
+                                 for g in ctx.get("games_this_week") or []])
     games = [g for g in chat.take_games(ctx, q)][:2]
-    if not games:  # 'who should I pick this week?' names no game: the whole week's calls (live 2026-11-16)
-        return slate_text(ctx, q)
+    if not named or not games:  # 'who should I pick this week?' names no game: EVERY game's call (live 2026-11-16,
+        return slate_text(ctx, q)  # it answered only the first two)
     out = []
     for g in games:
         c = _card_for(ctx, g)
@@ -836,14 +838,17 @@ def slate_text(ctx: dict, q: str) -> str | None:
         c = _card_for(ctx, g)
         if c:
             cards.append(c)
-            calls.append(f"{c['lean']['label']} ({c['confidence'].get('word') or 'lean'})")
+            rs = [r for r in game_cards._reasons(c, game_cards.is_locked(c)) if r]
+            why = " ".join(rs[0].split(";")[0].split()[:25]).rstrip(".,") if rs else ""
+            calls.append(f"{c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
+                         + (f": {why[0].lower() + why[1:]}" if why else ""))
         else:
             calls.append(f"{g['away']} at {g['home']}: no read yet")
     if not cards:
         return None
     best = game_cards.strongest(cards)
-    return (f"My {len(games)} calls: " + ", ".join(calls) + "."
-            + (f" Best play: {best['lean']['label']}." if best and len(cards) > 1 else ""))
+    return (f"My {len(games)} calls:\n" + "\n".join(calls) + "\n"
+            + (f"Best play: {best['lean']['label']}." if best and len(cards) > 1 else ""))
 
 
 def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:

@@ -658,7 +658,12 @@ def test_pick_and_slate_questions_name_a_side_and_line_for_every_open_game():
         out = router.fact_answer("slate", ctx, q)
         for lab in ("Wake Forest -1.5", "Oregon State +13.5", "UTSA +2.5", "Hawai'i +6.5"):
             assert lab in out, (lab, out)
-        assert out.startswith("My 4 calls: ") and out.endswith("Best play: Oregon State +13.5."), out
+        assert out.startswith("My 4 calls:\n") and out.endswith("Best play: Oregon State +13.5."), out
+        assert "Oregon State +13.5 (best play): oregon State is 3-0 ATS on the road" in out, out  # a reason per game
+        q = "Okay picky who should I pick this week"  # live 2026-11-16 10:05pm: only the first 2 games got a call
+        out = router.fact_answer("pick", ctx, q)
+        for lab in ("Wake Forest -1.5", "Oregon State +13.5", "UTSA +2.5", "Hawai'i +6.5"):
+            assert lab in out, (lab, out)
         cards.pop(3)
         out = router.fact_answer("slate", ctx, q)
         assert "North Texas at UTSA: no read yet" in out, out  # every open game still gets named
