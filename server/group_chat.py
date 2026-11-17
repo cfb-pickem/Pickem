@@ -998,7 +998,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                                      group=mode == "group", recall=callbacks.is_recall(q))
                 reply = router.nick_names(reply, chat.member_nicknames())  # team names, never real names
                 reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
-                reply = router.drop_repeat_jabs(reply, past[-3:], route)  # same jab hook as an earlier turn
+                reply = router.drop_repeat_jabs(reply, past[-3:], route, q)  # same jab hook as an earlier turn
                 reply = live_games.final_guard(reply) if route.lane != "fact" else reply
                 reply = matchup_guard.fix(reply)  # a flipped "Home at Away" of a known game, swapped back
                 # Ackbar (sender or named) always gets a real-fact jab; code lanes never carry one (Charlie 11/17)

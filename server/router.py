@@ -967,13 +967,20 @@ def _jab_hooks(text: str, records: bool = True) -> set[str]:
     return h
 
 
-def drop_repeat_jabs(reply: str, past: list[str], route=None) -> str:
+# a records/results question answered by the full brain ('who had the best week last week?'): its W-L is the answer
+_RECORD_ASK = re.compile(r"\b(best|worst|perfect) (week|record)|\brecords?\b|\bstandings\b|\bwho (won|had|went|covered|"
+                         r"is (first|last|winning|leading))\b|\bhow('?d| did) (i|he|she|they|we|\w+) (do|go)\b|\b\d{1,2}-\d{1,2}\b", re.I)
+
+
+def drop_repeat_jabs(reply: str, past: list[str], route=None, q: str = "") -> str:
     """Cut a sentence that reuses a jab hook from Picky's earlier replies in this conversation, as long as
-    something is left (the answer stays). W-L numbers count only when the text isn't a record question."""
+    something is left (the answer stays). W-L numbers count only when the text isn't a record question
+    (fact-lane record kinds, or a records ask by text: text exam 2026-11-17 cut 'You did, Chuck P, a perfect
+    4-0' from 'who had the best week last week?' and sent only the jab)."""
     if not reply or not past:
         return reply
     records = not (route is not None and getattr(route, "lane", "") == "fact"
-                   and getattr(route, "kind", "") in _RECORD_KINDS)
+                   and getattr(route, "kind", "") in _RECORD_KINDS) and not _RECORD_ASK.search(q or "")
     used = set().union(*(_jab_hooks(p, records) for p in past))
     if not used:
         return reply

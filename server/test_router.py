@@ -104,6 +104,11 @@ def test_drop_repeat_jabs_within_a_conversation():
     st = "Chuck P is 30-18 in first. Ackbar is 28-20, two back."
     assert router.drop_repeat_jabs(st, ["Chuck P is 30-18, Ackbar 28-20."], fact) == st  # record asks repeat records
     assert router.drop_repeat_jabs("Iowa -8.5 at Illinois.", []) == "Iowa -8.5 at Illinois."
+    best = ("You did, Chuck P, going a perfect 4-0 last week while the rest of us struggled. "
+            "I'd be jealous if I wasn't so busy being right about everything else.")
+    wk11 = ["You went 4-0 in week 11, clean sweep: UTSA +2.5 and Wake Forest -1.5 covered."]
+    assert router.drop_repeat_jabs(best, wk11, None, "Who had the best week last week?") == best  # the W-L IS the answer
+    assert router.drop_repeat_jabs(best, wk11, None, "u suck") != best  # a jab that reuses the 4-0: still cut
 
 
 def test_brief_fallback():
