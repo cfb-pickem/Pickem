@@ -27,15 +27,18 @@ is due (Central time):
             ONE short line on who it helped or hurt. One per game, games that
             end close together are batched, quiet hours 23:30-08:00.
 
-Writing: `claude -p` Opus on Charlie's subscription (picky_claude via
-dossier.run_claude: no tools, zero MCP, ANTHROPIC_API_KEY stripped), offline,
-never live chat. The
-facts are computed here; validate() rejects any number not in the facts, any
-member not in the facts, repeated openers, and the known canon breakers.
-Reminders and pings fall back to a plain line when the writer fails; recap,
-preview and saturday fall back to plain fact-only templates (plain_recap /
-plain_preview / plain_saturday), so posts still go out with Anthropic down
-(PICKY_NO_ANTHROPIC=1).
+Writing, code first (Charlie, 2026-11-16: "auto feed pipelines for him so you
+dont need an opus call every time"): preview, saturday, reminders and pings are
+code templates over the computed facts (a few rotating wordings, picked by the
+post's key, skipping any opener a recent post used), so they never call a model.
+The film room's one-liner (the dossier's weekly analyst take) rides in the
+preview while it's fresh. Only the weekly recap gets an Opus writer: `claude -p`
+on Charlie's subscription (picky_claude via dossier.run_claude: no tools, zero
+MCP, ANTHROPIC_API_KEY stripped), offline, never live chat, at most one post
+(two drafts) a week. validate() rejects any number not in the facts, any member
+not in the facts, repeated openers, and the known canon breakers; a rejected or
+failed recap falls back to plain_recap, so every post still goes out with
+Anthropic down (PICKY_NO_ANTHROPIC=1).
 
 CLI:
   group_posts.py tick [--dry-run]
@@ -51,6 +54,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import hashlib
 import json
 import logging
 import os
@@ -317,6 +321,18 @@ def _opener(t: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9 ]", "", t.lower()).split()[:3])
 
 
+def variant(options: list[str], key: str, recent: list[str] | None = None) -> str:
+    """One of the template wordings: fixed per post key (a retry says the same thing), skipping any
+    whose opener a recent post used."""
+    seen = {_opener(r) for r in (ob.recent_posts() if recent is None else recent)}
+    start = int(hashlib.sha1(key.encode()).hexdigest(), 16) % len(options)
+    for i in range(len(options)):
+        o = options[(start + i) % len(options)]
+        if _opener(o) not in seen:
+            return o
+    return options[start]
+
+
 def all_names(lg_names: dict[str, str]) -> dict[str, str]:
     """name or team as written -> team"""
     out = {}
@@ -555,11 +571,18 @@ def make_recap(lg: League, w: int, writer=run_writer) -> list[str] | None:
 
 
 def load_take(w: int, gid: int) -> dict | None:
+    """The dossier's weekly Opus analyst take, only while it's fresh (enrich.py)."""
+    import enrich
     try:
         d = json.loads((DOSSIER_DIR / str(w) / f"{gid}.json").read_text())
     except (OSError, ValueError):
         return None
-    return d.get("analyst_take") or None
+    t = d.get("analyst_take") or None
+    return t if t and enrich.fresh(t.get("generated_at"), lg_now()) else None
+
+
+def lg_now() -> dt.datetime:
+    return dt.datetime.now(CT)
 
 
 def picky_card(lg: League, w: int) -> dict[int, dict]:
@@ -587,19 +610,6 @@ def picky_card(lg: League, w: int) -> dict[int, dict]:
     return out
 
 
-def _take_facts(g: dict, t: dict | None) -> list[str]:
-    if not t:
-        return []
-    out = [f"Your analyst take on {matchup(g)}: lean {t.get('pick')} ({t.get('confidence')} confidence)."]
-    for r in (t.get("reasons") or [])[:2]:
-        out.append(f"Why ({matchup(g)}): {r.get('text')}")
-    if (t.get("counter") or {}).get("text"):
-        out.append(f"The case against ({matchup(g)}): {t['counter']['text']}")
-    if t.get("quotable"):
-        out.append(f"Quotable ({matchup(g)}): {t['quotable']}")
-    return out
-
-
 def stakes_facts(lg: League) -> list[str]:
     rows = standings(lg)
     if not rows:
@@ -614,56 +624,31 @@ def stakes_facts(lg: League) -> list[str]:
     return out
 
 
-def make_preview(lg: League, w: int, writer=run_writer) -> list[str] | None:
+def make_preview(lg: League, w: int) -> list[str] | None:
+    """Thursday preview, code only: the slate and lock, Picky's card, the film room's best line, the stakes."""
     games = lg.week_games(w)
     if not games:
         return None
     card = picky_card(lg, w)
     lock = lg.lock_time(w)
-    facts = [f"Week {w} slate, picks lock at the first kickoff, {kick_text(lock)}."]
-    for g in games:
-        c = card.get(g["GameId"])
-        facts.append(f"{matchup(g)}, {kick_text(kick(g))}, pool line {side_label(g, favorite(g))}."
-                     + (f" Your {'pick' if c['made'] else 'lean right now'}: {c['label']} ({c['why']})." if c else ""))
-        facts += _take_facts(g, load_take(w, g["GameId"]))
-    facts += stakes_facts(lg)
-    task = (f"Thursday preview of week {w}: walk the group through the slate, give your card (your picks or "
-            "current leans, say which) with a sharp reason or two from your takes, and talk some trash about "
-            "what's at stake. Never mention anyone else's picks (they're hidden until lock).")
-    texts, probs = write(task, facts, lg.names, n_texts="3 to 4", writer=writer)
-    if texts is None:
-        log.warning("preview week %s writer fell back to the template: %s", w, "; ".join(probs))
-        texts = plain_preview(w, games, card, lock, stakes_facts(lg))
+    texts = plain_preview(w, games, card, lock, stakes_facts(lg), key=f"preview:{lg.season}:{w}")
+    quote = next(((g, t["quotable"]) for g in games if (t := load_take(w, g["GameId"])) and t.get("quotable")), None)
+    if quote:
+        texts.insert(2, f"Film room on {matchup(quote[0])}: {quote[1]}")
     return texts
 
 
-def make_saturday(lg: League, w: int, writer=run_writer) -> list[str] | None:
+def make_saturday(lg: League, w: int) -> list[str] | None:
+    """Saturday morning post, code only: Picky's side in each of today's pool games."""
     today = lg.now.date()
     games = [g for g in lg.week_games(w) if (k := kick(g)) and k.date() == today and k > lg.now - dt.timedelta(hours=1)]
     if not games:
         return None
-    card = picky_card(lg, w)
-    facts = [f"Today (Saturday) in week {w}:"]
-    for g in games:
-        c = card.get(g["GameId"])
-        facts.append(f"{matchup(g)}, {kick_text(kick(g))}, pool line {side_label(g, favorite(g))}."
-                     + (f" Your {'pick' if c['made'] else 'lean (not submitted yet)'}: {c['label']} ({c['why']})."
-                        if c else ""))
-        t = load_take(w, g["GameId"])
-        if t and t.get("quotable"):
-            facts.append(f"Quotable ({matchup(g)}): {t['quotable']}")
-    facts += stakes_facts(lg)
-    task = ("Saturday morning hype post for the group: your picks for today's pool games (say if any are only "
-            "leans), with swagger, and get people fired up. Never mention anyone else's picks.")
-    texts, probs = write(task, facts, lg.names, n_texts="2 to 3", max_texts=3, writer=writer)
-    if texts is None:
-        log.warning("saturday week %s writer fell back to the template: %s", w, "; ".join(probs))
-        texts = plain_saturday(games, card)
-    return texts
+    return plain_saturday(games, picky_card(lg, w), key=f"sat:{lg.season}:{w}")
 
 
-# Plain templates for when the writer (Anthropic) is down or every draft fails validation:
-# the computed facts, lightly worded, nothing invented.
+# Code templates: the computed facts, lightly worded, nothing invented (preview / saturday always;
+# the recap when the weekly writer is down or every draft fails validation).
 
 def plain_recap(w: int, facts: list[str]) -> list[str]:
     def find(prefix):
@@ -685,14 +670,19 @@ def _card_line(g: dict, c: dict | None) -> str:
         else f"pool line {side_label(g, favorite(g))}")
 
 
-def plain_preview(w: int, games: list[dict], card: dict, lock, stakes: list[str]) -> list[str]:
-    out = [f"Week {w} slate is set. Picks lock at the first kickoff, {kick_text(lock)}.",
-           "My card: " + "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."]
+def plain_preview(w: int, games: list[dict], card: dict, lock, stakes: list[str], key: str = "") -> list[str]:
+    lk = kick_text(lock)
+    head = variant([f"Week {w} slate is set. Picks lock at the first kickoff, {lk}.",
+                    f"Week {w} is up. Every pick locks at the first kickoff, {lk}, so don't sleep on it.",
+                    f"Slate's out for week {w}. First kickoff, {lk}, locks every pick."], key or f"preview:{w}")
+    out = [head, "My card: " + "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."]
     return out + stakes[:1]
 
 
-def plain_saturday(games: list[dict], card: dict) -> list[str]:
-    return ["Pool games today. " + "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."]
+def plain_saturday(games: list[dict], card: dict, key: str = "") -> list[str]:
+    body = "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."
+    return [variant(["Pool games today. ", "Game day. Where I'm at: ", "Saturday's pool games, my side: "],
+                    key or "sat:" + ",".join(str(g["GameId"]) for g in games)) + body]
 
 
 # -----------------------------------------------------------------------------
@@ -738,26 +728,22 @@ def remind_facts(lg: League, w: int) -> tuple[list[str], list[str], int]:
     return facts, left, len(sub) - len(left)
 
 
-def make_reminder(lg: League, w: int, writer=run_writer) -> list[str] | None:
-    facts, left, _ = remind_facts(lg, w)
+def make_reminder(lg: League, w: int) -> list[str] | None:
+    """Pick reminder before the weekly lock, code only: when it locks and (config name_stragglers)
+    who still hasn't picked. Never anyone's picks, never who has picked."""
+    _, left, _ = remind_facts(lg, w)
     if not left:
         return None
-    name = ob.config()["name_stragglers"]
-    if name:
-        facts.append("Still need to pick: " + ", ".join(lg.nick(t) for t in left) + ".")
-    task = ("A pick reminder in the group before the weekly lock. One or two short texts: when picks lock, and "
-            + ("call out by name everyone in 'Still need to pick', with a little trash talk. "
-               if name else "how many still haven't picked, no names. ")
-            + "Only those people: never say anyone else has or hasn't picked, and never mention anyone's picks.")
-    allowed = set(left) if name else set()
-    texts, probs = write(task, facts, lg.names, n_texts="1 to 2", max_texts=2, max_chars=260, writer=writer,
-                         allowed_teams=allowed, required_teams=allowed if name else None)
-    if texts:
-        return texts
-    log.info("reminder writer fell back: %s", "; ".join(probs))
-    lock = lg.lock_time(w)
-    who = names_list([lg.nick(t) for t in left]) if name else f"{len(left)} of you"
-    return [f"Picks lock {kick_text(lock)}. Still waiting on {who}."]
+    lock = kick_text(lg.lock_time(w))
+    if ob.config()["name_stragglers"]:
+        who = names_list([lg.nick(t) for t in left])
+        opts = [f"Picks lock {lock}. Still waiting on {who}.",
+                f"{who}: picks lock {lock}. Clock's running.",
+                f"Lock is {lock} and {who} still {'has' if len(left) == 1 else 'have'}n't picked."]
+    else:
+        n = f"{len(left)} of you"
+        opts = [f"Picks lock {lock}. Still waiting on {n}.", f"Lock is {lock}. {n.capitalize()} still haven't picked."]
+    return [variant(opts, f"remind:{lg.season}:{w}:{lock}")]
 
 
 # -----------------------------------------------------------------------------
@@ -780,33 +766,6 @@ def espn_status(gid: int, client: httpx.Client) -> dict | None:
         ap = hp = None
     return {"final": bool((st.get("type") or {}).get("completed")), "state": (st.get("type") or {}).get("state"),
             "period": st.get("period") or 0, "away": ap, "home": hp}
-
-
-def ping_facts(lg: League, g: dict, ap: float, hp: float, rows) -> list[str]:
-    w = g["week"]
-    cov = covered_side(g, ap, hp)
-    fav = favorite(g)
-    picks = [p for p in lg.picks(w) if p["game_id"] == g["GameId"] and p.get("pick")]
-    won = [lg.tid[p["team_id"]] for p in picks if p["team_id"] in lg.tid and pr.same(p["pick"], cov)]
-    lost = [lg.tid[p["team_id"]] for p in picks if p["team_id"] in lg.tid and not pr.same(p["pick"], cov)]
-    rk = ranks(rows)
-    out = [f"FINAL: {score_line(g, ap, hp)}. Pool line {side_label(g, fav)}: {side_label(g, cov)} covered.",
-           f"Had {side_label(g, cov)} (hit): {', '.join(lg.nick(t) for t in won) or 'nobody'}.",
-           f"Had {side_label(g, g['Home'] if cov == g['Away'] else g['Away'])} (missed): "
-           f"{', '.join(lg.nick(t) for t in lost) or 'nobody'}."]
-    leader = rows[0][0] if rows else None
-    if leader in won + lost:
-        out.append(f"League leader {lg.nick(leader)} ({_ord(rk[leader])}) "
-                   f"{'hit' if leader in won else 'missed'} this one.")
-    for p in picks:
-        if lg.tid.get(p["team_id"]) == "Ackbar":
-            chalk = pr.same(p["pick"], fav)
-            out.append(f"Ackbar took {side_label(g, p['pick'])}{' (the favorite, chalk)' if chalk else ' (the underdog)'}"
-                       f" and {'hit' if pr.same(p['pick'], cov) else 'missed'}.")
-    pk = next((p for p in lg.picky_picks() if p.get("game_id") == g["GameId"] and p.get("pick")), None)
-    if pk:
-        out.append(f"Your own pick: {side_label(g, pk['pick'])}, {'hit' if pr.same(pk['pick'], cov) else 'missed'}.")
-    return out
 
 
 def due_pings(lg: League, client: httpx.Client) -> list[tuple[dict, float, float]] | None:
@@ -839,23 +798,41 @@ def due_pings(lg: League, client: httpx.Client) -> list[tuple[dict, float, float
     return finals
 
 
-def make_ping(lg: League, finals: list[tuple[dict, float, float]], writer=run_writer) -> list[str]:
+def make_ping(lg: League, finals: list[tuple[dict, float, float]]) -> list[str]:
+    """One line per batch of finals, code only: who covered, the score, and one hook from the graded
+    picks (Ackbar's chalk dying, nobody / everybody had it, the leader missing, who cashed)."""
     rows = standings(lg)
-    facts = []
-    for g, ap, hp in finals:
-        facts += ping_facts(lg, g, ap, hp, rows)
-    task = ("A pool game just went final" + (" (a few, together)" if len(finals) > 1 else "") +
-            ". ONE short text, a single punchy line on who in the league it helped or hurt (like \"Ackbar's chalk "
-            "Boise pick just died\"). Use the final score or the line only if it helps the joke.")
-    texts, probs = write(task, facts, lg.names, n_texts="exactly 1", max_texts=1, max_chars=220, writer=writer)
-    if texts:
-        return texts
-    log.info("ping writer fell back: %s", "; ".join(probs))
+    leader = rows[0][0] if rows else None
+    mine = {p.get("game_id"): p for p in lg.picky_picks() if p.get("pick")}
     parts = []
     for g, ap, hp in finals:
         cov = covered_side(g, ap, hp)
-        parts.append(f"{side_label(g, cov)} covers ({score_line(g, ap, hp)})")
-    return ["Final: " + "; ".join(parts) + "."]
+        if not cov:
+            parts.append(f"{matchup(g)} pushes on the line ({score_line(g, ap, hp)})")
+            continue
+        picks = [p for p in lg.picks(g["week"]) if p["game_id"] == g["GameId"] and p.get("pick") and p["team_id"] in lg.tid]
+        won = [lg.tid[p["team_id"]] for p in picks if pr.same(p["pick"], cov)]
+        lost = [lg.tid[p["team_id"]] for p in picks if not pr.same(p["pick"], cov)]
+        fav = favorite(g)
+        ack = next((p for p in picks if lg.tid[p["team_id"]] == "Ackbar"), None)
+        if ack and pr.same(ack["pick"], fav) and not pr.same(ack["pick"], cov):
+            hook = f"Ackbar's chalk on {fav} just died"
+        elif picks and not won:
+            hook = "nobody had it"
+        elif picks and not lost:
+            hook = "everybody had it"
+        elif leader in lost:
+            hook = f"{lg.nick(leader)} missed this one"
+        elif won:
+            hook = names_list([lg.nick(t) for t in won[:3]]) + (" cashes" if len(won) == 1 else " cash")
+        else:
+            hook = ""
+        pk = mine.get(g["GameId"])
+        if pk:
+            hook += (", " if hook else "") + ("I had it" if pr.same(pk["pick"], cov) else "I missed it")
+        parts.append(f"{side_label(g, cov)} covers ({score_line(g, ap, hp)})" + (f", {hook}" if hook else ""))
+    key = "ping:" + ",".join(str(g["GameId"]) for g, _, _ in finals)
+    return [variant(["Final:", "In the books:", "That's final:"], key) + " " + "; ".join(parts) + "."]
 
 
 # -----------------------------------------------------------------------------

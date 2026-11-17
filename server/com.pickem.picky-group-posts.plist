@@ -6,8 +6,9 @@
   once while /Users/Agent/cfb-pickem-private/PICKY_GROUP_PAUSE exists, and
   otherwise decides what's due (Mon recap, Thu preview, Sat picks, pick
   reminders before the weekly lock, final-score pings). Posts are queued in
-  the private outbox; the watcher in the picky user sends them. claude -p runs
-  on Charlie's subscription (ANTHROPIC_API_KEY stripped), no tools, zero MCP.
+  the private outbox; the watcher in the picky user sends them. Every post is
+  a code template except the weekly recap, whose writer is one claude -p (Opus,
+  Charlie's subscription, ANTHROPIC_API_KEY stripped, no tools, zero MCP) a week.
   Logs: server/logs/group_posts.log. Send log: cfb-pickem-private/picky_group_sends.jsonl.
   Install: cp to ~/Library/LaunchAgents and launchctl load it.
 -->

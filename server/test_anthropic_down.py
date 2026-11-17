@@ -168,6 +168,7 @@ G2 = {"GameId": 2, "Away": "Texas", "Home": "Texas A&M", "line": 2.5, "week": 12
 
 class FakeLeague:
     now = NOW
+    season = 2026
     names = {"Ackbar": "Ackbar", "Chuck P": "Charlie", "TG": "TG"}
     tid = {1: "Ackbar", 2: "Chuck P", 3: "TG"}
     db = None
@@ -187,6 +188,9 @@ class FakeLeague:
     def picky_picks(self):
         return []
 
+    def picks(self, w):
+        return [{"team_id": 1, "game_id": 1, "pick": "Utah"}, {"team_id": 2, "game_id": 1, "pick": "Iowa"}]
+
 
 lg = FakeLeague()
 CARD = {1: {"label": "Iowa -3.5", "why": "market", "made": True}, 2: {"label": "Texas +2.5", "why": "SP+", "made": False}}
@@ -200,22 +204,22 @@ with patch.object(gp, "picky_card", lambda lg_, w: CARD), patch.object(gp, "stak
             "BEST CALL: Iowa -3.5 (Utah at Iowa) covered by 3.5; only 1 of 3 had it: Charlie.",
             "YOUR OWN WEEK (Picky): 2-2 in week 11: Iowa -3.5 hit. Your season: 20-24."], {})), \
         patch.object(gp, "race_text", lambda lg_: ("Playoff race: Charlie is in.", {}, {})), \
-        patch.object(gp, "ping_facts", lambda *a: ["FINAL: Utah 17, Iowa 24. Pool line Iowa -3.5: Iowa -3.5 covered."]), \
         patch.object(gp, "standings", lambda lg_: []):
     rem = gp.make_reminder(lg, 12)
-    check("lock reminder still goes out (plain line, stragglers named)",
-          rem and "Picks lock" in rem[0] and "Ackbar" in rem[0] and "TG" in rem[0] and "Charlie" not in rem[0], rem)
+    check("lock reminder still goes out (code line, stragglers named)",
+          rem and "Sat 11 AM CT" in rem[0] and "Ackbar" in rem[0] and "TG" in rem[0] and "Charlie" not in rem[0], rem)
     rec = gp.make_recap(lg, 11)
     check("recap still goes out (template + race)", rec and rec[0].startswith("Week 11 is in the books")
           and any("Worst pick: Utah" in t for t in rec) and any(t.startswith("Me: 2-2") for t in rec)
           and "My season: 20-24" in " ".join(rec) and rec[-1] == "Playoff race: Charlie is in.", rec)
     pre = gp.make_preview(lg, 12)
-    check("preview still goes out (template)", pre and "Picks lock at the first kickoff" in pre[0]
+    check("preview still goes out (code template)", pre and "Sat 11 AM CT" in pre[0] and "first kickoff" in pre[0].lower()
           and "I'm on Iowa -3.5" in pre[1] and "Texas +2.5 (a lean" in pre[1] and "Cut line" in pre[-1], pre)
     sat = gp.make_saturday(lg, 12)
-    check("saturday post still goes out (template)", sat and "I'm on Iowa -3.5" in sat[0], sat)
+    check("saturday post still goes out (code template)", sat and "I'm on Iowa -3.5" in sat[0], sat)
     ping = gp.make_ping(lg, [(G1, 17.0, 24.0)])
-    check("final-score ping still goes out (plain line)", ping and ping[0].startswith("Final: Iowa -3.5 covers"), ping)
+    check("final-score ping still goes out (code line)", ping and "Iowa -3.5 covers (Utah 17, Iowa 24), Charlie cashes"
+          in ping[0], ping)
     for t in (rem or []) + (rec or []) + (pre or []) + (sat or []):
         if gp._PHONE.search(t) or re.search(r"\b(exhibition|as an ai|i'?m a bot)\b", t, re.I):
             check("templates stay clean", False, t)

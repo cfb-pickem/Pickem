@@ -41,6 +41,8 @@
         <string>dumb</string>
         <key>DISABLE_AUTOUPDATER</key>
         <string>1</string>
+        <key>PICKEM_CHAT_MODEL</key>
+        <string>gemma4:12b-it-qat</string>
     </dict>
     <key>ProcessType</key>
     <string>Background</string>

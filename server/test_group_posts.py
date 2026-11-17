@@ -284,6 +284,66 @@ def test_sidecar_race_answers():
     assert gc.race_answer("what do I need to make playoffs", gc.Sender(handle="+1555"), data) is None
 
 
+# -- code-first posts: only the weekly recap ever reaches a writer ---------------------------
+
+class _League:
+    now = t("2026-11-21T07:05")
+    season = 2026
+    names = {"Ackbar": "Ackbar", "Chuck P": "Charlie", "TG": "TG"}
+    tid = {1: "Ackbar", 2: "Chuck P", 3: "TG"}
+    db = None
+    G1 = {"GameId": 1, "Away": "Utah", "Home": "Iowa", "line": -3.5, "week": 12, "Start (CT)": "2026-11-21T11:00:00",
+          "picked": True}
+
+    def nick(self, team):
+        return self.names.get(team, team)
+
+    def week_games(self, w, pool_only=True):
+        return [self.G1]
+
+    def lock_time(self, w):
+        return t("2026-11-21T11:00")
+
+    def submission(self, w):
+        return {"Ackbar": False, "Chuck P": True, "TG": True}
+
+    def picky_picks(self):
+        return [{"game_id": 1, "pick": "Iowa", "week": 12}]
+
+    def picks(self, w):
+        return [{"team_id": 1, "game_id": 1, "pick": "Iowa"}, {"team_id": 2, "game_id": 1, "pick": "Utah"}]
+
+
+def test_posts_are_code_only_but_the_recap():
+    fresh()
+    import dossier
+    calls = []
+    real = dossier.run_claude
+    dossier.run_claude = lambda *a, **k: calls.append(a) or {"texts": ["Charlie 4-0, as foretold."]}
+    saved = gp.picky_card, gp.stakes_facts, gp.standings, gp.load_take
+    gp.picky_card = lambda lg, w: {1: {"label": "Iowa -3.5", "why": "value", "made": True}}
+    gp.stakes_facts = lambda lg: []
+    gp.standings = lambda lg: [("Chuck P", 30, 10)]
+    gp.load_take = lambda w, gid: {"quotable": "Iowa's defense eats this offense alive."}
+    try:
+        lg = _League()
+        pre = gp.make_preview(lg, 12)
+        sat = gp.make_saturday(lg, 12)
+        rem = gp.make_reminder(lg, 12)
+        ping = gp.make_ping(lg, [(lg.G1, 17.0, 24.0)])
+        assert not calls, calls  # Anthropic up, still no writer call
+        assert "I'm on Iowa -3.5" in pre[1] and pre[2] == "Film room on Utah at Iowa: Iowa's defense eats this offense alive."
+        assert "I'm on Iowa -3.5" in sat[0] and "Ackbar" in rem[0] and "TG" not in rem[0]
+        assert "Iowa -3.5 covers (Utah 17, Iowa 24), Charlie missed this one, I had it" in ping[0], ping
+        assert gp.make_ping(lg, [(lg.G1, 17.0, 24.0)]) == ping  # same key, same wording
+        assert gp.make_reminder(lg, 12) == rem
+        assert gp.variant(["Final: a", "Final: b", "In the books: c"], "k", recent=["Final: a", "final b!"]) \
+            == "In the books: c"  # skips a recent opener
+    finally:
+        dossier.run_claude = real
+        gp.picky_card, gp.stakes_facts, gp.standings, gp.load_take = saved
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_") and callable(v)]
     failed = 0
