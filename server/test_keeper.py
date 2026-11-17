@@ -667,6 +667,12 @@ def test_hidden_repeat_is_short():
     assert r == "Same answer: nobody's picks show till the first kickoff, me included.", r
 
 
+def test_long_live_signoff_only_when_chuck_comes_up():
+    a = "I don't give out the blueprint, Brian. Long live the Supreme Commissioner."
+    assert router.debot(a, "just the first line", "full") == "I don't give out the blueprint, Brian."
+    assert router.debot(a, "is chuck the goat", "full") == a
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

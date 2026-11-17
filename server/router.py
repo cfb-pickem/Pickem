@@ -980,6 +980,7 @@ _STARTERS = {"the", "they", "they're", "he", "he's", "she", "it", "it's", "that"
              "playing", "right", "just", "look", "listen", "man", "dude", "buddy", "sure", "oh", "ok", "okay"}
 
 
+_LONG_LIVE = re.compile(r"^\W*long live (the )?(supreme |glorious |dear )?(commissioner|leader|commish)\W*$", re.I)
 _DATA_TALK = re.compile(r"\s+(in|from|according to) (the|my) (league |pool |news )?(data|feed data|context)\b", re.I)
 
 
@@ -1018,6 +1019,9 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
         drop(lambda s: bool(OWN_RECORD.search(s)) and s is not last)
     if lane in ("full", "fact") and q and not provocation(q):  # fact: the voice line after the code answer too
         sents = cut_tail_jabs(sents)
+    if len(sents) > 1 and _LONG_LIVE.search(sents[-1]) and not re.search(r"\b(chuck|commish|commissioner|leader|charlie)\b",
+                                                                          q or "", re.I):
+        sents = sents[:-1]  # the Dear Leader sign-off only when someone brings him up (keeper k1d: a stock tic)
     return " ".join(sents)
 
 

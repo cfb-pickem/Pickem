@@ -1173,6 +1173,9 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                                            max_words=10 if st.get("ptype") == "spiral2" else 25)
                 if route.why.startswith("brief") or "brief" in route.why:
                     text = undodge(st, text, last_reply)  # a real question the brief misread as banter
+                tw = re.findall(r"[a-z']+", (text or "").lower())
+                if tw and len(tw) <= 3 and (text or "").strip().endswith("?") and set(tw) <= set(re.findall(r"[a-z']+", q.lower())):
+                    text = banter_fallback(st, text) or text  # 'Goat?', 'Just one game?': an echo, not a comeback (k1d)
                 if _DODGE.match(text or ""):  # 'Next question.' reads as a brush-off (keeper k1d): a book line, else react
                     text = banter_fallback(st, text) or REACTIONS[sum(map(ord, q)) % len(REACTIONS)]
                 text = fresh_jab(st, text, recent_picky or [])
