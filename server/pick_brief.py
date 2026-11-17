@@ -353,7 +353,7 @@ def _tz(v: dict | None) -> int | None:
 # intel (dossier facts, news, insider notes): text matched to a team
 # -----------------------------------------------------------------------------
 
-_OUT = re.compile(r"\b(ruled out|out for|will not play|won'?t play|is out|season[- ]ending|torn|surgery|"
+_OUT = re.compile(r"\b(ruled out|out for|will not play|won'?t play|is out|(remains|is still|still) out|season[- ]ending|torn|surgery|"
                   r"miss(es|ing)? (the|saturday|this)|sidelined|not expected to play)\b", re.I)
 _DOUBT = re.compile(r"\bdoubtful\b", re.I)
 _QUES = re.compile(r"\b(questionable|game[- ]time decision|day[- ]to[- ]day|limited in practice|banged up)\b", re.I)
@@ -561,9 +561,9 @@ def f_personnel(g: dict, side: str, t: dict | None, idx: dict, notes_side: dict 
         named = bool(qb and (qb.lower() in txt.lower() or (qb_last and it.get("team") is not None
                                                            and re.search(rf"\b{re.escape(qb_last)}\b", txt.lower()))))
         is_qb = named and (bool(re.search(r"\bQB\b|quarterback", txt)) or kind == "injury")
-        if is_qb and st and (qb_hit is None or _QB_RANK.get(st, 0) > _QB_RANK.get(qb_hit[0], 0) or (
-                _QB_RANK.get(st, 0) == _QB_RANK.get(qb_hit[0], 0) and str(it.get("date") or "") > str(qb_hit[1].get("date") or ""))):
-            qb_hit = (st, it)  # the worst status, and the newest report of it (Chiles: Nov 16, not Nov 6)
+        d, pd = str(it.get("date") or ""), str((qb_hit or (None, {}))[1].get("date") or "")
+        if is_qb and st and (qb_hit is None or d > pd or (d == pd and _QB_RANK.get(st, 0) > _QB_RANK.get(qb_hit[0], 0))):
+            qb_hit = (st, it)  # the newest report wins, the worse status on a tie (Chiles: Nov 16's, not Nov 6's 'out')
         elif ours and st in ("out", "doubtful") and not is_qb and (kind in (None, "injury")):
             inj.append(it)
         low = txt.lower()

@@ -919,6 +919,28 @@ def breaking_for(query: str | None = None, teams: list[str] | None = None, limit
     return [story_line(s, now) for s in picked]
 
 
+_PER = re.compile(r"\s*,?\s*\bper (?:the )?[A-Z][\w'&.-]*(?:\s+(?:[A-Z][\w'&.-]*|Sports|News))*")
+_AGO = re.compile(r"\s*,?\s*\b\d+\s?(?:min|mins|minutes?|h|hrs?|hours?) ago\b")
+
+
+def thin_citations(text: str) -> str:
+    """A news reply names a source at most once (Charlie 11-16, 'stop citing like this, it makes it
+    unreadable': 'per CBS Sports 30 min ago ... 2h ago per ClutchPoints ... 7h ago per The Athletic').
+    With 2+ 'per <Outlet>' credits, the first one stays and every other credit and 'Nh ago' goes."""
+    t = text or ""
+    if len(_PER.findall(t)) < 2:
+        return t
+    first = _PER.search(t)
+    head, tail = t[: first.end()], t[first.end():]
+    head = _AGO.sub("", head[: first.start()]) + head[first.start():]
+    tail = _PER.sub("", _AGO.sub("", tail))
+    t = head + tail
+    t = re.sub(r"(^|(?<=[.!?]\s))(Also|And|Plus)?\s*,\s*", lambda m: m.group(1) + (m.group(2) + " " if m.group(2) else ""), t)
+    t = re.sub(r"\s+([,.!?])", r"\1", t)
+    t = re.sub(r",\s*,", ",", t)
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
 def as_of(cache: dict | None = None) -> str | None:
     """Date of the newest cached item, e.g. "Nov 14" (for "as of" phrasing)."""
     cache = cache if cache is not None else load_cache()

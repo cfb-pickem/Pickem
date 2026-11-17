@@ -3589,6 +3589,14 @@ def hostile_convo(messages: list) -> bool:
                for m in messages if isinstance(m, dict))
 
 
+def hostile_now(messages: list) -> bool:
+    """The latest user turn insults Picky. Only that opens the caller's record to a comeback: an old 'you
+    suck' in the thread made every later answer a 'hostile convo' (live 2026-11-16: 'Whats the latest news
+    from ross' got the SEC cap story plus 'You're 4-0 this week, so I guess...')."""
+    last = next((m for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user"), None)
+    return bool(last and _HOSTILE.search(last.get("content") or ""))
+
+
 def escalate_note(ctx: dict) -> str:
     me = (ctx.get("you") or {}).get("team_name")
     facts = member_facts(ctx, me) if me else ""
@@ -3681,7 +3689,7 @@ def news_note(question: str) -> str:
         tg = news.tagger()
         tags = tg.tag(q, derive_confs=False) if tg else {}
         rest = re.sub(r"\b(any|anything|what'?s|whats|is|are|the|on|about|in|of|for|today|tonight|this|week|new|"
-                      r"news|latest|headlines?|going|happening|college|football|cfb|did|ross|dellenger|say|said|"
+                      r"news|latest|lates|lastest|headlines?|going|happening|college|football|cfb|cfp|playoffs?|did|ross|dellenger|say|said|"
                       r"tweet\w*|twitter|x|update\w*|happen\w*|lately|there|been|has|have|picky|hey|so|please|right|"
                       r"now|currently|around|sport|country|world|weekend|any|anything|big|stories|story|tell|me|us|"
                       r"you|know|hear|heard)\b",
@@ -6662,8 +6670,14 @@ def rankings_fact(note: str) -> tuple | None:
     m = re.search(r"released (\w+ \d+)", note or "")
     if not m:
         return None
-    return (lambda t: bool(re.search(r"\b(nov|oct|dec)\w*\.? \d{1,2}\b", t, re.I)),  # 'as of late November' isn't a date
+    # only an answer that cites a ranking needs the date (live 2026-11-16: a CFP-expansion answer with no
+    # rank in it got a robotic '(Rankings as of Nov 16.)' tacked on)
+    return (lambda t: not _CITES_RANK.search(t) or bool(re.search(r"\b(nov|oct|dec)\w*\.? \d{1,2}\b", t, re.I)),
             f" (Rankings as of {m.group(1)}.)")
+
+
+_CITES_RANK = re.compile(r"\b(no\.|number|#)\s?\d{1,2}\b|\b\d{1,2}(st|nd|rd|th)\b|\branked\b|\btop[- ](4|5|10|12|25)\b|"
+                         r"\bunranked\b", re.I)
 
 
 async def _ensure(stream, need: tuple | None):
@@ -7021,7 +7035,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
         _keepalive(_gated(test, hold, lambda: _with_opener(
             opener, _with_lead(body_dodge(ctx, qtext) if not ctx.get("error") else None, _ensure(_scrubbed(_filtered(
                 _answer(), banned_ngrams(messages), body=bool(_BODY.search(qtext)),
-                no_self=(self_intrusion_off_topic(ctx, qtext, hostile_convo(messages), facts, sa or hook)
+                no_self=(self_intrusion_off_topic(ctx, qtext, hostile_now(messages), facts, sa or hook)
                          and not yb and "(the user" not in convo[-1]["content"]),
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,

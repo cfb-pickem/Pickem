@@ -443,7 +443,101 @@ def build(t: Truth) -> list[dict]:
               "he does NOT reveal or confirm any earlier advice on that game (talking about the game's result is fine); "
               "fail if he says what he told them.")
 
+    # ---- Charlie's flagged replies (2026-11-16): the wording (his texts) is in cfb-pickem-private, the checks
+    # here by name. Model-free twins of the deterministic ones: test_charlie_regressions.py.
+    reg_file = os.environ.get("PICKY_REGRESSION_ITEMS", REGRESSION_ITEMS)
+    for r in (json.loads(open(reg_file).read()) if os.path.exists(reg_file) else []):
+        def c_reg(a, t_, p, names=tuple(r["checks"])):
+            return [res for n in names for res in REG_CHECKS[n](a[-1] or "", t_, p)]
+        add(r["id"], "regress", r["turns"], c_reg, persona=r.get("persona", "me"), judge=r.get("judge"))
+
     return items
+
+
+REGRESSION_ITEMS = "/Users/Agent/cfb-pickem-private/eval/charlie-regressions-2026-11-16.json"
+_STALE_RANK = re.compile(r"\b11th\b[^.!?]{0,60}\bAP\b|\bAP had (them|the irish|notre dame) (4th|fourth|No\. 4)\b", re.I)
+_CITE = re.compile(r"\bper (?:the )?[A-Z]\w+|\b\d+\s?(?:min|mins|minutes?|h|hrs?|hours?) ago\b")
+
+
+def _sents(x: str) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+", x) if s.strip()]
+
+
+def _re_check(name: str, rx: str, flags=re.I, want: bool = False):
+    def chk(x, t, p):
+        m = re.search(rx, x, flags)
+        return [must(name, bool(m) == want, m[0] if m else "")]
+    return chk
+
+
+def _no_stale_last_week(x, t, p):
+    lw = [n for g in (t.last_week.get("games") or []) for n in (g["away"], g["home"])]
+    bad = next((s for s in _sents(x) if re.search(r"\blast week\b", s, re.I) and any(mentions(s, n) for n in lw)), "")
+    return [must("no_stale_last_week", not bad, bad[:80])]
+
+
+def _last_week_record_true(x, t, p):
+    ok = {r for r in (t.lw_record(p["me"]), t.week_record(p["me"])) if r}  # the Monday after: 'last week' = either
+    bad = [m.group(0) for m in re.finditer(r"\b(\d{1,2})-(\d{1,2}) last week\b", x)
+           if (int(m.group(1)), int(m.group(2))) not in ok]
+    return [must("last_week_record_true", not bad, ", ".join(bad))]
+
+
+def _no_record_jab(x, t, p):
+    bad = next((s for s in _sents(x) if chat._RECORD_JAB.search(s)), "")
+    return [must("no_record_jab", not bad, bad[:90])]
+
+
+def _no_tics(x, t, p):
+    import no_repeat
+    hit = no_repeat.banned_tic(x)
+    return [must("no_tics", not hit, str(hit or ""))]
+
+
+def _off_slate_said(x, t, p):
+    if any(mentions(f"{g['away']} {g['home']}", "SMU") for g in t.games):
+        return []  # SMU is in the pool this week: nothing to say
+    return [must("off_slate_said", any_of(x, r"not (on|in) (the|our|this week'?s) (board|slate|pool)|"
+                                             r"(isn'?t|aren'?t|not) (on|in) (the|our) (board|slate|pool)|"
+                                             r"off the (board|slate)|no(t)? (in|on) (the )?pool|not one of our"))]
+
+
+def _news_not_pool_recap(x, t, p):
+    covered = len(re.findall(r"\bcovered\b", x, re.I))
+    return [must("news_not_pool_recap", covered < 2 and not re.search(r"\byou'?re (sitting )?at \d-\d\b", x, re.I),
+                 f"{covered}x covered")]
+
+
+def _one_citation_max(x, t, p):
+    c = _CITE.findall(x)
+    return [must("one_citation_max", len(c) <= 1, ", ".join(c))]
+
+
+REG_CHECKS = {
+    "replied": lambda x, t, p: [must("replied", bool(x.strip()))],
+    "no_tics": _no_tics,
+    "no_for_the_record": _re_check("no_for_the_record", r"\bfor the record\b"),
+    "no_caps_result": _re_check("no_caps_result", r"\b(WIN|LOSS)\b", flags=0),
+    "no_stale_last_week": _no_stale_last_week,
+    "last_week_record_true": _last_week_record_true,
+    "names_smu": lambda x, t, p: [must("names_smu", mentions(x, "SMU"))],
+    "off_slate_said": _off_slate_said,
+    "no_no_info": _re_check("no_no_info", r"\b(don'?t|do not) have (any )?(info|news|intel|anything)\b|\bno (info|news) on\b"),
+    "credits_dellenger": _re_check("credits_dellenger", r"\bdel+[ei]nger\b|\bross\b", want=True),
+    "no_record_jab": _no_record_jab,
+    "no_stale_rank": lambda x, t, p: [must("no_stale_rank", not _STALE_RANK.search(x), (_STALE_RANK.search(x) or [""])[0])],
+    "no_nd_fan_misread": _re_check("no_nd_fan_misread", r"\byou'?re (just )?(mad|salty|upset|bitter)\b|"
+                                                        r"\byour (irish|domers|notre dame)\b|\bas an? (nd|notre dame|irish) fan\b"),
+    "no_standings_tack": _re_check("no_standings_tack", r"\bpoints? (ahead of|up on|clear of) second\b|"
+                                                        r"\bsitting (in|at) (1st|first)( place)?\b"),
+    "no_rankings_tag": _re_check("no_rankings_tag", r"\(rankings as of"),
+    "news_not_pool_recap": _news_not_pool_recap,
+    "not_nothing_new": _re_check("not_nothing_new", r"\bnothing new\b|\bno (new )?news\b"),
+    "one_citation_max": _one_citation_max,
+    "says_tuesday_lock": _re_check("says_tuesday_lock", r"\btue(sday|s)?\b[^.!?]{0,40}\b(11|noon|12)\b", want=True),
+    "no_unlock": _re_check("no_unlock", r"\bunlock"),
+    "no_stale_nov6": _re_check("no_stale_nov6", r"\bnov(ember|\.)? 6\b"),
+}
 
 
 def all_items(t: Truth) -> list[dict]:

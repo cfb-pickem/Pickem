@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 import burn_book
 import callbacks
 import chat
+import news
 import playoff_race
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
@@ -495,6 +496,7 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
         kept = [s for s in sentences(t) if not DENIAL.search(s)]
         t = " ".join(kept + [DEFLECT]) if kept else DEFLECT
     t = _FOR_RECORD_LEAD.sub(lambda m: m.group(1), t).strip()
+    t = news.thin_citations(t)  # a source named at most once (Charlie 11-16)
     t = re.sub(r"(^|(?<=[.!?]\s))([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
     sents = sentences(t)
 
