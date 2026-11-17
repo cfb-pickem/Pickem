@@ -200,6 +200,9 @@ def parse_scoreboard(d: dict) -> dict[str, dict]:
             lp = sit.get("lastPlay") or {}
             if lp.get("text"):
                 g["last_play"] = _clean_play(lp["text"])
+        tv = [n for b in comp.get("broadcasts") or [] for n in b.get("names") or [] if n]
+        if tv:  # the chat's channel lane + close_cover's scoreboard fallback (drill 11/17: they had none)
+            g["broadcasts"] = tv
         out[g["id"]] = g
     return out
 

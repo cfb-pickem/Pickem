@@ -39,6 +39,7 @@ import pick_strategy
 import slate_cards
 import playoff_race
 import why_lane
+import channel  # the channel lane (drill 11/17)
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
     import league_rules
@@ -90,6 +91,12 @@ COVERING_NOW = re.compile(
     rf"|\bis ({_T}) covering\b|\bwhat'?s the score\b|\bscore (of|in) the\b|\bwhat'?s ({_T}) (up|down) by\b"
     rf"|\bhow'?s the ({_T}) game\b"
     rf"|\b(how many|how much|what)( points)? (do|does) ({_T}) need to cover\b", re.I)  # live, not rules/playoff (drill 11/17)
+# 'what channel is LSU Tennessee on' (channel.py answers from ESPN's listed broadcasts; drill 11/17)
+CHANNEL_ASK = re.compile(
+    r"\b(what|which) (channel|network|station)\b|\bon (what|which) (channel|network)\b"
+    r"|\bwhere (can|do|should|could) (i|we|you|u) (watch|stream)\b|\bwhat'?s (it|that|the game) on\b"
+    rf"|\bwhat'?s the ({_T}) game on\b|\bis ({_T}) on (espn\w*|abc|fox|fs1|cbs|nbc|cw|the cw|peacock|btn|sec network|acc network)\b",
+    re.I)
 # game-state asks score_text answers from the live feed in code (Saturday drill 11/17: these went to the full brain,
 # ~22 s each in the one-slot queue during a burst). 'covering' ones before kickoff are pick asks: score_text steps aside.
 LIVE_STATE = re.compile(
@@ -702,6 +709,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "lock", "LOCK_ASK"
     if COVERING_NOW.search(t):
         return "score", "COVERING_NOW"
+    if CHANNEL_ASK.search(t):
+        return "channel", "CHANNEL_ASK"
     if LIVE_STATE.search(t):
         return "score", "LIVE_STATE"
     if DID_COVER.search(t):
@@ -2050,7 +2059,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text,
               "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text,
               "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text, "pick_ctx": pick_ctx_text,
-              "worst": worst_text, "fade": fade_text, "why": why_lane.answer}.get(kind)
+              "worst": worst_text, "fade": fade_text, "why": why_lane.answer, "channel": channel.answer}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
