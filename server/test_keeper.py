@@ -730,6 +730,15 @@ def test_change_later_pick_ctx_worst():
                      "have Iowa by 10."), r
 
 
+def test_who_covers():
+    assert router.classify("ok but who covers").label() == "fact:pick_ctx"
+    assert router.classify("who covers lsu tenn").label() == "fact:pick"
+    ctx = _wk12_picks()
+    with patch.object(router, "pick_text", lambda c, q: "I'd take Illinois +8.5." if "Iowa" in q else None):
+        assert router.fact_answer("pick_ctx", ctx, "ok but who covers ||| Iowa -8.5 is a lot.") == "I'd take Illinois +8.5."
+        assert router.fact_answer("pick_ctx", ctx, "ok but who covers ||| ") is None
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

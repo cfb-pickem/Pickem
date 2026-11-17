@@ -103,7 +103,7 @@ PLAYOFF_TODAY = re.compile(r"\b(ended today|ends today|if the season ended|as it
                            r"|\bwho'?s in the playoffs\b|\bprojected (playoff )?(field|seeds?)\b"
                            r"|\bcurrent (playoff )?(seeds?|field)\b|\bwho are the (4|four) (seeds|playoff teams)\b", re.I)
 # 'who you got in Northwestern at Minnesota?': a side + line from the game card
-PICK_ASK = re.compile(r"\bwho (you|ya|u|do you|would you|d'?you) (got|like|taking|take|have|pick|picking)\b"
+PICK_ASK = re.compile(r"\bwho covers\b(?=\s+\S)|\bwho (you|ya|u|do you|would you|d'?you) (got|like|taking|take|have|pick|picking)\b"
                       r"|\bwho sh?o?u?l?d\s*i\s*n?\s*(take|pick|go with|ride)\b|\b(your|ur) (pick|play|lean) (in|for|on)\b"
                       r"|\bwho'?s (your|ur) pick\b|\bwhat'?s the play (in|for|on)\b|\bwhich side (in|of|on)\b", re.I)
 # 'gimme a read on this week's games': every open game, one call each
@@ -199,6 +199,7 @@ CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden", "pick_ctx"}
 CHANGE_LATER = re.compile(r"\bcan i (still )?(change|switch|flip|swap)( it| that| them| my pick)?( after| later| before (sat|saturday|kickoff))?\W*$", re.I)
 # 'ok so whats ur actual pick in that game' (got the who-hasn't-picked list): my call on the game in the thread
 PICK_CTX = re.compile(r"\b(ur|your) (actual |real |final )?(pick|call|side|lean) (in|on|for) (that|this) (one|game)\b"
+                      r"|^\W*(ok |so |but |and |then )*(who covers|who'?s covering|whos covering|who you got|who do you like)( then| there)?\W*$"
                       r"|\b(whats|what'?s) (ur|your) (actual |real )?(pick|call) (there|then)\b|\bso who do you (like|got) there\b", re.I)
 # 'and worst' / 'whats the worst one of the 4' / 'which game do u hate this week'
 WORST_ASK = re.compile(r"^\W*(and |so |ok )?(the )?(worst|weakest|shakiest)( one| game| pick| play)?\W*$"
