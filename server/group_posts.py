@@ -854,6 +854,7 @@ def make_ping(lg: League, finals: list[tuple[dict, float, float]]) -> list[str]:
 # -----------------------------------------------------------------------------
 
 LIVE_PINGS_FLAG = ob.PRIVATE / "PICKY_LIVE_PINGS"
+FINAL_PINGS_FLAG = ob.PRIVATE / "PICKY_FINAL_PINGS"  # absent = no final-score posts in the group
 LIVE_PING_GAP_S = 20 * 60
 
 
@@ -972,8 +973,12 @@ def tick(dry_run: bool | None = None, now: dt.datetime | None = None, echo=print
                 send("remind", make_reminder(lg, ow), key,
                      expires_s=int(max(300, (lock - now).total_seconds() - 300)))
 
-    with httpx.Client() as c:
-        finals = due_pings(lg, c)
+    # Final-score pings are OFF (Charlie, 2026-11-17: "No need to send final scores to the group").
+    # Turn back on by creating cfb-pickem-private/PICKY_FINAL_PINGS.
+    finals = None
+    if FINAL_PINGS_FLAG.exists():
+        with httpx.Client() as c:
+            finals = due_pings(lg, c)
     if finals:
         key = "ping:" + ",".join(str(g["GameId"]) for g, _, _ in finals)
         r = ob.post("ping", make_ping(lg, finals), key, quiet=True, expires_s=1800, dry_run=dry_run, now=now,
