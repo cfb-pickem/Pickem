@@ -88,7 +88,8 @@ LOCK_ASK = re.compile(
 COVERING_NOW = re.compile(
     r"\b(am i|are we|is my (pick|team)|are my picks?)\b[^?.!]{0,20}\bcovering\b"
     rf"|\bis ({_T}) covering\b|\bwhat'?s the score\b|\bscore (of|in) the\b|\bwhat'?s ({_T}) (up|down) by\b"
-    rf"|\bhow'?s the ({_T}) game\b", re.I)
+    rf"|\bhow'?s the ({_T}) game\b"
+    rf"|\b(how many|how much|what)( points)? (do|does) ({_T}) need to cover\b", re.I)  # live, not rules/playoff (drill 11/17)
 DID_COVER = re.compile(rf"\bdid ({_T}) (cover|hit)\b|\bwho covered\b|\bdid (it|they|that) cover\b", re.I)
 RESULTS_Q = re.compile(
     r"\bhow('?d| did) (i|we|my picks?|my week)\b[^?.!]{0,20}\b(do|go|look|end up|turn out)\b"

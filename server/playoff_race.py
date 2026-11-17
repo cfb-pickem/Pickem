@@ -234,7 +234,7 @@ _NEED_ASK = re.compile(
     r"\b(am i|are we) (eliminated|out|alive|still alive|in)\b|\bis \w+ (eliminated|still alive)\b|"
     r"\bwhat (do|does) \w+ need\b|\bmathematically\b|\beliminated\b|\bstill alive\b", re.I)
 _NOT_LEAGUE = re.compile(r"\b(cfp|committee|college football playoff|rank(ed|ings?)|seed\w*|bracket|"
-                         r"last (year|season)|who won)\b", re.I)
+                         r"last (year|season)|who won|need to cover)\b", re.I)  # 'what does Iowa need to cover' = a live game
 
 
 # "can I still pick the playoff games if I don't make it?" is a rules question
