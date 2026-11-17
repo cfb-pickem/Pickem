@@ -785,3 +785,26 @@ Charlie, 08:05-08:06 CT: "look at [n]d message boards for your personality and t
 - picky_brain: `brief_notes` hands the understand pass the insider notes and the picked hot takes (without them its core answer said "no data" on a Big Ten/SEC question and made up an injury joke for "most outrageous hot take"), and banter texts with no stance get the board voice.
 - Tests: `test_insider.py` (fixtures only, no model).
 - **Text exam after fa1bad9 (league-group-only replies):** eval/run.py sends group items in `exam-<tag>-<id>` chats, which that gate now skips. Side sidecars must run with `PICKY_GROUP_EXAM=1` (plus the usual PICKY_GROUP_PORT / PICKY_IMESSAGE_HISTORY / PICKY_BITS_STATE overrides). The live sidecar never sets it, so the league-only rule stands; test_maintenance pins that.
+
+## Speed lane 2: reroll budget, prime timeout, keep-warm (2026-11-17)
+
+Goal p95 < 60 s per reply. What the logs showed:
+- **Cold prefix prime (~55-60 s for ~8k tokens).** In the keeper side logs every cold prime came with a new prefix hash: a data change (ESPN lines/win probabilities, standings, finals), not traffic from other gemma users. A different ~3k-token prompt between texts does not evict the prefix: llama.cpp's RAM prompt cache restores it in ~2-5 s (measured in the replay below).
+- **The prime was cut short.** `_prime` ran under its caller's read timeout (understand 60 s, fact wrap 30 s, banter 40 s). A cold prime died at 30/60 s and the next call paid the prefill again on top (live 11-16 12:18: 279 s; 16:23: 169 s).
+- **The reroll.** A second draft ran whenever draft 1 had any sentence cut. Draft 1 still won 39 of 64 rerolls, and on group follow-ups a draft costs 20-35 s.
+
+Fixes:
+- `picky_brain.reroll_ok`: the extra draft runs only when elapsed + the last draft's own time (understand excluded) + 3 s fits `PICKY_SOFT_BUDGET` (50 s), or when every draft is unusable (empty, a bare dodge, < 4 words; a dodge `undodge()` can replace with the card call counts as usable) and the finish fits `DRAFT_BUDGET` (105 s; `PICKY_UNUSABLE_BUDGET` caps it lower). Logged as `reroll runs/skipped: projected ...`.
+- `chat._guarded_stream`: the no-sentence-survived regen goes straight to the templated answer when picky_brain says the regen would bust the soft budget (`chat.REGEN_OK`; the site never sets it).
+- `chat._prime`: its own read timeout `PICKY_PRIME_TIMEOUT` (180 s), never shorter than the caller's.
+- Fact wrap and banter line: wait `PICKY_PRIME_WAIT` (10 s) for the prime. A cold one sends the code answer or book line alone, and `chat.start_prime` finishes the prefill in the background for the next text.
+- Keep-warm (group_chat, live sidecar only): every 60 s, after 20 s with no `/group` request in flight (pure ASGI middleware), it re-primes the latest prefix, and every `PICKY_KEEP_WARM_CTX_EVERY` (300 s) it rebuilds the context a group text would get (`chat.league_ctx`, shared with `chat()` so the bytes can't drift; ~80 KB of Supabase reads per build). It skips while a live text runs in any process (live_flag), while the exam lock is held (non-blocking flock test, never held), or under 10% free memory. It is off in side sidecars unless `PICKY_KEEP_WARM=1`; `PICKY_KEEP_WARM=0` turns it off. In the replay its prefix hash matched the texts' (`574b82`).
+
+Replay (`server/eval/speed_replay.py`, 10 keeper convos / 39 turns, 7 group + 3 DM; an evictor call + 75 s idle before each conversation; side sidecar :8804 inside the exam lock; results in /private/tmp/picky-speed2-run/):
+
+| build | all p50 / p95 / max | full lane p50 / p95 | group p95 / max | DM p95 / max | 2nd drafts |
+|---|---|---|---|---|---|
+| before (main 9d1de83) | 32.3 / 67.1 / 70.5 | 44.2 / 67.1 | 58.9 / 63.1 | 70.5 / 70.5 | 10 |
+| after (28f732f, keep-warm on) | 33.5 / 63.3 / 81.3 | 35.6 / 63.3 | 63.3 / 81.3 | 45.8 / 45.8 | 6 (5 skipped) |
+
+There were no cold primes in either run: the prefix didn't change during the runs, and the evictor doesn't evict. So the replay measures the reroll budget, not keep-warm. The after run's three replies over 60 s: two unusable-draft rerolls ("I do picks, not paperwork. Next question.": 81 s, which `undodge` now answers from the card instead, and 62 s, a shot at Picky that stays a reroll by design), and one group follow-up with no reroll (understand 32 s + draft 28 s, 2.6k-token tail).
