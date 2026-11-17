@@ -78,6 +78,7 @@ Last refreshed 2026-11-16 (fixture).
 - fixture
 """)
 os.environ["PICKY_INSIDER"] = str(TMP / "insider.md")
+os.environ["PICKY_INSIDER_WIRE"] = str(TMP / "insider_wire.json")
 os.environ["PICKY_HOT_TAKES"] = str(TMP / "takes.md")
 
 sys.path.insert(0, ".")
@@ -294,6 +295,73 @@ def test_insider_refresh_keeps_last_good():
         assert "kept the last good copy" in ir.LOG.read_text()
     finally:
         ir.MIN_TOTAL = 20
+
+
+def test_wire_code_only_and_opus_capped_daily():
+    """The wire is pure code (PICKY_NO_ANTHROPIC=1 still builds it, no claude); the Opus notes refresh runs
+    at most once a day, only when the notes are 3+ days old, never with the kill switch."""
+    import datetime as dt
+    import json as js
+    import insider_refresh as ir
+    now = dt.datetime(2026, 11, 18, 10, 0, tzinfo=dt.timezone(dt.timedelta(hours=-6)))
+    items = [
+        {"title": "Big Ten, SEC split on CFP expansion to 24 teams", "source": "Yahoo Sports", "author": "Ross Dellenger",
+         "insider": "Ross Dellenger", "date": "2026-11-17T15:00:00+00:00", "teams": [], "link": "https://y.com/a"},
+        {"title": "Oregon beats Washington", "source": "ESPN", "author": None, "insider": None,
+         "date": "2026-11-17T15:00:00+00:00", "teams": ["Oregon"], "link": "https://e.com/b"},           # no topic
+        {"title": "Hot seat: Norvell's buyout explained", "source": "Ducks Wire", "author": None, "insider": None,
+         "date": "2026-11-17T15:00:00+00:00", "teams": [], "link": "https://d.com/c"},                   # not a desk
+        {"title": "Sankey talks conference title games", "source": "ESPN", "author": "Pete Thamel",
+         "insider": "Pete Thamel", "date": "2026-11-05T15:00:00+00:00", "teams": [], "link": "https://e.com/d"},  # old
+    ]
+    old_bank, old_work, old_log, old_state = ir.BANK, ir.WORK_DIR, ir.LOG, ir.STATE
+    ir.BANK, ir.WORK_DIR, ir.LOG = TMP / "wbank.md", TMP / "wwork", TMP / "wire.log"
+    ir.STATE = ir.WORK_DIR / "state.json"
+    os.environ["PICKY_NO_ANTHROPIC"] = "1"
+    try:
+        w = ir.wire(items, now=now, out=TMP / "insider_wire.json")
+        assert [x["title"] for x in w["items"]] == [items[0]["title"]], w
+        assert w["items"][0]["section"] == "CFP format" and w["items"][0]["author"] == "Ross Dellenger"
+        ir.BANK.write_text("# Picky insider notes (PRIVATE)\n\nLast refreshed 2026-11-10 (x).\n")
+        assert not ir.opus_due(now)  # kill switch
+        calls = []
+        assert ir.tick(now, claude=lambda *a: calls.append(a)) == 0 and not calls
+        del os.environ["PICKY_NO_ANTHROPIC"]
+        assert ir.opus_due(now)  # 8 days old, never tried
+        ir.WORK_DIR.mkdir(parents=True, exist_ok=True)
+        ir.STATE.write_text(js.dumps({"attempt_at": (now - dt.timedelta(hours=5)).isoformat()}))
+        assert not ir.opus_due(now)  # tried 5 h ago: once a day at most
+        ir.STATE.write_text(js.dumps({"attempt_at": (now - dt.timedelta(hours=21)).isoformat()}))
+        assert ir.opus_due(now)
+        ir.BANK.write_text("# Picky insider notes (PRIVATE)\n\nLast refreshed 2026-11-17 (x).\n")
+        assert not ir.opus_due(now)  # notes a day old: no refresh
+    finally:
+        os.environ.pop("PICKY_NO_ANTHROPIC", None)
+        ir.BANK, ir.WORK_DIR, ir.LOG, ir.STATE = old_bank, old_work, old_log, old_state
+
+
+def test_wire_headlines_ride_after_the_notes():
+    import datetime as dt
+    import json as js
+    today = chat._now_ct_naive().date()
+    d1, d9 = today, today - dt.timedelta(days=9)  # the fixture notes were refreshed before today
+    (TMP / "insider_wire.json").write_text(js.dumps({"generated_at": "x", "items": [
+        {"section": "CFP format", "sections": ["CFP format"], "title": "Big Ten, SEC split on 24-team CFP",
+         "author": "Ross Dellenger", "insider": "Ross Dellenger", "outlet": "Yahoo Sports", "date": f"{d1}T09:00-06:00"},
+        {"section": "CFP format", "sections": ["CFP format"], "title": "Old CFP headline", "author": None,
+         "insider": None, "outlet": "ESPN", "date": f"{d9}T09:00-06:00"}]}))
+    lines = chat.insider_wire(["CFP format"], False, None)
+    assert lines == [f"- {d1:%b} {d1.day}, per Ross Dellenger, Yahoo Sports: Big Ten, SEC split on 24-team CFP"], lines
+    assert chat.insider_wire(["CFP format"], False, d1) == []  # not newer than the notes
+    assert chat.insider_wire(["Realignment"], False, None) == []  # other section
+    real = chat.load_insider
+    chat.load_insider = lambda: dict(real(), day=today - dt.timedelta(days=2))  # notes refreshed 2 days ago
+    try:
+        note = chat.insider_note("what's the latest on the 24-team playoff?")
+    finally:
+        chat.load_insider = real
+    assert "NEWER HEADLINES" in note and "24-team CFP" in note and "Old CFP headline" not in note, note
+    (TMP / "insider_wire.json").unlink()
 
 
 def main():

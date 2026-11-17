@@ -3922,6 +3922,9 @@ def takes_note(question: str) -> str:
 # committee, the coaching carousel, commissioners and governance. Read server-side only,
 # re-read on mtime change, injected on topic into the LATEST user turn, never prompt_prefix().
 INSIDER_FILE = Path(os.environ.get("PICKY_INSIDER", "/Users/Agent/cfb-pickem-private/insider_bank.md"))
+# code-pulled insider headlines between Opus note refreshes (insider_refresh.wire): headline, byline, date
+INSIDER_WIRE = Path(os.environ.get("PICKY_INSIDER_WIRE", "/Users/Agent/cfb-pickem-private/insider_wire.json"))
+INSIDER_WIRE_MAX_DAYS = 6
 _insider_memo: dict = {"mtime": None, "data": None}
 _INSIDER_LINE = re.compile(r"^- ([^:]{3,16}): (.+) \(([^()]+)\) \[checked \d{4}-\d{2}-\d{2}\]$")
 # 'Last refreshed' (else the file's mtime) is the notes' fetched_at: refreshes run twice a week, so past
@@ -4017,12 +4020,13 @@ def insider_note(question: str, limit: int = 4) -> str:
     data = load_insider()
     secs = data.get("secs") or {}
     age = (_now_ct_naive().date() - data["day"]).days if data.get("day") else 0
-    if age > INSIDER_MAX_AGE_DAYS:  # refreshes kept failing: old notes would read as current news
-        return ""
     heads = insider_topics(q)
     dl = bool(_DELLENGER_ASK.search(q))
-    if not secs or not (heads or dl):
+    if not (heads or dl):
         return ""
+    wire = insider_wire(heads, dl, data.get("day") if age <= INSIDER_MAX_AGE_DAYS else None)
+    if age > INSIDER_MAX_AGE_DAYS or not secs:  # refreshes kept failing: old notes would read as current news
+        return (WIRE_HEAD + "\n".join(wire) + "\n" + WIRE_SAY) if wire else ""
     words = set(re.findall(r"[a-z0-9]{3,}", q.lower())) - _INSIDER_STOP
     per = max(1, limit // len(heads)) if heads else 1
     picked: list[dict] = []
@@ -4039,7 +4043,7 @@ def insider_note(question: str, limit: int = 4) -> str:
         picked += [pool[i] for i in ranked[:per] if pool[i] not in picked]
     picked = picked[:limit]
     if not picked:
-        return ""
+        return (WIRE_HEAD + "\n".join(wire) + "\n" + WIRE_SAY) if wire else ""
     asof = data.get("asof") or "recently"
     return ("INSIDER NOTES (checked public reporting, as of " + asof + "; this is a real college football question, "
             "so answer it from these lines, it is not off-topic"
@@ -4050,7 +4054,44 @@ def insider_note(question: str, limit: int = 4) -> str:
             "Credit 'Dellenger reported' only on lines labeled Dellenger, 'per <outlet>' on the others. In your own "
             "words: never quote anyone, never claim to be Ross Dellenger or to have talked to him, and never add a "
             "name, number or detail that isn't in these lines. A proposal is only a proposal. Live rankings, scores "
-            "and standings beat these notes.")
+            "and standings beat these notes.") + ("\n" + WIRE_HEAD + "\n".join(wire) + "\n" + WIRE_SAY if wire else "")
+
+
+WIRE_HEAD = "NEWER HEADLINES (code-pulled from the news feed since those notes; headline only):\n"
+WIRE_SAY = ("A headline is all you know about these: say what the headline says with its date and 'per <outlet>' "
+            "(or the byline), add nothing to it, and never call it a confirmed fact if the headline doesn't.")
+_wire_memo: dict = {"mtime": None, "data": None}
+
+
+def insider_wire(heads: list[str], dl: bool, since: dt.date | None, limit: int = 2) -> list[str]:
+    """Up to `limit` code-pulled insider headlines (insider_refresh.wire) for the asked sections (or
+    Dellenger's own for a bare 'what's Dellenger saying'), newer than the notes' refresh day and never
+    older than INSIDER_WIRE_MAX_DAYS. Each line: '- <Mon D>, per <who>, <outlet>: <headline>'."""
+    try:
+        m = INSIDER_WIRE.stat().st_mtime
+        if _wire_memo["mtime"] != m:
+            _wire_memo.update(mtime=m, data=json.loads(INSIDER_WIRE.read_text()))
+    except (OSError, ValueError):
+        return []
+    today = _now_ct_naive().date()
+    out = []
+    for it in (_wire_memo["data"] or {}).get("items") or []:
+        try:
+            d = dt.date.fromisoformat(str(it.get("date"))[:10])
+        except ValueError:
+            continue
+        if (today - d).days > INSIDER_WIRE_MAX_DAYS or (since and d <= since):
+            continue
+        if heads and not set(heads) & set(it.get("sections") or [it.get("section")]):
+            continue
+        if not heads and dl and it.get("insider") != "Ross Dellenger":
+            continue
+        who = it.get("author") or it.get("insider")
+        out.append(f"- {d:%b} {d.day}, per {who + ', ' if who else ''}{it.get('outlet') or 'the news feed'}: "
+                   f"{str(it.get('title') or '').strip()}")
+        if len(out) >= limit:
+            break
+    return out
 
 
 # an ASK to roast someone ('roast Ackbar', 'talk shit about the SEC'), not a jab ('you talk shit for a bot')

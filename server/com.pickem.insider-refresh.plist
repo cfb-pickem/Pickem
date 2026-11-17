@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Picky's insider notes refresh (insider_refresh.py): Sun + Wed 10:40 CT, after the
-  hot-takes refresh. One offline claude -p (Opus via picky_claude.py) on Charlie's
-  subscription (ANTHROPIC_API_KEY stripped), web tools + Read/Edit only, zero MCP
-  servers. Writes the private cfb-pickem-private/insider_bank.md only after its
-  validator passes; otherwise the last good copy stays. No Ollama, no RAM lock needed.
+  Picky's insider notes (insider_refresh.py tick), every 2 hours. Each tick
+  rebuilds the code-only headline wire (cfb-pickem-private/insider_wire.json:
+  insider-bylined headlines from the news cache, byline, date, team tags). The
+  Opus notes refresh (one offline claude -p via picky_claude.py on Charlie's
+  subscription, ANTHROPIC_API_KEY stripped, web tools + Read/Edit only, zero MCP
+  servers) runs only when the notes are 3+ days old, at most one attempt a day,
+  never with PICKY_NO_ANTHROPIC=1; it swaps cfb-pickem-private/insider_bank.md
+  only after its validator passes. No Ollama, no RAM lock needed.
   Logs: server/logs/insider_refresh.log.
-  Install: cp to ~/Library/LaunchAgents and launchctl load it.
+  Install: cp to ~/Library/LaunchAgents and launchctl bootstrap gui/$(id -u) it.
 -->
 <plist version="1.0">
 <dict>
@@ -18,29 +21,14 @@
         <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
         <string>-I</string>
         <string>/Users/Agent/cfb-pickem/server/insider_refresh.py</string>
-        <string>run</string>
+        <string>tick</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/Agent/cfb-pickem/server</string>
-    <key>StartCalendarInterval</key>
-    <array>
-        <dict>
-            <key>Weekday</key>
-            <integer>0</integer>
-            <key>Hour</key>
-            <integer>10</integer>
-            <key>Minute</key>
-            <integer>40</integer>
-        </dict>
-        <dict>
-            <key>Weekday</key>
-            <integer>3</integer>
-            <key>Hour</key>
-            <integer>10</integer>
-            <key>Minute</key>
-            <integer>40</integer>
-        </dict>
-    </array>
+    <key>StartInterval</key>
+    <integer>7200</integer>
+    <key>RunAtLoad</key>
+    <true/>
     <key>StandardOutPath</key>
     <string>/Users/Agent/cfb-pickem/server/logs/insider_refresh.launchd.log</string>
     <key>StandardErrorPath</key>

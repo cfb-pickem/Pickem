@@ -28,6 +28,7 @@ sys.path.insert(0, str(HERE))
 TMP = Path(tempfile.mkdtemp(prefix="picky-anthropic-down-"))
 # Anthropic-fed artifacts that never got written (Anthropic was never up), private dir in a temp
 for k, name in (("PICKY_HOT_TAKES", "hot_takes_bank.md"), ("PICKY_INSIDER", "insider_bank.md"),
+                ("PICKY_INSIDER_WIRE", "insider_wire.json"),
                 ("PICKY_LEAGUE_MATERIAL", "league_material.json"), ("PICKY_BANTER_BANK", "banter_bank.json"),
                 ("PICKY_BURN_BOOK", "burn_book.json"), ("PICKY_DOSSIER_DIR", "dossiers"),
                 ("PICKY_GAME_CARD_DIR", "game_cards")):
