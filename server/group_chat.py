@@ -1096,6 +1096,169 @@ async def outbox_ack(req: Request):
     return {"ok": ok}
 
 
+# -----------------------------------------------------------------------------
+# keep-warm (speed lane 2026-11-17): rebuild a cold prefix while nobody waits
+# -----------------------------------------------------------------------------
+# chat._prime leaves gemma's checkpoint inside the shared prefix. Any other gemma user (exam sidecars,
+# :8766, batch jobs) or a data change (new prefix) made the next member text pay a ~55-60 s prefill
+# (live log 2026-11-16: 'prime: 53-60s' before nearly every reply over 60 s). Every KEEP_WARM_EVERY s,
+# once no text has been in flight for KEEP_WARM_IDLE s, this primes the prefix the next text would use:
+# ~0.3 s of Ollama when it's still warm. Evictions: the latest prefix (the last text's, or the last
+# build's) is re-primed every tick, no Supabase read. Data changes: every KEEP_WARM_CTX_EVERY s it
+# rebuilds the context a group text would get (chat.league_ctx -> prompt_prefix; ~80 KB of Supabase
+# reads, so not every minute: ~350 MB/month at 600 s). Live sidecar
+# only: off in side sidecars (PICKY_GROUP_EXAM=1, PICKY_SIDE=1, any port but 8768) unless
+# PICKY_KEEP_WARM=1; PICKY_KEEP_WARM=0 turns it off anywhere. No Python lock is shared with /group:
+# a text that lands mid-prime only queues behind it in Ollama, and finds the prefix warm.
+
+KEEP_WARM_EVERY = float(os.environ.get("PICKY_KEEP_WARM_EVERY", "60"))
+KEEP_WARM_IDLE = float(os.environ.get("PICKY_KEEP_WARM_IDLE", "20"))
+KEEP_WARM_CTX_EVERY = float(os.environ.get("PICKY_KEEP_WARM_CTX_EVERY", "600"))
+KEEP_WARM_MIN_FREE = 10  # % free memory (kern.memorystatus_level); under it, no extra model work
+EXAM_LOCK = os.environ.get("PICKY_EXAM_LOCK", "/tmp/picky-exam.lock")  # "" = don't check
+WARM = {"inflight": 0, "last": 0.0, "hash": None, "at": 0.0, "built": 0.0, "task": None}
+
+
+def keep_warm_on(env=os.environ) -> bool:
+    v = env.get("PICKY_KEEP_WARM", "")
+    if v != "":
+        return v != "0"  # the explicit setting wins over the side-sidecar default
+    side = env.get("PICKY_GROUP_EXAM") == "1" or env.get("PICKY_SIDE", "") not in ("", "0") or \
+        env.get("PICKY_GROUP_PORT", live_flag.LIVE_GROUP_PORT) != live_flag.LIVE_GROUP_PORT
+    return not side
+
+
+def exam_lock_held(path: str = EXAM_LOCK) -> bool:
+    """True while someone holds the shared exam lock (/usr/bin/lockf takes an flock). Tested with a
+    non-blocking flock that's released at once: never held, never created."""
+    if not path:
+        return False
+    import fcntl
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    except OSError:
+        return False
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(fd)
+
+
+def mem_free_pct() -> int | None:
+    try:
+        out = subprocess.run(["/usr/sbin/sysctl", "-n", "kern.memorystatus_level"], capture_output=True,
+                             text=True, timeout=2).stdout
+        return int(out.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def warm_skip(now: float, state: dict, lock_held: bool, live_busy: bool, free: int | None) -> str | None:
+    """Why this tick doesn't prime, or None to prime."""
+    if state["inflight"]:
+        return "text in flight"
+    if now - state["last"] < KEEP_WARM_IDLE:
+        return "a text just ran"
+    if live_busy:
+        return "a live text is in flight in another process"
+    if lock_held:
+        return "exam lock held"
+    if free is not None and free < KEEP_WARM_MIN_FREE:
+        return f"memory {free}% free"
+    return None
+
+
+async def warm_prefix() -> str | None:
+    """prompt_prefix for the context a group text would get right now (viewer-neutral)."""
+    async with httpx.AsyncClient() as c:
+        await VIEWER.session(c)
+        token, mtok = SENDER.set(Sender(handle="keep-warm")), MODE.set("group")
+        try:
+            ctx = await chat.league_ctx(c, VIEWER.jwt, VIEWER.uid, q="", live_refresh=False)
+        finally:
+            MODE.reset(mtok)
+            SENDER.reset(token)
+    return None if ctx.get("error") else chat.prompt_prefix(ctx)
+
+
+async def warm_once(now: float | None = None, build=None, prime=None, latest=None) -> str:
+    """One keep-warm tick; returns what it did (logged)."""
+    now = time.time() if now is None else now
+    why = warm_skip(now, WARM, exam_lock_held(), live_flag.busy(), await asyncio.to_thread(mem_free_pct))
+    if why:
+        return f"skip ({why})"
+    prefix = (latest or (lambda: picky_brain.LAST_PREFIX["text"]))()
+    if not prefix or now - WARM["built"] >= KEEP_WARM_CTX_EVERY:
+        WARM["built"] = now  # a failed build waits for the next round too: no retry storm on Supabase
+        prefix = await (build or warm_prefix)() or prefix
+    if not prefix:
+        return "skip (no context)"
+    if WARM["inflight"]:  # a text arrived during the Supabase reads: it primes for itself
+        return "skip (text arrived)"
+    h = format(hash(prefix) & 0xffffff, "06x")  # the same tag chat._prime logs
+    t0 = time.time()
+    async with httpx.AsyncClient() as c:
+        await (prime or chat._prime)(c, prefix)
+    changed, secs = h != WARM["hash"], time.time() - t0
+    WARM.update(hash=h, at=time.time())
+    return f"primed {h} in {secs:.1f}s" + (" (new prefix)" if changed else "") + (" (was cold)" if secs > 5 else "")
+
+
+def warm_log_level(out: str, last: str | None) -> int:
+    """INFO for a prime that did work (new prefix, cold) and for a new kind of skip; a warm re-prime
+    or the same skip again (every minute through an exam) is DEBUG."""
+    if out.startswith("primed"):
+        return logging.INFO if "(" in out else logging.DEBUG
+    return logging.INFO if out != last else logging.DEBUG
+
+
+async def _keep_warm_loop() -> None:
+    last = None
+    while True:
+        await asyncio.sleep(KEEP_WARM_EVERY)
+        try:
+            out = await warm_once()
+            log.log(warm_log_level(out, last), "keep-warm: %s", out)
+            last = out if out.startswith("skip") else None
+        except Exception as e:  # noqa: BLE001 - keep-warm never takes the sidecar down
+            log.warning("keep-warm failed: %r", e)
+
+
+class _InflightMiddleware:
+    """Counts /group requests in flight and stamps when the last one finished (pure ASGI)."""
+
+    def __init__(self, app_):
+        self.app = app_
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("path") != "/group":
+            return await self.app(scope, receive, send)
+        WARM["inflight"] += 1
+        try:
+            return await self.app(scope, receive, send)
+        finally:
+            WARM["inflight"] -= 1
+            WARM["last"] = time.time()
+
+
+app.add_middleware(_InflightMiddleware)
+
+
+@app.on_event("startup")
+async def _start_keep_warm():
+    if keep_warm_on():
+        log.info("keep-warm on: every %.0fs after %.0fs idle (exam lock %s)", KEEP_WARM_EVERY, KEEP_WARM_IDLE,
+                 EXAM_LOCK or "not checked")
+        WARM["task"] = asyncio.create_task(_keep_warm_loop())
+
+
 if __name__ == "__main__":
     import uvicorn
 

@@ -182,7 +182,7 @@ def _banter_run(q, team="TG", route=None, json_out='{"pick": 1, "tie": "", "own"
         calls["understand"] += 1
         return pb.Brief(asking="x", intent="insult")
 
-    async def fake_json(prefix, tail, user, schema, temperature, num_predict, timeout):
+    async def fake_json(prefix, tail, user, schema, temperature, num_predict, timeout, **k):
         calls["json"].append({"tail": tail, "user": user, "num_predict": num_predict})
         return json_out
 
@@ -560,7 +560,7 @@ def test_fact_lane_wraps_with_one_voice_line_and_keeps_facts_verbatim():
     def run(q, line, route=None):
         calls = []
 
-        async def fake_json(prefix, tail, user, schema, temperature, num_predict, timeout):
+        async def fake_json(prefix, tail, user, schema, temperature, num_predict, timeout, **k):
             calls.append(user)
             return '{"line": %s}' % __import__("json").dumps(line)
 

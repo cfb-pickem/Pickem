@@ -111,6 +111,13 @@ OLLAMA_FALLBACK_KEEP_ALIVE = "15m"
 OLLAMA_KEEP_ALIVE = os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h")
 # Thinking models (qwen3.5): "false" skips the reasoning pass. Unset = don't send.
 OLLAMA_THINK = os.environ.get("PICKY_OLLAMA_THINK")
+# A cold prefix prime (~8k tokens after another gemma user evicted it) takes ~55-60 s. It gets its own
+# read timeout: under a caller's 30/60 s timeout it was cut off just short, and the next call paid the
+# whole prefill again on top (live 2026-11-16 12:18: 279 s).
+PRIME_TIMEOUT = float(os.environ.get("PICKY_PRIME_TIMEOUT", "180"))
+# picky_brain sets a callable per text: False when the results guard's regen would bust the reply's
+# time budget (the templated answer goes out instead). None = no budget (the site).
+REGEN_OK: contextvars.ContextVar = contextvars.ContextVar("picky_regen_ok", default=None)
 
 RATE_LIMIT_PER_MIN = 10
 MAX_HISTORY_TURNS = 10
@@ -3388,7 +3395,11 @@ async def _guarded_stream(convo: list[dict], prefix: str | None, facts: dict):
         return
     probs = list(dict.fromkeys(dropped))
     text = ""
-    if probs:
+    regen_ok = REGEN_OK.get()
+    if probs and regen_ok is not None and not regen_ok():
+        log.warning("results guard: %s; no time for a regen, templated answer", probs)
+        text = templated_answer(facts)
+    elif probs:
         log.warning("results guard: %s; regenerating. draft: %r", probs, text[:400])
         fix = convo[:-1] + [{"role": "user", "content": convo[-1]["content"] + "\n\n"
                              + correction_rider(probs, facts) + "\n\n" + facts["question"]}]
@@ -5511,13 +5522,29 @@ async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
     else:
         return
     try:
-        r = await c.post(f"{OLLAMA}/api/{endpoint}", json=payload)
+        r = await c.post(f"{OLLAMA}/api/{endpoint}", json=payload,
+                         timeout=httpx.Timeout(connect=5.0, read=PRIME_TIMEOUT, write=10.0, pool=5.0))
         if r.status_code == 200:
             d = r.json()
             log.info("prime: %.1fs (prefix %s)", (d.get("prompt_eval_duration") or 0) / 1e9,
                      format(hash(prefix) & 0xffffff, "06x"))
     except (httpx.HTTPError, ValueError) as e:  # ValueError: a non-JSON body
         log.warning("prime failed: %s", e)
+
+
+_BG_PRIMES: set = set()
+
+
+def start_prime(prefix: str) -> asyncio.Task:
+    """_prime in a background task with its own client: a caller that can't wait for a cold prefill
+    (picky_brain's fact/banter calls) moves on, and the prefill still finishes for the next text."""
+    async def run():
+        async with httpx.AsyncClient() as c:
+            await _prime(c, prefix)
+    t = asyncio.create_task(run())
+    _BG_PRIMES.add(t)
+    t.add_done_callback(_BG_PRIMES.discard)
+    return t
 
 
 async def _ollama_stream(messages: list[dict], prefix: str | None = None):
@@ -7171,6 +7198,29 @@ async def health():
             "gate": {"members_active": GATE.members(), "test_busy": GATE.test_busy, **GATE.stats}}
 
 
+async def league_ctx(client: httpx.AsyncClient, jwt: str, user_id: str, mode: str = "leaderboard",
+                     rival_predictions: dict | None = None, q: str | None = None, prev_q: str = "",
+                     live_refresh: bool = True) -> dict:
+    """The snapshot every prompt is built from (Supabase reads, Picky's own record, the live overlay,
+    ESPN notes, the CFBD index). chat() builds it here for each request, and the group sidecar's
+    keep-warm builds it here with q="" to prime the same prompt_prefix the next text will use, so the
+    two can't drift. q=None: no question (no live overlay, as before)."""
+    try:
+        ctx = await _build_context(client, jwt, user_id, mode=mode, rival_predictions=rival_predictions)
+    except httpx.HTTPError as e:
+        log.warning("supabase fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail="supabase_unreachable")
+    if not ctx.get("error"):
+        ctx["picky_player"], _ = await asyncio.gather(
+            picky_player_facts(client, jwt, ctx), load_live(client, jwt, ctx))
+        if q is not None:  # game-day live feed: rider + fresher pool scores (live_games.py)
+            await asyncio.to_thread(live_games.apply_to_ctx, ctx, q, live_refresh, prev_q)
+        ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
+    # (re)load the CFBD cache off the event loop; ~3 s only after a refresh
+    await asyncio.to_thread(_cfbd_index)
+    return ctx
+
+
 @app.post("/chat")
 async def chat(req: Request):
     # a member request preempts test traffic the moment it arrives, before
@@ -7214,26 +7264,12 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
-        try:
-            ctx = await _build_context(
-                client, jwt, user_id, mode=mode, rival_predictions=rival_predictions
-            )
-        except httpx.HTTPError as e:
-            log.warning("supabase fetch failed: %s", e)
-            raise HTTPException(status_code=502, detail="supabase_unreachable")
-        if not ctx.get("error"):
-            ctx["picky_player"], _ = await asyncio.gather(
-                picky_player_facts(client, jwt, ctx), load_live(client, jwt, ctx))
-            if last.get("role") == "user":  # game-day live feed: rider + fresher pool scores (live_games.py)
-                prev_q = next((m.get("content", "") for m in reversed(messages[:-1])
-                               if isinstance(m, dict) and m.get("role") == "user"), "")
-                await asyncio.to_thread(live_games.apply_to_ctx, ctx, last.get("content", ""), True, prev_q)
-            if last.get("role") == "user" and wants_submission(ctx, last.get("content", "")):
-                ctx["submission"] = await load_submission(client, jwt, ctx)
-    if not ctx.get("error"):
-        ctx["espn"] = await espn.game_notes([g["id"] for g in ctx["games_this_week"]])
-    # (re)load the CFBD cache off the event loop; ~3 s only after a refresh
-    await asyncio.to_thread(_cfbd_index)
+        prev_q = next((m.get("content", "") for m in reversed(messages[:-1])
+                       if isinstance(m, dict) and m.get("role") == "user"), "")
+        ctx = await league_ctx(client, jwt, user_id, mode=mode, rival_predictions=rival_predictions,
+                               q=last.get("content", "") if last.get("role") == "user" else None, prev_q=prev_q)
+        if not ctx.get("error") and last.get("role") == "user" and wants_submission(ctx, last.get("content", "")):
+            ctx["submission"] = await load_submission(client, jwt, ctx)
     # breakdown questions only: public splits + kickoff weather (cached, fail soft)
     ag = analysis_games(ctx, last.get("content", "")) if last.get("role") == "user" else []
     if ag and not all(game_cards.load_card(ctx.get("current_week"), g["id"]) for g in ag[:4]):  # cards have it
