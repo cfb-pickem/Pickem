@@ -314,7 +314,11 @@ def last_meeting(g: dict) -> str | None:
         return None
     x = max(hits, key=lambda x: x.get("startDate") or "")
     ln = _line(x)
-    s = f"  Last meeting ({x['season']}): {x['awayTeam']} {x['awayScore']} at {x['homeTeam']} {x['homeScore']}"
+    aw = x["awayScore"] > x["homeScore"]
+    win, lose = (x["awayTeam"], x["homeTeam"]) if aw else (x["homeTeam"], x["awayTeam"])
+    hi, lo = max(x["awayScore"], x["homeScore"]), min(x["awayScore"], x["homeScore"])
+    s = (f"  Last meeting ({x['season']}): {win} won {hi}-{lo} "
+         f"{'at ' + x['homeTeam'] if aw else 'at home vs ' + x['awayTeam']}")
     if ln:
         cm = x["homeScore"] - x["awayScore"] + ln["spread"]
         hs = ln["spread"]

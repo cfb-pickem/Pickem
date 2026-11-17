@@ -5991,10 +5991,12 @@ def week_claim_check(ctx: dict, question: str):
     return ok
 
 
-def record_check(ctx: dict, question: str):
+def record_check(ctx: dict, question: str, card: str = ""):
     """A sentence test for invented records: a season record ('34-18 overall')
     for the caller or a named member must be their real one; on a pure
-    opinion question any W-L must come from the opinion riders."""
+    opinion question any W-L must come from the opinion riders. A W-L or score
+    printed in a code-computed GAME CARD / standings block (`card`) is true."""
+    card_recs = set(re.findall(r"\b\d{1,2}-\d{1,2}\b", card or ""))
     st = {r["team"]: (r["w"], r["l"]) for r in ctx.get("standings_ytd") or []}
     me = (ctx.get("you") or {}).get("team_name")
     op = opinion_note(question, ctx)
@@ -6106,6 +6108,8 @@ def record_check(ctx: dict, question: str):
                 return False
         for m in re.finditer(r"\b(\d{1,2})-(\d{1,2})\b", sent):
             rec = (int(m.group(1)), int(m.group(2)))
+            if m.group(0) in card_recs:
+                continue  # straight from the GAME CARD / standings block (computed from CFBD)
             if op_only and m.group(0) not in op_recs:
                 return False
             after = sent[m.end():m.end() + 30]
@@ -7379,7 +7383,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
                          and not yb and "(the user" not in convo[-1]["content"]),
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
-                extra=_named_checks([("record", record_check(ctx, qtext)), ("trait", trait_word_check(ctx, qtext)),
+                extra=_named_checks([("record", record_check(ctx, qtext, sc)), ("trait", trait_word_check(ctx, qtext)),
                                      ("grounded", grounded_check(ctx, corpus, qtext)), ("news", news_claim_check(corpus)),
                                      ("pick_claim", pick_claim_check(ctx, qtext)),
                                      ("live", live_games.claim_check(None if "GAME CARD" in sc  # pre-game card: not live
