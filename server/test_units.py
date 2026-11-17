@@ -97,7 +97,9 @@ check(O("New Mexico's defense vs Wyoming's offense, who wins that?", "New Mexico
 check(O("Memphis -3.5 at Navy. How does Memphis's defense match up with the option?", "Memphis", "Navy") == "Navy",
       "a later possessive mention still counts")
 ql = U.question_lines("Can Team 3 run on Team 35?", "Team 35", "Team 3", tab)
-check(ql and ql[0].startswith("Team 3's run game"), "the asked offense comes first")
+check(len(ql) == 1 and ql[0].startswith("Team 3's run game"),
+      "one offense asked: only that direction (the other muddied the 12B's answer in the model check)")
+check(len(U.question_lines("who wins the run game battle?", "Team 35", "Team 3", tab)) == 2, "no direction: both ways")
 
 # ---------------------------------------------------------------------------
 # travel: venues + games patched in (CFBD shapes: elevation in meters as a string, IANA timezone)
@@ -193,6 +195,12 @@ lidx = {"teams": {"ohio state": {"name": "Ohio State", "sp": {"rank": 4}, "games
                   "nebraska": {"name": "Nebraska", "sp": {"rank": 30}, "games": [cur]},
                   "michigan": {"name": "Michigan", "sp": {"rank": 12}, "games": [nxt]},
                   "rutgers": {"name": "Rutgers", "sp": {"rank": 60}, "games": [prv]}}}
+g_ia = {"id": 5, "awayTeam": "Iowa", "homeTeam": "Illinois"}
+g_ne = {"id": 6, "awayTeam": "Ohio State", "homeTeam": "Nebraska"}
+check(S.games_for(["Nebraska", "Iowa"], [g_ia, g_ne], set(), "Is Iowa looking ahead to Nebraska?") == [g_ia],
+      "two teams that don't meet + a lookahead ask: the first-named team's game gets the card")
+check(S.games_for(["Nebraska", "Iowa"], [g_ia, g_ne], set(), "Iowa or Nebraska, who you got?") == [],
+      "two teams that don't meet, no lookahead ask: no card (unchanged)")
 ll = S.lookahead_line(cur, lidx)
 check("lookahead spot for Ohio State (favored here, SP+ #12 Michigan next)" in ll, "lookahead: favored + big game next: " + ll)
 ll2 = S.lookahead_line(dict(cur, lines=[{"provider": "DraftKings", "spread": -3}]), lidx)

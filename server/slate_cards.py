@@ -705,6 +705,17 @@ def match_games(named: list[str], games: list[dict], pool_ids: set) -> list[dict
     return [g for g in out if g["id"] not in pool_ids]
 
 
+def games_for(named: list[str], games: list[dict], pool_ids: set, q: str = "") -> list[dict]:
+    """match_games, plus: 'Is Iowa looking ahead to Nebraska?' names two teams that don't play each other this
+    week; a lookahead/letdown ask is about the FIRST team named's game (model check 2026-11-17: no card, so the
+    pool guard said 'Nebraska isn't in the pool')."""
+    out = match_games(named, games, pool_ids)
+    if out or len(named) < 2 or "lookahead" not in sub_asks(q):
+        return out
+    first = min(named, key=lambda t: (units._pos(t, q) if units._pos(t, q) >= 0 else 10 ** 6))
+    return match_games([first], games, pool_ids)
+
+
 def football_ask(q: str) -> bool:
     """A question about the game (any '?' or betting/football words), not a statement like 'Notre Dame is back.'"""
     return "?" in (q or "") or bool(_PICK_WORDS.search(q or ""))
@@ -721,7 +732,13 @@ def covers(question: str, ctx: dict) -> bool:
         return False
     games = upcoming_games(idx, dt.datetime.now(dt.timezone.utc))
     pool_ids = {int(g["id"]) for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
-    return bool(match_games(cfbd.other_teams_named(question, [], idx) or player_teams(question, idx), games, pool_ids))
+    named = cfbd.other_teams_named(question, [], idx) or player_teams(question, idx)
+    if games_for(named, games, pool_ids, question):
+        return True
+    # 'Is Iowa looking ahead to Nebraska?': the card is the POOL game's (extras with the SUB-QUESTION line), and the
+    # other team named is next week's opponent, not a non-pool pick: no NOT-IN-POOL rail either
+    return bool((sub_asks(question) or units.ask_units(question)) and len(named) >= 2
+                and any(g["id"] in pool_ids for g in games_for(named, games, set(), question)))
 
 
 def player_teams(question: str, idx: dict) -> list[str]:
@@ -929,7 +946,7 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     pool = {int(g["id"]): g for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
     named = cfbd.other_teams_named(q, [], idx) or player_teams(q, idx)
     coach = "\n".join(x for x in (coach_note(q, idx, named), conference_note(q), cfp_note(q)) if x)
-    picks = match_games(named, games, set())  # pool games too: the card adds the move, splits, h2h, news
+    picks = games_for(named, games, set(), q)  # pool games too: the card adds the move, splits, h2h, news
     whole = bool(_SLATE_ASK.search(q)) and not picks
     if (not picks and not whole) or (picks and not football_ask(q)):
         return coach
