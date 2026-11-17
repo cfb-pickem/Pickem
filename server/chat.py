@@ -6321,6 +6321,22 @@ _TICS = re.compile(r"\b(don'?t get cocky|sitting pretty|the rest of us|here to w
                    r"so maybe you should|go(es|ing)? to (your|his|her|their) head|let that sink in)\b", re.I)  # board-voice tic, 11/16
 
 
+def _named_checks(checks: list):
+    """All the per-sentence fact checks as one callable; logs which one dropped a sentence (genius exam
+    2026-11-17: true game-card facts were being cut and the log couldn't say by what)."""
+    live = [(n, f) for n, f in checks if f is not None]
+    if not live:
+        return None
+
+    def ok(x):
+        for n, f in live:
+            if not f(x):
+                log.info("fact check %s dropped: %r", n, x[:100])
+                return False
+        return True
+    return ok
+
+
 def _both(a, b):
     if a is None or b is None:
         return a or b
@@ -6760,6 +6776,27 @@ def sentence_ok(sent: str, banned: set, body: bool = False, no_self: bool = Fals
 _EXAMPLE_NGRAMS = _example_ngrams()
 
 
+def _drop_reason(sent: str, banned: set, body=False, no_self=False, offtopic=False, sides=None) -> str:
+    """Which sentence_ok rule cut a sentence, for the log ('extra' = a fact check, logged by name)."""
+    sent = sent.replace("\u2019", "'").replace("\u2018", "'")
+    for name, hit in (("mashup", lambda: _MASHUPS.search(sent)),
+                      ("family/health/anatomy", lambda: _FAMILY_DARK.search(sent) or _HEALTH_CLAIM.search(sent)
+                       or _ANATOMY.search(sent)),
+                      ("superlative", lambda: fake_superlative(sent)), ("tic", lambda: _TICS.search(sent) and len(sent.split()) <= 14),
+                      ("mascot", lambda: _MASCOT_RE is not None and _MASCOT_RE.search(sent)),
+                      ("wrong_person", lambda: sides and wrong_person_picks(sent, *sides)),
+                      ("offtopic_leak", lambda: offtopic and _OFFTOPIC_LEAK.search(sent)),
+                      ("body", lambda: body and _BODY_WORDS.search(sent)),
+                      ("self_intrusion", lambda: no_self and _SELF_INTRUSION.search(sent)),
+                      ("copy", lambda: _ngrams(sent) & banned)):
+        try:
+            if hit():
+                return name
+        except Exception:  # noqa: BLE001
+            pass
+    return "repeat/extra"
+
+
 async def _filtered(stream, banned: set, body: bool = False, no_self: bool = False, offtopic: bool = False,
                     sides: tuple | None = None, extra=None):
     buf, sent_any, spare = "", False, None
@@ -6783,7 +6820,7 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
                 and not (sides and wrong_person_picks(x, *sides)) and not (offtopic and _OFFTOPIC_LEAK.search(x)) \
                 and (extra is None or extra(x)):
             spare = x
-        log.info("sentence filter dropped: %r", x[:120])
+        log.info("sentence filter dropped (%s): %r", _drop_reason(x, banned, body, no_self, offtopic, sides), x[:120])
 
     async for chunk in stream:
         if not chunk.startswith("data: {"):
@@ -7342,15 +7379,17 @@ async def _chat(req: Request, test: bool, hold: int | None):
                          and not yb and "(the user" not in convo[-1]["content"]),
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
-                extra=_both(_both(_both(record_check(ctx, qtext), trait_word_check(ctx, qtext)),
-                                  _both(grounded_check(ctx, corpus, qtext), news_claim_check(corpus))),
-                            _both(_both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
-                                        _both(picky_claim_check(ctx), picky_claim_check(ctx, "you"))),
-                                  _both(_both(value_claim_check(ctx), advice_jab_check(ctx, qtext)),
-                                        _both(_both(fav_claim_check(ctx), card_side_check(ctx)),
-                                              _both(line_set_check(ctx), move_claim_check(ctx)))))) if not ctx.get("error") else None),
+                extra=_named_checks([("record", record_check(ctx, qtext)), ("trait", trait_word_check(ctx, qtext)),
+                                     ("grounded", grounded_check(ctx, corpus, qtext)), ("news", news_claim_check(corpus)),
+                                     ("pick_claim", pick_claim_check(ctx, qtext)),
+                                     ("live", live_games.claim_check(ctx.get("live_rider_games"))),
+                                     ("picky_claim", picky_claim_check(ctx)), ("you_claim", picky_claim_check(ctx, "you")),
+                                     ("value", value_claim_check(ctx)), ("advice_jab", advice_jab_check(ctx, qtext)),
+                                     ("fav_claim", fav_claim_check(ctx)), ("card_side", card_side_check(ctx)),
+                                     ("line_set", line_set_check(ctx)), ("move_claim", move_claim_check(ctx))])
+                if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or (None if "GAME CARD" in sc else live_games.required_fact(ctx, qtext))
-                                     or required_fact(ctx, qtext) or rankings_fact(rn))
+                                     or (None if sc else required_fact(ctx, qtext)) or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),
         media_type="text/event-stream",
