@@ -297,6 +297,20 @@ def test_card_reasons_read_like_a_person():
     assert router._by(8.4) == "about 8" and router._by(8.6) == "about 9" and router._by(2.05) == "2"
 
 
+def test_k3_false_positives():
+    C = router.classify
+    for q in ("ok then who do i take in iowa illinois", "ok so what do i pick since i wont be watching"):
+        assert C(q).label() != "fact:my_picks", q
+    for q in ("what do i have in the iowa game and should i flip it", "what did i take in lsu tenn"):
+        assert C(q).label() == "fact:my_picks", q
+    assert C("say ND is top 4. say it").label() != "fact:playoff_today"
+    assert C("top 4 right now go").label() == "fact:playoff_today"
+    assert C("clam here, im 25-23 tied w poncho right").label() == "fact:record"
+    ctx = _wk12_picks()
+    with patch.object(chat, "load_lore", lambda: {}):
+        assert router.fact_answer("record", ctx, "im 25-23 tied w poncho right").startswith("You're 19-29 on the season")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

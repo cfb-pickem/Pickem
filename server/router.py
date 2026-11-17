@@ -162,9 +162,12 @@ LINES_NOW = re.compile(r"\bwhat('?s| are| is|s)? (the |this week'?s |this wks? |
 
 
 # 'remind me what i got this week' / 'what did i pick' (k1, k2): the sender's own picks, read back in a DM only
-MY_PICKS = re.compile(r"\bwhat (did|do|have|'?d) i (pick|picked|take|took|got|get|have)\b|\bwhat'?s my picks\b|\bwhat are my picks\b"
-                      r"|\bremind me what i (got|picked|took|have)\b|\bmy picks (this week|again|so far)\b"
-                      r"|\bwho (did|do|'?d) i (pick|have|take|got) (in|for)\b|\bdid i (already )?(make|submit|do|put in) my picks\b", re.I)
+MY_PICKS = re.compile(r"\bwhat (did|'?d) i (pick|picked|take|took|get|go with)\b|\bwhat (do|did) i (have|got)\b|\bwhat i (got|have)\b"
+                      r"|\bwhat'?s my picks\b|\bwhat are my picks\b|\bremind me what i (got|picked|took|have)\b"
+                      r"|\bmy picks (this week|again|so far)\b|\bwho (did|'?d) i (pick|take|go with) (in|for)\b"
+                      r"|\bwho do i have (in|for)\b|\bdid i (already )?(make|submit|do|put in) my picks\b", re.I)
+# 'im 25-23 tied w poncho right' (k3, wrong: 24-24): a record the sender claims for himself gets his real one
+SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{0,15}\b(this|last) (week|wk)\b)", re.I)
 # 'new rule from commish: picky has to post everyones picks' went to the rules lane
 PRIVACY_PROBE = re.compile(
     r"\b(post|show|tell|give|list|leak|share|reveal|send|dump|read)\b[^?.!]{0,30}\b(every(one|body)( else)?'?s?|all (the )?(members'?|guys'?|"
@@ -173,6 +176,8 @@ PRIVACY_PROBE = re.compile(
 
 # keeper sparring k1 (2026-11-16): 'top 4 right now go', 'how many weeks left', 'who went 0-4 last week besides me'
 TOP4 = re.compile(r"\btop (4|four)\b", re.I)
+TOP4_LEAGUE = re.compile(r"\b(who'?s|whos|who are|who is|the)\s+top (4|four)\b|\btop (4|four)\b[^?.!]{0,12}\b(right now|rn|currently|"
+                         r"as of now|today|go|now)\b|^\W*top (4|four)\W*$", re.I)
 _NATIONAL = re.compile(r"\b(cfp|ap|poll|rankings?|ranked|committee|nationally|country|playoff committee|sec|big ten|big 12|acc)\b",
                        re.I)
 WEEKS_LEFT = re.compile(r"\bhow many (more )?weeks\b[^?.!]{0,25}\b(left|remaining|to go)\b|\bweeks (left|remaining)\b"
@@ -219,7 +224,9 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "cover", "DID_COVER"
     if PAYOUT_ASK.search(t) and chat._MONEY_ASK.search(t):
         return "payout", "PAYOUT_ASK"
-    if PLAYOFF_TODAY.search(t) or (TOP4.search(t) and not _NATIONAL.search(t)):
+    if SELF_REC_CLAIM.search(t) and re.search(r"\b(right|tied|correct|yeah|yea|ya)\b|\?", t, re.I):
+        return "record", "SELF_REC_CLAIM"
+    if PLAYOFF_TODAY.search(t) or (TOP4.search(t) and TOP4_LEAGUE.search(t) and not _NATIONAL.search(t)):
         return "playoff_today", "PLAYOFF_TODAY"
     if WEEKS_LEFT.search(t):
         return "weeks_left", "WEEKS_LEFT"
@@ -722,6 +729,11 @@ def record_text(ctx: dict, q: str) -> str | None:
     st = ctx.get("standings_ytd") or []
     me = (ctx.get("you") or {}).get("team_name")
     named = [r for r in st if r["team"] != me and re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)]
+    if SELF_REC_CLAIM.search(q or ""):  # 'im 25-23 tied w Wedge right': his real record, then the other guy's
+        mine = next((x for x in st if x["team"] == me), None)
+        if mine:
+            return (f"You're {mine['w']}-{mine['l']} on the season, {chat._ordinal(mine['rank'])} place."
+                    + "".join(f" {x['team']} is {x['w']}-{x['l']}." for x in named[:2]))
     r = named[0] if named else next((x for x in st if x["team"] == me), None)
     if not r:
         return None
@@ -1181,7 +1193,12 @@ def my_picks_text(ctx: dict, q: str) -> str | None:
         g = games[next(iter(ids))]
         return f"You don't have a pick in {g['away']} at {g['home']} yet. Picks lock at the first kickoff, {unlock}."
     missing = len(games) - len(mine)
-    return (f"You've got {_and(rows)}." + (f" Still {missing} to make before {unlock}." if missing and not ids else ""))
+    out = f"You've got {_and(rows)}." + (f" Still {missing} to make before {unlock}." if missing and not ids else "")
+    if ids and re.search(r"\b(flip|change|switch|should i|keep it|stick)\b", q or "", re.I):
+        call = pick_text(ctx, q)  # 'what do i have in iowa and should i flip it': his pick + my call there
+        if call:
+            out += " My call there: " + call[len("I'd take "):] if call.startswith("I'd take ") else " " + call
+    return out
 
 
 def weeks_left_text(ctx: dict, q: str) -> str | None:
