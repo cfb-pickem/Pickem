@@ -222,9 +222,14 @@ def others_text(ctx: dict, q: str) -> str | None:
 
 def short_text(ctx: dict, q: str) -> str | None:
     text, _, last = (q or "").partition(" ||| ")
-    if not re.search(r"\bcalls?:|My \d calls|I'd take", last):
+    if not re.search(r"\bcalls?:|My \d calls|I'd take|I've got", last):
         return None
-    labs = _LABEL.findall(last)
+    head = re.match(r"\s*I'?ve got (.+?)\.(?:\s|$)", last)
+    if head:  # the slate lane's first sentence is the list
+        best = re.search(r"Best play(?::|'s) (.+?)\.(?:\s|$)", last)
+        items = [x.strip() for x in re.split(r",\s*(?:and\s+)?|\s+and\s+", head.group(1)) if x.strip()]
+        return ", ".join(items) + "." + (f" Best: {best.group(1)}." if best else "")
+    labs = _LABEL.findall(re.sub(r"\b(I'?d take|Best play'?s?:?|My \d calls:)\s*", "", last))
     seen, out = set(), []
     for team, num in labs:
         t = team.strip()
@@ -233,7 +238,7 @@ def short_text(ctx: dict, q: str) -> str | None:
         seen.add(t.lower())
         out.append(f"{t} {num}")
     out = [x for x in out if not x.startswith(("SP", "FPI"))][:4]
-    best = re.search(r"Best play: (.+?)\.(?:\s|$)", last)
+    best = re.search(r"Best play(?::|'s) (.+?)\.(?:\s|$)", last)
     return (", ".join(out) + "." + (f" Best: {best.group(1)}." if best else "")) if out else None
 # pushback on Picky's own call ('8.5 is a lot for a road team', 'bielema always plays iowa close', 'ok so baylor then'):
 # keeper k1 live run, Picky said 'I'd take Illinois +8.5' then 'Iowa ... They'll smother Illinois.'
@@ -790,8 +795,9 @@ _JAB_MARK = re.compile(
     r"^(try|just try|maybe|don'?t|good luck|honestly|unless you|since you|after your|pick your poison|you'?re (probably|so|usually|just))\b"
     r"|\b(keep up|backbone|chalk|terrified|scared|hurt your feelings|your feelings|get your act together|your nerves|"
     r"for once|your (bad )?(record|misses|taste|luck|season|week)|\d{1,2} misses|\d-\d (week|record|season)|"
-    r"lose more|bottom[- ]tier|in the basement|cry for help|wouldn'?t know|overthink)\b", re.I)
-_LINE_TOKEN = re.compile(r"(?<![\w-])[+-]\d{1,2}(\.5)?\b|\b(covers?|spread|kickoff|lock(s|ed)?)\b", re.I)
+    r"lose more|bottom[- ]tier|in the basement|cry for help|wouldn'?t know|overthink|\d+(st|nd|rd|th) place|"
+    r"last week|choke\w*|brain cell|collapse|your \w+ pick|you went \d|terrible taste|dignity)\b", re.I)
+_LINE_TOKEN = re.compile(r"(?<![\w-])[+-]\d{1,2}(\.5)?\b|\b(spread|kickoff|lock(s|ed)?)\b", re.I)
 
 
 def cut_tail_jabs(sents: list[str]) -> list[str]:
@@ -1186,7 +1192,7 @@ def pick_text(ctx: dict, q: str) -> str | None:
         rs = [r for r in game_cards._reasons(c, locked) if r]
         why = say_reason(rs[0], c, locked) if rs else ""
         out.append(f"I'd take {c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
-                   + (f": {(why[0].lower() + why[1:] if why[1:2].islower() else why)}" if why else "") + ".")
+                   + (f": {why}" if why else "") + ".")
     return " ".join(out)
 
 
@@ -1200,23 +1206,28 @@ def slate_text(ctx: dict, q: str) -> str | None:
              and not chat._game_is_locked({"Start (CT)": g.get("start"), "Status": g.get("status")}, now)]
     if not games or chat.week_locked(ctx):
         return None
-    calls, cards = [], []
+    labels, whys, cards = [], [], []
     for g in games:
         c = _card_for(ctx, g)
         if c:
             cards.append(c)
             lk = game_cards.is_locked(c)
             rs = [r for r in game_cards._reasons(c, lk) if r]
-            why = " ".join(say_reason(rs[0], c, lk).split(";")[0].split()[:25]).rstrip(".,") if rs else ""
-            calls.append(f"{c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
-                         + (f": {(why[0].lower() + why[1:] if why[1:2].islower() else why)}" if why else ""))
+            why = " ".join(say_reason(rs[0], c, lk).split(";")[0].split()[:22]).rstrip(".,") if rs else ""
+            labels.append(c["lean"]["label"])
+            team = c["lean"]["side"]
+            word = c["confidence"].get("word") or "lean"
+            whys.append(f"{team}'s a coin flip" + (f" ({why})" if why else "") if word == "coin flip"
+                        else why if why.lower().startswith(team.lower()) else f"{team}, {why}" if why else f"{team}, {word}")
         else:
-            calls.append(f"{g['away']} at {g['home']}: no read yet")
+            whys.append(f"no read yet on {g['away']} at {g['home']}")
     if not cards:
         return None
     best = game_cards.strongest(cards)
-    return (f"My {len(games)} calls:\n" + "\n".join(calls) + "\n"
-            + (f"Best play: {best['lean']['label']}." if best and len(cards) > 1 else ""))
+    # one conversational text, three sentences (keeper k1 judge: the 'My 4 calls:' list + 'Best play:' header read
+    # like a report in the group)
+    return (f"I've got {_and(labels)}. " + "; ".join(w[0].upper() + w[1:] if k == 0 else w for k, w in enumerate(whys))
+            + "." + (f" Best play's {best['lean']['label']}." if best and len(cards) > 1 else ""))
 
 
 def _and(xs: list[str]) -> str:
@@ -1650,7 +1661,7 @@ def fact_user(q: str, answer: str, sender: str = "", jab: bool = False, leader: 
 
 
 _FACTY = re.compile(r"\d|\b(cover\w*|miss\w*|won|lost|record|points?|place|ahead|behind|back of|up on|in first|"
-                    r"in last|spread|line)\b", re.I)
+                    r"in last|spread|line|last week|this week|week|choke\w*|blew|blow it|again)\b", re.I)
 
 
 # the line talks to the texter: a he/they line is about someone in the answer (live exam 2026-11-16: "He is

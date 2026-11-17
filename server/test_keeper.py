@@ -489,6 +489,8 @@ def test_others_and_short_follow_ups():
     assert router.fact_answer("short", ctx, "too long ||| " + slate) == \
         "Northwestern -2.5, Illinois +8.5. Best: Northwestern -2.5.", router.fact_answer("short", ctx, "too long ||| " + slate)
     assert router.fact_answer("short", ctx, "too long ||| Pizza rules.") is None
+    sl2 = "I've got Northwestern -2.5 and Illinois +8.5. Northwestern, SP+ has it; Illinois, SP+ has Iowa by 8. Best play's Northwestern -2.5."
+    assert router.fact_answer("short", ctx, "too long ||| " + sl2) == "Northwestern -2.5, Illinois +8.5. Best: Northwestern -2.5."
     cards = {11: {"lean": {"side": "Northwestern", "label": "Northwestern -2.5"}, "confidence": {"word": "lean"}}}
     import game_cards
     with patch.object(router, "_card_for", lambda c, g: cards.get(g["id"])), \
@@ -496,6 +498,16 @@ def test_others_and_short_follow_ups():
             patch.object(game_cards, "is_locked", lambda c, now=None: False):
         r = router.fact_answer("others", ctx, "what about the others ||| I'd take Illinois +8.5.")
         assert r == "The rest: Northwestern -2.5 (lean): SP+ has Northwestern by about 10.", r
+
+
+def test_more_tail_jabs_and_voice_lines():
+    a = ("Go with Northwestern -2.5. They have the better defense. Just try to actually cover a game for once since you "
+         "went 1-3 last week.")
+    assert router.debot(a, "lol just pick one", "full") == "Go with Northwestern -2.5. They have the better defense."
+    a = ("I'd take Northwestern -2.5. They have the better defense. You're still sitting in 9th place, so try not to let "
+         "this one slide like your SMU pick did.")
+    assert router.debot(a, "flip a coin for nw minny", "full") == "I'd take Northwestern -2.5. They have the better defense."
+    assert not router.voice_line_ok("Just try not to choke these like you did last week, man.", "x", {})
 
 
 if __name__ == "__main__":

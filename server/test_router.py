@@ -677,21 +677,21 @@ def test_pick_and_slate_questions_name_a_side_and_line_for_every_open_game():
         q = "who you got in Oregon State at Boise State?"
         assert router.classify(q).label() == "fact:pick"
         out = router.fact_answer("pick", ctx, q)
-        assert out == "I'd take Oregon State +13.5 (best play): oregon State is 3-0 ATS on the road.", out
+        assert out == "I'd take Oregon State +13.5 (best play): Oregon State is 3-0 ATS on the road.", out
         q = "Gimme a read on this weeks games"
         assert router.classify(q).label() == "fact:slate"
         out = router.fact_answer("slate", ctx, q)
         for lab in ("Wake Forest -1.5", "Oregon State +13.5", "UTSA +2.5", "Hawai'i +6.5"):
             assert lab in out, (lab, out)
-        assert out.startswith("My 4 calls:\n") and out.endswith("Best play: Oregon State +13.5."), out
-        assert "Oregon State +13.5 (best play): oregon State is 3-0 ATS on the road" in out, out  # a reason per game
+        assert out.startswith("I've got ") and out.endswith("Best play's Oregon State +13.5."), out
+        assert "; Oregon State is 3-0 ATS on the road;" in out, out  # a reason per game
         q = "Okay picky who should I pick this week"  # live 2026-11-16 10:05pm: only the first 2 games got a call
         out = router.fact_answer("pick", ctx, q)
         for lab in ("Wake Forest -1.5", "Oregon State +13.5", "UTSA +2.5", "Hawai'i +6.5"):
             assert lab in out, (lab, out)
         cards.pop(3)
         out = router.fact_answer("slate", ctx, q)
-        assert "North Texas at UTSA: no read yet" in out, out  # every open game still gets named
+        assert "no read yet on North Texas at UTSA" in out, out  # every open game still gets named
         assert router.fact_answer("pick", ctx, "who you got in North Texas at UTSA?") is None  # no card: full brain
 
 
