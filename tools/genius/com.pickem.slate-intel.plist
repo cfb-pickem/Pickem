@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.pickem.slate-intel</string>
+<key>ProgramArguments</key><array><string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string><string>-I</string><string>/Users/Agent/cfb-pickem/server/slate_intel.py</string><string>run</string></array>
+<key>StartInterval</key><integer>3600</integer>
+<key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+<key>StandardOutPath</key><string>/Users/Agent/cfb-pickem/server/logs/slate_intel.log</string>
+<key>StandardErrorPath</key><string>/Users/Agent/cfb-pickem/server/logs/slate_intel.log</string>
+<key>LowPriorityIO</key><true/><key>Nice</key><integer>10</integer>
+</dict></plist>
