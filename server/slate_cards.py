@@ -434,6 +434,19 @@ def board(top: list[dict], notes: dict) -> str:
     return "THIS WEEK'S NOTABLE GAMES (current market, computed):\n" + "\n".join(rows)
 
 
+def match_games(named: list[str], games: list[dict], pool_ids: set) -> list[dict]:
+    """Upcoming non-pool games for the named teams. Two or more teams named: only a
+    game between two of them ('Ohio State vs Oregon' isn't Ohio State at Nebraska)."""
+    ns = [cfbd.norm(t) for t in named]
+    def teams_of(g):
+        return {cfbd.norm(g["homeTeam"]), cfbd.norm(g["awayTeam"])}
+    if len(ns) >= 2:
+        out = [g for g in games if len(teams_of(g) & set(ns)) >= 2]
+    else:
+        out = [g for g in games if set(ns) & teams_of(g)]
+    return [g for g in out if g["id"] not in pool_ids]
+
+
 def covers(question: str, ctx: dict) -> bool:
     """Cheap, sync (no network): would slate_note put a GAME CARD on this text?
     chat.guard_note uses it to skip its 'NOT IN THE POOL: no spread, no pick' rider."""
@@ -445,11 +458,7 @@ def covers(question: str, ctx: dict) -> bool:
         return False
     games = upcoming_games(idx, dt.datetime.now(dt.timezone.utc))
     pool_ids = {int(g["id"]) for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
-    for team in cfbd.other_teams_named(question, [], idx) or player_teams(question, idx):
-        n = cfbd.norm(team)
-        if any(n in (cfbd.norm(g["homeTeam"]), cfbd.norm(g["awayTeam"])) and g["id"] not in pool_ids for g in games):
-            return True
-    return False
+    return bool(match_games(cfbd.other_teams_named(question, [], idx) or player_teams(question, idx), games, pool_ids))
 
 
 def player_teams(question: str, idx: dict) -> list[str]:
@@ -595,12 +604,7 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     pool_ids = {int(g["id"]) for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
     named = cfbd.other_teams_named(q, [], idx) or player_teams(q, idx)
     coach = coach_note(q, idx, named)
-    picks = []
-    for team in named:
-        n = cfbd.norm(team)
-        g = next((g for g in games if n in (cfbd.norm(g["homeTeam"]), cfbd.norm(g["awayTeam"]))), None)
-        if g and g not in picks and g["id"] not in pool_ids:
-            picks.append(g)
+    picks = match_games(named, games, pool_ids)
     whole = bool(_SLATE_ASK.search(q)) and not picks
     if (not picks and not whole) or (picks and not _PICK_WORDS.search(q)):
         return coach

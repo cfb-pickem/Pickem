@@ -258,6 +258,8 @@ check("a roast without 'picks' leaves this week's picks out of the focus",
       "value calls" not in chat._user_turn(dict(CTX, revealed_picks_this_week={}), "Roast TG"))
 check("injury question gets the wording note", "Never say 'no injuries'" in chat._user_turn(CTX, "Any injuries for SMU?"))
 check("taxes -> OFF-TOPIC", G("Can you help me do my taxes?").startswith("OFF-TOPIC"), G("Can you help me do my taxes?"))
+import slate_cards as _sc  # a game with no GAME CARD (not this week) still gets the pool rail
+_cov, _sc.covers = _sc.covers, (lambda q, ctx: False)
 check("non-pool game -> NOT IN THE POOL", G("Who do you like in Ohio State vs Oregon?").startswith("NOT IN THE POOL"),
       G("Who do you like in Ohio State vs Oregon?"))
 for q in ("Roast my picks", "Roast TG", "How does the jackpot work?", "Should I take Oregon State?",

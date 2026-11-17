@@ -75,8 +75,17 @@ def test_not_offtopic_or_pool_or_picks():
               "Freeman took Notre Dame to the national title game though. Give him some credit."]:
         assert chat.guard_note(CTX, q) == "", q
         assert "LOCKED" not in chat._user_turn(CTX, q), q
-    # a real pick question about a non-pool team still gets the pool rail
-    assert chat.guard_note(CTX, "Should I take Notre Dame this week?").startswith("NOT IN THE POOL")
+    # a real pick question about a non-pool team with no GAME CARD still gets the pool rail ...
+    import slate_cards
+    real = slate_cards.covers
+    try:
+        slate_cards.covers = lambda q, ctx: False
+        assert chat.guard_note(CTX, "Should I take Notre Dame this week?").startswith("NOT IN THE POOL")
+        # ... but with a GAME CARD (slate_cards.py) it's real data and gets answered (genius exam 2026-11-16)
+        slate_cards.covers = lambda q, ctx: True
+        assert not chat.guard_note(CTX, "Should I take Notre Dame this week?").startswith("NOT IN THE POOL")
+    finally:
+        slate_cards.covers = real
 
 
 if __name__ == "__main__":
