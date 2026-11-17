@@ -6705,13 +6705,43 @@ async def _filtered(stream, banned: set, body: bool = False, no_self: bool = Fal
         buf += obj["content"]
         while (m := _SENT_END.search(buf)):
             sent, buf = buf[:m.end()], buf[m.end():]
+            sent = repair_value_clause(sent)
             if ok(sent):
                 sent_any = True
                 yield _sse({"content": sent})
             else:
                 keep(sent)
-    if buf.strip() and ok(buf):
-        yield _sse({"content": buf})
+    if buf.strip() and ok(repair_value_clause(buf)):
+        yield _sse({"content": repair_value_clause(buf)})
+
+
+_CLAUSE_L = re.compile(r"(,|;|\s(?:and|but|so|since|because|plus)\s)", re.I)
+
+
+def repair_value_clause(sent: str) -> str:
+    """'I'm taking Texas Tech -3.5 because they have the better offense and there's no line value to worry about.'
+    loses only the 'no line value' clause; the value check used to drop the whole sentence, so the reason went
+    and only the jab after it survived (keeper k1 live run, 2026-11-17)."""
+    m = _ONLY_VALUE.search(sent or "")
+    if not m:
+        return sent
+    lefts = [x for x in _CLAUSE_L.finditer(sent[:m.start()])]
+    left = lefts[-1].start() if lefts else 0
+    rm = re.search(r"[,;]|[.!?](?=\s|$)", sent[m.end():])
+    right = m.end() + rm.start() if rm else len(sent)
+    end = sent.rstrip()[-1:] if sent.rstrip()[-1:] in ".!?" else "."
+    if left == 0:
+        rest = sent[right:].lstrip(",; ").strip()
+        if not rest or rest in ".!?":
+            return sent  # the whole sentence is the claim: the check drops it
+        out = rest[0].upper() + rest[1:]
+    else:
+        out = (sent[:left].rstrip(" ,;") + sent[right:].rstrip()).strip()
+        out = out.rstrip(",;") if out[-1:] in ",;" else out
+    if out[-1:] not in ".!?":
+        out += end
+    trail = sent[len(sent.rstrip()):]
+    return out + trail if not _ONLY_VALUE.search(out) else sent
 
 
 def required_fact(ctx: dict, question: str) -> tuple | None:

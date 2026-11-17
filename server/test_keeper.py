@@ -408,6 +408,17 @@ def test_flip_my_picks_against_the_cards():
         assert "DM me" in router.fact_answer("flip", ctx, "should i flip any")
 
 
+def test_no_value_clause_is_cut_not_the_reason():
+    R = chat.repair_value_clause
+    assert R("I'm taking Texas Tech -3.5 because they have the better offense and there's no line value to worry about. ") == \
+        "I'm taking Texas Tech -3.5 because they have the better offense. "
+    assert R("Since there is no line value on any of your four games, you should just stick with what you have.") == \
+        "You should just stick with what you have."
+    assert R("Iowa -8.5 is the only value side.") == "Iowa -8.5 is the only value side."  # whole claim: dropped by the check
+    assert R("LSU has the better offense.") == "LSU has the better offense."
+    assert R("Iowa has the edge, but there's no value at -8.5, so lean Illinois.") == "Iowa has the edge, so lean Illinois."
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
