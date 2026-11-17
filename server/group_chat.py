@@ -90,6 +90,7 @@ import group_outbox  # noqa: E402
 import live_flag  # noqa: E402
 import live_games  # noqa: E402
 import maintenance  # noqa: E402
+import matchup_guard  # noqa: E402
 import picky_brain  # noqa: E402
 import picky_zh  # noqa: E402
 import rare_bits  # noqa: E402
@@ -956,6 +957,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 reply = router.nick_names(reply, chat.member_nicknames())  # team names, never real names
                 reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
                 reply = live_games.final_guard(reply) if route.lane != "fact" else reply
+                reply = matchup_guard.fix(reply)  # a flipped "Home at Away" of a known game, swapped back
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
             log.info("lane: %s", route.label())
             await save_turn(key, q_hist, reply, who, lane=route.label())
@@ -985,7 +987,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             log.info("%s reroll %d: filter dropped %d sentence(s)", mode, i + 1, len(drops))
         _, reply, image = best
         if not image:
-            reply = no_repeat_screen(reply, q, s.team, key or chat_id)
+            reply = matchup_guard.fix(no_repeat_screen(reply, q, s.team, key or chat_id))
         rare_bits.note_sent(reply)
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}

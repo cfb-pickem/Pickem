@@ -48,6 +48,7 @@ import game_cards
 import league_rules
 import live_flag
 import live_games
+import matchup_guard
 import news
 import picky_claude
 import rare_bits
@@ -3339,6 +3340,7 @@ async def _guarded_stream(convo: list[dict], prefix: str | None, facts: dict):
                         if p:
                             dropped += p
                             continue
+                        sent = matchup_guard.fix(sent)  # never a flipped "Home at Away" of a known game
                         sent_any, last_out = True, sent
                         yield _sse({"content": sent})
                     continue
