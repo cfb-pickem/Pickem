@@ -46,9 +46,11 @@ Each claim: text (one sentence, plain facts, <= 300 chars, no URL in the text), 
 GAMES:
 {games}
 
+ALSO give the College Football Playoff selection committee's LATEST rankings: the release date, the next scheduled release date if announced, and the top 25 (rank, team as ESPN names it, record), with a source URL.
+
 ALSO list every FBS head-coach change during THIS season (since August 1): firings, resignations, a coach announced as leaving, and who the interim coach is. Each: school (as ESPN names it), text (one sentence: who was fired/left, when, who's interim), source_url, date (YYYY-MM-DD of the article).
 
-Return JSON only: {{"games": [{{"game_id": 123, "claims": [...]}}, ...], "coaching": [{{"school": "...", "text": "...", "source_url": "...", "date": "..."}}, ...]}}."""
+Return JSON only: {{"games": [{{"game_id": 123, "claims": [...]}}, ...], "coaching": [{{"school": "...", "text": "...", "source_url": "...", "date": "..."}}, ...], "cfp": {{"released": "YYYY-MM-DD", "next_release": "YYYY-MM-DD or empty", "source_url": "...", "top": [{{"rank": 1, "team": "...", "record": "9-1"}}, ...]}}}}."""
 
 SCHEMA = {"type": "object", "properties": {"games": {"type": "array", "items": {
     "type": "object", "properties": {"game_id": {"type": "integer"},
@@ -56,7 +58,11 @@ SCHEMA = {"type": "object", "properties": {"games": {"type": "array", "items": {
     "required": ["game_id", "claims"]}},
     "coaching": {"type": "array", "items": {"type": "object", "properties": {
         "school": {"type": "string"}, "text": {"type": "string"}, "source_url": {"type": "string"},
-        "date": {"type": "string"}}, "required": ["school", "text", "source_url", "date"]}}}, "required": ["games"]}
+        "date": {"type": "string"}}, "required": ["school", "text", "source_url", "date"]}},
+    "cfp": {"type": "object", "properties": {"released": {"type": "string"}, "next_release": {"type": "string"},
+            "source_url": {"type": "string"}, "top": {"type": "array", "items": {"type": "object", "properties": {
+                "rank": {"type": "integer"}, "team": {"type": "string"}, "record": {"type": "string"}},
+                "required": ["rank", "team"]}}}, "required": ["released", "source_url", "top"]}}, "required": ["games"]}
 
 
 def load() -> dict | None:
@@ -75,6 +81,12 @@ def claims_for(game_id) -> tuple[list[dict], str | None]:
         return [], None
     g = (d.get("games") or {}).get(str(game_id)) or {}
     return (g.get("facts") or []) + (g.get("rumors") or [])[:1], d.get("as_of")
+
+
+def cfp() -> dict | None:
+    """The committee's latest rankings from the last good refresh ({released, next_release, source_name, top})."""
+    d = load() or {}
+    return d.get("cfp") or None
 
 
 def coaching_changes() -> dict[str, list[dict]]:
@@ -159,13 +171,30 @@ def run(force: bool = False) -> int:
                 continue
             coaching.append({"school": str(c.get("school") or "").strip(), "text": text, "date": d.isoformat(),
                              "source_name": dossier._domain(url)})
+    cfp_doc = None
+    c = raw.get("cfp") if isinstance(raw.get("cfp"), dict) else None
+    if c:
+        url = str(c.get("source_url") or "")
+        top = [x for x in c.get("top") or [] if isinstance(x, dict) and x.get("team") and isinstance(x.get("rank"), int)]
+        try:
+            rel = dt.date.fromisoformat(str(c.get("released"))[:10])
+        except ValueError:
+            rel = None
+        with httpx.Client() as client:
+            dead = dossier.check_urls(client, [url]).get(url) == "dead" if url else True
+        if rel and len(top) >= 12 and dossier._url_ok(url) and not dossier._paid(url) and not dead \
+                and 0 <= (now.date() - rel).days <= 10:
+            cfp_doc = {"released": rel.strftime("%a %b %-d"), "next_release": str(c.get("next_release") or "")[:10],
+                       "source_name": dossier._domain(url), "top": sorted(top, key=lambda x: x["rank"])[:25]}
+    if not cfp_doc and CACHE.exists():
+        cfp_doc = json.loads(CACHE.read_text()).get("cfp")  # keep the last good one (cfp() ages it out)
     if not coaching and CACHE.exists():
         coaching = json.loads(CACHE.read_text()).get("coaching") or []  # keep the last good list
     for gid, g in prev.items():  # a game Opus skipped this run keeps its last notes until the file ages out
         if gid not in out and int(gid) in ids:
             out[gid] = g
     doc = {"fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-           "as_of": now.strftime("%a %b %-d %-I:%M %p CT"), "week": week, "games": out, "coaching": coaching}
+           "as_of": now.strftime("%a %b %-d %-I:%M %p CT"), "week": week, "games": out, "coaching": coaching, "cfp": cfp_doc}
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     tmp = CACHE.with_suffix(".tmp")
     tmp.write_text(json.dumps(doc, indent=1))

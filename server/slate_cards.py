@@ -613,6 +613,63 @@ def coach_note(question: str, idx: dict, teams: list[str]) -> str:
             + ("\n  Coaching news:\n" + "\n".join(news_rows[:3]) if news_rows else ""))
 
 
+CONFS = {"big 12": "Big 12", "big12": "Big 12", "big ten": "Big Ten", "big 10": "Big Ten", "b1g": "Big Ten",
+         "sec": "SEC", "acc": "ACC", "mountain west": "Mountain West", "mwc": "Mountain West",
+         "american": "American Athletic", "aac": "American Athletic", "sun belt": "Sun Belt", "mac": "Mid-American",
+         "c-usa": "Conference USA", "conference usa": "Conference USA", "cusa": "Conference USA", "pac-12": "Pac-12",
+         "pac 12": "Pac-12"}
+_CONF_ASK = re.compile(r"\b(title|champ\w*|race|standings?|lead\w*|control|picture|first place|clinch\w*|"
+                       r"scenarios?|who'?s in)\b", re.I)
+_CFP_ASK = re.compile(r"\b(college football playoff|cfp|committee|playoff (picture|rankings?|bracket|field|race)|"
+                      r"12-team|bracket|top 12|in the playoff)\b", re.I)
+
+
+def conference_note(question: str) -> str:
+    """'Big 12 title race?': the conference table from CFBD records (conference W-L, then overall)."""
+    q = (question or "").lower()
+    conf = next((v for k, v in sorted(CONFS.items(), key=lambda x: -len(x[0])) if re.search(rf"\b{re.escape(k)}\b", q)), None)
+    if not conf or not _CONF_ASK.search(q):
+        return ""
+    try:
+        db = sqlite3.connect(cfbd.DB_PATH)
+        recs = json.loads(db.execute("select json from datasets where name='records'").fetchone()[0])
+        db.close()
+    except Exception:  # noqa: BLE001
+        return ""
+    rows = []
+    for r in recs:
+        if r.get("conference") != conf:
+            continue
+        c, t = r.get("conferenceGames") or {}, r.get("total") or {}
+        cw, cl = c.get("wins", 0), c.get("losses", 0)
+        rows.append(((cw / max(1, cw + cl)), cw, -cl, r["team"], f"{cw}-{cl}", f"{t.get('wins', 0)}-{t.get('losses', 0)}"))
+    if not rows:
+        return ""
+    rows.sort(reverse=True)
+    return (f"{conf.upper()} STANDINGS (conference record first, then overall; CFBD, through last week; the title game "
+            f"takes the top 2; tiebreakers not computed here, so say 'tiebreakers' rather than guessing one):\n"
+            + "\n".join(f"  {i}. {t} {c} ({o})" for i, (_, _, _, t, c, o) in enumerate(rows[:8], 1)))
+
+
+def cfp_note(question: str) -> str:
+    """The committee's latest CFP rankings (slate_intel, sourced), for CFP-picture questions."""
+    if not _CFP_ASK.search(question or ""):
+        return ""
+    try:
+        import slate_intel
+        c = slate_intel.cfp()
+    except Exception:  # noqa: BLE001
+        c = None
+    if not c:
+        return ("CFP COMMITTEE RANKINGS: not in your data right now. Don't guess a ranking or a field; say you don't "
+                "have the latest committee top 12.")
+    top = "; ".join(f"{x['rank']} {x['team']}" + (f" ({x['record']})" if x.get("record") else "") for x in c["top"][:12])
+    return (f"CFP COMMITTEE RANKINGS (released {c.get('released')}, per {c.get('source_name')}"
+            + (f"; next release {c['next_release']}" if c.get("next_release") else "")
+            + f"): {top}. 12-team field: the top-ranked teams as the committee seeds them; "
+            "don't invent bracket matchups or a format detail you don't see here.")
+
+
 _FOLLOW_UP = re.compile(r"\b(why|how come|explain|and\b|what about|best case|what would change|change your mind|"
                         r"other side|you sure|really|the other team|counter|devil'?s advocate|what if)\b", re.I)
 
@@ -647,7 +704,7 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
         return ""
     pool = {int(g["id"]): g for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
     named = cfbd.other_teams_named(q, [], idx) or player_teams(q, idx)
-    coach = coach_note(q, idx, named)
+    coach = "\n".join(x for x in (coach_note(q, idx, named), conference_note(q), cfp_note(q)) if x)
     picks = match_games(named, games, set())  # pool games too: the card adds the move, splits, h2h, news
     whole = bool(_SLATE_ASK.search(q)) and not picks
     if (not picks and not whole) or (picks and not football_ask(q)):
