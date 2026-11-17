@@ -859,7 +859,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
         if kind in ("standings", "record", "results"):
             who = unknown_member(ctx, q)
             if who:  # never the sender's numbers for a name nobody goes by (full exam 2026-11-16)
-                return f"Nobody in this league goes by {who}."
+                return f"{who} isn't in this league. No team by that name."
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
               "pick": pick_text, "slate": slate_text}.get(kind)

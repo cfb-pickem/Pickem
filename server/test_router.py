@@ -589,7 +589,7 @@ def test_unknown_member_never_gets_the_senders_numbers():
         F = router.fact_answer
         for q in ("What's Big Tuna Tony's record in the pool?", "how did Big Tuna Tony do this week",
                   "where does Big Tuna rank", "how far behind is Tony Soprano"):
-            assert F(router.classify(q).kind, ctx, q) == f"Nobody in this league goes by {router.unknown_member(ctx, q)}.", q
+            assert F(router.classify(q).kind, ctx, q) == f"{router.unknown_member(ctx, q)} isn't in this league. No team by that name.", q
             assert "30-18" not in F(router.classify(q).kind, ctx, q)
         # real members, nicknames, Picky and pool teams still resolve
         assert F("record", ctx, "whats Ackbar's record").startswith("Ackbar is 28-20")
