@@ -52,6 +52,7 @@ import matchup_guard
 import news
 import picky_claude
 import rare_bits
+import pick_strategy
 import slate_cards
 
 CT = zoneinfo.ZoneInfo("America/Chicago")
@@ -7221,7 +7222,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
     if last.get("role") == "user" and not ctx.get("error") and SLATE_CARDS:
         prior = [m.get("content", "") for m in messages[:-1] if m.get("role") == "user"][-2:]
         try:
-            sc = await slate_cards.slate_note(last.get("content", ""), ctx, prior)
+            sc = "\n".join(x for x in (await slate_cards.slate_note(last.get("content", ""), ctx, prior),
+                                         pick_strategy.note(ctx, last.get("content", ""))) if x)
         except Exception as e:  # noqa: BLE001 - a bad card never breaks chat
             log.warning("slate card failed: %r", e)
     # a game outside the pool, 'what's on', upsets: the latest question only

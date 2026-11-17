@@ -35,6 +35,7 @@ import burn_book
 import callbacks
 import chat
 import news
+import pick_strategy
 import playoff_race
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
@@ -743,6 +744,8 @@ def classify(q: str) -> Route:
         return Route("jailbreak", why="burn_book._JAILBREAK" if p == "jailbreak" else "PRIVACY_PROBE")
     if callbacks.is_recall(t):  # 'remember what you said about Boise?': his own logged call, code-written
         return Route("fact", "recall", why="callbacks.is_recall")
+    if pick_strategy.wants(t):  # 'should I go against the field?': strategy, not the playoff math or a rule (genius exam)
+        return Route("full", why="pick_strategy.ASK")
     fi = fact_intent(t)
     if fi:
         kind, why = fi

@@ -176,7 +176,7 @@ def insert_rider(messages: list[dict], rider: str, question: str) -> list[dict]:
     return messages[:-1] + [{**messages[-1], "content": body}]
 
 
-_CARD_HEADS = ("GAME CARD (", "THIS WEEK'S NOTABLE GAMES")
+_CARD_HEADS = ("GAME CARD (", "THIS WEEK'S NOTABLE GAMES", "HEAD COACHES (", "PICK STRATEGY (")
 
 
 def slate_block(messages: list[dict]) -> str:

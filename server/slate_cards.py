@@ -295,7 +295,11 @@ def last_meeting(g: dict) -> str | None:
     return s
 
 
-def lean_lines(g: dict, idx: dict, espn_notes: dict | None) -> list[str]:
+_OTHER_SIDE = re.compile(r"\b(best case|other side|case for|devil'?s advocate|counter|argue)\b", re.I)
+_CHANGE_MIND = re.compile(r"\b(change your mind|flip (you|it)|what would make you|wrong about)\b", re.I)
+
+
+def lean_lines(g: dict, idx: dict, espn_notes: dict | None, ask: str = "") -> list[str]:
     """pick_brief's factor engine (the pool cards' ATS lean) run against the
     current MARKET line, since a non-pool game has no league line."""
     try:
@@ -327,10 +331,20 @@ def lean_lines(g: dict, idx: dict, espn_notes: dict | None) -> list[str]:
            f"({conf}; factor score {away} {sc[away]:g}, {home} {sc[home]:g}). Who COVERS, not who wins."]
     out += [f"    + for {f['side']}: {f['why']}" for f in b["top"][:4]]
     out += [f"    ! red flag: {f['why']}" for f in b["flags"][:2]]
+    other = away if b["pick"] == home else home
+    if _OTHER_SIDE.search(ask or ""):
+        case = sorted((f for f in b["factors"] if f["side"] == other and f["w"] > 0), key=lambda f: -f["w"])[:4]
+        out.append(f"  THEY WANT THE CASE FOR {other.upper()} (the side the lean is against): argue it honestly from "
+                   "these, don't repeat the other side's reasons:")
+        out += [f"    - {f['why']}" for f in case] or ["    - (no computed factor favors it: say so)"]
+    elif _CHANGE_MIND.search(ask or ""):
+        flips = sorted((f for f in b["factors"] if f["side"] == other and f["w"] > 0), key=lambda f: -f["w"])[:2]
+        out.append("  WHAT WOULD FLIP IT: an availability change in the news lines below, the line moving across a key "
+                   "number, plus these factors for " + other + ": " + "; ".join(f["why"] for f in flips))
     return out
 
 
-def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict) -> str:
+def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str = "") -> str:
     away, home = g["awayTeam"], g["homeTeam"]
     meta = games_ds.get(g["id"]) or {}
     s = _sd(g)
@@ -349,7 +363,7 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict) -> str:
     for extra in (style_line(away, home, idx), run_game_line(away, home), rest_line(g, idx, games_ds), last_meeting(g)):
         if extra:
             L.append(extra)
-    L += lean_lines(g, idx, espn_notes)
+    L += lean_lines(g, idx, espn_notes, ask)
     wp = (espn_notes or {}).get("espn_win_prob")
     if wp:
         L.append(f"  ESPN FPI: {home} {wp['home']:.0f}% to win")
@@ -528,7 +542,7 @@ def coach_note(question: str, idx: dict, teams: list[str]) -> str:
             + ("\n  Coaching news:\n" + "\n".join(news_rows[:3]) if news_rows else ""))
 
 
-_FOLLOW_UP = re.compile(r"^\W*(why|how come|explain|and\b|what about|best case|what would change|change your mind|"
+_FOLLOW_UP = re.compile(r"\b(why|how come|explain|and\b|what about|best case|what would change|change your mind|"
                         r"other side|you sure|really|the other team|counter|devil'?s advocate|what if)\b", re.I)
 
 
@@ -539,7 +553,14 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     q = question or ""
     if not q.strip():
         return ""
-    if prior and len(q.split()) <= 12 and _FOLLOW_UP.search(q):
+    try:
+        idx = cfbd.load_index()
+    except Exception:  # noqa: BLE001
+        idx = None
+    if not idx:
+        return ""
+    ask = q
+    if prior and len(q.split()) <= 12 and _FOLLOW_UP.search(q) and not cfbd.other_teams_named(q, [], idx):
         q = f"{prior[-1]} {q}"
     try:
         idx = cfbd.load_index()
@@ -572,4 +593,4 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     if whole:
         return board(chosen, notes) + (f"\n{coach}" if coach else "")
     gds = _games_dataset()
-    return "\n".join([card(g, idx, notes.get(g["id"]), gds) for g in picks[:MAX_CARDS]] + ([coach] if coach else []))
+    return "\n".join([card(g, idx, notes.get(g["id"]), gds, ask) for g in picks[:MAX_CARDS]] + ([coach] if coach else []))
