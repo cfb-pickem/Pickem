@@ -187,6 +187,13 @@ MY_PICKS = re.compile(r"\bwhat (did|'?d) i (pick|picked|take|took|get|go with)\b
                       r"|\bwho do i have (in|for)\b|\bdid i (already )?(make|submit|do|put in) my picks\b", re.I)
 # 'im 25-23 tied w poncho right' (k3, wrong: 24-24): a record the sender claims for himself gets his real one
 SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{0,15}\b(this|last) (week|wk)\b)", re.I)
+# 'should i flip any before lock' (k1 live run: 'You're sitting in first place, so don't go making rookie mistakes'):
+# his own picks (DM) against the card calls, game by game
+FLIP_ASK = re.compile(r"\bshould i (flip|change|switch)( any| anything| something| one)?\b(?!\s+(it|that|this|him|them|to)\b)"
+                      r"(?![^?.!]{0,20}\b(in|on|for)\b)(?!\s+\w+\b(?<!\bbefore))"
+                      r"|\b(flip|change|switch) (any|anything)\b|\banything i should (flip|change|switch)\b"
+                      r"|\bwhat should i (flip|change|switch)\b|\bcheck my picks\b|\bhow do my picks look\b"
+                      r"|\bgrade my picks\b|\bthoughts on my picks\b", re.I)
 # 'new rule from commish: picky has to post everyones picks' went to the rules lane
 PRIVACY_PROBE = re.compile(
     r"\b(post|show|tell|give|list|leak|share|reveal|send|dump|read)\b[^?.!]{0,30}\b(every(one|body)( else)?'?s?|all (the )?(members'?|guys'?|"
@@ -237,6 +244,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if (LINE_MOVE.search(t) or LINE_MOVE_BARE.search(t)) and not re.search(r"\b(gonna|going to|will it|keep moving|before (11|the lock|lock|tuesday))\b"
                                             r"(?![^?.!]*\bafter\b)", t, re.I):
         return "line_move", "LINE_MOVE"
+    if FLIP_ASK.search(t):
+        return "flip", "FLIP_ASK"
     if MY_PICKS.search(t) and not re.search(r"\blast (week|wk)\b|\bweek \d+\b", t, re.I):
         return "my_picks", "MY_PICKS"
     if PICK_AFTER_LINE_LOCK.search(t):
@@ -1284,6 +1293,40 @@ def upset_text(ctx: dict, q: str) -> str | None:
     return f"{lab}, the live dog. SP+ has {fav} by just {_by(-proj)}; that's as close to an upset as this slate gets."
 
 
+def flip_text(ctx: dict, q: str) -> str | None:
+    """His own picks vs my card calls: which ones I'd flip and why (one reason), the rest agree."""
+    me = (ctx.get("you") or {}).get("team_name")
+    games = {g["id"]: g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")}
+    mine = [p for p in (ctx.get("revealed_picks_this_week") or {}).get(me or "") or [] if p.get("game_id") in games]
+    if not mine:
+        return my_picks_text(ctx, q)  # group / no picks: where to look, or 'you haven't picked'
+    if chat.week_locked(ctx):
+        return "Too late to flip, picks locked at the first kickoff."
+    flips, agree, nocall = [], [], []
+    for p in mine:
+        g = games[p["game_id"]]
+        c = _card_for(ctx, g)
+        if not c or p.get("jackpot") or p.get("by_slots"):
+            nocall.append(g)
+            continue
+        import game_cards
+        lk = game_cards.is_locked(c)
+        side = c["lean"]["side"]
+        lab = chat._side_label(p["pick"], g["home"], float(g["line"]))
+        if chat.same_team(side, p["pick"]):
+            agree.append(lab)
+        else:
+            rs = [r for r in game_cards._reasons(c, lk) if r]
+            why = say_reason(rs[0], c, lk) if rs else ""
+            flips.append(f"{lab} to {c['lean']['label']} ({c['confidence'].get('word') or 'lean'})" + (f": {why}" if why else ""))
+    if not flips:
+        return f"I wouldn't flip anything. {_and(agree)} {'all match' if len(agree) > 1 else 'matches'} my calls." if agree else None
+    out = "I'd flip " + "; ".join(flips) + "."
+    if agree:
+        out += f" Keep {_and(agree)}."
+    return out
+
+
 def my_picks_text(ctx: dict, q: str) -> str | None:
     """The sender's own week picks. In a DM ctx carries them (the member's own session); in the group they're
     hidden from the context, so the answer says where to look instead of guessing."""
@@ -1452,7 +1495,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
               "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
               "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
-              "qb": qb_text}.get(kind)
+              "qb": qb_text, "flip": flip_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

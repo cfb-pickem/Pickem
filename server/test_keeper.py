@@ -385,6 +385,29 @@ def test_k123_followup_and_week_scoping():
     assert router.classify("3 back w 4 weeks left, doable or nah").label() != "fact:weeks_left"
 
 
+def test_flip_my_picks_against_the_cards():
+    ctx = _wk12_picks()
+    ctx["week_unlock"] = "2026-11-21T11:00:00"
+    for q in ("should i flip any before lock", "anything i should change", "check my picks", "should i flip"):
+        assert router.classify(q).label() == "fact:flip", q
+    assert router.classify("should i flip iowa").label() != "fact:flip"
+    cards = {11: {"lean": {"side": "Northwestern", "label": "Northwestern -2.5"}, "confidence": {"word": "slight lean"}},
+             12: {"lean": {"side": "Illinois", "label": "Illinois +8.5"}, "confidence": {"word": "slight lean"}}}
+    ctx["revealed_picks_this_week"] = {"TG": [{"game_id": 11, "pick": "Northwestern"}, {"game_id": 12, "pick": "Iowa"}]}
+    import game_cards
+    with patch.object(router, "_card_for", lambda c, g: cards.get(g["id"])), \
+            patch.object(game_cards, "_reasons", lambda c, lk: ["SP+ (ratings + 2.5 home field): projects Iowa by 8, so x"]), \
+            patch.object(game_cards, "is_locked", lambda c, now=None: False), patch.object(chat, "week_locked", lambda c: False):
+        r = router.fact_answer("flip", ctx, "should i flip any before lock")
+        assert r == "I'd flip Iowa -8.5 to Illinois +8.5 (slight lean): SP+ has Iowa by 8. Keep Northwestern -2.5.", r
+        ctx["revealed_picks_this_week"] = {"TG": [{"game_id": 11, "pick": "Northwestern"}]}
+        r = router.fact_answer("flip", ctx, "should i flip any before lock")
+        assert r == "I wouldn't flip anything. Northwestern -2.5 matches my calls.", r
+        ctx["revealed_picks_this_week"] = {}
+        ctx["you_have_picks_this_week"] = None
+        assert "DM me" in router.fact_answer("flip", ctx, "should i flip any")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
