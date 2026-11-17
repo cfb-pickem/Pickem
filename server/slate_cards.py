@@ -502,11 +502,19 @@ def lookahead_line(g: dict, idx: dict, home_now: float | None = None) -> str | N
             rx = _sp_rank(no, idx)
             b += (f"; next {'vs' if cfbd.norm(n['homeTeam']) == cfbd.norm(team) else 'at'} {no}"
                   + (f" (SP+ #{rx})" if rx else ""))
-            if rx and rx <= 25 and (rn is None or rn > rx):
-                if team == fav:
-                    flags.append(f"lookahead spot for {team} (favored here, SP+ #{rx} {no} next)")
-                else:
-                    flags.append(f"{team} has SP+ #{rx} {no} next but is the underdog here, so lookahead matters less")
+            try:
+                import rivalries
+                riv = rivalries.rivalry(team, no) if not rivalries.rivalry(away, home) else None
+            except Exception:  # noqa: BLE001
+                riv = None
+            if riv:
+                b += f", a rivalry game ({riv})"
+            big = (rx and rx <= 25 and (rn is None or rn > rx)) or riv
+            what = f"SP+ #{rx} {no}" if rx and rx <= 25 else f"rivalry game vs {no} ({riv})"
+            if big and team == fav:
+                flags.append(f"lookahead spot for {team} (favored here, {what} next)")
+            elif big:
+                flags.append(f"{team} has {what} next but is the underdog here, so lookahead matters less")
         else:
             b += "; no game after this one on the schedule"
         bits.append(b)
