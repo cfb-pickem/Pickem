@@ -4567,6 +4567,9 @@ _SLATE_ASK = re.compile(
     r"|\bwhat (do|would|should) (you|u|i|we) (like|take|pick|play)\b(?!.{0,25}\b(in|on|with|for)\b)"
     r"|\b(gimme|give me|got any|any|your|ur) (picks?|plays?|leans?)\b|^\W*(picks?|plays?|leans?)\W*$"
     r"|\b(gimme|give me|what are|whats|what'?s) (all|your|ur|the)? ?(4|four)? ?(picks|plays|leans)\b"
+    # keeper k1/k2: 'gimme all 4 w reasons', 'give me the slate', 'ur 4 picks', 'picks for all 4', 'run me thru the games'
+    r"|\b(gimme|give me|hit me with|run me (thru|through)|go through|walk me (thru|through))\s+(all|the|ur|your)?\s*(4|four|slate|games|board)\b"
+    r"|\b(ur|your|all) (4|four) (picks|plays|calls|games)\b|\bpicks? for (all|every) (4|four|games?)\b"
     , re.I)
 # 'whats ur lock' / 'best bet this wk' / 'lock of the week': ONE play, the slate's strongest (spar r1 2026-11-16:
 # 'ok whats ur lock then' got all four of Picky's own exhibition picks, all favorites, called 'my locks')

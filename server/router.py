@@ -107,8 +107,8 @@ PICK_ASK = re.compile(r"\bwho (you|ya|u|do you|would you|d'?you) (got|like|takin
                       r"|\bwho sh?o?u?l?d\s*i\s*n?\s*(take|pick|go with|ride)\b|\b(your|ur) (pick|play|lean) (in|for|on)\b"
                       r"|\bwho'?s (your|ur) pick\b|\bwhat'?s the play (in|for|on)\b|\bwhich side (in|of|on)\b", re.I)
 # 'gimme a read on this week's games': every open game, one call each
-SLATE_READ = re.compile(r"\b(read|reads|picks?|calls?|leans?|thoughts?|take|takes|breakdown|rundown|who do you like)\b",
-                        re.I)
+SLATE_READ = re.compile(r"\b(read|reads|picks?|calls?|leans?|thoughts?|take|takes|breakdown|rundown|who do you like|"
+                        r"slate|all (4|four)|games|board|plays?)\b", re.I)
 # who a member-question is about: 'Big Tuna Tony's record', 'how'd X do', 'where does X rank'
 _NAME_ASK = re.compile(rf"\b(?:what'?s|what is|whats|how'?s|how is)\s+({_T})'s (?:record|season|week)\b"
                        rf"|\bhow(?:'d| did| is| was|'s)\s+({_T})\s+(?:do|doing|done|go|going|look|looking)\b"
@@ -984,6 +984,32 @@ def _card_for(ctx: dict, g: dict):
     return c
 
 
+def _by(n: float) -> str:
+    r = int(n + 0.5)  # nearest whole point: never crosses a half-point line
+    return str(r) if abs(n - r) < 0.05 else f"about {r}"
+
+
+def say_reason(r: str, c: dict | None = None, locked: bool = False) -> str:
+    """A card reason the way a person texts it (keeper k1: 'SP+ (ratings + 2.5 home field): projects Tennessee by 1.9,
+    so Tennessee +1.5 covers by 3.4' read like a report). Same facts, fewer words; unknown shapes pass through."""
+    r = (r or "").strip()
+    m = re.match(r"(SP\+|EPA|ESPN FPI)(?!\w)[^:]*: projects (.+?) by ([\d.]+)", r)
+    if m:
+        who = {"SP+": "SP+ has", "EPA": "the EPA numbers have", "ESPN FPI": "FPI has"}[m.group(1)]
+        return f"{who} {m.group(2)} by {_by(float(m.group(3)))}"
+    m = re.match(r"the league (?:line is locked at|has) (.+?) and the market's at (.+?) \(", r)
+    if m:
+        return (f"we get {m.group(1)} and the books are at {m.group(2)}"
+                + ("" if locked else ", so that's a better number if it holds through Tuesday's lock"))
+    m = re.match(r"line move: opened (.+?), now (.+?), ", r)
+    if m:
+        return f"the line's gone from {m.group(1)} to {m.group(2)}"
+    m = re.match(r"[\w +()&'#.-]{2,40}?: (.+)", r)
+    if m:
+        return m.group(1)
+    return r
+
+
 def pick_text(ctx: dict, q: str) -> str | None:
     """'who you got in X at Y?': the card's side + line, the confidence, one reason."""
     import game_cards
@@ -999,7 +1025,7 @@ def pick_text(ctx: dict, q: str) -> str | None:
             return None  # no card (or the line moved since): the full brain's live breakdown takes it
         locked = game_cards.is_locked(c)
         rs = [r for r in game_cards._reasons(c, locked) if r]
-        why = rs[0] if rs else ""
+        why = say_reason(rs[0], c, locked) if rs else ""
         out.append(f"I'd take {c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
                    + (f": {(why[0].lower() + why[1:] if why[1:2].islower() else why)}" if why else "") + ".")
     return " ".join(out)
@@ -1020,8 +1046,9 @@ def slate_text(ctx: dict, q: str) -> str | None:
         c = _card_for(ctx, g)
         if c:
             cards.append(c)
-            rs = [r for r in game_cards._reasons(c, game_cards.is_locked(c)) if r]
-            why = " ".join(rs[0].split(";")[0].split()[:25]).rstrip(".,") if rs else ""
+            lk = game_cards.is_locked(c)
+            rs = [r for r in game_cards._reasons(c, lk) if r]
+            why = " ".join(say_reason(rs[0], c, lk).split(";")[0].split()[:25]).rstrip(".,") if rs else ""
             calls.append(f"{c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
                          + (f": {(why[0].lower() + why[1:] if why[1:2].islower() else why)}" if why else ""))
         else:

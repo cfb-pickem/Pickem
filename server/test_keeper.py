@@ -271,6 +271,32 @@ def test_lines_now_and_locked_yet():
                             "Minnesota, Iowa -8.5 at Illinois (locked)."), r
 
 
+def test_whole_slate_phrasings_get_the_slate_lane():
+    for q in ("give me the slate fast no essay", "poncho needs a heater gimme all 4 w reasons",
+              "bub went 0-4 so whatever u say ill do the opposite. gimme all 4", "ur 4 picks before i do mine",
+              "picks for all 4?", "run me thru the games"):
+        assert router.classify(q).label() == "fact:slate", q
+    for q in ("all 4 of those games suck", "the games this week are boring", "tg says ur picks are worse than his"):
+        assert router.classify(q).label() != "fact:slate", q
+
+
+def test_card_reasons_read_like_a_person():
+    S = router.say_reason
+    assert S("SP+ (ratings + 2.5 home field): projects Tennessee by 1.9, so Tennessee +1.5 covers by 3.4") == \
+        "SP+ has Tennessee by about 2"
+    assert S("SP+ (ratings + 2.5 home field): projects Iowa by 8, so Illinois +8.5 covers by 0.5") == "SP+ has Iowa by 8"
+    assert S("EPA (season PPA per play): projects Northwestern by 5.6, so Northwestern -2.5 covers by 3.1") == \
+        "the EPA numbers have Northwestern by about 6"
+    assert S("the league has Northwestern -2.5 and the market's at Northwestern -3 (DraftKings); if that holds") == \
+        "we get Northwestern -2.5 and the books are at Northwestern -3, so that's a better number if it holds through " \
+        "Tuesday's lock"
+    assert S("line move: opened Iowa -5.5, now Iowa -8.5, the market moved 3 points toward Iowa") == \
+        "the line's gone from Iowa -5.5 to Iowa -8.5"
+    assert S("title stakes: Texas Tech (AP #12, 9-1) is in the playoff race, Baylor (6-4) isn't") == \
+        "Texas Tech (AP #12, 9-1) is in the playoff race, Baylor (6-4) isn't"
+    assert router._by(8.4) == "about 8" and router._by(8.6) == "about 9" and router._by(2.05) == "2"
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
