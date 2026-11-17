@@ -724,6 +724,13 @@ def test_member_material_first_and_off_topic_gets_a_real_answer():
     assert router.classify("Roast Clam for being gay").kind == "looks_bait"
 
 
+def test_typo_pick_asks():
+    # live 2026-11-16 9pm: "Who should inpick this week" fell to the full brain and got a content-free one-liner
+    for q in ("Who should inpick this week", "who shoud i pick", "who shld i take", "who should ipick"):
+        r = router.classify(q)
+        assert r.lane == "fact" and r.kind == "pick", (q, r)
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
