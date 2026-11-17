@@ -6008,6 +6008,18 @@ def record_check(ctx: dict, question: str):
                 continue
             if re.search(r"\b(vs\.?|versus|head to head|h2h|opposite)\b|\bagainst (?!the (spread|line|number))", sent, re.I):
                 continue  # head-to-head records aren't season records ('against the spread' is)
+            # a week-sized W-L pinned on the caller must be one of his recent weeks (spar r1 2026-11-16: Ackbar,
+            # 3-1 and 2nd, got "someone who's currently 0-3", Picky's own record; Rettino, 1-3, got "0-4 vibes")
+            subj = list(re.finditer(r"(?<![\w'])(you|you'?re|your|you'?ve|someone who(?:'?s| is)|a guy who(?:'?s| is)|"
+                                    r"i|i'?m|my|me)(?![\w'])", before, re.I))
+            if sum(rec) <= 4 and me and subj and not re.fullmatch(r"i|i'?m|my|me", subj[-1].group(1), re.I) \
+                    and not re.search(r"\b(if you|you'?d|need|needs|would|could|gonna|going to|you go)\b", before[-25:], re.I) \
+                    and not any(re.search(rf"(?<!\w){re.escape(t)}(?!\w)", before[subj[-1].start():], re.I)
+                                for t in st if t != me):
+                mine = (ctx.get("weekly_records") or {}).get(me) or {}
+                recent = [tuple(mine[k]) for k in sorted(mine, key=lambda k: int(k) if str(k).isdigit() else -1)[-3:]]
+                if recent and rec not in recent:
+                    return False
             season_claim = (re.search(r"^\s*(overall|on the (season|year)|all season|for the season|season record)\b",
                                       after, re.I) or sum(rec) > 8  # a week has 4 games: past 8 it's a season number
                             or re.search(r"\bseason record\b[^.]{0,30}\b(is|of|at|sits at)\s*$", before, re.I))

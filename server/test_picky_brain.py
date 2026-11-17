@@ -554,6 +554,19 @@ def test_record_check_lets_stats_page_oddities_through():
         assert not ok("Chuck P is 22-26 on the season.")
 
 
+def test_record_check_holds_a_weekly_record_pinned_on_the_caller():
+    # spar r1 2026-11-16: Ackbar (3-1 last week, 2nd) got "someone who's currently 0-3" (Picky's own record),
+    # Rettino (1-3) got "0-4 vibes". A week-sized W-L on the caller must be one of his last three weeks.
+    c = _stance_ctx("Chuck P")
+    c["weekly_records"] = dict(c.get("weekly_records") or {}, **{"Chuck P": {"9": [3, 1], "10": [3, 1], "11": [4, 0]}})
+    with patch.object(chat, "load_lore", lambda: {"members": {}}), patch.object(chat, "material_records", lambda ctx: {}):
+        ok = chat.record_check(c, "thats it?")
+        assert not ok("I don't need to overexplain my genius to someone who's currently 0-3.")
+        assert not ok("Just checking if your brain works or if it's just 0-4 vibes.")
+        assert ok("You went 4-0 last week, fine.")
+        assert ok("I'm 0-3 and still smarter than you.")  # Picky's own record is someone else's check
+
+
 def test_brief_core_drops_a_sentence_the_filter_would_cut():
     b = pb.Brief(asking="A shot at me.", intent="insult", about="Picky", tone="hostile",
                  answer="Own the 0-3. You're 2-7 in Oklahoma games, which is a special kind of tragic.")
