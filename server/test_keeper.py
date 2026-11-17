@@ -435,6 +435,22 @@ def test_confidence_from_the_card_and_thread():
         assert r.startswith("Depends on the game: Northwestern -2.5 6, Illinois +8.5 5."), r
 
 
+def test_pushback_stands_by_the_call():
+    ctx = _wk12_picks()
+    cards = {12: {"lean": {"side": "Illinois", "label": "Illinois +8.5"}, "confidence": {"word": "slight lean"}}}
+    import game_cards
+    with patch.object(router, "_card_for", lambda c, g: cards.get(g["id"])), \
+            patch.object(game_cards, "_reasons", lambda c, lk: ["SP+ (ratings + 2.5 home field): projects Iowa by 8, so x",
+                                                                "ESPN FPI: projects Iowa by 5.4, so Illinois +8.5 covers by 3.1"]), \
+            patch.object(game_cards, "is_locked", lambda c, now=None: False):
+        last = "I'd take Illinois +8.5. The only real concern is Houser."
+        r = router.fact_answer("defend", ctx, "8.5 is a lot for a road team ||| " + last)
+        assert r == "Still Illinois +8.5. SP+ has Iowa by 8. FPI has Iowa by about 5.", r
+        assert router.fact_answer("defend", ctx, "bielema always plays iowa close ||| " + last).startswith("Still Illinois")
+        assert router.fact_answer("defend", ctx, "ok what about nw ||| " + last) is None  # new game
+        assert router.fact_answer("defend", ctx, "lol ok ||| " + last) is None  # not pushback
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

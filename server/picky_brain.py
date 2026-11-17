@@ -891,6 +891,10 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         async for x in _text_stream(st["fact_text"]):  # a guard regen asks again: same answer
             yield x
         return
+    if prefix and st.get("brief") is None and rt is not None and rt.lane == "full" and rt.why == "no rule" \
+            and st.get("last_reply") and router.PUSHBACK.search(st["q"]):
+        if router.fact_answer("defend", st.get("ctx"), st["q"] + " ||| " + st["last_reply"]):
+            rt.lane, rt.kind, rt.why = "fact", "defend", "PUSHBACK"  # stand by the call just made
     if prefix and st.get("brief") is None and rt is not None and rt.lane == "fact":
         qf = st["q"] + (" ||| " + (st.get("last_reply") or "") if rt.kind in router.CTX_KINDS else "")
         ans = router.fact_answer(rt.kind, st.get("ctx"), qf)

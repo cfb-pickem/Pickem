@@ -190,7 +190,40 @@ SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{
 # 'whats ur confidence 1-10' (k1 live: briefed as banter -> 'I do picks, not paperwork'): the card's confidence for the
 # game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
 CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
-CTX_KINDS = {"conf"}
+CTX_KINDS = {"conf", "defend"}
+# pushback on Picky's own call ('8.5 is a lot for a road team', 'bielema always plays iowa close', 'ok so baylor then'):
+# keeper k1 live run, Picky said 'I'd take Illinois +8.5' then 'Iowa ... They'll smother Illinois.'
+PUSHBACK = re.compile(r"\b(tho|though|but|nah|really|you sure|u sure|always|never|overrated|a lot|too (many|much)|trap|"
+                      r"c'?mon|no way|sucks|disagree|wrong|scary|risky|worried|close)\b|\bthen\W*$", re.I)
+_LABEL = re.compile(r"\b([A-Z][\w.&' ]{1,24}?) ([+-]\d{1,2}(?:\.5)?)\b")
+
+
+def defend_text(ctx: dict, q: str) -> str | None:
+    """Stand by the call Picky just made on a game when the next text pushes back on it, with the card's reasons."""
+    import game_cards
+    text, _, last = re.sub(r"['’]s\b", "", q or "").partition(" ||| ")
+    if not last or not PUSHBACK.search(text) or len(text.split()) > 14:
+        return None
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    m = re.search(r"\bI'?d take ([A-Z][\w.&' ]{1,24}?) [+-]\d", last) or _LABEL.search(last)
+    if not m:
+        return None
+    side_named = chat.games_named(m.group(1), gl)
+    if not side_named:
+        return None
+    gid = side_named[0]["id"]
+    tn = chat.games_named(text, gl)
+    if tn and tn[0]["id"] != gid:
+        return None  # a new game, not pushback
+    g = next(x for x in games if x["id"] == gid)
+    c = _card_for(ctx, g)
+    if not c or not chat.same_team(c["lean"]["side"], m.group(1).strip()):
+        return None
+    lk = game_cards.is_locked(c)
+    rs = [say_reason(r, c, lk) for r in game_cards._reasons(c, lk) if r][:2]
+    rs = [r[0].upper() + r[1:] for r in rs]
+    return f"Still {c['lean']['label']}." + (" " + ". ".join(rs) + "." if rs else "")
 CONF_NUM = {"best play": 7, "lean": 6, "slight lean": 5, "coin flip": 3}
 
 
@@ -1536,7 +1569,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
               "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
               "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
-              "qb": qb_text, "flip": flip_text, "conf": conf_text}.get(kind)
+              "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
