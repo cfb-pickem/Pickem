@@ -97,5 +97,21 @@ Every graded 2025-26 pool game, weeks 1-15, no tiebreakers (107 games), each sid
 - Rivalry underdog (factor 24, `rivalries.backtest`, every FBS-vs-FBS game with a CFBD closing line, 2025 + 2026 to date): **63-82, 43%** [36-52%] vs 50% for all other underdogs (639-630). 2025 alone 36-54 (40%), 2026 so far 27-28. The "rivalry dogs cover" rule doesn't hold here, so factor 24 flags the game with weight 0 instead of leaning to the dog. On the league's own pool games vs the league line, rivalry dogs went 7-15 (32%) [16-53%], against 40% for all pool underdogs: a tiny sample pointing the same way.
 - Title stakes (factor 26) and resting starters (57) come from `title_race.py`: top 2 by conference record make the title game; a team has clinched when at most one rival can still reach its conference wins, and is out when two rivals already have more wins than its best case (tiebreakers not modeled, so it's conservative). Out of the CFP = out of its title game and a Group of 6 team or 3+ losses. It never says anyone is in.
 
+### Out of sample: are the hand-set weights any good? (2026-11-16, `weights_fit.py`)
+
+Dataset: every FBS-vs-FBS regular-season game of 2024, 2025 and 2026 so far with a final and a CFBD closing spread (2,105 games: 737 / 749 / 619), graded against the close, pushes out. Each game gets the factors that can be computed with no lookahead: pregame Elo in place of end-of-season SP+/FPI/SRS (weight 3.5, their sum), season-to-date net PPA, and the schedule/ATS factors (17, 18-23, 24, 29, 30, 50, 5) from games played before that week. Line value only exists against the league line, so it's scored on the pool games; QB/injury/news factors have no history and aren't in it. Splits are by time only. The fit is an L2 logistic regression on cover, its penalty picked on the last third of the training span.
+
+| test (games) | hand-set weights | fitted weights | home | dog |
+|---|---|---|---|---|
+| train 2024 → test 2025 + 2026 (1,368) | **676-661, 50.6%** [48-53%] | 680-688, 49.7% [47-52%] | 51.6% | 49.6% |
+| train 2024-25 → test 2026 (619) | **311-292, 51.6%** [48-56%] | 324-295, 52.3% [48-56%] | 51.9% | 49.8% |
+| league pool games vs the league line, + line value (103) | 47-55, 46% [37-56%] | 52-51, 50.5% [41-60%] | | |
+
+Nothing beats a coin flip out of sample. The penalty search chose the heaviest shrinkage on the grid (the data has almost no signal), the fitted log-loss is a coin's (0.6929 vs 0.6931), and the fitted signs flip between the two splits (home ATS -0.9 then +1.8, bye +1.3 then -0.6). The fit loses on the first split, so **the hand-set weights stay** (the rule was: ship only if it wins out of sample).
+
+What moved most, factor by factor (follow it, 2024 → 2025-26): the Elo rating edge 48% → 50% (the biggest hand weight, a coin flip here; real SP+/FPI may do better, but there's no lookahead-free history of them); letdown 57% → 53% and revenge 55% → 51%, the only ones that held up a little; rivalry dog 39% → 44% (fading it would have won; factor 24 is already weight 0); recent form 48% → 45%; everything else 46-52%.
+
+Confidence words, recalibrated to these numbers: a factor-score lean hit ~50% at every size out of sample (score 0.5-1.5: 54% / 53%; 2-3.5: 50% / 51%; 4+: 50% / 53%), so without 1.5+ points of line value even a "strong" lean is now a **slight lean** (it used to say "lean"). "Lean" needs 1.5+ points of value against the league line (20-13 in the pool, still a small sample), "I like it" needs that plus a strong lean and the backtest support, and nothing is ever a lock. Rerun: `weights_fit.py fit` (history cached in cache/cfbd_hist.sqlite, report in cache/weights_report.json).
+
 Read it straight: only the big line-value gap looks better than a coin flip, and even that sample is small enough that 50% is inside the interval. The card words confidence from these buckets (coin flip / slight lean / lean / "I like it" only for a strong lean with 1.5+ points of value) and never calls anything a lock.
 

@@ -112,6 +112,10 @@ def test_confidence_scales_with_edge_and_backtest():
     assert best["word"] == "best play" and "not a lock" in best["say"] and "20-13 (61%)" in best["backtest"]
     weak_bt = {"span": "2025-26", "strategies": {"value_1.5+": {"w": 9, "n": 18, "pct": 0.5}}}
     assert gc.confidence(3, "strong", 6, weak_bt)["word"] == "lean"  # no backtest support: no 'I like it'
+    # out of sample (weights_fit.py, 2025-26) a factor-only lean hit ~50% at every score size, 'strong' included:
+    # without 1.5+ points of line value it's a slight lean at most
+    assert gc.confidence(None, "strong", 6, BT)["word"] == "slight lean"
+    assert gc.confidence(0.5, "strong", 5, BT)["word"] == "slight lean"
     for c in (gc.confidence(3, "strong", 6, BT), gc.confidence(0.5, "lean", 1, None)):
         assert "lock" not in c["say"].replace("not a lock", "").replace("no lock", "")
 

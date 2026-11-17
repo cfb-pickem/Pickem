@@ -186,7 +186,7 @@ def confidence(value_pts: float | None, strength: str, margin: float, bt: dict |
         word, say = "coin flip", "honestly a coin flip; if you have to pick, this side"
     elif value_pts is not None and value_pts >= EDGE_BIG and strength == "strong" and proven:
         word, say = "best play", "I like it: real value against a stale league line, still not a lock"
-    elif strength == "strong" or (value_pts or 0) >= EDGE_BIG:
+    elif (value_pts or 0) >= EDGE_BIG:  # a factor-only 'strong' lean hit 50-53% out of sample (weights_fit.py): slight
         word, say = "lean", "a lean, not a lock"
     else:
         word, say = "slight lean", "a slight lean at best"
