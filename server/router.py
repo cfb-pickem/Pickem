@@ -194,7 +194,43 @@ SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{
 # 'whats ur confidence 1-10' (k1 live: briefed as banter -> 'I do picks, not paperwork'): the card's confidence for the
 # game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
 CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
-CTX_KINDS = {"conf", "defend", "others", "short"}
+CTX_KINDS = {"conf", "defend", "others", "short", "value"}
+# 'so illinois got value now?' -> 'Nah.' (k1b); 'so nw is the value side?' -> a chalk jab (k1a)
+VALUE_ASK = re.compile(r"\b(value|free points?|better number|any edge|edge on)\b(?![^?.!]*\b(bet|meal|menu)\b)", re.I)
+
+
+def value_text(ctx: dict, q: str) -> str | None:
+    """League line vs the market for the game in the text (else Picky's last reply), lock-aware wording."""
+    import game_cards
+    text, _, last = re.sub(r"['’]s\b", "", q or "").partition(" ||| ")
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    named = chat.games_named(text, gl) or chat.games_named(last, gl)
+    if not named:
+        gaps = []
+        for g in games:
+            c = _card_for(ctx, g)
+            if c and c.get("value"):
+                gaps.append(c["value"]["label"])
+        if not gaps:
+            return "No gaps this week: every league line matches the books."
+        locked = game_cards.is_locked(_card_for(ctx, games[0]) or {"league_line": {"locked": False, "lock_at": "2099-01-01T11:00:00"}})
+        return (f"Only gap on the board: {_and(gaps)}" + (" vs the books." if locked else
+                " vs the books, and it only counts if it holds through Tuesday's 11 AM lock."))
+    g = next(x for x in games if x["id"] == named[0]["id"])
+    c = game_cards.load_card(ctx.get("current_week"), g["id"])
+    if not c or float(c["league_line"]["home"]) != float(g.get("line") or 0):
+        return None
+    lk = game_cards.is_locked(c)
+    vt = game_cards.value_text(c, lk)
+    if vt:
+        return vt[0].upper() + vt[1:].split(". Not banked")[0] + "."
+    m = c.get("market") or {}
+    if m.get("home_now") is None:
+        return None
+    ours = _fav(float(c["league_line"]["home"]), g["away"], g["home"])
+    return (f"No real gap: we have {ours} and the books are at {_fav(float(m['home_now']), g['away'], g['home'])}, so "
+            "neither side's getting free points. Pick it on the matchup.")
 # k1 judge: 'what about the others' after a pick meant the other games (got other members' hidden picks);
 # 'too long' / 'just the teams' after the slate meant the short version
 OTHERS_ASK = re.compile(r"^\W*(ok\s+|and\s+|so\s+)?(what about |how about |and )?(the )?(others|other (games?|ones|3|three|2|two)|rest( of (them|em|the games))?)\W*$"
@@ -360,6 +396,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if (LINE_MOVE.search(t) or LINE_MOVE_BARE.search(t)) and not re.search(r"\b(gonna|going to|will it|keep moving|before (11|the lock|lock|tuesday))\b"
                                             r"(?![^?.!]*\bafter\b)", t, re.I):
         return "line_move", "LINE_MOVE"
+    if VALUE_ASK.search(t):
+        return "value", "VALUE_ASK"
     if CONF_ASK.search(t):
         return "conf", "CONF_ASK"
     if OTHERS_ASK.search(t):
@@ -1650,7 +1688,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
               "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
               "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text,
-              "others": others_text, "short": short_text}.get(kind)
+              "others": others_text, "short": short_text, "value": value_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

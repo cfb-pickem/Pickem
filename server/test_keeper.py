@@ -560,6 +560,20 @@ def test_news_keyword_fallback_and_triggers():
         assert "nothing in your news feed" in chat.news_note("whats the latest on springfield tech")
 
 
+def test_value_lane():
+    import game_cards
+    ctx = _wk12_picks()
+    assert router.classify("so illinois got value now?").label() == "fact:value"
+    assert router.classify("whats the best value meal").label() != "fact:value"
+    cards = {12: {"league_line": {"home": 8.5, "locked": False, "lock_at": "2099-01-01T11:00:00"},
+                  "market": {"home_now": 8.5}, "value": None}}
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: cards.get(gid)), \
+            patch.object(game_cards, "is_locked", lambda c, now=None: False):
+        r = router.fact_answer("value", ctx, "so illinois got value now? ||| ")
+    assert r == ("No real gap: we have Iowa -8.5 and the books are at Iowa -8.5, so neither side's getting free points. "
+                 "Pick it on the matchup."), r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
