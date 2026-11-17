@@ -133,6 +133,18 @@ BARE_INSULT = re.compile(r"^\W*(pussy|bitch|loser|trash|garbage|bum|fraud|clown|
                          r"cringe|weak|soft|mid|boring|dork|tool|dumbass|jackass|fuck off|fuck you|ratio|l+)\W*$", re.I)
 
 
+# keeper sparring k1 (2026-11-16): 'top 4 right now go', 'how many weeks left', 'who went 0-4 last week besides me'
+TOP4 = re.compile(r"\btop (4|four)\b", re.I)
+_NATIONAL = re.compile(r"\b(cfp|ap|poll|rankings?|ranked|committee|nationally|country|playoff committee|sec|big ten|big 12|acc)\b",
+                       re.I)
+WEEKS_LEFT = re.compile(r"\bhow many (more )?weeks\b[^?.!]{0,25}\b(left|remaining|to go)\b|\bweeks (left|remaining)\b"
+                        r"|\bhow many (more )?weeks (are there|in the (regular )?season)\b", re.I)
+WENT_REC = re.compile(r"\b(?:who|anyone|anybody|someone|somebody)\b[^?.!]{0,20}\b(?:go|went|goes|gone)\s+([0-4])-([0-4])\b",
+                      re.I)
+LAST_WK_Q = re.compile(r"\blast (week|wk|weekend)\b", re.I)
+LAST_REGULAR_WEEK = 15  # league_rules facts: last_regular_week (conference championship week)
+
+
 def rules_answer(q: str, n_teams: int | None = None) -> str | None:
     """The rules module's short computed answer, or None (no module yet, or not a rules question it knows)."""
     if league_rules is None or not hasattr(league_rules, "answer"):
@@ -156,8 +168,12 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "cover", "DID_COVER"
     if PAYOUT_ASK.search(t) and chat._MONEY_ASK.search(t):
         return "payout", "PAYOUT_ASK"
-    if PLAYOFF_TODAY.search(t):
+    if PLAYOFF_TODAY.search(t) or (TOP4.search(t) and not _NATIONAL.search(t)):
         return "playoff_today", "PLAYOFF_TODAY"
+    if WEEKS_LEFT.search(t):
+        return "weeks_left", "WEEKS_LEFT"
+    if WENT_REC.search(t) and LAST_WK_Q.search(t):
+        return "results", "WENT_REC"
     if PICK_ASK.search(t):
         return "pick", "PICK_ASK"
     if chat.slate_ask(t) and SLATE_READ.search(t):
@@ -923,6 +939,100 @@ def slate_text(ctx: dict, q: str) -> str | None:
             + (f"Best play: {best['lean']['label']}." if best and len(cards) > 1 else ""))
 
 
+def _and(xs: list[str]) -> str:
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
+
+
+def weeks_left_text(ctx: dict, q: str) -> str | None:
+    cw = ctx.get("current_week")
+    if not isinstance(cw, int):
+        return None
+    if cw > LAST_REGULAR_WEEK:
+        return "The regular season's done. It's playoff time: the top 4 pick the College Football Playoff games."
+    n = LAST_REGULAR_WEEK - cw
+    return (f"This is week {cw}. The regular season runs through week {LAST_REGULAR_WEEK} (conference championship "
+            f"week), so {n} more week{'s' if n != 1 else ''} after this one, then the top 4 go to the playoffs.")
+
+
+def _subject_team(ctx: dict, q: str) -> str | None:
+    """The member a question names (team name or what the group calls them), else the sender."""
+    me = (ctx.get("you") or {}).get("team_name")
+    nick = chat.member_nicknames()
+    for r in ctx.get("standings_ytd") or []:
+        t = r["team"]
+        if t == me:
+            continue
+        for name in {t, nick.get(t) or t}:
+            if re.search(rf"(?<!\w){re.escape(name)}(?!\w)", q or "", re.I):
+                return t
+    return me
+
+
+def last_week_text(kind: str, ctx: dict, q: str) -> str | None:
+    """Last week's finals (the Monday after a week, or 'last week' in the text): a member's picks graded,
+    'did X cover last week', 'who went 0-4 last week'. None when it isn't that question."""
+    lw = ctx.get("last_week") or {}
+    games, wk = lw.get("games") or [], lw.get("week")
+    if not games:
+        return None
+    says_lw = bool(LAST_WK_Q.search(q or ""))
+    me = (ctx.get("you") or {}).get("team_name")
+    m = WENT_REC.search(q or "")
+    if m and says_lw:
+        rec = (int(m.group(1)), int(m.group(2)))
+        names = [t for t, w in (ctx.get("weekly_records") or {}).items()
+                 if tuple((w.get(wk) if w.get(wk) is not None else w.get(str(wk))) or ()) == rec]
+        tag = f"{rec[0]}-{rec[1]}"
+        if re.search(r"\b(besides|other than|except|but) me\b|\bjust me\b", q, re.I):
+            others = [n for n in names if n != me]
+            if me in names and not others:
+                return f"Just you went {tag} in week {wk}."
+            return f"Week {wk} {tag}: {', '.join(others)}." + ("" if me in names else " Nobody else.") if others else \
+                f"Nobody went {tag} in week {wk}."
+        return f"Week {wk} {tag}: {', '.join(names)}." if names else f"Nobody went {tag} in week {wk}."
+    lwg = [{"Away": g["away"], "Home": g["home"], "id": i} for i, g in enumerate(games)]
+    if kind == "cover":
+        named = chat.games_named(q, lwg)
+        if named and (says_lw or not chat.week_started(ctx)):
+            g = games[named[0]["id"]]
+            side = _named_side(q, g)
+            r = chat.grade_pick(side, g["away"], g["home"], g.get("line"), g.get("covered"), "final",
+                                g.get("away_pts"), g.get("home_pts"))
+            out = _row_text(r) + "."
+            if g.get("away_pts") is not None and g.get("home_pts") is not None:
+                out += f" Final: {g['away']} {chat._num(float(g['away_pts']))}, {g['home']} {chat._num(float(g['home_pts']))}."
+            return out
+        if says_lw:
+            tw = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]}
+                                      for g in ctx.get("games_this_week") or []])
+            if tw:
+                g = next(x for x in ctx["games_this_week"] if x["id"] == tw[0]["id"])
+                return (f"{_named_side(q, g)} wasn't in the pool in week {wk}. Week {wk} was "
+                        + ", ".join(f"{x['away']} at {x['home']}" for x in games) + ".")
+        return None
+    if kind == "results" and (says_lw or not chat.week_started(ctx)):
+        team = _subject_team(ctx, q)
+        rows = []
+        for g in games:
+            p = (g.get("picks") or {}).get(team)
+            if p:
+                rows.append(chat.grade_pick(p, g["away"], g["home"], g.get("line"), g.get("covered"), "final",
+                                            g.get("away_pts"), g.get("home_pts")))
+        if not rows:
+            return None
+        hit = [r["label"] for r in rows if r["result"] == "WIN"]
+        miss = [r for r in rows if r["result"] != "WIN"]
+        who = "You" if team == me else team
+        head = f"{who} went {len(hit)}-{len(miss)} in week {wk}"
+        if not miss:  # Charlie flagged a 4-cover recital on 'Howd the week go': short, like a person says it
+            return f"{head}, clean sweep: {_and(hit)} all covered."
+        if not hit:
+            return f"{head}: {_and([r['label'] for r in miss])} all missed."
+        return (f"{head}: hit {_and(hit)}, missed " + _and([f"{r['label']} (by {chat._num(abs(r['margin']))})"
+                                                            if r.get('margin') is not None else r["label"] for r in miss]) + ".")
+    return None
+
+
 def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     """The complete answer in code for a fact intent, or None (no data / not this lane's question)."""
     if not ctx or ctx.get("error"):
@@ -939,9 +1049,13 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
             who = unknown_member(ctx, q)
             if who:  # never the sender's numbers for a name nobody goes by (full exam 2026-11-16)
                 return f"{who} isn't in this league. No team by that name."
+        if kind in ("results", "cover") and (LAST_WK_Q.search(q or "") or kind == "results"):
+            lwt = last_week_text(kind, ctx, q)
+            if lwt:
+                return lwt
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
-              "pick": pick_text, "slate": slate_text}.get(kind)
+              "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

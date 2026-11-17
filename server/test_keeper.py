@@ -70,6 +70,77 @@ def test_shots_at_pickys_picks_are_not_slate_asks():
         assert chat.slate_ask(q), q
 
 
+def _wk12_picks():
+    ctx = _wk12("TG")
+    picks = {"Ackbar": ["Wake Forest", "Boise State", "UTSA", "North Dakota State"],
+             "TG": ["SMU", "Oregon State", "North Texas", "Hawai'i"],
+             "Andrew Bub": ["SMU", "Boise State", "North Texas", "Hawai'i"]}
+    for i, g in enumerate(ctx["last_week"]["games"]):
+        g["picks"] = {t: v[i] for t, v in picks.items()}
+    ctx["weekly_records"]["Andrew Bub"] = {11: [0, 4]}
+    return ctx
+
+
+def test_last_week_results_for_a_member_or_the_sender():
+    # k1: 'how did ackbar do last week' returned nothing (results lane only reads this week)
+    ctx = _wk12_picks()
+    with patch.object(chat, "load_lore", lambda: {}), patch.object(chat, "member_nicknames", lambda: {"Ackbar": "Ackbar"}):
+        r = router.fact_answer("results", ctx, "how did ackbar do last week")
+        assert r == ("Ackbar went 3-1 in week 11: hit Wake Forest -1.5, UTSA +2.5 and North Dakota State -6.5, "
+                     "missed Boise State -13.5 (by 8.5)."), r
+        r = router.fact_answer("results", ctx, "howd i do last week")
+        assert r.startswith("You went 1-3 in week 11: hit Oregon State +13.5, missed SMU +1.5 (by 40.5), "), r
+        ctx["last_week"]["games"][0]["picks"]["TG"] = "Wake Forest"
+        for i, t in ((2, "UTSA"), (3, "North Dakota State")):
+            ctx["last_week"]["games"][i]["picks"]["TG"] = t
+        r = router.fact_answer("results", ctx, "Howd the week go")  # Monday, nothing started: last week
+        assert r == ("You went 4-0 in week 11, clean sweep: Wake Forest -1.5, Oregon State +13.5, UTSA +2.5 and "
+                     "North Dakota State -6.5 all covered."), r
+
+
+def test_did_x_cover_last_week_never_reads_this_weeks_game():
+    # k1: 'did iowa cover last week' -> 'Iowa -8.5 hasn't kicked off.'
+    ctx = _wk12_picks()
+    with patch.object(chat, "load_lore", lambda: {}):
+        r = router.fact_answer("cover", ctx, "did iowa cover last week")
+        assert "hasn't kicked off" not in r and r.startswith("Iowa wasn't in the pool in week 11"), r
+        r = router.fact_answer("cover", ctx, "did boise cover last week")
+        assert r.startswith("Boise State -13.5 missed the cover by 8.5"), r
+        r = router.fact_answer("cover", ctx, "did iowa cover")  # this week, not started: unchanged
+        assert "hasn't kicked off" in r, r
+
+
+def test_who_went_0_4_last_week():
+    ctx = _wk12_picks()
+    with patch.object(chat, "load_lore", lambda: {}):
+        assert router.classify("who went 0-4 last week besides me").label() == "fact:results"
+        r = router.fact_answer("results", ctx, "who went 0-4 last week besides me")
+        assert r == "Week 11 0-4: Andrew Bub. Nobody else.", r
+        r = router.fact_answer("results", ctx, "anyone go 4-0 last week")
+        assert r == "Week 11 4-0: Chuck P.", r
+
+
+def test_top_4_right_now_and_weeks_left():
+    assert router.classify("top 4 right now go").label() == "fact:playoff_today"
+    assert router.classify("who's top four rn").label() == "fact:playoff_today"
+    assert router.classify("how many weeks left").label() == "fact:weeks_left"
+    assert router.classify("how many weeks are left in the season").label() == "fact:weeks_left"
+    ctx = _wk12_picks()
+    r = router.fact_answer("weeks_left", ctx, "how many weeks left")
+    assert r == ("This is week 12. The regular season runs through week 15 (conference championship week), "
+                 "so 3 more weeks after this one, then the top 4 go to the playoffs."), r
+
+
+def test_injury_rule_and_news_typos():
+    # spar r1-c13/c15: 'whats the lates' got standings; injury lines rode next to 'No college injury report exists'
+    import inspect
+    for q in ("whats the lates", "whats the lastest", "any nees", "whats the latest"):
+        assert chat._NEWS_ASK.search(q), q
+    assert "No college injury report exists" not in inspect.getsource(chat)
+    assert chat._INJ_LINE.search("LSU RT Weston Davis is reportedly dealing with a 'really bad' ankle injury")
+    assert not chat._INJ_LINE.search("UTEP fired Scotty Walden after a 6-28 run")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

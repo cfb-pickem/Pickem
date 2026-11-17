@@ -1300,7 +1300,7 @@ Q: Explain the Utah Iowa spread like I'm dumb
 A: Pool line is Utah -3.5 / Iowa +3.5. Utah covers only by winning by 4 or more. Iowa covers by winning, or losing by 3 or fewer. The market has Utah -6, so Utah -3.5 is the value side. You took Iowa. Bold. Wrong, but bold.
 
 Q: Is Iowa's quarterback healthy?
-A: No college injury report exists, so I can't tell you. Ask the Iowa beat writers; I'm a mascot, not a team doctor.
+A: Haven't seen a thing on him in my feeds, and colleges don't put out an injury report. Watch the Iowa beat writers before Saturday.
 
 Q: Who do you like in Texas vs Oklahoma?
 A: Not in the pool, so not my problem. You've already got four games to screw up."""
@@ -2292,9 +2292,10 @@ def prompt_prefix(ctx: dict) -> str:
         "POOL LINE (favorite minus, underdog plus). One or two reasons each, "
         "from that game's block.\n"
         "6. FPI is the chance to WIN outright, never to cover.\n"
-        "7. INJURIES: no college injury report exists. Say so and send them "
-        "to the beat writers. Never say or hint that a team or player is "
-        "healthy, fine or good to go.\n"
+        "7. INJURIES: colleges publish no official injury report. Report only "
+        "what a NEWS QUESTION line or that game's block says (player, status, "
+        "who reported it). Nothing there: say you haven't seen anything on it. "
+        "Never say or hint that a team or player is healthy, fine or good to go.\n"
         "8. Only the games under YOUR GAMES THIS WEEK are in the pool. "
         "Anything else (another game, taxes, anything): roast them in one or "
         "two lines and stop. Don't do it, and don't bring up picks, games or "
@@ -3685,7 +3686,7 @@ def leader_note(ctx: dict, question: str) -> str:
 # the cache only, on news-type questions, into the latest user turn. His X
 # posts are not available (no free, ToS-clean source), so Picky says so.
 _NEWS_ASK = re.compile(
-    r"\b(news|headlines?|latest|lat(?:es|st|set)|nees|neews|anything new|what'?s the word|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
+    r"\b(news|headlines?|latest|lat(?:es|st|set)|lastest|latests|nees|neews|newz|anything new|what'?s the word|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
     r"hot seat|buyout|transfer\w*|portal|decommit\w*|what('?s| is) (going on|happening|new)|going on in|happening in|dellenger|"
     r"tweet\w*|twitter|recruit\w*|suspend\w*|any updates?|breaking|questionable|doubtful|injury report|"
     r"availability|game[- ]time decision|(is|are|will)\b[^?.!]{0,30}\b(qb|quarterback|starter)s?\b[^?.!]{0,20}"
@@ -3741,7 +3742,14 @@ def news_note(question: str, teams: list[str] | None = None) -> str:
             "anything here. Injury news: report only what a line says; never call anyone healthy."
             + (" These lines ARE published injury/availability reports (an exception to rule 7): answer with the "
                "status and who reported it, and don't say no injury report exists or send them to beat writers."
-               if any("[status: " in ln for ln in lines) else ""))
+               if any("[status: " in ln or _INJ_LINE.search(ln) for ln in lines) else ""))
+
+
+# a news line that IS an injury/availability report (spar r1: 'any injury news on lsu' got 'No college injury
+# report exists' in the same breath as the Weston Davis ankle report)
+_INJ_LINE = re.compile(r"\b(injur\w*|ankle|knee|shoulder|concussion|hamstring|out for|ruled out|questionable|doubtful|"
+                       r"game[- ]time decision|week[- ]to[- ]week|season[- ]ending|out (indefinitely|for the season)|"
+                       r"won'?t play|will miss|expected to (play|start|miss|return))\b", re.I)
 
 
 # Present-day CFB (Charlie, 2026-11-14): current CFP / AP rankings from ESPN's
