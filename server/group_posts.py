@@ -10,9 +10,18 @@ is due (Central time):
   recap     Sunday 9:00 (until Mon 9:00), once per fully-final pool week:
             worst pick, chalk of the week, best call,
             Picky's own week, then the playoff math (deterministic text).
-  preview   Thursday 12:00 until the week's first kickoff: the slate, Picky's
-            card (his submitted picks, else what his pick logic leans today)
-            and his takes from the analyst takes in the dossiers.
+  picks up  When a new week's 4 pool games appear (before lock): the "Week N
+            picks are up" announcement (code template: lock time, the 4 lines
+            with the favorite framed from `line`, "@Picky me or DM me"), then
+            4+ min later the deep breakdown (week_breakdown.py: code-computed
+            facts + forecast, Opus-phrased offline, every number verified in
+            code). Posts 09:00-23:30 only (overnight drops wait for 9am).
+            Keys picksup:<season>:<week> / breakdown:<season>:<week>.
+  preview   Thursday 12:00 until the week's first kickoff. With a breakdown on
+            file: a short refresh of what changed since (market moves of 1+,
+            new dated injury/QB lines, forecast swings, a flipped lean), and no
+            post at all when nothing changed. Without one (fallback): the
+            slate, Picky's card and the film room's line.
   saturday  Saturday 09:30-13:00 when the week has a Saturday game: Picky's
             picks and a hype post.
   remind    Before the weekly lock only (regular season: every pick locks at
@@ -70,6 +79,7 @@ sys.path.insert(0, str(HERE))
 import group_outbox as ob  # noqa: E402
 import playoff_race as pr  # noqa: E402
 import rare_bits  # noqa: E402
+import week_breakdown  # noqa: E402
 
 log = logging.getLogger("picky.posts")
 CT = zoneinfo.ZoneInfo("America/Chicago")
@@ -933,12 +943,23 @@ def tick(dry_run: bool | None = None, now: dt.datetime | None = None, echo=print
         send("recap", make_recap(lg, w), f"recap:{sea}:{w}", expires_s=20 * 3600)
 
     ow = lg.open_week()
+    # picks up: a new week's pool games -> the announcement, then the deep breakdown (week_breakdown.py)
+    try:
+        log.info("picks-up week %s -> %s", ow, week_breakdown.tick_picks_up(lg, ow, now, send))
+    except Exception as e:  # noqa: BLE001  never let it block reminders and pings
+        log.warning("picks-up failed: %r", e)
     if ow is not None:
         lock = lg.lock_time(ow)
-        # preview: Thursday noon until the lock
+        # preview: Thursday noon until the lock. With a breakdown on file it's a short refresh
+        # (what changed since); nothing changed = no post.
         if now.weekday() == 3 and now.hour >= 12 and lock and now < lock and not ob.done(f"preview:{sea}:{ow}"):
-            send("preview", make_preview(lg, ow), f"preview:{sea}:{ow}",
-                 expires_s=int(max(600, (lock - now).total_seconds())))
+            texts = week_breakdown.refresh_texts(lg, ow, now)
+            if texts == []:
+                ob.mark(f"preview:{sea}:{ow}", "nothing-new")
+                log.info("preview %s: nothing changed since the breakdown, skipped", ow)
+            else:
+                send("preview", texts or make_preview(lg, ow), f"preview:{sea}:{ow}",
+                     expires_s=int(max(600, (lock - now).total_seconds())))
         # saturday: 09:30-13:00 with a game today
         if (now.weekday() == 5 and (now.hour, now.minute) >= (9, 30) and now.hour < 13
                 and not ob.done(f"sat:{sea}:{ow}")):
