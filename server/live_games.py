@@ -1287,6 +1287,11 @@ def picks_fact(ctx: dict) -> tuple | None:
             need.append(_num_rx(abs(m)))
     if not parts:
         return None
+    if any(x.endswith("not started") for x in parts):  # 'locked in for this week' isn't 'hasn't kicked off'
+        need.append(r"not (started|kicked|underway|begun)|hasn'?t (started|kicked|begun)|haven'?t (started|kicked)|"
+                    r"kicks? off|kickoff|yet to|later|tonight")
+    if any("WON" in x or "LOST" in x for x in parts):
+        need.append(r"\b(won|win|covered|cashed|hit|lost|loss|missed)\b")
     return (lambda t, need=need: all(re.search(r, t, re.I) for r in need),
             " Your picks right now: " + "; ".join(parts) + ".")
 
