@@ -804,8 +804,8 @@ def pick_text(ctx: dict, q: str) -> str | None:
     """'who you got in X at Y?': the card's side + line, the confidence, one reason."""
     import game_cards
     games = [g for g in chat.take_games(ctx, q)][:2]
-    if not games:
-        return None
+    if not games:  # 'who should I pick this week?' names no game: the whole week's calls (live 2026-11-16)
+        return slate_text(ctx, q)
     out = []
     for g in games:
         c = _card_for(ctx, g)

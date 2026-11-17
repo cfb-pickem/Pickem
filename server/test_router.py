@@ -731,6 +731,15 @@ def test_typo_pick_asks():
         assert r.lane == "fact" and r.kind == "pick", (q, r)
 
 
+def test_pick_ask_naming_no_game_gets_the_slate():
+    # "who should I pick this week" named no game, pick_text returned None and the full brain sent a jab
+    from unittest import mock
+    with mock.patch.object(router.chat, "take_games", return_value=[]), \
+         mock.patch.object(router, "slate_text", return_value="My 4 calls: X.") as st:
+        assert router.pick_text({"games_this_week": []}, "Who should inpick this week") == "My 4 calls: X."
+        st.assert_called_once()
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
