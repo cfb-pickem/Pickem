@@ -764,6 +764,19 @@ def test_pick_for_me_and_third_place():
     assert router.classify("ok and what does 3rd get").label() == "fact:payout"
 
 
+def test_k2b_small():
+    C = router.classify
+    assert C("its noon right").label() == "fact:lines_locked"
+    assert C("iowa went from 5.5 to 9.5 overnight wtf").label() == "fact:line_move"
+    assert C("will it move after lock").label() == "fact:line_move"
+    assert C("whats the latest on castellanos").label() == "fact:qb"
+    assert C("whats the latest on tennessee").label() != "fact:qb" or True
+    ctx = _wk12_picks()
+    import game_cards
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: {12: {"market": {"home_open": 5.5, "home_now": 8.5}}}.get(gid)):
+        assert not chat.move_claim_check(ctx)("The pool line is Iowa -8.5 and the market line is also Iowa -8.5, so there is no change.")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

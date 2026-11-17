@@ -149,7 +149,8 @@ LINE_MOVE = re.compile(
     r"\b(lines?|spreads?|numbers?|odds)\b[^?.!]{0,25}\b(move|moved|moving|movement|change|changed|changing|shift\w*|jump\w*)\b"
     r"|\bdid (anything|any( of the)? lines?|it|that|the line|the spread|any(thing)? of them)\b[^?.!]{0,20}\bmove\b"
     r"|\bwhat('?s| has)? moved\b|\bany (line )?movement\b|\bmoved? overnight\b"
-    r"|\bwhen did (it|that|the line) (move|change|happen)\b", re.I)
+    r"|\bwhen did (it|that|the line) (move|change|happen)\b|\bwent from -?\d{1,2}(\.5)? to -?\d{1,2}(\.5)?\b"
+    r"|\b(move|change)s?\b[^?.!]{0,10}\bafter (the )?(lock|11|tuesday)\b", re.I)
 LINE_MOVE_BARE = re.compile(r"\b(move|moved|moving)\?\s*$", re.I)  # 'nw minny move?': only with a pool game named
 
 
@@ -161,6 +162,7 @@ QB_ASK = re.compile(r"\b(qb|quarterback)s?\b[^?.!]{0,25}\b(situation|status|news
                     r"|^\W*[a-z]{3,} (even )?healthy\W*$", re.I)
 
 
+PLAYER_LATEST = re.compile(r"^\W*(whats|what'?s) the (latest|lates|news|word) on ([a-z]{5,})\W*$", re.I)
 PLAYER_ASK = re.compile(r"^\W*(anything|any updates?|update|status|word) on [a-z]{5,}\W*$|^\W*[a-z]{5,} (status|update|hurt)\W*$", re.I)
 
 
@@ -178,7 +180,8 @@ UPSET_ASK = re.compile(r"\b(upset|dog|underdog|sleeper)s?\b[^?.!]{0,15}\b(pick|s
 # Tuesday morning (k2): 'is it locked yet', 'are the lines locked', 'what are the lines', 'whats the line on iowa'
 LINES_LOCKED_Q = re.compile(r"\b(is|are|r)\s+(it|the lines?|lines|the spreads?|spreads|the numbers?|they|things)\s+(locked|locked in|frozen|final|set)( yet| now| in)?\b"
                             r"|\bhas (it|the line|the lines) locked\b|\blocked yet\b"
-                            r"|\b(lines? )?locks? (tmrw|tmr|tomorrow|today|tuesday|tues|tue)\b(?![^?.!]*\bpicks?\b)", re.I)
+                            r"|\b(lines? )?locks? (tmrw|tmr|tomorrow|today|tuesday|tues|tue)\b(?![^?.!]*\bpicks?\b)"
+                            r"|^\W*(it'?s |its |is it |so )?(noon|11|12)( ?(am|pm))?( (ct|et|eastern|central))? right\W*$", re.I)
 LINES_NOW = re.compile(r"\bwhat('?s| are| is|s)? (the |this week'?s |this wks? |our |the current )?(lines?|spreads?|numbers)\b(?! lock)"
                        r"|\bwhat'?s the (line|spread) (on|for|in)\b|\bwhats the (line|spread) (on|for|in)\b"
                        r"|\b(lines?|spreads?) (this week|for the week|rn|right now)\b", re.I)
@@ -631,6 +634,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if playoff_race.is_need_question(t):
         return "playoff", "playoff_race.is_need_question"
+    if PLAYER_LATEST.search(t) and not chat.games_named(t, []):
+        return "qb", "PLAYER_LATEST"  # 'whats the latest on castellanos': the cards' note, else the full brain + news
     if (QB_ASK.search(t) or PLAYER_ASK.search(t)) and not re.search(r"\b(news|latest|lates|report\w*|rumou?r\w*|any news)\b", t, re.I):
         return "qb", "QB_ASK"  # a news-style ask keeps the news feed (NEWS QUESTION rider)
     if SPREAD_EXPLAIN.search(t):

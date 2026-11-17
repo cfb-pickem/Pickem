@@ -1177,7 +1177,8 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                 if tw and len(tw) <= 3 and (text or "").strip().endswith("?") and set(tw) <= set(re.findall(r"[a-z']+", q.lower())):
                     text = banter_fallback(st, text) or text  # 'Goat?', 'Just one game?': an echo, not a comeback (k1d)
                 if _DODGE.match(text or ""):  # 'Next question.' reads as a brush-off (keeper k1d): a book line, else react
-                    text = banter_fallback(st, text) or REACTIONS[sum(map(ord, q)) % len(REACTIONS)]
+                    claim = "?" in q or re.search(r"\b(right|correct|true|isn'?t it|isnt it|yeah)\b", q, re.I)
+                    text = banter_fallback(st, text) or (text if claim else REACTIONS[sum(map(ord, q)) % len(REACTIONS)])
                 text = fresh_jab(st, text, recent_picky or [])
                 import no_repeat
                 if no_repeat.banned_tic(text):  # one-line banter keeps its tic past debot ('...go to your head')

@@ -6401,7 +6401,8 @@ def line_set_check(ctx: dict):
     return lambda sent: not (_SET_CLAIM.search(sent or "") and not _SET_OK.search(sent or ""))
 
 
-_NO_MOVE = re.compile(r"\b(no|hasn'?t been any|hasn'?t been|without|zero) (real )?(line )?(movement|move)\b|\bhasn'?t moved\b|"
+_NO_MOVE = re.compile(r"\b(no|hasn'?t been any|hasn'?t been|without|zero) (real )?(line )?(movement|move|change)\b|\bhasn'?t (moved|changed)\b|"
+                      r"\bnothing('?s| has) changed\b|\bno change\b|"
                       r"\bdidn'?t move\b|\bnot moved\b|\bnothing'?s moved\b|\bstill at the opener\b", re.I)
 
 
