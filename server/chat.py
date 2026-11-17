@@ -134,6 +134,11 @@ DADDYFREEMAN_USER_ID = "21ade75b-cfbf-431d-8b3d-20b7b2b52ef2"
 BLINKSTRADAMUS_USER_ID = "07756da9-3947-4b63-9aaf-23c7c8ceda97"
 # set per request in _chat: the milk budget is free AND this text is about Blinky
 MILK_OK: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_milk_ok", default=False)
+# Set by the group sidecar around its in-process calls (group_chat._answer). Every group ask runs with
+# Picky's own session, so the per-user minute bucket below was shared by the WHOLE group, drafts and
+# rerolls included: in a burst the 11th call in a minute raised 429 and that ask got no reply. The
+# watcher caps group replies itself (10 s gap, 60/h); site asks are still counted once at /chat.
+SKIP_RATE: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_skip_rate", default=False)
 _BLINKS_ASK = re.compile(r"\bblink(?:stradamus|y|ie|s)\b", re.I)
 BLINKS_BIT = ("RUNNING BIT about Blinkstradamus (he, not the user). True origin: at a bachelor party he was "
               "just walking along the roadside holding a carton of milk when girls in a top-off Jeep yelled "
@@ -7309,7 +7314,8 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
 
     async with httpx.AsyncClient() as client:
         user_id = await _verify_jwt(client, jwt)
-        _rate_check(user_id)
+        if not SKIP_RATE.get():
+            _rate_check(user_id)
         opener = land_ack_for(user_id, messages)
         last =messages[-1] if isinstance(messages[-1], dict) else {}
         if last.get("role") == "user" and wants_image(last.get("content", "")):

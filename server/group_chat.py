@@ -921,6 +921,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     token, mtok = SENDER.set(s), MODE.set(mode)
     rtok = RECENT.set(recent_block(recent) if mode == "group" else "")
     wtok = WEB.set(bool(web))
+    stok = chat.SKIP_RATE.set(True)  # in-process: one shared session, the watcher rate-limits (chat.SKIP_RATE)
     try:
         q = strip_trigger(text)[:2000]
         live_games.LIVE_NEED.set({})  # filled by the drafts below (chat -> live_games.required_fact)
@@ -1039,6 +1040,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
     finally:
+        chat.SKIP_RATE.reset(stok)
         WEB.reset(wtok)
         RECENT.reset(rtok)
         MODE.reset(mtok)
