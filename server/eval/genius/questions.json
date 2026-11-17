@@ -2,7 +2,7 @@
  "week": 12,
  "season": 2026,
  "as_of": "2026-11-16 12:26 CT",
- "slate_note": "The league's 4 week-12 pool games weren't picked yet when this was written (Monday), so these are the week's notable games. Lines are ESPN/DraftKings as of as_of; the runner re-pulls the market at run time and the grader allows normal drift.",
+ "slate_note": "Week-12 pool games (set Monday evening): LSU at Tennessee, Iowa at Illinois, Texas Tech at Baylor, Northwestern at Minnesota; pool items first, then the week's other notable games. Lines are ESPN/DraftKings as of as_of (pool items: Mon ~8:40 PM CT); the runner re-pulls the market + the league line at run time and the grader allows normal drift.",
  "sources_common": [
   "CFBD local cache server/cache/cfbd.sqlite (records, SP+, ATS, advanced, games+lines 2026, lines 2025), fetched 2026-11-16 06:15-10:34 CT",
   "ESPN summary endpoint per game (DraftKings open/current spread + total, FPI predictor, kickoff), pulled 2026-11-16 12:26 CT",
@@ -11,6 +11,195 @@
   "CFP committee rankings #2, released 2026-11-10 (ncaa.com, cbssports.com)"
  ],
  "items": [
+  {
+   "id": "pool-iowa-ill-move",
+   "cat": "lines",
+   "games": [
+    401858527
+   ],
+   "turns": [
+    "Iowa went from about -5.5 to -8.5 at Illinois. What happened, and is 8.5 a lot with a 40.5 total?"
+   ],
+   "key": {
+    "must_include": [
+     "Illinois' QB situation is the story: Katin Houser's status is in doubt (reports Nov 16: hurt at UCLA, surgery; a backup/third-stringer could start) and the line jumped ~3 points",
+     "With a 40.5 total, 8.5 is a big number (implied about Iowa 24.5, Illinois 16): Iowa has to win by 9+ in a low-scoring game"
+    ],
+    "must_not_claim": [
+     "Houser is confirmed healthy/starting",
+     "Iowa's QB is hurt",
+     "the move was weather"
+    ],
+    "lean": "Conditional/none is fine. Illinois +8.5 has support (Illinois 4-0 ATS as a dog, low total); Iowa is defensible if Illinois starts a backup (Iowa 7-3 ATS, 3 straight covers, defense SP+ #4).",
+    "lean_side": "conditional",
+    "facts": [
+     "League line (all_games, Mon night): Iowa -8.5, opened -6.5 in the league feed; ESPN DK open -5.5",
+     "Iowa 8-2, defense SP+ #4, offense #52; Illinois 6-4, SP+ #44",
+     "Iowa hosts Nebraska next week; Illinois at Northwestern next",
+     "Pool game in the league this week"
+    ],
+    "sources": [
+     "cfb-pickem-private slate_intel.json (ESPN/Rittenberg via ESPN Radio, RotoWire, 2026-11-16)"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "pool-nw-minn-value",
+   "cat": "lines",
+   "games": [
+    401858530
+   ],
+   "turns": [
+    "League has Northwestern -2.5 at Minnesota and the books are at -3. Which side has the value?"
+   ],
+   "key": {
+    "must_include": [
+     "Northwestern backers get the better number: at -2.5 a 3-point Northwestern win covers, while at the market's -3 it would be a push",
+     "Minnesota +2.5 is a worse number than the market's +3 (3 is the key number)",
+     "The league line locks Tuesday 11 AM CT, so it holds only if it's still -2.5 then"
+    ],
+    "must_not_claim": [
+     "Minnesota is the value side at +2.5",
+     "a push is possible in the league"
+    ],
+    "lean": "Northwestern -2.5 has the value vs the market (by the key number); the side is still the member's call.",
+    "lean_side": "Northwestern",
+    "facts": [
+     "ESPN DK: NU -3 (no move), total 42.5",
+     "League line in all_games Mon night: Northwestern -2.5"
+    ],
+    "sources": [
+     "server/league_rules.md"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "pool-nw-minn-matchup",
+   "cat": "matchups",
+   "games": [
+    401858530
+   ],
+   "turns": [
+    "Can Minnesota move the ball on Northwestern?"
+   ],
+   "key": {
+    "must_include": [
+     "Minnesota's offense is bad: SP+ offense #109, negative rushing EPA (about -0.14 per rush), ~2.9 points per scoring chance",
+     "Northwestern's defense is middle of the pack (SP+ #32) and its offense is better (#36 vs Minnesota's #109)"
+    ],
+    "must_not_claim": [
+     "Minnesota has a good offense"
+    ],
+    "lean": "Optional. Context: Minnesota is 5-5 and needs one win for a bowl (motivation, home game); forecast has rain chances (~70%) at an 11 AM kickoff, 5 days out.",
+    "lean_side": "any",
+    "facts": [
+     "Minnesota lost 42-14 at Penn State and 34-20 to UCLA the last two weeks"
+    ],
+    "sources": []
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pool-nw-minn-h2h",
+   "cat": "ats",
+   "games": [
+    401858530
+   ],
+   "turns": [
+    "What happened when Northwestern and Minnesota played last year?"
+   ],
+   "key": {
+    "must_include": [
+     "2025: Northwestern won 38-35 as a 4-point favorite (home game, played at Wrigley Field), so Minnesota covered by 1"
+    ],
+    "must_not_claim": [
+     "Minnesota won last year",
+     "Northwestern covered"
+    ],
+    "lean": "n/a",
+    "lean_side": "none",
+    "facts": [],
+    "sources": [
+     "CFBD lines 2025 (cache lines_prev)",
+     "https://www.cbssports.com/college-football/news/northwestern-prowling-for-bowl-bid-welcomes-minnesota-to-wrigley"
+    ]
+   },
+   "det": {
+    "ats_frame": false
+   }
+  },
+  {
+   "id": "pool-ttu-bay-pick",
+   "cat": "pushback",
+   "games": [
+    401856871
+   ],
+   "turns": [
+    "Texas Tech -3.5 at Baylor, who you got?",
+    "why?"
+   ],
+   "key": {
+    "must_include": [
+     "A side vs -3.5 with real reasons",
+     "Uses at least two of: the hook over 3 (Baylor +3.5), Baylor 7-3 ATS and 2-1 ATS under interim Joe Klanderman, Texas Tech 5-5 ATS / 4-5 as a favorite, Texas Tech chasing a Big 12 title-game spot, Texas Tech QB Tommy Castellanos took a rib hit but X-rays were clean"
+    ],
+    "must_not_claim": [
+     "Aranda is still Baylor's coach",
+     "Castellanos is out"
+    ],
+    "lean": "Either side with reasons; Baylor +3.5 has slightly more support from the ATS form and the hook.",
+    "lean_side": "Baylor|Texas Tech",
+    "facts": [
+     "League line: Texas Tech -3.5 (pool game)",
+     "Texas Tech 9-1, CFP #12"
+    ],
+    "sources": [
+     "slate_intel.json (Yahoo Sports 2026-11-15)"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
+  {
+   "id": "pool-lsu-tenn-pick",
+   "cat": "pushback",
+   "games": [
+    401856754
+   ],
+   "turns": [
+    "LSU-Tennessee, who covers?",
+    "what would change your mind?"
+   ],
+   "key": {
+    "must_include": [
+     "A side vs the league line (LSU -1.5 / Tennessee +1.5) or an honest coin flip, tied to Tennessee's QB uncertainty (MacIntyre's knee vs freshman Faizon Brandon)",
+     "Turn 2: concrete triggers, e.g. Tennessee naming its QB, MacIntyre ruled out, the line moving through 3"
+    ],
+    "must_not_claim": [
+     "MacIntyre is confirmed out or confirmed starting"
+    ],
+    "lean": "No strong lean; conditional on Tennessee's QB is ideal. Extra real facts: Tennessee WR1 Mike Matthews is out for the season; LSU's Sam Leavitt threw 3 INTs vs Texas and stays the starter; both defenses top 10 in SP+.",
+    "lean_side": "any",
+    "facts": [
+     "League line (all_games): home +1.5 = LSU -1.5"
+    ],
+    "sources": [
+     "slate_intel.json (Rocky Top Insider, SI, The Advocate, 2026-11-16)"
+    ]
+   },
+   "det": {
+    "ats_frame": true
+   }
+  },
   {
    "id": "lv-uga-sc-move",
    "cat": "lines",
