@@ -28,6 +28,7 @@ CLI: live_games.py run | once | show [team] | status
 
 from __future__ import annotations
 
+import contextvars
 import datetime as dt
 import json
 import logging
@@ -1301,8 +1302,28 @@ def _same(a: str, b: str) -> bool:
     return n(a) == n(b)
 
 
+LIVE_NEED: "contextvars.ContextVar[dict | None]" = contextvars.ContextVar("live_need", default=None)
+
+
 def required_fact(ctx: dict, question: str) -> tuple | None:
-    """(check(reply) -> bool, sentence) for a live factual question, else None."""
+    """(check(reply) -> bool, sentence) for a live factual question, else None. Also kept in LIVE_NEED so the
+    group sidecar can re-check it after its last edits (debot / no-repeat screen run after chat._ensure)."""
+    need = _required_fact(ctx, question)
+    box = LIVE_NEED.get()
+    if box is not None:  # a dict the sidecar put in the context: shared with draft tasks (a plain set() isn't)
+        box["need"] = need
+    return need
+
+
+def final_guard(reply: str) -> str:
+    """The sidecar's last step: the live fact this turn needed, re-added if a later edit cut it."""
+    need = (LIVE_NEED.get() or {}).get("need")
+    if not need or not reply or need[0](reply):
+        return reply
+    return reply.rstrip() + need[1]
+
+
+def _required_fact(ctx: dict, question: str) -> tuple | None:
     q = question or ""
     hit = ctx.get("live_rider_games") or []
     if not hit or not q:

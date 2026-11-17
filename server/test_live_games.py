@@ -487,6 +487,16 @@ class Exam80Fixes(unittest.TestCase):
         out = router.debot("T.Burgess is the guy under center for North Carolina right now. They're hanging on.", q, "full")
         self.assertIn("T.Burgess", out)
 
+    def test_final_guard_readds_a_cut_fact(self):
+        tok = L.LIVE_NEED.set({})
+        try:
+            L.LIVE_NEED.get()["need"] = (lambda t: "Burgess" in t, " North Carolina QB right now: T.Burgess.")
+            self.assertEqual(L.final_guard("They're hanging on."), "They're hanging on. North Carolina QB right now: T.Burgess.")
+            self.assertEqual(L.final_guard("Burgess is in."), "Burgess is in.")
+        finally:
+            L.LIVE_NEED.reset(tok)
+        self.assertEqual(L.final_guard("x"), "x")
+
     def test_ensured_fact_survives_group_trim(self):
         import group_chat as G
         raw = "One. Two. Three. Four." + G.ENSURED + " As of 9:14 3Q: Louisville 13, North Carolina 7."

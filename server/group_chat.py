@@ -88,6 +88,7 @@ import callbacks  # noqa: E402
 import chat  # noqa: E402
 import group_outbox  # noqa: E402
 import live_flag  # noqa: E402
+import live_games  # noqa: E402
 import maintenance  # noqa: E402
 import picky_brain  # noqa: E402
 import picky_zh  # noqa: E402
@@ -888,6 +889,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     rtok = RECENT.set(recent_block(recent) if mode == "group" else "")
     try:
         q = strip_trigger(text)[:2000]
+        live_games.LIVE_NEED.set({})  # filled by the drafts below (chat -> live_games.required_fact)
         # the group calls him "blinky": tag the real team name, the way chat.py
         # tags follow-ups, so he isn't OFF-TOPIC and his results get checked
         if chat._BLINKS_ASK.search(q) and not re.search(r"blinkstradamus", q, re.I):
@@ -952,6 +954,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
                                      group=mode == "group", recall=callbacks.is_recall(q))
                 reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
+                reply = live_games.final_guard(reply) if route.lane != "fact" else reply
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
             log.info("lane: %s", route.label())
             await save_turn(key, q_hist, reply, who, lane=route.label())
