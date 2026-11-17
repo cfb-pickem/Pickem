@@ -319,7 +319,9 @@ def others_text(ctx: dict, q: str) -> str | None:
         import game_cards
         lk = game_cards.is_locked(c)
         rs = [r for r in game_cards._reasons(c, lk) if r]
-        out.append(f"{c['lean']['label']} ({c['confidence'].get('word') or 'lean'})" + (f": {say_reason(rs[0], c, lk)}" if rs else ""))
+        why = say_reason(rs[0], c, lk) if rs else ""
+        word = c["confidence"].get("word") or "lean"
+        out.append(f"{c['lean']['label']}" + (" (coin flip)" if word == "coin flip" else "") + (f", {why}" if why else ""))
     return ("The rest: " + "; ".join(out) + ".") if out else None
 
 
@@ -1049,6 +1051,10 @@ _STARTERS = {"the", "they", "they're", "he", "he's", "she", "it", "it's", "that"
              "playing", "right", "just", "look", "listen", "man", "dude", "buddy", "sure", "oh", "ok", "okay"}
 
 
+_ALL_LOCK = re.compile(r"\b(everything|it all|all (of )?(it|them|the picks|your picks)|picks?|your picks?) (locks?|are locked|get locked|close[sd]?|are due)"
+                       r"( up)? (on )?tuesday( at)?( 11(:00)?)?( ?(am|a\.m\.))?( ct)?", re.I)
+_NOT_KICKED = re.compile(r"\bhasn'?t kicked off( yet)?\b.{0,40}\(\w{3} \d{1,2}(:\d\d)? ?[AP]M CT\)", re.I)
+_LIVE_Q = re.compile(r"\b(score|winning|losing|up by|down by|live|right now|rn|playing now|started|kick(ed)? off|kickoff|halftime|half)\b", re.I)
 _LONG_LIVE = re.compile(r"^\W*long live (the )?(supreme |glorious |dear )?(commissioner|leader|commish)\W*$", re.I)
 _DATA_TALK = re.compile(r"\s+(in|from|according to) (the|my) (league |pool |news )?(data|feed data|context)\b", re.I)
 
@@ -1068,6 +1074,7 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
         t = " ".join(kept + [DEFLECT]) if kept else DEFLECT
     t = _FOR_RECORD_LEAD.sub(lambda m: m.group(1), t).strip()
     t = _DATA_TALK.sub("", t)  # 'No Riley is mentioned in the league data' (keeper k1): bot voice
+    t = _ALL_LOCK.sub("the line locks Tuesday 11 AM CT (picks stay open till the first kickoff Saturday)", t)
     t = news.thin_citations(t)  # a source named at most once (Charlie 11-16)
     t = re.sub(r"(^|(?<=[.!?]\s))([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
     sents = sentences(t)
@@ -1088,6 +1095,8 @@ def debot(text: str, q: str = "", lane: str = "full", picky_asked: bool = False,
         drop(lambda s: bool(OWN_RECORD.search(s)) and s is not last)
     if lane in ("full", "fact") and q and not provocation(q):  # fact: the voice line after the code answer too
         sents = cut_tail_jabs(sents)
+    if len(sents) > 1 and _NOT_KICKED.search(sents[-1]) and not _LIVE_Q.search(q or ""):
+        sents = sents[:-1]  # 'X hasn't kicked off yet (Sat 2:30 PM CT)' tacked on a pick answer (keeper k2a: robotic)
     if len(sents) > 1 and _LONG_LIVE.search(sents[-1]) and not re.search(r"\b(chuck|commish|commissioner|leader|charlie)\b",
                                                                           q or "", re.I):
         sents = sents[:-1]  # the Dear Leader sign-off only when someone brings him up (keeper k1d: a stock tic)
@@ -1487,8 +1496,11 @@ def say_reason(r: str, c: dict | None = None, locked: bool = False) -> str:
         return f"{who} {m.group(2)} by {_by(float(m.group(3)))}"
     m = re.match(r"the league (?:line is locked at|has) (.+?) and the market's at (.+?) \(", r)
     if m:
-        return (f"we get {m.group(1)} and the books are at {m.group(2)}"
-                + ("" if locked else ", so that's a better number if it holds through Tuesday's lock"))
+        ours, theirs = m.group(1), m.group(2)
+        num = lambda x: x.rsplit(" ", 1)[-1]  # noqa: E731
+        same_team = ours.rsplit(" ", 1)[0] == theirs.rsplit(" ", 1)[0]
+        return (f"we get {num(ours) if same_team else ours} vs the books' {num(theirs) if same_team else theirs}"
+                + ("" if locked else ", better number if it holds to the lock"))
     m = re.match(r"line move: opened (.+?), now (.+?), ", r)
     if m:
         return f"the line's gone from {m.group(1)} to {m.group(2)}"

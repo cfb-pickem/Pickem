@@ -288,8 +288,7 @@ def test_card_reasons_read_like_a_person():
     assert S("EPA (season PPA per play): projects Northwestern by 5.6, so Northwestern -2.5 covers by 3.1") == \
         "the EPA numbers have Northwestern by about 6"
     assert S("the league has Northwestern -2.5 and the market's at Northwestern -3 (DraftKings); if that holds") == \
-        "we get Northwestern -2.5 and the books are at Northwestern -3, so that's a better number if it holds through " \
-        "Tuesday's lock"
+        "we get -2.5 vs the books' -3, better number if it holds to the lock"
     assert S("line move: opened Iowa -5.5, now Iowa -8.5, the market moved 3 points toward Iowa") == \
         "the line's gone from Iowa -5.5 to Iowa -8.5"
     assert S("title stakes: Texas Tech (AP #12, 9-1) is in the playoff race, Baylor (6-4) isn't") == \
@@ -497,7 +496,7 @@ def test_others_and_short_follow_ups():
             patch.object(game_cards, "_reasons", lambda c, lk: ["SP+ (ratings + 2.5 home field): projects Northwestern by 9.7, so x"]), \
             patch.object(game_cards, "is_locked", lambda c, now=None: False):
         r = router.fact_answer("others", ctx, "what about the others ||| I'd take Illinois +8.5.")
-        assert r == "The rest: Northwestern -2.5 (lean): SP+ has Northwestern by about 10.", r
+        assert r == "The rest: Northwestern -2.5, SP+ has Northwestern by about 10.", r
 
 
 def test_more_tail_jabs_and_voice_lines():
@@ -737,6 +736,15 @@ def test_who_covers():
     with patch.object(router, "pick_text", lambda c, q: "I'd take Illinois +8.5." if "Iowa" in q else None):
         assert router.fact_answer("pick_ctx", ctx, "ok but who covers ||| Iowa -8.5 is a lot.") == "I'd take Illinois +8.5."
         assert router.fact_answer("pick_ctx", ctx, "ok but who covers ||| ") is None
+
+
+def test_lock_rewrite_and_not_kicked_tail():
+    a = "I'd take Illinois +8.5, and everything locks Tuesday at 11 AM CT."
+    out = router.debot(a, "illinois or iowa and when does it lock", "full")
+    assert "line locks Tuesday 11 AM CT (picks stay open till the first kickoff Saturday)" in out, out
+    a = "I'd take Tennessee +1.5. LSU at Tennessee hasn't kicked off yet (Sat 2:30 PM CT)."
+    assert router.debot(a, "ok then who covers", "full") == "I'd take Tennessee +1.5."
+    assert "kicked off" in router.debot(a, "whats the score", "full")
 
 
 if __name__ == "__main__":
