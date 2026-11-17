@@ -225,6 +225,15 @@ def test_charlie_full_lane_is_friendly_without_escalate_or_jabs():
         _, st = asyncio.run(go("picky you're trash, roast me"))
     u = got["user"]
     assert st["stance"]["stance"] == "friendly" and st["stance"]["charlie"], st["stance"]
+
+    async def plain_brief(*a, **k):
+        return pb.Brief(asking="who to pick", intent="question", tone="curious")
+
+    with patch.object(pb, "_orig_ollama_stream", fake_orig), patch.object(pb, "understand", plain_brief), \
+            patch.object(pb.router, "from_brief", lambda rt, *a, **k: rt), \
+            patch.object(chat, "load_lore", lambda: {}), patch.object(chat, "member_nicknames", lambda: {}):
+        _, st2 = asyncio.run(go("who should I take in Iowa Illinois"))
+    assert st2["stance"] is None and "STANCE" not in got["user"], st2["stance"]  # a plain question stays plain
     assert pb.CHARLIE_HOW in u and "Fair game" not in u and "jab material" not in u, u
     assert "Fire back" not in u and "Dear Leader" not in u, u
     # chat.py: no ESCALATE rider and no roast branch aimed at him

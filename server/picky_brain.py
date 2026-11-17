@@ -587,9 +587,8 @@ STANCE_HOW = {
     "friendly": ("They've been friendly with you lately. Be warm with them: still funny, a light tease at most, "
                  "nothing mean. Answer any real question first; every fact stays exactly true."),
 }
-CHARLIE_HOW = ("This is Chuck. Whatever he says, even a shot at you or a mean text, stay warm and friendly: laugh it "
-               "off or tease yourself, never insult him, never roast his picks, record or looks, no comeback at him. "
-               "You can still say no to something (privacy, money), kindly. No worship either, just a friend.")
+CHARLIE_HOW = ("This is Chuck: whatever he says, stay warm. Laugh it off or tease yourself; never insult him or roast "
+               "his picks, record or looks, no comeback. Say no kindly if needed. No worship, just a friend.")
 
 
 # Warm lines for Charlie's mean test texts (the banter call picks one; gemma's own comebacks kept sneaking in:
@@ -884,7 +883,7 @@ def banter_material(st: dict, ptype: str, target: str | None) -> tuple[list[dict
             fresh = [x for x in CHARLIE_LINES if not led.is_repeat(x, target=st.get("team"), chat_id=st.get("chat_id"))]
         except Exception:  # noqa: BLE001
             fresh = []
-        lines = (fresh or CHARLIE_LINES)[:BANTER_N]
+        lines = (fresh or CHARLIE_LINES)[:3]
         return [{"text": x, "tier": "A", "facts": [], "angle": "charlie", "id": f"charlie{i}", "kind": "charlie",
                  "src": "charlie"} for i, x in enumerate(lines)], []
     book = None if ptype in router.FAMILIES else BOOK_TYPE.get(ptype, ptype)  # off-topic: gemma's own real pick
@@ -1155,8 +1154,10 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             if st["stance"]:
                 log.info("stance (from brief): %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         if charlie_caller(st):  # Charlie's mean texts are tests: always warm with him (2026-11-17)
-            st["stance"] = friendly_stance(st["stance"], st.get("team"))
-            log.info("stance: friendly (Charlie)")
+            b0 = st["brief"]
+            if st["stance"] or b0.intent == "insult" or b0.tone in ("hostile", "annoyed") or chat._HOSTILE.search(st["q"]):
+                st["stance"] = friendly_stance(st["stance"], st.get("team"))
+                log.info("stance: friendly (Charlie)")  # a plain question from him stays a plain answer
         elif not st["stance"]:
             st["stance"] = tone_stance(st)
             if st["stance"]:
