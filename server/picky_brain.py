@@ -956,6 +956,9 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             rt.lane, rt.kind, rt.why = "fact", "defend", "PUSHBACK"  # stand by the call just made
     if prefix and st.get("brief") is None and rt is not None and rt.lane == "fact":
         qf = st["q"] + (" ||| " + (st.get("last_reply") or "") if rt.kind in router.CTX_KINDS else "")
+        if rt.kind == "why":  # turn 3+: the why lane also checks Picky's earlier replies, so no reason repeats
+            older = [r for r in reversed(st.get("recent_picky") or []) if r and r != st.get("last_reply")]
+            qf += "".join(" ||| " + r for r in older)
         ans = router.fact_answer(rt.kind, st.get("ctx"), qf)
         if ans:
             st["prefix"], st["brief"], st["fact_answer"] = prefix, Brief(intent="question"), ans
@@ -1204,7 +1207,8 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
     t0 = t0 or time.time()
     route = route if route is not None else router.Route("full", why="no router")
     st = {"q": q, "sender": sender, "team": team, "recent": recent, "last_reply": last_reply, "brief": None, "ammo": None,
-          "prefix": None, "idx": 0, "options": dict(SAMPLING[0]), "route": route, "chat_id": chat_id}
+          "prefix": None, "idx": 0, "options": dict(SAMPLING[0]), "route": route, "chat_id": chat_id,
+          "recent_picky": list(recent_picky or [])}
     def regen_ok() -> bool:  # chat's results guard: a regen costs about one generation
         now = time.time()
         return (now - t0) + (now - st.get("gen_t0", now)) + REROLL_MARGIN <= SOFT_BUDGET
