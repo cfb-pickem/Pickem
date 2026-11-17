@@ -672,6 +672,13 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if not ctx or ctx.get("error"):
         return None
     try:
+        if kind in ("results", "score") and re.search(r"\b(my|our) (picks?|week)\b|\bam i\b|\bare we\b", q or "", re.I):
+            lg = chat.live_games
+            games = ctx.get("live_rider_games") or []
+            if any(g.get("state") in ("in", "pre") for g in games if g.get("in_pool")):  # a live week: every pick
+                pf = lg.picks_fact(ctx)                                                  # with its cover margin
+                if pf:
+                    return pf[1].strip()
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
               "score": score_text, "lock": lock_text, "payout": payout_answer}.get(kind)
         if fn:

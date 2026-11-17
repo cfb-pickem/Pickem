@@ -463,6 +463,24 @@ class Exam80Fixes(unittest.TestCase):
         finally:
             L._overlay.clear()
 
+    def test_fact_lane_live_week_picks(self):
+        import live_exam as X
+        import router
+        pool, picks = X.load_pool()
+        t = R._ts("2026-11-14T18:50:00Z")
+        L._overlay.clear()
+        with L._lock:
+            for gid in GAMES:
+                L._overlay[gid] = {**state(gid, t), "id": gid}
+        try:
+            ctx = X.fake_ctx(pool, picks, GAMES, X.Truth(GAMES, pool), t)
+            L.apply_to_ctx(ctx, "how are my picks doing?", refresh=False)
+            ans = router.fact_answer("results", ctx, "how are my picks doing?")
+            self.assertIn("Wake Forest -1.5 covering by 40.5", ans)
+            self.assertIn("Oregon State +13.5 not started", ans)
+        finally:
+            L._overlay.clear()
+
     def test_ensured_fact_survives_group_trim(self):
         import group_chat as G
         raw = "One. Two. Three. Four." + G.ENSURED + " As of 9:14 3Q: Louisville 13, North Carolina 7."
