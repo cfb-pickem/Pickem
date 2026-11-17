@@ -38,6 +38,7 @@ import news
 import pick_strategy
 import slate_cards
 import playoff_race
+import why_lane
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
     import league_rules
@@ -202,7 +203,7 @@ SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{
 # 'whats ur confidence 1-10' (k1 live: briefed as banter -> 'I do picks, not paperwork'): the card's confidence for the
 # game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
 CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
-CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden", "pick_ctx"}
+CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden", "pick_ctx", "why"}
 # k2: 'lock it in. wait can i still change after' got 'the rules don't cover changing picks after the lock'
 CHANGE_LATER = re.compile(r"\bcan i (still )?(change|switch|flip|swap)( it| that| them| my pick)?( after| later| before (sat|saturday|kickoff))?\W*$", re.I)
 # 'ok so whats ur actual pick in that game' (got the who-hasn't-picked list): my call on the game in the thread
@@ -638,6 +639,8 @@ def rules_answer(q: str, n_teams: int | None = None) -> str | None:
 def fact_intent(q: str) -> tuple[str, str] | None:
     """(intent, rule) for a factual question code can answer exactly, else None."""
     t = (q or "").replace("’", "'")
+    if why_lane.why_kind(t):  # 'why?' / 'how come' / 'why not Ohio State?' after a call: the next unused reason
+        return "why", "WHY_ASK"
     if playoff_race.is_need_question(t) and not CFP_WORDS.search(t):
         return "playoff", "playoff_race.is_need_question"
     if PLAYER_LATEST.search(t) and not chat.games_named(t, []):
@@ -2029,7 +2032,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text,
               "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text,
               "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text, "pick_ctx": pick_ctx_text,
-              "worst": worst_text, "fade": fade_text}.get(kind)
+              "worst": worst_text, "fade": fade_text, "why": why_lane.answer}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

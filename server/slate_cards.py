@@ -363,9 +363,9 @@ _OTHER_SIDE = re.compile(r"\b(best case|other side|case for|devil'?s advocate|co
 _CHANGE_MIND = re.compile(r"\b(change your mind|flip (you|it)|what would make you|wrong about)\b", re.I)
 
 
-def lean_lines(g: dict, idx: dict, espn_notes: dict | None, ask: str = "") -> list[str]:
-    """pick_brief's factor engine (the pool cards' ATS lean) run against the
-    current MARKET line, since a non-pool game has no league line."""
+def brief_for(g: dict, idx: dict, espn_notes: dict | None) -> dict | None:
+    """pick_brief's factor engine (the pool cards' ATS lean) run against the current MARKET line, since a
+    non-pool game has no league line. None when there's no line or the engine fails."""
     try:
         import news
         import pick_brief
@@ -375,7 +375,7 @@ def lean_lines(g: dict, idx: dict, espn_notes: dict | None, ask: str = "") -> li
         if home_now is None:
             home_now = (_line(g) or {}).get("spread")
         if home_now is None:
-            return []
+            return None
         away, home = g["awayTeam"], g["homeTeam"]
         kick = _sd(g).astimezone(CT).replace(tzinfo=None).isoformat() if _sd(g) else None
         cg = {"id": g["id"], "away": away, "home": home, "line": home_now, "start": kick,
@@ -385,10 +385,41 @@ def lean_lines(g: dict, idx: dict, espn_notes: dict | None, ask: str = "") -> li
                   "status": c.get("status"), "date": c.get("date"), "source": c.get("source_name")}
                  for c in claims if c.get("team") in ("away", "home")]
         intel += pick_brief.news_intel(news.load_cache(), [away, home])
-        b = pick_brief.build(cg, espn_notes, idx, {}, intel)
+        return pick_brief.build(cg, espn_notes, idx, {}, intel)
     except Exception as e:  # noqa: BLE001 - the card works without a lean
         log.warning("slate lean failed: %r", e)
+        return None
+
+
+def find_game(text: str, ctx: dict, idx: dict | None = None) -> tuple[dict | None, dict | None]:
+    """(CFBD game row, pool game or None) for the upcoming game a text is about: a pool game named the way
+    chat names them, else a game between two FBS teams it names, else the first named team's game."""
+    import chat
+    idx = idx or cfbd.load_index()
+    if not idx:
+        return None, None
+    games = upcoming_games(idx, dt.datetime.now(dt.timezone.utc))
+    pool = {int(g["id"]): g for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
+    hit = chat.games_named(text or "", [{"Away": g["away"], "Home": g["home"], "id": g["id"]}
+                                        for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")])
+    if hit and str(hit[0]["id"]).isdigit():
+        gid = int(hit[0]["id"])
+        pg = pool.get(gid)
+        row = next((x for x in games if x["id"] == gid), None) or {
+            "id": gid, "awayTeam": pg["away"], "homeTeam": pg["home"], "startDate": None, "lines": []}
+        return row, pg
+    named = cfbd.other_teams_named(text or "", [], idx)
+    ms = match_games(named, games, set()) or (match_games(named[:1], games, set()) if named else [])
+    return (ms[0], pool.get(ms[0]["id"])) if ms else (None, None)
+
+
+def lean_lines(g: dict, idx: dict, espn_notes: dict | None, ask: str = "") -> list[str]:
+    """pick_brief's factor engine (the pool cards' ATS lean) run against the
+    current MARKET line, since a non-pool game has no league line."""
+    b = brief_for(g, idx, espn_notes)
+    if not b:
         return []
+    away, home = g["awayTeam"], g["homeTeam"]
     conf = {"strong": "strong lean", "lean": "lean", "none": "coin flip"}[b["strength"]]
     sc = b["score"]
     out = [f"  COMPUTED ATS LEAN (vs the current market line): {b['pick_label']} "
