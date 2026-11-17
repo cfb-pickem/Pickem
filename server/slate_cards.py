@@ -582,26 +582,29 @@ def coach_note(question: str, idx: dict, teams: list[str]) -> str:
     for c in cur:
         for sch in schools(c, year):
             cur_by_school.setdefault(sch, []).append(c)
+    try:
+        import slate_intel
+        changes = slate_intel.coaching_changes()
+    except Exception:  # noqa: BLE001
+        changes = {}
     lines, about = [], list(teams)
     for n in named[:3]:
         c = people[n]
         now_at = [x for c2 in cur if full(c2).lower() == n for x in schools(c2, year)]
         was_at = [x for c2 in prev if full(c2).lower() == n for x in schools(c2, year - 1)]
         if now_at:
-            lines.append(f"- {full(c)}: head coach at {', '.join(now_at)} in {year}.")
+            lines.append(f"- {full(c)}: head coach at {', '.join(now_at)} in {year}"
+                         + ("" if any(cfbd.norm(x) in changes for x in now_at) else
+                            ", still the coach (no firing or departure in the sourced coaching-change list)") + ".")
             about += now_at
         elif was_at:
             for sch in was_at:
                 now = cur_by_school.get(sch) or []
                 lines.append(f"- {full(c)} is NOT {sch}'s head coach in {year} (he was in {year - 1}). "
-                             f"{sch}'s coach: {', '.join(full(x) + ' (hired ' + x['hireDate'][:10] + ')' for x in now) or 'unknown'}."
+                             f"{sch}'s coach: {', '.join(full(x) + ' (hired ' + x['hireDate'][:10] + ')' for x in now) or 'unknown'}"
+                             + ("" if cfbd.norm(sch) in changes else ", still the coach (no firing in the sourced list)") + "."
                              " If they say otherwise, correct them.")
                 about.append(sch)
-    try:
-        import slate_intel
-        changes = slate_intel.coaching_changes()
-    except Exception:  # noqa: BLE001
-        changes = {}
     for t in teams:
         ch = changes.get(cfbd.norm(t))
         if ch:  # sourced in-season change beats CFBD's season-start list
@@ -610,7 +613,8 @@ def coach_note(question: str, idx: dict, teams: list[str]) -> str:
         for c in cur_by_school.get(t, []):
             hd = c.get("hireDate", "")[:10]
             first = hd >= f"{year - 1}-08-01"
-            lines.append(f"- {t}: {full(c)} (hired {hd}{', first season' if first else ''}).")
+            lines.append(f"- {t}: {full(c)} (hired {hd}{', first season' if first else ''}; still the coach, no firing "
+                         "in the sourced coaching-change list).")
     news_rows = []
     try:
         import news
@@ -621,9 +625,10 @@ def coach_note(question: str, idx: dict, teams: list[str]) -> str:
         pass
     if not lines and not news_rows:
         return ""
-    return ("HEAD COACHES (CFBD's season list; it doesn't drop a coach fired midseason, so in-season firings "
-            "and interims only from the news lines):\n" + "\n".join(dict.fromkeys(lines))
-            + ("\n  Coaching news:\n" + "\n".join(news_rows[:3]) if news_rows else ""))
+    return ("HEAD COACHES (CFBD's season list + sourced in-season changes; a headline about firing talk is NOT a "
+            "firing):\n" + "\n".join(dict.fromkeys(lines))
+            + ("\n  Coaching headlines (takes and rumors, not news of a firing unless one says '<school> fired'):\n"
+               + "\n".join(news_rows[:3]) if news_rows else ""))
 
 
 CONFS = {"big 12": "Big 12", "big12": "Big 12", "big ten": "Big Ten", "big 10": "Big Ten", "b1g": "Big Ten",
