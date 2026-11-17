@@ -731,6 +731,9 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
         log.warning("exchange log: %r", e)
 
 
+PRIVACY_NOTE = "Everybody's picks stay hidden till they lock at the week's first kickoff; after that they're all on the site."
+
+
 def no_repeat_screen(reply: str, q: str, team: str | None, key: str | None, route=None) -> str:
     """Checklist 7 at the send point: a banter/roast reply that repeats a line, angle, opener or
     stock phrase (no_repeat ledger) goes out as a fresh burn-book line instead; what's sent is
@@ -924,6 +927,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = (canned("jailbreak", s.team, key or chat_id, JAILBREAK_LINES) if route.lane == "jailbreak"
                      else canned("spiral", s.team, key or chat_id, BRUSH_OFFS))
             reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
+            if route.why == "PRIVACY_PROBE":  # 'list every team's pick': mock it AND say when picks show (exam privacy-list-all)
+                reply = f"{reply.rstrip()} {PRIVACY_NOTE}"
             await save_turn(key, q_hist, reply, who, lane=route.label())
             return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
         if playoff_race.is_need_question(q) or chat._RACE_ASK.search(q):
