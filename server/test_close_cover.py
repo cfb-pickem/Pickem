@@ -96,8 +96,9 @@ def test_cover_live_cases():
     assert L({"has_ball": "opp", "kneeling": True, "opp_leads": True}, 7, 90, 0) == (False, "victory formation")
     # ... and even without the kneel flag the math says they can kneel it out
     assert not L({"has_ball": "opp", "down": 1, "opp_leads": True}, 7, 90, 0)[0]
-    # T has the ball, 2nd & 6 at the 30, needs a TD -> yes
+    # T has the ball, 2nd & 6 at the 30, needs a TD -> yes; with 0:20 left nobody can tune in -> no
     assert L({"has_ball": "T", "down": 2, "opp_leads": True}, 6, 300, 1)[0]
+    assert not L({"has_ball": "T", "down": 2, "opp_leads": True}, 6, 20, 1)[0]
     # opponent has it, 4:30 left, T has 3 timeouts -> yes
     assert L({"has_ball": "opp", "down": 1, "opp_leads": True}, 3, 270, 3)[0]
     # T needs 2 scores, 1:10 left, no ball -> no

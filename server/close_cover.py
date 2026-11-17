@@ -62,6 +62,7 @@ MAX_POSTS = 2         # alert posts per game, total
 SPACING_S = 120       # post 2 at least this long after post 1
 DEBOUNCE_S = 30       # a flip / live-again has to hold this long (score corrections, review)
 KNEEL_S = 40          # play clock burned per kneel when the trailing side can't stop it
+TUNE_S = 30           # less than this left and an alert can't get anyone to a TV
 TICK_HOT = 15         # s, while a pool game is live in the 4th / OT
 TICK_WARM = 60        # s, a pool game is live (earlier quarters) or kicks off soon
 TICK_IDLE = 300       # s, nothing going on
@@ -149,7 +150,8 @@ def cover_live(situation: dict | None, needs_points: int, clock: int | None, tim
         return False, "victory formation"
     if ball == "T":
         if k == 1:
-            return (clock >= 10, "T has the ball" if clock >= 10 else "no time")
+            # under TUNE_S nobody gets to a TV in time: that's a final, not an alert
+            return (clock >= TUNE_S, "T has the ball" if clock >= TUNE_S else "no time to tune in")
         need = 180 - 20 * tos  # score, then onside / stop, then score again
         return (clock >= need, "T has the ball, time for two" if clock >= need else "not enough time for two scores")
     if ball == "opp":
