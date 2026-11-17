@@ -710,6 +710,26 @@ def test_k2_lock_pick_move_claims_staying():
         assert not chat.card_side_check(ctx)("Staying with Iowa -8.5.")
 
 
+def test_change_later_pick_ctx_worst():
+    import game_cards
+    ctx = _wk12_picks()
+    C = router.classify
+    assert C("lock it in. wait can i still change after").label() == "fact:lock"
+    assert C("ok so whats ur actual pick in that game").label() == "fact:pick_ctx"
+    for q in ("and worst", "whats the worst one of the 4", "which game do u hate this week"):
+        assert C(q).label() == "fact:worst", q
+    cards = {11: {"game": {"away": "Northwestern", "home": "Minnesota"}, "lean": {"side": "Northwestern", "label": "Northwestern -2.5"},
+                  "confidence": {"word": "lean"}, "against": []},
+             12: {"game": {"away": "Iowa", "home": "Illinois"}, "lean": {"side": "Illinois", "label": "Illinois +8.5"},
+                  "confidence": {"word": "coin flip"}, "against": ["EPA (season PPA per play): projects Iowa by 10, so x"]}}
+    with patch.object(router, "_card_for", lambda c, g: cards.get(g["id"])), \
+            patch.object(game_cards, "_reasons", lambda c, lk: ["SP+ (ratings + 2.5 home field): projects Iowa by 8, so x"]), \
+            patch.object(game_cards, "is_locked", lambda c, now=None: False):
+        r = router.fact_answer("worst", ctx, "and worst")
+        assert r == ("Iowa at Illinois is the one I trust least. I lean Illinois +8.5 but it's a coin flip: the EPA numbers "
+                     "have Iowa by 10."), r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

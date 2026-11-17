@@ -194,7 +194,42 @@ SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{
 # 'whats ur confidence 1-10' (k1 live: briefed as banter -> 'I do picks, not paperwork'): the card's confidence for the
 # game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
 CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
-CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden"}
+CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden", "pick_ctx"}
+# k2: 'lock it in. wait can i still change after' got 'the rules don't cover changing picks after the lock'
+CHANGE_LATER = re.compile(r"\bcan i (still )?(change|switch|flip|swap)( it| that| them| my pick)?( after| later| before (sat|saturday|kickoff))?\W*$", re.I)
+# 'ok so whats ur actual pick in that game' (got the who-hasn't-picked list): my call on the game in the thread
+PICK_CTX = re.compile(r"\b(ur|your) (actual |real |final )?(pick|call|side|lean) (in|on|for) (that|this) (one|game)\b"
+                      r"|\b(whats|what'?s) (ur|your) (actual |real )?(pick|call) (there|then)\b|\bso who do you (like|got) there\b", re.I)
+# 'and worst' / 'whats the worst one of the 4' / 'which game do u hate this week'
+WORST_ASK = re.compile(r"^\W*(and |so |ok )?(the )?(worst|weakest|shakiest)( one| game| pick| play)?\W*$"
+                       r"|\b(worst|weakest|shakiest|least confident)\b[^?.!]{0,15}\b(one|game|pick|play|line)\b"
+                       r"|\bwhich (game|one) do (u|you) (hate|not like|like least|trust least)\b|\bstay away from\b", re.I)
+
+
+def pick_ctx_text(ctx: dict, q: str) -> str | None:
+    text, _, last = re.sub(r"['’]s\b", "", q or "").partition(" ||| ")
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    named = chat.games_named(text, gl) or chat.games_named(last, gl)
+    if not named:
+        return None
+    g = next(x for x in games if x["id"] == named[0]["id"])
+    return pick_text(ctx, f"who you got in {g['away']} at {g['home']}")
+
+
+def worst_text(ctx: dict, q: str) -> str | None:
+    import game_cards
+    cards = [c for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker") and (c := _card_for(ctx, g))]
+    if not cards:
+        return None
+    rank = {"best play": 3, "lean": 2, "slight lean": 1, "coin flip": 0}
+    w = min(cards, key=lambda c: rank.get(c["confidence"].get("word"), 1))
+    lk = game_cards.is_locked(w)
+    rs = [r for r in game_cards._reasons(w, lk) if r] + [r for r in w.get("against") or [] if r]
+    why = say_reason(rs[-1], w, lk) if len(rs) > 1 else (say_reason(rs[0], w, lk) if rs else "")
+    g = w.get("game") or {}
+    return (f"{g.get('away')} at {g.get('home')} is the one I trust least. I lean {w['lean']['label']} but it's a "
+            f"{w['confidence'].get('word') or 'lean'}" + (f": {why}." if why else "."))
 # 'freeman needs a lock before 11 and dont say northwestern' (k2: a jab, no pick, 119 s): the strongest card call,
 # skipping a game the text rules out
 LOCK_PICK = re.compile(r"\b(needs?|gimme|give me|got|whats|what'?s|ur|your|any|best) (a |ur |your |the )?(lock|best bet|best play)\b"
@@ -621,8 +656,12 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "payout", "PAYOUT_FOLLOW"
     if MY_PICKS.search(t) and not re.search(r"\blast (week|wk)\b|\bweek \d+\b", t, re.I):
         return "my_picks", "MY_PICKS"
-    if PICK_AFTER_LINE_LOCK.search(t):
+    if PICK_AFTER_LINE_LOCK.search(t) or CHANGE_LATER.search(t):
         return "lock", "PICK_AFTER_LINE_LOCK"
+    if PICK_CTX.search(t):
+        return "pick_ctx", "PICK_CTX"
+    if WORST_ASK.search(t):
+        return "worst", "WORST_ASK"
     if (LOCK_ASK.search(t) or LOCK_ASK2.search(t)) and not re.search(r"\blines?\b", t, re.I):
         return "lock", "LOCK_ASK"
     if COVERING_NOW.search(t):
@@ -1934,7 +1973,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text,
               "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text,
               "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text,
-              "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text}.get(kind)
+              "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text, "pick_ctx": pick_ctx_text,
+              "worst": worst_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
