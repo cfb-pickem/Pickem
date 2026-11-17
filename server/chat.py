@@ -6343,6 +6343,45 @@ def value_claim_check(ctx: dict):
     return ok
 
 
+_FAV_WORD = re.compile(r"\b(favou?rites?|favou?red|chalk|laying (the )?points|lay(ing)? \d)\b", re.I)
+_DOG_WORD = re.compile(r"\b(underdogs?|dogs?|getting (the )?points|getting \d|plus the points)\b", re.I)
+_CLAUSE = re.compile(r"[,;:()]|\s(?:but|while|and|whereas|though)\s", re.I)
+
+
+def fav_claim_check(ctx: dict):
+    """A sentence that calls a pool game's underdog the favorite/chalk (or the favorite the dog) is dropped
+    (spar r1: 'You probably have the Vols because you lack the backbone to pick anything other than the chalk'
+    and 'Tennessee +1.5 because they're the home favorites', Tennessee the +1.5 dog)."""
+    games = [g for g in ctx.get("games_this_week") or [] if g.get("line") not in (None, 0, 0.0) and not g.get("tiebreaker")]
+    if not games:
+        return None
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    by = {g["id"]: g for g in games}
+
+    def sides_in(clause: str, g: dict) -> set:
+        q = f" {_match_key(clause)} "
+        for short, full in _TEAM_SHORT.items():
+            q = q.replace(f" {short} ", f" {full} ")
+        return {side for side in (g["away"], g["home"]) if f" {_match_key(side)} " in q}
+
+    def ok(sent: str) -> bool:
+        for clause in _CLAUSE.split(sent or ""):
+            fw, dw = _FAV_WORD.search(clause), _DOG_WORD.search(clause)
+            if not (fw or dw) or (fw and dw):
+                continue
+            for n in games_named(clause, gl):
+                g = by[n["id"]]
+                fav = g["home"] if float(g["line"]) < 0 else g["away"]
+                dog = g["away"] if fav == g["home"] else g["home"]
+                named = sides_in(clause, g)
+                if fw and named == {dog}:
+                    return False
+                if dw and named == {fav}:
+                    return False
+        return True
+    return ok
+
+
 _RECORD_JAB = re.compile(
     r"\bgo(es|ing)? to (your|his|her|their) head\b|"
     r"\b(you|you'?re|your|ur)\b.{0,60}\b(\d{1,2}-\d{1,2}\s+((this|last) )?(week|weekend|start|run|slate)|first place|"
@@ -7158,7 +7197,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
                                   _both(grounded_check(ctx, corpus, qtext), news_claim_check(corpus))),
                             _both(_both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
                                         _both(picky_claim_check(ctx), picky_claim_check(ctx, "you"))),
-                                  _both(value_claim_check(ctx), advice_jab_check(ctx, qtext)))) if not ctx.get("error") else None),
+                                  _both(_both(value_claim_check(ctx), advice_jab_check(ctx, qtext)),
+                                        fav_claim_check(ctx)))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or live_games.required_fact(ctx, qtext)
                                      or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")

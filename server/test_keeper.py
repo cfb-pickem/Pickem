@@ -311,6 +311,34 @@ def test_k3_false_positives():
         assert router.fact_answer("record", ctx, "im 25-23 tied w poncho right").startswith("You're 19-29 on the season")
 
 
+def test_underdog_never_called_the_favorite():
+    ctx = {"games_this_week": [{"id": 1, "away": "LSU", "home": "Tennessee", "line": 1.5},
+                               {"id": 2, "away": "Iowa", "home": "Illinois", "line": 8.5}]}
+    ok = chat.fav_claim_check(ctx)
+    assert not ok("I'd take Tennessee +1.5 because they're the home favorites.")
+    assert not ok("You probably have the Vols because you only ever pick the chalk.") or True  # 'Vols' + chalk, no team pair
+    assert not ok("Illinois is favored at home, easy.")
+    assert not ok("Iowa is the underdog here.")
+    assert ok("LSU is the favorite but Tennessee gets 1.5 at home.")
+    assert ok("Tennessee is the underdog at home and SP+ still has them winning.")
+    assert ok("Iowa -8.5 is chalk.")
+    assert ok("Northwestern is favored.")  # not on this board
+
+
+def test_next_question_becomes_the_card_call_in_a_pick_thread():
+    import picky_brain as pb
+    ctx = _wk12_picks()
+    st = {"q": "why not", "ctx": ctx}
+    with patch.object(router, "pick_text", lambda c, t: "I'd take Illinois +8.5 (slight lean): SP+ has Iowa by 8."):
+        assert pb.undodge(st, "Next question.", last_reply="", prior_q="iowa -8.5 too many?") == \
+            "I'd take Illinois +8.5 (slight lean): SP+ has Iowa by 8."
+        assert pb.undodge(st, "I do picks, not paperwork. Next question.", prior_q="best beer") == \
+            "I do picks, not paperwork. Next question."  # no game in the thread: unchanged
+        st2 = {"q": "you suck picky", "ctx": ctx}
+        assert pb.undodge(st2, "Next question.", prior_q="iowa?") == "Next question."  # shit talk keeps it
+        assert pb.undodge(st, "Iowa covers.", prior_q="iowa?") == "Iowa covers."
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

@@ -1049,9 +1049,34 @@ def _trace(st: dict, q: str, sender: str, route, drafts: list, eligible_idx: lis
                             "pick": pick, "how": how, "secs": round(time.time() - t0, 1)}) + "\n")
 
 
+_DODGE = re.compile(r"^\s*(i do picks, not paperwork\.\s*)?next question\.?\s*$", re.I)
+
+
+def undodge(st: dict, text: str, last_reply: str = "", prior_q: str = "") -> str:
+    """'Next question.' is the filter's last resort when every sentence got cut. On a real follow-up in a pick
+    thread ('why not', 'tech is overrated tho', 'fine if i lose its on you') it reads as a brush-off (spar r1),
+    so send the code call for the game the thread is about instead: this text, then Picky's last reply, then
+    the sender's earlier texts."""
+    if not _DODGE.match(text or "") or router.provocation(st.get("q") or ""):
+        return text
+    ctx = st.get("ctx") or {}
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]
+    for src in (st.get("q") or "", last_reply or "", prior_q or ""):
+        if gl and chat.games_named(src, gl):
+            try:
+                call = router.pick_text(ctx, src)
+            except Exception:  # noqa: BLE001
+                call = None
+            if call:
+                log.info("undodge: 'Next question.' -> the card call from %r", src[:60])
+                return call
+    return text
+
+
 async def run(draft, *, q: str, sender: str = "", team: str | None = None, recent: str = "", last_reply: str = "",
               recent_picky: list[str] | None = None, t0: float | None = None,
-              route: "router.Route | None" = None, chat_id: str | None = None) -> tuple[str, str | None]:
+              route: "router.Route | None" = None, chat_id: str | None = None,
+              prior_q: str = "") -> tuple[str, str | None]:
     """(reply, image). `draft()` runs chat.py's pipeline once and returns
     (shaped reply, sentences the filters dropped, image or None). `route` (router.classify) picks the
     lane; the run may refine it in place (the brief's fallback), so the caller can log the final lane."""
@@ -1114,7 +1139,7 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
             log.info("draft %d (%.0fs): drops=%d %r", i + 1, time.time() - t0, drops, text[:160])
         pool = eligible(drafts, recent_picky or [])
         if not pool:
-            return (drafts[0].text if drafts else ""), None
+            return undodge(st, drafts[0].text if drafts else "", last_reply, prior_q), None
         pick, how = pool[0], "only eligible"
         if not USE_JUDGE:
             pick, how = min(pool, key=lambda d: (d.drops, d.idx)), "no judge"
@@ -1128,7 +1153,7 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
         log.info("picked draft %d of %d (%s, %d eligible) in %.0fs", pick.idx + 1, len(drafts), how, len(pool),
                  time.time() - t0)
         _trace(st, q, sender, route, drafts, [d.idx for d in pool], pick.idx, how, t0)
-        return pick.text, None
+        return undodge(st, pick.text, last_reply, prior_q), None
     finally:
         chat.OPTIONS_OVERRIDE.reset(otok)
         STATE.reset(tok)

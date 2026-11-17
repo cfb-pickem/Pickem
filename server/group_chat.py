@@ -954,7 +954,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply, image = await picky_brain.run(
                 draft, q=q, sender=f"{s.name or s.team} (team \"{s.team}\")" if s.team else (s.name or ""),
                 team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:],
-                route=route, chat_id=key or chat_id)
+                route=route, chat_id=key or chat_id,
+                prior_q=" ".join(str(m["content"]) for m in messages[:-1] if m["role"] == "user")[-400:])
             if not image:
                 reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
                                      group=mode == "group", recall=callbacks.is_recall(q))
