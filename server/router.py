@@ -1214,8 +1214,9 @@ def qb_text(ctx: dict, q: str) -> str | None:
             team_hit = g["id"] in named and f" {chat._match_key(team)} " in qx
             if name.split()[-1].lower() in words or team_hit:
                 d = re.sub(r"\.\.\..*$", "", re.sub(r",\s*[^,]*$", "", detail or "")).strip().rstrip(" .,")
-                if "..." in (detail or "") and ". " in d:  # the report was cut mid-sentence: keep whole ones
-                    d = d.rsplit(". ", 1)[0]
+                ends = list(re.finditer(r"(?<!\bvs)(?<!\bSt)(?<!\bNo)\.\s", d))
+                if "..." in (detail or "") and ends:  # the report was cut mid-sentence: keep whole ones
+                    d = d[:ends[-1].start()]
                 d = " ".join(d.split()[:22])
                 hits.append(f"{name} ({team}) is {status}." + (f" Latest report: {d}." if d else ""))
     if not hits:
