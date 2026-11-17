@@ -1,0 +1,1582 @@
+{
+ "_how": "Group-chat league snapshot, Mon 2026-11-16 ~8:45 PM CT (week 12, pre-lock, no game started), captured by the speed lane with member names replaced by fake ones; no unlocked picks (group ctx is teamless). test_speed.py builds the per-intent prompts from it.",
+ "captured_ct": "2026-11-16T20:45:00",
+ "ctx": {
+  "season": 2026,
+  "current_week": 12,
+  "you": {
+   "team_id": null,
+   "team_name": null
+  },
+  "leader": {
+   "team_id": 6,
+   "team_name": "Mack"
+  },
+  "teams": [
+   "Hoss",
+   "Biff",
+   "Skip",
+   "Tank",
+   "Sully",
+   "Mack",
+   "Moose",
+   "Chip",
+   "Dutch",
+   "Duke",
+   "Lefty",
+   "Bubba",
+   "Rocco",
+   "Vince"
+  ],
+  "standings_ytd": [
+   {
+    "rank": 1,
+    "team": "Mack",
+    "w": 30,
+    "l": 18
+   },
+   {
+    "rank": 2,
+    "team": "Hoss",
+    "w": 28,
+    "l": 20
+   },
+   {
+    "rank": 3,
+    "team": "Skip",
+    "w": 27,
+    "l": 21
+   },
+   {
+    "rank": 3,
+    "team": "Chip",
+    "w": 27,
+    "l": 21
+   },
+   {
+    "rank": 5,
+    "team": "Duke",
+    "w": 26,
+    "l": 22
+   },
+   {
+    "rank": 5,
+    "team": "Lefty",
+    "w": 26,
+    "l": 22
+   },
+   {
+    "rank": 7,
+    "team": "Tank",
+    "w": 25,
+    "l": 23
+   },
+   {
+    "rank": 7,
+    "team": "Vince",
+    "w": 25,
+    "l": 23
+   },
+   {
+    "rank": 9,
+    "team": "Moose",
+    "w": 24,
+    "l": 24
+   },
+   {
+    "rank": 10,
+    "team": "Sully",
+    "w": 23,
+    "l": 25
+   },
+   {
+    "rank": 10,
+    "team": "Bubba",
+    "w": 23,
+    "l": 25
+   },
+   {
+    "rank": 12,
+    "team": "Biff",
+    "w": 22,
+    "l": 26
+   },
+   {
+    "rank": 13,
+    "team": "Dutch",
+    "w": 21,
+    "l": 23
+   },
+   {
+    "rank": 14,
+    "team": "Rocco",
+    "w": 19,
+    "l": 29
+   }
+  ],
+  "games_this_week": [
+   {
+    "id": 401858530,
+    "start": "2026-11-21T11:00:00",
+    "away": "Northwestern",
+    "home": "Minnesota",
+    "line": 2.5,
+    "status": "scheduled",
+    "winner": null,
+    "tiebreaker": false,
+    "fpi_margin": -10.824
+   },
+   {
+    "id": 401858527,
+    "start": "2026-11-21T13:30:00",
+    "away": "Iowa",
+    "home": "Illinois",
+    "line": 8.5,
+    "status": "scheduled",
+    "winner": null,
+    "tiebreaker": false,
+    "fpi_margin": -5.395
+   },
+   {
+    "id": 401856754,
+    "start": "2026-11-21T14:30:00",
+    "away": "LSU",
+    "home": "Tennessee",
+    "line": 1.5,
+    "status": "scheduled",
+    "winner": null,
+    "tiebreaker": false,
+    "fpi_margin": -0.022
+   },
+   {
+    "id": 401856871,
+    "start": "2026-11-21T14:30:00",
+    "away": "Texas Tech",
+    "home": "Baylor",
+    "line": 3.5,
+    "status": "scheduled",
+    "winner": null,
+    "tiebreaker": false,
+    "fpi_margin": -3.956
+   }
+  ],
+  "revealed_picks_this_week": {},
+  "you_have_picks_this_week": null,
+  "revealed_game_ids": [],
+  "week_unlock": "2026-11-21T11:00:00",
+  "jackpot": {
+   "pulls_since_pop": 230,
+   "last_pop_at": null,
+   "last_pop_team": null
+  },
+  "weekly_records": {
+   "Mack": {
+    "0": [
+     2,
+     2
+    ],
+    "1": [
+     2,
+     2
+    ],
+    "2": [
+     2,
+     2
+    ],
+    "3": [
+     2,
+     2
+    ],
+    "4": [
+     3,
+     1
+    ],
+    "5": [
+     3,
+     1
+    ],
+    "6": [
+     2,
+     2
+    ],
+    "7": [
+     2,
+     2
+    ],
+    "8": [
+     2,
+     2
+    ],
+    "9": [
+     3,
+     1
+    ],
+    "10": [
+     3,
+     1
+    ],
+    "11": [
+     4,
+     0
+    ]
+   },
+   "Hoss": {
+    "0": [
+     2,
+     2
+    ],
+    "1": [
+     2,
+     2
+    ],
+    "2": [
+     3,
+     1
+    ],
+    "3": [
+     2,
+     2
+    ],
+    "4": [
+     2,
+     2
+    ],
+    "5": [
+     2,
+     2
+    ],
+    "6": [
+     2,
+     2
+    ],
+    "7": [
+     2,
+     2
+    ],
+    "8": [
+     1,
+     3
+    ],
+    "9": [
+     3,
+     1
+    ],
+    "10": [
+     4,
+     0
+    ],
+    "11": [
+     3,
+     1
+    ]
+   },
+   "Lefty": {
+    "0": [
+     3,
+     1
+    ],
+    "1": [
+     1,
+     3
+    ],
+    "2": [
+     3,
+     1
+    ],
+    "3": [
+     2,
+     2
+    ],
+    "4": [
+     2,
+     2
+    ],
+    "5": [
+     3,
+     1
+    ],
+    "6": [
+     2,
+     2
+    ],
+    "7": [
+     3,
+     1
+    ],
+    "8": [
+     0,
+     4
+    ],
+    "9": [
+     2,
+     2
+    ],
+    "10": [
+     4,
+     0
+    ],
+    "11": [
+     1,
+     3
+    ]
+   },
+   "Sully": {
+    "0": [
+     3,
+     1
+    ],
+    "1": [
+     1,
+     3
+    ],
+    "2": [
+     2,
+     2
+    ],
+    "3": [
+     2,
+     2
+    ],
+    "4": [
+     1,
+     3
+    ],
+    "5": [
+     2,
+     2
+    ],
+    "6": [
+     1,
+     3
+    ],
+    "7": [
+     2,
+     2
+    ],
+    "8": [
+     3,
+     1
+    ],
+    "9": [
+     2,
+     2
+    ],
+    "10": [
+     2,
+     2
+    ],
+    "11": [
+     2,
+     2
+    ]
+   },
+   "Bubba": {
+    "0": [
+     0,
+     4
+    ],
+    "1": [
+     2,
+     2
+    ],
+    "2": [
+     2,
+     2
+    ],
+    "3": [
+     2,
+     2
+    ],
+    "4": [
+     1,
+     3
+    ],
+    "5": [
+     2,
+     2
+    ],
+    "6": [
+     4,
+     0
+    ],
+    "7": [
+     1,
+     3
+    ],
+    "8": [
+     2,
+     2
+    ],
+    "9": [
+     3,
+     1
+    ],
+    "10": [
+     3,
+     1
+    ],
+    "11": [
+     1,
+     3
+    ]
+   },
+   "Moose": {
+    "0": [
+     2,
+     2
+    ],
+    "1": [
+     1,
+     3
+    ],
+    "2": [
+     4,
+     0
+    ],
+    "3": [
+     1,
+     3
+    ],
+    "4": [
+     2,
+     2
+    ],
+    "5": [
+     3,
+     1
+    ],
+    "6": [
+     1,
+     3
+    ],
+    "7": [
+     2,
+     2
+    ],
+    "8": [
+     3,
+     1
+    ],
+    "9": [
+     2,
+     2
+    ],
+    "10": [
+     2,
+     2
+    ],
+    "11": [
+     1,
+     3
+    ]
+   },
+   "Chip": {
+    "0": [
+     2,
+     2
+    ],
+    "1": [
+     2,
+     2
+    ],
+    "2": [
+     1,
+     3
+    ],
+    "3": [
+     4,
+     0
+    ],
+    "4": [
+     3,
+     1
+    ],
+    "5": [
+     2,
+     2
+    ],
+    "6": [
+     1,
+     3
+    ],
+    "7": [
+     2,
+     2
+    ],
+    "8": [
+     2,
+     2
+    ],
+    "9": [
+     3,
+     1
+    ],
+    "10": [
+     3,
+     1
+    ],
+    "11": [
+     2,
+     2
+    ]
+   },
+   "Duke": {
+    "0": [
+     2,
+     2
+    ],
+    "1": [
+     1,
+     3
+    ],
+    "2": [
+     3,
+     1
+    ],
+    "3": [
+     2,
+     2
+    ],
+    "4": [
+     1,
+     3
+    ],
+    "5": [
+     3,
+     1
+    ],
+    "6": [
+     3,
+     1
+    ],
+    "7": [
+     3,
+     1
+    ],
+    "8": [
+     2,
+     2
+    ],
+    "9": [
+     3,
+     1
+    ],
+    "10": [
+     2,
+     2
+    ],
+    "11": [
+     1,
+     3
+    ]
+   },
+   "Skip": {
+    "0": [
+     3,
+     1
+    ],
+    "1": [
+     4,
+     0
+    ],
+    "2": [
+     2,
+     2
+    ],
+    "3": [
+     2,
+     2
+    ],
+    "4": [
+     2,
+     2
+    ],
+    "5": [
+     2,
+     2
+    ],
+    "6": [
+     0,
+     4
+    ],
+    "7": [
+     3,
+     1
+    ],
+    "8": [
+     1,
+     3
+    ],
+    "9": [
+     2,
+     2
+    ],
+    "10": [
+     3,
+     1
+    ],
+    "11": [
+     3,
+     1
+    ]
+   },
+   "Dutch": {
+    "0": [
+     1,
+     3
+    ],
+    "1": [
+     1,
+     3
+    ],
+    "2": [
+     2,
+     2
+    ],
+    "3": [
+     2,
+     2
+    ],
+    "4": [
+     4,
+     0
+    ],
+    "6": [
+     2,
+     2
+    ],
+    "7": [
+     1,
+     3
+    ],
+    "8": [
+     0,
+     4
+    ],
+    "9": [
+     3,
+     1
+    ],
+    "10": [
+     2,
+     2
+    ],
+    "11": [
+     3,
+     1
+    ]
+   },
+   "Biff": {
+    "0": [
+     3,
+     1
+    ],
+    "1": [
+     1,
+     3
+    ],
+    "2": [
+     2,
+     2
+    ],
+    "3": [
+     0,
+     4
+    ],
+    "4": [
+     2,
+     2
+    ],
+    "5": [
+     2,
+     2
+    ],
+    "6": [
+     3,
+     1
+    ],
+    "7": [
+     2,
+     2
+    ],
+    "8": [
+     2,
+     2
+    ],
+    "9": [
+     2,
+     2
+    ],
+    "10": [
+     3,
+     1
+    ],
+    "11": [
+     0,
+     4
+    ]
+   },
+   "Tank": {
+    "0": [
+     2,
+     2
+    ],
+    "1": [
+     2,
+     2
+    ],
+    "2": [
+     3,
+     1
+    ],
+    "3": [
+     1,
+     3
+    ],
+    "4": [
+     1,
+     3
+    ],
+    "5": [
+     3,
+     1
+    ],
+    "6": [
+     1,
+     3
+    ],
+    "7": [
+     3,
+     1
+    ],
+    "8": [
+     2,
+     2
+    ],
+    "9": [
+     2,
+     2
+    ],
+    "10": [
+     2,
+     2
+    ],
+    "11": [
+     3,
+     1
+    ]
+   },
+   "Vince": {
+    "0": [
+     4,
+     0
+    ],
+    "1": [
+     2,
+     2
+    ],
+    "2": [
+     1,
+     3
+    ],
+    "3": [
+     1,
+     3
+    ],
+    "4": [
+     3,
+     1
+    ],
+    "5": [
+     3,
+     1
+    ],
+    "6": [
+     1,
+     3
+    ],
+    "7": [
+     2,
+     2
+    ],
+    "8": [
+     3,
+     1
+    ],
+    "9": [
+     2,
+     2
+    ],
+    "10": [
+     1,
+     3
+    ],
+    "11": [
+     2,
+     2
+    ]
+   },
+   "Rocco": {
+    "0": [
+     2,
+     2
+    ],
+    "1": [
+     2,
+     2
+    ],
+    "2": [
+     2,
+     2
+    ],
+    "3": [
+     1,
+     3
+    ],
+    "4": [
+     1,
+     3
+    ],
+    "5": [
+     1,
+     3
+    ],
+    "6": [
+     3,
+     1
+    ],
+    "7": [
+     0,
+     4
+    ],
+    "8": [
+     2,
+     2
+    ],
+    "9": [
+     1,
+     3
+    ],
+    "10": [
+     3,
+     1
+    ],
+    "11": [
+     1,
+     3
+    ]
+   }
+  },
+  "playoff_board": [],
+  "playoff_preview": {
+   "computed_at": "2026-11-17T02:40:00.200625+00:00",
+   "phase": "regular",
+   "state": "regular",
+   "qualifiers": [
+    {
+     "seed": 1,
+     "team": "Mack",
+     "points": 30,
+     "decided_by": "regular season points"
+    },
+    {
+     "seed": 2,
+     "team": "Hoss",
+     "points": 28,
+     "decided_by": "regular season points"
+    },
+    {
+     "seed": 3,
+     "team": "Chip",
+     "points": 27,
+     "decided_by": "chips"
+    },
+    {
+     "seed": 4,
+     "team": "Skip",
+     "points": 27,
+     "decided_by": "regular season points"
+    }
+   ],
+   "cut_tie": null,
+   "holds": [
+    "Week 15 games aren't picked yet, so the regular season isn't over."
+   ]
+  },
+  "last_week": {
+   "week": 11,
+   "you": null,
+   "games": [
+    {
+     "away": "North Texas",
+     "home": "UTSA",
+     "away_pts": 16,
+     "home_pts": 35,
+     "line": 2.5,
+     "covered": "UTSA",
+     "picks": {
+      "Mack": "UTSA",
+      "Sully": "North Texas",
+      "Biff": "North Texas",
+      "Chip": "North Texas",
+      "Hoss": "UTSA",
+      "Moose": "UTSA",
+      "Skip": "North Texas",
+      "Duke": "North Texas",
+      "Tank": "UTSA",
+      "Lefty": "North Texas",
+      "Bubba": "North Texas",
+      "Vince": "North Texas",
+      "Rocco": "North Texas",
+      "Dutch": "UTSA"
+     }
+    },
+    {
+     "away": "Wake Forest",
+     "home": "SMU",
+     "away_pts": 49,
+     "home_pts": 7,
+     "line": 1.5,
+     "covered": "Wake Forest",
+     "picks": {
+      "Mack": "Wake Forest",
+      "Sully": "Wake Forest",
+      "Biff": "SMU",
+      "Chip": "Wake Forest",
+      "Hoss": "Wake Forest",
+      "Moose": "SMU",
+      "Skip": "Wake Forest",
+      "Duke": "SMU",
+      "Tank": "Wake Forest",
+      "Lefty": "SMU",
+      "Bubba": "Wake Forest",
+      "Vince": "Wake Forest",
+      "Rocco": "SMU",
+      "Dutch": "Wake Forest"
+     }
+    },
+    {
+     "away": "Oregon State",
+     "home": "Boise State",
+     "away_pts": 41,
+     "home_pts": 46,
+     "line": -13.5,
+     "covered": "Oregon State",
+     "picks": {
+      "Mack": "Oregon State",
+      "Sully": "Boise State",
+      "Biff": "Boise State",
+      "Chip": "Boise State",
+      "Hoss": "Boise State",
+      "Moose": "Boise State",
+      "Skip": "Oregon State",
+      "Duke": "Boise State",
+      "Tank": "Boise State",
+      "Lefty": "Oregon State",
+      "Bubba": "Boise State",
+      "Vince": "Oregon State",
+      "Rocco": "Boise State",
+      "Dutch": "Oregon State"
+     }
+    },
+    {
+     "away": "North Dakota State",
+     "home": "Hawai'i",
+     "away_pts": 21,
+     "home_pts": 13,
+     "line": 6.5,
+     "covered": "North Dakota State",
+     "picks": {
+      "Mack": "North Dakota State",
+      "Sully": "North Dakota State",
+      "Biff": "Hawai'i",
+      "Chip": "North Dakota State",
+      "Hoss": "North Dakota State",
+      "Moose": "Hawai'i",
+      "Skip": "North Dakota State",
+      "Duke": "North Dakota State",
+      "Tank": "North Dakota State",
+      "Lefty": "Hawai'i",
+      "Bubba": "Hawai'i",
+      "Vince": "Hawai'i",
+      "Rocco": "North Dakota State",
+      "Dutch": "Hawai'i"
+     }
+    }
+   ]
+  },
+  "mode": "leaderboard",
+  "rivals": [],
+  "live_games": [
+   {
+    "GameId": 401856751,
+    "Away": "Kentucky",
+    "Home": "Missouri",
+    "AwayPts": null,
+    "HomePts": null,
+    "Status": "",
+    "Period": null,
+    "Clock": null,
+    "status_name": null,
+    "possession": null,
+    "is_red_zone": null,
+    "line": -5.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-16T08:00:30.178+00:00",
+    "Start (CT)": "2026-11-21T18:30:00"
+   },
+   {
+    "GameId": 401856754,
+    "Away": "LSU",
+    "Home": "Tennessee",
+    "AwayPts": null,
+    "HomePts": null,
+    "Status": "scheduled",
+    "Period": null,
+    "Clock": null,
+    "status_name": null,
+    "possession": null,
+    "is_red_zone": null,
+    "line": 1.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-16T08:00:30.178+00:00",
+    "Start (CT)": "2026-11-21T14:30:00"
+   },
+   {
+    "GameId": 401858527,
+    "Away": "Iowa",
+    "Home": "Illinois",
+    "AwayPts": null,
+    "HomePts": null,
+    "Status": "scheduled",
+    "Period": null,
+    "Clock": null,
+    "status_name": null,
+    "possession": null,
+    "is_red_zone": null,
+    "line": 8.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-16T08:00:30.178+00:00",
+    "Start (CT)": "2026-11-21T13:30:00"
+   },
+   {
+    "GameId": 401856871,
+    "Away": "Texas Tech",
+    "Home": "Baylor",
+    "AwayPts": null,
+    "HomePts": null,
+    "Status": "scheduled",
+    "Period": null,
+    "Clock": null,
+    "status_name": null,
+    "possession": null,
+    "is_red_zone": null,
+    "line": 3.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-16T10:00:57.081+00:00",
+    "Start (CT)": "2026-11-21T14:30:00"
+   },
+   {
+    "GameId": 401858530,
+    "Away": "Northwestern",
+    "Home": "Minnesota",
+    "AwayPts": null,
+    "HomePts": null,
+    "Status": "scheduled",
+    "Period": null,
+    "Clock": null,
+    "status_name": null,
+    "possession": null,
+    "is_red_zone": null,
+    "line": 2.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-16T08:00:30.178+00:00",
+    "Start (CT)": "2026-11-21T11:00:00"
+   },
+   {
+    "GameId": 401866467,
+    "Away": "Akron",
+    "Home": "Massachusetts",
+    "AwayPts": 0,
+    "HomePts": 0,
+    "Status": "scheduled",
+    "Period": 0,
+    "Clock": "0:00",
+    "status_name": "STATUS_SCHEDULED",
+    "possession": null,
+    "is_red_zone": null,
+    "line": -3.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-17T00:00:00.976282+00:00",
+    "Start (CT)": "2026-11-18T18:00:00"
+   },
+   {
+    "GameId": 401866469,
+    "Away": "Central Michigan",
+    "Home": "Buffalo",
+    "AwayPts": 0,
+    "HomePts": 0,
+    "Status": "scheduled",
+    "Period": 0,
+    "Clock": "0:00",
+    "status_name": "STATUS_SCHEDULED",
+    "possession": null,
+    "is_red_zone": null,
+    "line": -2.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-17T00:00:00.979331+00:00",
+    "Start (CT)": "2026-11-18T18:30:00"
+   },
+   {
+    "GameId": 401866465,
+    "Away": "Eastern Michigan",
+    "Home": "Western Michigan",
+    "AwayPts": 0,
+    "HomePts": 0,
+    "Status": "scheduled",
+    "Period": 0,
+    "Clock": "0:00",
+    "status_name": "STATUS_SCHEDULED",
+    "possession": null,
+    "is_red_zone": null,
+    "line": -14.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-16T08:01:00.59497+00:00",
+    "Start (CT)": "2026-11-17T17:00:00"
+   },
+   {
+    "GameId": 401866464,
+    "Away": "Ball State",
+    "Home": "Ohio",
+    "AwayPts": 0,
+    "HomePts": 0,
+    "Status": "scheduled",
+    "Period": 0,
+    "Clock": "0:00",
+    "status_name": "STATUS_SCHEDULED",
+    "possession": null,
+    "is_red_zone": null,
+    "line": -11.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-16T08:01:00.601308+00:00",
+    "Start (CT)": "2026-11-17T18:00:00"
+   },
+   {
+    "GameId": 401866466,
+    "Away": "Miami (OH)",
+    "Home": "Kent State",
+    "AwayPts": 0,
+    "HomePts": 0,
+    "Status": "scheduled",
+    "Period": 0,
+    "Clock": "0:00",
+    "status_name": "STATUS_SCHEDULED",
+    "possession": null,
+    "is_red_zone": null,
+    "line": 9.5,
+    "winner": null,
+    "SourceUpdatedAt": "2026-11-16T08:01:00.601837+00:00",
+    "Start (CT)": "2026-11-17T18:00:00"
+   }
+  ],
+  "live_at": {
+   "__dt__": "2026-11-16T20:45:03.004054"
+  },
+  "picky_player": {
+   "name": "Picky",
+   "season": [
+    0,
+    3
+   ],
+   "last_week": [
+    0,
+    3
+   ],
+   "this_week": [],
+   "hidden_count": 0,
+   "revealed": [
+    {
+     "week": 11,
+     "pick": "Boise State",
+     "away": "Oregon State",
+     "home": "Boise State",
+     "line": -13.5,
+     "winner": "Oregon State",
+     "status": "final",
+     "tiebreaker": false
+    },
+    {
+     "week": 11,
+     "pick": "North Texas",
+     "away": "North Texas",
+     "home": "UTSA",
+     "line": 2.5,
+     "winner": "UTSA",
+     "status": "final",
+     "tiebreaker": false
+    },
+    {
+     "week": 11,
+     "pick": "Hawai'i",
+     "away": "North Dakota State",
+     "home": "Hawai'i",
+     "line": 6.5,
+     "winner": "North Dakota State",
+     "status": "final",
+     "tiebreaker": false
+    }
+   ]
+  },
+  "live_followup": false,
+  "live_rider": "",
+  "live_rider_games": [],
+  "live_injuries": false,
+  "espn": {
+   "401858530": {
+    "home": {
+     "name": "Minnesota Golden Gophers",
+     "abbr": "MINN",
+     "ap_rank": null,
+     "record": "5-5",
+     "last5": [
+      "L 41-13 @ Purdue Boilermakers",
+      "W 13-10 vs Iowa Hawkeyes",
+      "L 23-16 OT @ Indiana Hoosiers",
+      "L 34-20 vs UCLA Bruins",
+      "L 42-14 @ Penn State Nittany Lions"
+     ],
+     "injuries": [],
+     "stats": [
+      "Points Per Game 23.6",
+      "Total Yards 299.4",
+      "Yards Passing 206.6",
+      "Yards Rushing 92.8",
+      "Points Allowed Per Game 24.0",
+      "Yards Allowed 325.7",
+      "Pass Yards Allowed 185.6",
+      "Rush Yards Allowed 140.1"
+     ],
+     "leaders": [
+      "Passing Yards: Drake Lindsey (196/326, 1,982 YDS, 13 TD, 7 INT)",
+      "Rushing Yards: TJ Thomas (72 CAR, 411 YDS, 1 TD)",
+      "Receiving Yards: Javon Tracy (55 REC, 536 YDS, 3 TD)",
+      "Sacks: TJ Bush Jr. (6)"
+     ]
+    },
+    "away": {
+     "name": "Northwestern Wildcats",
+     "abbr": "NU",
+     "ap_rank": null,
+     "record": "6-4",
+     "last5": [
+      "W 24-21 @ Michigan State Spartans",
+      "W 42-14 vs Rutgers Scarlet Knights",
+      "L 34-26 @ Oregon Ducks",
+      "L 24-10 vs Iowa Hawkeyes",
+      "L 28-19 @ Ohio State Buckeyes"
+     ],
+     "injuries": [],
+     "stats": [
+      "Points Per Game 29.8",
+      "Total Yards 406.9",
+      "Yards Passing 230.4",
+      "Yards Rushing 176.5",
+      "Points Allowed Per Game 20.2",
+      "Yards Allowed 365.8",
+      "Pass Yards Allowed 214.6",
+      "Rush Yards Allowed 151.2"
+     ],
+     "leaders": [
+      "Passing Yards: Aidan Chiles (139/202, 1,898 YDS, 13 TD, 1 INT)",
+      "Rushing Yards: Caleb Komolafe (122 CAR, 697 YDS, 5 TD)",
+      "Receiving Yards: Griffin Wilde (52 REC, 843 YDS, 5 TD)",
+      "Sacks: Braydon Brus (4)"
+     ]
+    },
+    "market": {
+     "book": "DraftKings",
+     "details": "NU -3",
+     "over_under": 42.5,
+     "away_ml": -155,
+     "home_ml": 130,
+     "home_open": 3.0,
+     "home_now": 3.0
+    },
+    "espn_win_prob": {
+     "home": 21.9,
+     "away": 78.1
+    },
+    "weather": "52F, wind gusts 18 mph, 47% chance of precipitation",
+    "venue": {
+     "id": "3953",
+     "name": "Huntington Bank Stadium",
+     "city": "Minneapolis",
+     "indoor": null
+    },
+    "headlines": [],
+    "injury_report_available": false
+   },
+   "401858527": {
+    "home": {
+     "name": "Illinois Fighting Illini",
+     "abbr": "ILL",
+     "ap_rank": null,
+     "record": "6-4",
+     "last5": [
+      "W 38-37 OT @ Michigan State Spartans",
+      "W 21-10 vs Oregon Ducks",
+      "W 20-17 @ Maryland Terrapins",
+      "W 24-13 vs Nebraska Cornhuskers",
+      "L 22-14 @ UCLA Bruins"
+     ],
+     "injuries": [],
+     "stats": [
+      "Points Per Game 27.0",
+      "Total Yards 377.0",
+      "Yards Passing 230.8",
+      "Yards Rushing 146.2",
+      "Points Allowed Per Game 22.9",
+      "Yards Allowed 375.2",
+      "Pass Yards Allowed 246.3",
+      "Rush Yards Allowed 128.9"
+     ],
+     "leaders": [
+      "Passing Yards: Katin Houser (178/286, 2,131 YDS, 18 TD, 8 INT)",
+      "Rushing Yards: Aidan Laughery (116 CAR, 664 YDS, 2 TD)",
+      "Receiving Yards: Collin Dixon (72 REC, 946 YDS, 13 TD)",
+      "Sacks: Ean Rhea (2)"
+     ]
+    },
+    "away": {
+     "name": "Iowa Hawkeyes",
+     "abbr": "IOWA",
+     "ap_rank": 15,
+     "record": "8-2",
+     "last5": [
+      "W 41-24 @ Washington Huskies",
+      "L 13-10 @ Minnesota Golden Gophers",
+      "W 30-0 vs Wisconsin Badgers",
+      "W 24-10 @ Northwestern Wildcats",
+      "W 28-7 vs Purdue Boilermakers"
+     ],
+     "injuries": [],
+     "stats": [
+      "Points Per Game 27.8",
+      "Total Yards 379.9",
+      "Yards Passing 198.9",
+      "Yards Rushing 181.0",
+      "Points Allowed Per Game 11.7",
+      "Yards Allowed 279.3",
+      "Pass Yards Allowed 195.7",
+      "Rush Yards Allowed 83.6"
+     ],
+     "leaders": [
+      "Passing Yards: Hank Brown (145/219, 1,504 YDS, 10 TD, 4 INT)",
+      "Rushing Yards: Kamari Moulton (86 CAR, 541 YDS, 4 TD)",
+      "Receiving Yards: Tony Diaz (40 REC, 549 YDS, 3 TD)",
+      "Sacks: Joseph Anderson (4)"
+     ]
+    },
+    "market": {
+     "book": "DraftKings",
+     "details": "IOWA -8.5",
+     "over_under": 40.5,
+     "away_ml": -325,
+     "home_ml": 260,
+     "home_open": 5.5,
+     "home_now": 8.5
+    },
+    "espn_win_prob": {
+     "home": 34.7,
+     "away": 65.3
+    },
+    "weather": "65F, wind gusts 23 mph, 14% chance of precipitation",
+    "venue": {
+     "id": "3832",
+     "name": "Gies Memorial Stadium",
+     "city": "Champaign",
+     "indoor": null
+    },
+    "headlines": [
+     "Top 25 betting lines: UGA big faves over Gamecocks, Vols slim favorites vs. LSU"
+    ],
+    "injury_report_available": false
+   },
+   "401856754": {
+    "home": {
+     "name": "Tennessee Volunteers",
+     "abbr": "TENN",
+     "ap_rank": 8,
+     "record": "8-2",
+     "last5": [
+      "W 24-17 @ Arkansas Razorbacks",
+      "W 26-10 vs Alabama Crimson Tide",
+      "L 27-24 @ South Carolina Gamecocks",
+      "W 34-6 vs Kentucky Wildcats",
+      "W 22-7 @ Texas A&M Aggies"
+     ],
+     "injuries": [],
+     "stats": [
+      "Points Per Game 31.4",
+      "Total Yards 385.5",
+      "Yards Passing 171.5",
+      "Yards Rushing 214.0",
+      "Points Allowed Per Game 14.3",
+      "Yards Allowed 284.7",
+      "Pass Yards Allowed 164.2",
+      "Rush Yards Allowed 120.5"
+     ],
+     "leaders": [
+      "Passing Yards: George MacIntyre (91/134, 962 YDS, 2 TD, 3 INT)",
+      "Rushing Yards: DeSean Bishop (230 CAR, 1,163 YDS, 13 TD)",
+      "Receiving Yards: Mike Matthews (39 REC, 608 YDS, 4 TD)",
+      "Sacks: Tyree Weathersby (7)"
+     ]
+    },
+    "away": {
+     "name": "LSU Tigers",
+     "abbr": "LSU",
+     "ap_rank": 21,
+     "record": "6-4",
+     "last5": [
+      "L 35-34 OT @ Kentucky Wildcats",
+      "W 31-0 vs Mississippi State Bulldogs",
+      "W 38-17 @ Auburn Tigers",
+      "L 31-13 vs Alabama Crimson Tide",
+      "L 22-21 vs Texas Longhorns"
+     ],
+     "injuries": [],
+     "stats": [
+      "Points Per Game 35.5",
+      "Total Yards 490.3",
+      "Yards Passing 316.8",
+      "Yards Rushing 173.5",
+      "Points Allowed Per Game 18.1",
+      "Yards Allowed 262.3",
+      "Pass Yards Allowed 176.2",
+      "Rush Yards Allowed 86.1"
+     ],
+     "leaders": [
+      "Passing Yards: Sam Leavitt (242/340, 2,797 YDS, 19 TD, 12 INT)",
+      "Rushing Yards: Dilin Jones (185 CAR, 838 YDS, 8 TD)",
+      "Receiving Yards: Jackson Harris (55 REC, 864 YDS, 9 TD)",
+      "Sacks: Princewill Umanmielen (9.5)"
+     ]
+    },
+    "market": {
+     "book": "DraftKings",
+     "details": "LSU -1.5",
+     "over_under": 46.5,
+     "away_ml": -115,
+     "home_ml": -105,
+     "home_open": 1.5,
+     "home_now": 1.5
+    },
+    "espn_win_prob": {
+     "home": 49.9,
+     "away": 50.1
+    },
+    "weather": "68F, wind gusts 1 mph, 6% chance of precipitation",
+    "venue": {
+     "id": "3853",
+     "name": "Neyland Stadium",
+     "city": "Knoxville",
+     "indoor": null
+    },
+    "headlines": [
+     "Block Party: Cubelic almost kicks Harper out of the party",
+     "Which teams will end up in Atlanta for the final SEC Title game?",
+     "Top 25 betting lines: UGA big faves over Gamecocks, Vols slim favorites vs. LSU"
+    ],
+    "injury_report_available": false
+   },
+   "401856871": {
+    "home": {
+     "name": "Baylor Bears",
+     "abbr": "BAY",
+     "ap_rank": null,
+     "record": "6-4",
+     "last5": [
+      "L 17-6 vs TCU Horned Frogs",
+      "L 25-24 @ Kansas Jayhawks",
+      "W 41-9 @ UCF Knights",
+      "W 42-31 vs Iowa State Cyclones",
+      "L 28-7 @ BYU Cougars"
+     ],
+     "injuries": [],
+     "stats": [
+      "Points Per Game 29.4",
+      "Total Yards 413.9",
+      "Yards Passing 265.9",
+      "Yards Rushing 148.0",
+      "Points Allowed Per Game 18.1",
+      "Yards Allowed 344.6",
+      "Pass Yards Allowed 224.6",
+      "Rush Yards Allowed 120.0"
+     ],
+     "leaders": [
+      "Passing Yards: DJ Lagway (166/307, 2,059 YDS, 16 TD, 5 INT)",
+      "Rushing Yards: Caden Knighten (84 CAR, 378 YDS, 3 TD)",
+      "Receiving Yards: Gavin Freeman (75 REC, 889 YDS, 3 TD)",
+      "Sacks: Garrick Ponder (4)"
+     ]
+    },
+    "away": {
+     "name": "Texas Tech Red Raiders",
+     "abbr": "TTU",
+     "ap_rank": 12,
+     "record": "9-1",
+     "last5": [
+      "W 53-25 vs Arizona State Sun Devils",
+      "L 37-24 @ Cincinnati Bearcats",
+      "W 34-26 vs Arizona Wildcats",
+      "W 53-48 vs West Virginia Mountaineers",
+      "W 52-27 @ Oklahoma State Cowboys"
+     ],
+     "injuries": [],
+     "stats": [
+      "Points Per Game 39.0",
+      "Total Yards 448.6",
+      "Yards Passing 238.0",
+      "Yards Rushing 210.6",
+      "Points Allowed Per Game 24.4",
+      "Yards Allowed 408.6",
+      "Pass Yards Allowed 288.0",
+      "Rush Yards Allowed 120.6"
+     ],
+     "leaders": [
+      "Passing Yards: Will Hammond (140/206, 1,566 YDS, 6 TD, 6 INT)",
+      "Rushing Yards: J'Koby Williams (138 CAR, 1,078 YDS, 8 TD)",
+      "Receiving Yards: Kenny Johnson (43 REC, 707 YDS, 5 TD)",
+      "Sacks: A.J. Holmes Jr. (8)"
+     ]
+    },
+    "market": {
+     "book": "DraftKings",
+     "details": "TTU -3.5",
+     "over_under": 57.5,
+     "away_ml": -170,
+     "home_ml": 142,
+     "home_open": 1.5,
+     "home_now": 3.5
+    },
+    "espn_win_prob": {
+     "home": 38.6,
+     "away": 61.4
+    },
+    "weather": "73F, wind gusts 15 mph, 47% chance of precipitation",
+    "venue": {
+     "id": "4727",
+     "name": "McLane Stadium",
+     "city": "Waco",
+     "indoor": null
+    },
+    "headlines": [
+     "Top 25 betting lines: UGA big faves over Gamecocks, Vols slim favorites vs. LSU"
+    ],
+    "injury_report_available": false
+   }
+  },
+  "daddyfreeman": false
+ }
+}

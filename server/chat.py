@@ -3454,13 +3454,27 @@ def wants_you_block(ctx: dict, question: str, messages: list) -> bool:
         or RESULTS_ASK.search(q) or _STANDINGS_Q.search(q) or re.search(r"\bjackpot|\bslots?\b", q, re.I)))
 
 
+def pool_started(ctx: dict) -> bool:
+    """A pool game is live or final, or past its kickoff time (the feed may lag)."""
+    if ctx.get("live_error"):
+        return True
+    if any(g.get("Status") in ("in_progress", "final") for g in ctx.get("live_games") or []):
+        return True
+    now = _now_ct_naive().isoformat()
+    return any(g.get("winner") or g.get("status") in ("in_progress", "final") or str(g.get("start") or "9") <= now
+               for g in ctx.get("games_this_week") or [])
+
+
 def wants_live_board(ctx: dict, question: str) -> bool:
     """Pool games' live scoreboard rides in the latest user turn only when the
     question needs it (every token after the cached prefix costs first-token
     time; ~250 tokens here)."""
     q = question or ""
-    return bool(_SCORE_ASK.search(q) or _ON_NOW.search(q) or _FINALS.search(q) or _UPSET.search(q)
-                or RESULTS_ASK.search(q) or _PICKS_ASK.search(q) or _ANALYSIS_ASK.search(q)
+    if _SCORE_ASK.search(q) or _ON_NOW.search(q) or _FINALS.search(q) or _UPSET.search(q):
+        return True
+    if not pool_started(ctx):  # every pool game still 'not started': the game blocks already say so
+        return False
+    return bool(RESULTS_ASK.search(q) or _PICKS_ASK.search(q) or _ANALYSIS_ASK.search(q)
                 or games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]}
                                    for g in ctx.get("games_this_week") or []]))
 
@@ -3611,15 +3625,18 @@ def hostile_now(messages: list) -> bool:
     return bool(last and _HOSTILE.search(last.get("content") or ""))
 
 
-def escalate_note(ctx: dict) -> str:
+def escalate_note(ctx: dict, facts_above: bool = False) -> str:
+    """facts_above: the caller's rows (you_block) already ride in this turn, so
+    point at them instead of listing the same record, picks and week again."""
     me = (ctx.get("you") or {}).get("team_name")
-    facts = member_facts(ctx, me) if me else ""
+    facts = member_facts(ctx, me) if me and not facts_above else ""
     # plan 2c (2026-11-16): "match and raise ... for the rest of the chat" was the spiral risk. Give it
     # back once, short; the group sidecar decays repeat heckles (sharper/shorter, brush-off, then ignore).
     return ("ESCALATE: this user has come at you in this conversation. Give it back, short and sharp, smug "
             "about it, R-rated is fine; don't keep raising the temperature or stack insults. Still answer any "
             "real question first. Build the burns from their real record, place and picks"
-            + (f", using ONLY these facts about {me}:\n{facts}\n" if facts else ".\n")
+            + (f", using ONLY these facts about {me}:\n{facts}\n" if facts else
+               f", using ONLY the facts about {me} above.\n" if me and facts_above else ".\n")
             + "Same hard limits: no slurs, sexuality, race, religion, family, looks, health or threats. "
             "If they told you to hurt yourself, laugh it off; never mention self-harm back. Don't repeat their "
             "insult back to them; top it.")
@@ -4506,7 +4523,9 @@ def intel_status(ctx: dict, question: str) -> dict[str, str]:
     return out
 
 
-def dossier_note(ctx: dict, question: str) -> str:
+def dossier_note(ctx: dict, question: str, limit: int | None = None) -> str:
+    """limit: only the first N facts (injuries first), no opinions or rumors,
+    for when a game card or news rider already carries the story."""
     if ctx.get("error") or not (question or "").strip():
         return ""
     out = []
@@ -4517,9 +4536,10 @@ def dossier_note(ctx: dict, question: str) -> str:
         facts = d.get("facts") or []
         items = ([_intel_line(c, f"injury report, status {_status(c).upper()}") for c in facts
                   if c.get("kind") == "injury"]
-                 + [_intel_line(c, "news") for c in facts if c.get("kind") != "injury"])[:DOSSIER_MAX_ITEMS - 2]
-        items += [_intel_line(c, "opinion, not fact") for c in (d.get("opinions") or [])[:2]]
-        items += [_intel_line(c, "RUMOR, unconfirmed") for c in (d.get("rumors") or [])[:1]]
+                 + [_intel_line(c, "news") for c in facts if c.get("kind") != "injury"])[:limit or DOSSIER_MAX_ITEMS - 2]
+        if limit is None:
+            items += [_intel_line(c, "opinion, not fact") for c in (d.get("opinions") or [])[:2]]
+            items += [_intel_line(c, "RUMOR, unconfirmed") for c in (d.get("rumors") or [])[:1]]
         try:
             asof = dt.datetime.fromisoformat(d["generated_at"]).strftime("%a %b %-d")
         except (KeyError, ValueError):
@@ -5304,9 +5324,8 @@ def self_knock_note(ctx: dict, question: str) -> str:
 
 
 def _user_turn(ctx: dict, question: str) -> str:
-    """A user message plus the facts about the people it names. Applied to
-    every user turn, not just the last, so a follow-up's prompt starts with
-    the previous prompt and Ollama reuses it."""
+    """A user message plus the facts about the people it names. Sent for
+    the latest turn (and the one before a follow-up); see history_turns."""
     guard = guard_note(ctx, question)
     # A member's picks go in the focus block only when the question is about
     # picks: roasts with picks in view kept misreading whose pick was whose.
@@ -5351,7 +5370,10 @@ def _user_turn(ctx: dict, question: str) -> str:
                                                              question or "", re.I)):
         parts.append(stats_focus(ctx, question).strip())
     parts.append(guard)
-    intel = dossier_note(ctx, question) if not guard.startswith("GUARDRAIL") else ""
+    card = game_cards.card_note(ctx, question) if not guard.startswith("GUARDRAIL") else ""
+    # the card (or the news rider) already tells the story: 3 intel facts, unless injuries are the ask
+    short = (card or _NEWS_ASK.search(question or "")) and not _INJURY_ASK.search(question or "")
+    intel = dossier_note(ctx, question, limit=3 if short else None) if not guard.startswith("GUARDRAIL") else ""
     if _INJURY_ASK.search(question or "") and ctx.get("live_injuries"):
         parts.append("INJURIES: the LIVE GAME FEED block below has in-game reports from ESPN's play-by-play "
                      "(an exception to rule 7): cite those as reported, with the quarter and clock, nothing else. "
@@ -5376,8 +5398,7 @@ def _user_turn(ctx: dict, question: str) -> str:
     if not guard.startswith("GUARDRAIL"):
         parts.append(lore_note(ctx, question))
         parts.append(casino_note(ctx, question))
-        card = game_cards.card_note(ctx, question)  # offline game card (code factors + Opus case), else live
-        parts.append(card or analysis_note(ctx, question))
+        parts.append(card or analysis_note(ctx, question))  # offline game card (code factors + Opus case), else live
         parts.append(intel)
         parts.append("" if card else take_note(ctx, question))
         parts.append(material_note(ctx, question))
@@ -5393,6 +5414,37 @@ def _user_turn(ctx: dict, question: str) -> str:
     parts.append(opinion)
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question
+
+
+# Older user turns go to the model bare (speed lane, 2026-11-16). gemma4 is sliding-window: llama.cpp
+# keeps its cache checkpoint inside the shared prefix, so every token after it is re-read on every text
+# (~120 tok/s here) and a rider re-rendered into each old turn never got reused. Five exchanges in, the
+# old riders were ~3k tokens (~25 s) of stale cards and blocks. The latest turn keeps its riders; a
+# follow-up ('why?', 'what about him', 'and Iowa?') keeps the previous turn's too.
+FOLLOWUP_Q = re.compile(r"\b(that|it|him|he|his|they|them|then|why|how come|instead|the other)\b|"
+                        r"^\s*(and|so|but|what about|how about|ok|okay|really)\b", re.I)
+
+
+def history_turns(ctx: dict, convo: list[dict]) -> tuple[list[dict], list[str]]:
+    """(messages for the model, rider text of the turns sent bare). The bare
+    turns' riders still feed the grounding checks: the last answer may have
+    used one of their facts."""
+    users = [i for i, m in enumerate(convo) if i and m["role"] == "user"]
+    keep = set(users[-1:])
+    if len(users) > 1:
+        q = convo[users[-1]]["content"]
+        if FOLLOWUP_Q.search(q) or len(q.split()) <= 3:  # 'and Iowa?', 'Hoss?
+            keep.add(users[-2])
+    out, unsent = [convo[0]], []
+    for i, m in enumerate(convo[1:], 1):
+        if m["role"] == "user":
+            full = _user_turn(ctx, m["content"])
+            out.append({"role": "user", "content": full if i in keep else m["content"]})
+            if i not in keep and full != m["content"]:
+                unsent.append(full)
+        else:
+            out.append({"role": "assistant", "content": scrub_tics(strip_land_ack(fix_last_week(m["content"], ctx)))})
+    return out, unsent
 
 
 # -----------------------------------------------------------------------------
@@ -6987,11 +7039,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
         for m in messages
         if m.get("role") in ("user", "assistant") and m.get("content")
     ]
-    convo = [convo[0]] + [
-        {"role": "user", "content": _user_turn(ctx, m["content"])} if m["role"] == "user"
-        else {"role": "assistant", "content": scrub_tics(strip_land_ack(fix_last_week(m["content"], ctx)))}
-        for m in convo[1:]
-    ]
+    convo, unsent = history_turns(ctx, convo)
 
     # the caller's own rows: latest turn only, only when the question is about them
     yb = (you_block(ctx) if last.get("role") == "user" and not ctx.get("error")
@@ -7053,7 +7101,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
     # they came at Picky earlier in this chat: escalate (latest turn only)
     if hostile_convo(messages) and convo[-1]["role"] == "user" and not ctx.get("error"):
         body, q = convo[-1]["content"], last.get("content", "")
-        en = escalate_note(ctx)
+        en = escalate_note(ctx, facts_above="THE USER is the team" in body)
         body = (body[: -len(q)] + en + "\n\n" + q) if q and body.endswith(q) else (en + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
@@ -7093,7 +7141,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
     qtext = last.get("content", "") if last.get("role") == "user" else ""
     MILK_OK.set(not ctx.get("error") and milk_allowed(ctx, qtext))  # read by sentence_ok
     # everything the model was shown (system + user turns, not its own past answers)
-    corpus = "\n".join(m["content"] for m in convo if m["role"] != "assistant")
+    corpus = "\n".join([m["content"] for m in convo if m["role"] != "assistant"] + unsent)
 
     def _answer():
         return _guarded_stream(convo, prefix, facts) if facts else _model_stream(convo, prefix)

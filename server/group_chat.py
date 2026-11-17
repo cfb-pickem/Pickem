@@ -396,6 +396,10 @@ def _system_tail(ctx: dict) -> str:
 
 
 picky_brain.install()
+# a text reply is 1-3 sentences (157 live texts 2026-11-16: p99 111 tokens out, max 121); chat.py's 600 is
+# for the site. This only bounds a runaway draft (~40 s at 600). JSON passes and translations set their own.
+TEXT_NUM_PREDICT = int(os.environ.get("PICKY_TEXT_NUM_PREDICT") or 320)
+chat.OLLAMA_OPTIONS["num_predict"] = TEXT_NUM_PREDICT
 # up to 4 drafts per text, each one a chat.py request: the per-user limit is per draft
 chat.RATE_LIMIT_PER_MIN = 40
 chat._verify_jwt = _verify_jwt

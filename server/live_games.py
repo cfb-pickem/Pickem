@@ -1177,6 +1177,12 @@ _FOLLOWUP = re.compile(r"\b(that|it|him|he|his|they|them|then|why|when|how long|
                        re.I)
 
 
+# a game nobody has kicked off yet: the rider rides only for the asks its 'not started' answers
+_PRE_ASK = re.compile(r"\b(scores?|scored|scoring|live|right now|happening|going on|on now|what'?s on|winning|losing|"
+                      r"leading|lead|up by|down by|quarter|half(time)?|clock|time left|cover\w*|won|win|lost|los(e|ing)|"
+                      r"final|start\w*|kick\w*|doing|over yet|td|tds|touchdowns?)\b", re.I)
+
+
 def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "") -> str:
     """chat.py's one hook (run off the event loop). Builds the LIVE rider for
     the question (refreshing stale live games first) into ctx['live_rider'] /
@@ -1202,6 +1208,8 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "")
     except Exception as e:  # noqa: BLE001 - the live rider must never break a reply
         log.warning("live rider failed: %s", e)
         text, hit = "", []
+    if text and hit and all(g.get("state") == "pre" for g in hit) and not _PRE_ASK.search(question or ""):
+        text = ""  # only 'not started' to say, and the game blocks already have the kickoff (speed lane)
     ctx["live_rider"], ctx["live_rider_games"] = text, hit
     ctx["live_injuries"] = any(g.get("injuries") or any((q or {}).get("changes") for q in (g.get("qb") or {}).values())
                                for g in hit)
