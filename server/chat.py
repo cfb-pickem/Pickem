@@ -111,7 +111,7 @@ OLLAMA_FALLBACK_KEEP_ALIVE = "15m"
 OLLAMA_KEEP_ALIVE = os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h")
 # Thinking models (qwen3.5): "false" skips the reasoning pass. Unset = don't send.
 OLLAMA_THINK = os.environ.get("PICKY_OLLAMA_THINK")
-# A cold prefix prime (~8k tokens after another gemma user evicted it) takes ~55-60 s. It gets its own
+# A cold prefix prime (~8k tokens after a data change or a model reload) takes ~55-60 s. It gets its own
 # read timeout: under a caller's 30/60 s timeout it was cut off just short, and the next call paid the
 # whole prefill again on top (live 2026-11-16 12:18: 279 s).
 PRIME_TIMEOUT = float(os.environ.get("PICKY_PRIME_TIMEOUT", "180"))
