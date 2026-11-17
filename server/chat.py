@@ -4569,8 +4569,14 @@ _BEST_ASK = re.compile(
     r"|\bwhat'?s the (lock|play)\b(?!\s*(time|deadline|date|at))|\bsafest (pick|play|bet)\b", re.I)
 
 
+# a shot at Picky's picks isn't a request for them (sparring k1: 'tg says ur picks are worse than his', 'bo nix > ur picks')
+_PICKS_SHOT = re.compile(r"\b(ur|your|his) picks? (are|r|is|suck|stink|blow|been|was|were)\b|[<>]\s*(ur|your) picks?"
+                         r"|\bthan (ur|your|his) picks?|\b(worse|better) than\b", re.I)
+
+
 def slate_ask(question: str) -> bool:
-    return bool(_SLATE_ASK.search(question or "") or _BEST_ASK.search(question or ""))
+    q = question or ""
+    return bool(_SLATE_ASK.search(q) or _BEST_ASK.search(q)) and not _PICKS_SHOT.search(q)
 
 
 def best_ask(question: str) -> bool:

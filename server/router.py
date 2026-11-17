@@ -612,6 +612,19 @@ def standings_text(ctx: dict, q: str) -> str | None:
                if nxt and gap else "") + ".")
 
 
+_LAST_N_WEEKS = re.compile(r"\b(?:last|past|previous) (\d|two|three|four|five|couple(?: of)?) weeks?\b|\blast week\b", re.I)
+_NUMW = {"two": 2, "three": 3, "four": 4, "five": 5, "couple": 2, "couple of": 2}
+
+
+def _done_weeks(ctx: dict, wk: dict) -> list[int]:
+    """Weeks with a record, oldest first, minus the current week while it still has games to play."""
+    cw = ctx.get("current_week")
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    cw_done = bool(games) and all(g.get("winner") for g in games)
+    out = sorted(int(k) for k, v in wk.items() if v and sum(v) and str(k).isdigit())
+    return [w for w in out if w != cw or cw_done]
+
+
 def record_text(ctx: dict, q: str) -> str | None:
     st = ctx.get("standings_ytd") or []
     me = (ctx.get("you") or {}).get("team_name")
@@ -622,6 +635,18 @@ def record_text(ctx: dict, q: str) -> str | None:
     who = "You're" if r["team"] == me else f"{r['team']} is"
     cw = ctx.get("current_week")
     wk = ((ctx.get("weekly_records") or {}).get(r["team"]) or {})
+    m = _LAST_N_WEEKS.search(q or "")
+    if m and wk:  # 'whats my record last 3 weeks' / 'what was my record last week' (sparring k1-c29)
+        n = 1 if not m.group(1) else int(m.group(1)) if m.group(1).isdigit() else _NUMW.get(m.group(1).lower(), 2)
+        weeks = _done_weeks(ctx, wk)[-n:]
+        rec = {w: (wk.get(w) if wk.get(w) is not None else wk.get(str(w))) for w in weeks}
+        if weeks:
+            if len(weeks) == 1:
+                w = weeks[0]
+                return f"{'You' if r['team'] == me else r['team']} went {rec[w][0]}-{rec[w][1]} in week {w}."
+            tw, tl = sum(v[0] for v in rec.values()), sum(v[1] for v in rec.values())
+            return (f"{who} {tw}-{tl} over the last {len(weeks)} weeks ("
+                    + ", ".join(f"week {w} {rec[w][0]}-{rec[w][1]}" for w in weeks) + ").")
     v = wk.get(cw) if wk.get(cw) is not None else wk.get(str(cw))
     week = f", {v[0]}-{v[1]} in week {cw} so far" if v and sum(v) else ""
     return f"{who} {r['w']}-{r['l']} on the season, {chat._ordinal(r['rank'])} place{week}."
@@ -672,6 +697,13 @@ def cover_text(ctx: dict, q: str) -> str | None:
     named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games])
     byid = {g["id"]: g for g in games}
     out = []
+    lw = ctx.get("last_week") or {}
+    if not named and re.search(r"\bwho covered\b", q, re.I) and lw.get("games") and (
+            re.search(r"\blast week\b", q, re.I) or not any(g.get("winner") for g in games)):
+        # the Monday after a week: nothing final this week, so 'who covered (last week)' is last week's finals (k1-c30)
+        cov = [chat._side_label(g["covered"], g["home"], float(g["line"])) if g.get("line") else g["covered"]
+               for g in lw["games"] if g.get("covered")]
+        return f"Week {lw['week']} covers: {', '.join(cov)}." if cov else None
     if not named and re.search(r"\bwho covered\b", q, re.I):
         cov, nope = [], []
         for g in games:
