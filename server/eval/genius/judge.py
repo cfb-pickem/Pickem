@@ -84,6 +84,23 @@ def verified(games: list, facts: dict) -> str:
             bits.append(f"{t['team']} {t['record']} (conf {t['conf_record']}), SP+ #{t['sp_rank']} (off #{t['sp_off_rank']}, "
                         f"def #{t['sp_def_rank']}), ATS {t['cfbd_ats']} splits {t['ats_splits_computed']}, rest {t['days_rest']}d, "
                         f"next {t['next_week']}; last 4: {last}")
+        try:  # the advanced ranks Picky's cards quote (slate_cards/cfbd), so 'rushing EPA #21' is checkable
+            import cfbd
+            import slate_cards
+            idx, adv = cfbd.load_index(), slate_cards._advanced()
+            for side in ("away", "home"):
+                nm = g["teams"][side]["team"]
+                t, a = cfbd.resolve_team(nm, idx) or {}, adv.get(cfbd.norm(nm)) or {}
+                o, d = (t.get("adv") or {}).get("offense") or {}, (t.get("adv") or {}).get("defense") or {}
+                bits.append(f"{nm} ranks: off EPA #{o.get('ppa_rank')}, def EPA #{d.get('ppa_rank')}, off explosiveness "
+                            f"#{o.get('explosive_rank')}, def explosiveness allowed #{d.get('explosive_rank')}, def havoc "
+                            f"#{d.get('havoc_rank')}, rushing EPA #{(a.get('_rank') or {}).get('offense_rush')}, rushing EPA "
+                            f"allowed #{(a.get('_rank') or {}).get('defense_rush')}, run rate "
+                            f"{((a.get('offense') or {}).get('rushingPlays') or {}).get('rate', 0):.0%}, pts per scoring chance "
+                            f"{(a.get('offense') or {}).get('pointsPerOpportunity', 0):.1f} (allows "
+                            f"{(a.get('defense') or {}).get('pointsPerOpportunity', 0):.1f})")
+        except Exception:  # noqa: BLE001
+            pass
         if g.get("h2h_2025"):
             bits.append("2025 meeting: " + "; ".join(f"{h['score']} (home line {h['home_spread']})" for h in g["h2h_2025"]))
         if g.get("weather"):
