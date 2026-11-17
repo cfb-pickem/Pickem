@@ -153,6 +153,17 @@ LINE_MOVE = re.compile(
 LINE_MOVE_BARE = re.compile(r"\b(move|moved|moving)\?\s*$", re.I)  # 'nw minny move?': only with a pool game named
 
 
+# spar r1 handoff: 'whats -2.5 mean' / 'explain like im 5' / 'so if nw wins by 2 i lose?' (non-answers, 'just pick a
+# winner'), and 'whats ur upset pick' named the favorite LSU -1.5
+SPREAD_EXPLAIN = re.compile(
+    r"\bwhat('?s| does| is|s)?\s+(a\s+)?[+-]\d{1,2}(\.5)?\s+mean\b|\bhow does (the |a )?(spread|line|ats|point spread) work\b"
+    r"|\bexplain (the |a )?(spread|line|ats|point spread|covering)\b|\bwhat('?s| is| does) (ats|against the spread|covering|cover) (mean)?\b"
+    r"|\bexplain like (i'?m|im) (5|five|dumb|stupid)\b|\bif (\w+\s){1,3}(wins?|loses?) by (\d{1,2})\b", re.I)
+UPSET_ASK = re.compile(r"\b(upset|dog|underdog|sleeper)s?\b[^?.!]{0,15}\b(pick|special|play|of the (week|wk)|alert)\b"
+                       r"|\b(gimme|give me|got|any|whats|what'?s|ur|your|real)\s+(an?\s+|ur\s+|your\s+)?(upset|dog|underdog|sleeper)\b"
+                       r"|\bwho'?s (the|ur|your) (upset|dog)\b|^\W*upsets?\W*$", re.I)
+
+
 # Tuesday morning (k2): 'is it locked yet', 'are the lines locked', 'what are the lines', 'whats the line on iowa'
 LINES_LOCKED_Q = re.compile(r"\b(is|are|r)\s+(it|the lines?|lines|the spreads?|spreads|the numbers?|they|things)\s+(locked|locked in|frozen|final|set)( yet| now| in)?\b"
                             r"|\bhas (it|the line|the lines) locked\b|\blocked yet\b", re.I)
@@ -205,6 +216,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if playoff_race.is_need_question(t):
         return "playoff", "playoff_race.is_need_question"
+    if SPREAD_EXPLAIN.search(t):
+        return "spread", "SPREAD_EXPLAIN"
+    if UPSET_ASK.search(t) and not re.search(r"\b(natty|national|title|cfp|playoff|heisman|bowl)\b", t, re.I):
+        return "upset", "UPSET_ASK"
     if LINES_LOCKED_Q.search(t):
         return "lines_locked", "LINES_LOCKED_Q"
     if LINES_NOW.search(t) and not re.search(r"\b(lock|locks|move|moved|moving|value|why)\b", t, re.I):
@@ -1166,6 +1181,64 @@ def lines_now_text(ctx: dict, q: str) -> str | None:
     return ("Our line: " if len(rows) == 1 else "This week's lines: ") + ", ".join(rows) + tail
 
 
+def spread_text(ctx: dict, q: str) -> str | None:
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker") and g.get("line") not in (None, 0, 0.0)]
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    named = chat.games_named(q, gl)
+    g = next((x for x in games if named and x["id"] == named[0]["id"]), None) or (games[0] if games else None)
+    if not g:
+        return None
+    ln = float(g["line"])
+    fav, dog = (g["home"], g["away"]) if ln < 0 else (g["away"], g["home"])
+    sp = abs(ln)
+    need = int(sp) + 1
+    m = re.search(r"\bif (?:(\w+(?:\s\w+){0,2})\s)?(wins?|loses?) by (\d{1,2})\b", q or "", re.I)
+    if m and named:
+        by = int(m.group(3))
+        who = f" {chat._match_key(m.group(1) or q)} "
+        for short, full in chat._TEAM_SHORT.items():
+            who = who.replace(f" {short} ", f" {full} ")
+        side = _named_side(who, g)
+        won = m.group(2).lower().startswith("win")
+        margin_fav = (by if won else -by) * (1 if side == fav else -1)
+        cov = fav if margin_fav > sp else dog
+        return (f"{fav} -{chat._num(sp)} needs to win by {need}+. If {side} {'wins' if won else 'loses'} by {by}, "
+                f"{cov} covers.")
+    return (f"Minus is the favorite, plus is the dog. Take {fav} -{chat._num(sp)} and they have to win by {need} or more. "
+            f"Take {dog} +{chat._num(sp)} and they cover by winning or losing by {need - 1} or less. Every line's a "
+            "half point, so no ties.")
+
+
+def upset_text(ctx: dict, q: str) -> str | None:
+    """An underdog, never a favorite: the dog the numbers like best (SP+ projects it to win outright, else the dog
+    with the smallest projected loss), from the cards."""
+    import game_cards
+    best = None
+    for g in ctx.get("games_this_week") or []:
+        if g.get("tiebreaker") or g.get("line") in (None, 0, 0.0) or g.get("winner"):
+            continue
+        c = game_cards.load_card(ctx.get("current_week"), g["id"])
+        if not c:
+            continue
+        ln = float(c["league_line"]["home"])
+        dog = g["away"] if ln < 0 else g["home"]
+        for r in (c.get("reasons") or []) + (c.get("against") or []):
+            m = re.match(r"SP\+(?!\w)[^:]*: projects (.+?) by ([\d.]+)", r)
+            if m:
+                proj = float(m.group(2)) * (1 if chat.same_team(m.group(1), dog) else -1)  # + = dog wins
+                if best is None or proj > best[0]:
+                    best = (proj, dog, ln, g)
+                break
+    if not best:
+        return None
+    proj, dog, ln, g = best
+    lab = chat._side_label(dog, g["home"], ln)
+    fav = g["home"] if dog == g["away"] else g["away"]
+    if proj > 0:
+        return f"{lab}. SP+ actually has {dog} winning by {_by(proj)}, so that's my upset: {fav} goes down outright."
+    return f"{lab}, the live dog. SP+ has {fav} by just {_by(-proj)}; that's as close to an upset as this slate gets."
+
+
 def my_picks_text(ctx: dict, q: str) -> str | None:
     """The sender's own week picks. In a DM ctx carries them (the member's own session); in the group they're
     hidden from the context, so the answer says where to look instead of guessing."""
@@ -1330,7 +1403,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
               "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
-              "lines_now": lines_now_text}.get(kind)
+              "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

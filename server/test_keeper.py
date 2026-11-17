@@ -339,6 +339,26 @@ def test_next_question_becomes_the_card_call_in_a_pick_thread():
         assert pb.undodge(st, "Iowa covers.", prior_q="iowa?") == "Iowa covers."
 
 
+def test_spread_explainer_and_upset():
+    import game_cards
+    ctx = _wk12_picks()
+    C = router.classify
+    for q in ("whats -2.5 mean", "explain like im 5", "so if nw wins by 2 i lose?", "how does the spread work"):
+        assert C(q).label() == "fact:spread", q
+    for q in ("gimme an upset", "upset special this wk", "whats ur upset pick then"):
+        assert C(q).label() == "fact:upset", q
+    assert C("who wins the natty upset alert").label() != "fact:upset"
+    r = router.fact_answer("spread", ctx, "so if nw wins by 2 i lose?")
+    assert r == "Northwestern -2.5 needs to win by 3+. If Northwestern wins by 2, Minnesota covers.", r
+    r = router.fact_answer("spread", ctx, "what if iowa wins by 9")
+    assert r == "Iowa -8.5 needs to win by 9+. If Iowa wins by 9, Iowa covers.", r
+    cards = {11: {"league_line": {"home": 2.5}, "reasons": ["SP+ (ratings + 2.5 home field): projects Northwestern by 9.7, so x"]},
+             12: {"league_line": {"home": 8.5}, "reasons": ["SP+ (ratings + 2.5 home field): projects Iowa by 8, so Illinois +8.5 covers by 0.5"]}}
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: cards.get(gid)):
+        r = router.fact_answer("upset", ctx, "gimme an upset")
+    assert r.startswith("Illinois +8.5, the live dog. SP+ has Iowa by just 8"), r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
