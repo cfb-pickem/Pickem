@@ -239,7 +239,8 @@ def league_vs_market(g: dict, league_home: float, espn_market: dict | None) -> l
         m = (_line(g) or {}).get("spread")
     L = float(league_home)
     lfav, lsp = (home, L) if L < 0 else (away, -L)
-    out = [f"  LEAGUE LINE (pool game; graded against this, locks Tue 11 AM CT): {_fmt_spread(lfav, lsp)}"]
+    out = [f"  LEAGUE LINE (pool game; graded against this, locks Tue 11 AM CT; before then say 'value if it holds "
+           f"through the lock'): {_fmt_spread(lfav, lsp)}"]
     if m is None or float(m) == L:
         out[0] += " = the market right now (it can still move until the lock)."
         return out

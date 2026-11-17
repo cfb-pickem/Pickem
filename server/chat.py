@@ -6348,11 +6348,19 @@ def value_claim_check(ctx: dict):
     if locked and gaps < 2:
         return None
 
+    pool_teams = [t for g in ctx["games_this_week"] for t in (g.get("away"), g.get("home")) if t]
+
     def ok(sent: str) -> bool:
         if _ONLY_VALUE.search(sent):
             return False
+        if not any(same_team_in(sent, t) for t in pool_teams):
+            return True  # a non-pool game (GAME CARD) has no league line to lock: the rail is about pool games
         return locked or not _VALUE_WORD.search(sent) or bool(_VALUE_IF.search(sent))
     return ok
+
+
+def same_team_in(sent: str, team: str) -> bool:
+    return bool(re.search(rf"(?<!\w){re.escape(team)}(?!\w)", sent or "", re.I))
 
 
 _MY_PICK = re.compile(r"\b(i'?m (taking|going with|sticking with|riding|rolling with|backing|on|staying with|staying the course with|with)|"
