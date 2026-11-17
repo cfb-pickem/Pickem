@@ -81,6 +81,14 @@ def test_full_brain_for_the_rest():
         assert router.classify(q).lane == "full", (q, router.classify(q))
 
 
+def test_whos_winning_a_game_is_not_standings():
+    # spar r1 2026-11-16: 'nvm whos winning lsu tenn' got the standings leader
+    for q in ("nvm whos winning lsu tenn", "whos winning the lsu game", "who's winning iowa illinois"):
+        assert router.classify(q).lane == "full", (q, router.classify(q))
+    for q in ("whos winning", "who is winning the pool", "who's winning this thing", "whos winning in the league"):
+        assert lane(q) == "fact:standings", (q, router.classify(q))
+
+
 def test_brief_fallback():
     r = router.classify("ugh whatever man")
     assert r.lane == "full", r

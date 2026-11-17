@@ -121,6 +121,10 @@ _NOT_A_NAME = re.compile(r"^(i|we|me|my|you|u|ya|he|she|they|it|that|this|everyo
 STANDINGS_EXTRA = re.compile(r"\bwho('?s| is)? (even|actually|really|currently|still) (winning|leading|in first)\b"
                              rf"|\bwhere (does|is) ({_T}) (rank|stand|sit)\b"
                              r"|\bwho('?s| is) winning (this|the) (thing|league|pool)\b", re.I)
+# 'whos winning lsu tenn' / 'who's winning the Iowa game' is about a GAME, not the standings (spar r1 2026-11-16:
+# it got 'Chuck P is sitting at the top with 30 points'). Bare 'who's winning' / '... the pool' stays standings.
+GAME_WINNING = re.compile(r"\bwho('?s| is)? winning\s+(?!(the |this )?(pool|league|thing|whole thing|it all)\b|in\b|overall\b"
+                          r"|right now\b|rn\b|so far\b|now\b|at\b|this week\b)[a-z]", re.I)
 _BOTWORD = re.compile(r"\b(bot|robot|ai|toaster|chat ?gpt|computer)\b", re.I)
 # a real question mark plus a question word: a mixed text with a question we don't have a rule for
 _REAL_Q = re.compile(r"\b(who|what|when|where|which|how|why|should|can|is|are|does|do|did|will)\b[^?]*\?", re.I)
@@ -164,7 +168,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "record", "RECORD_Q"
     if RESULTS_Q.search(t) and not re.search(r"\b(season|on the year|all year)\b", t, re.I):
         return "results", "RESULTS_Q"
-    if (chat._STANDINGS_Q.search(t) or STANDINGS_EXTRA.search(t)) and not re.search(r"\bthis week\b|\bweek \d+", t, re.I):
+    if (chat._STANDINGS_Q.search(t) or STANDINGS_EXTRA.search(t)) and not re.search(r"\bthis week\b|\bweek \d+", t, re.I) \
+            and not GAME_WINNING.search(t):
         return "standings", "_STANDINGS_Q"
     return None
 
