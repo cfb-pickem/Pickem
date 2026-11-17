@@ -255,7 +255,7 @@ def test_watcher_drains_only_to_groups():
         ITEM = {"id": "a1", "chat": "any;+;league", "texts": ["one", "two"], "kind": "recap"}
         watcher.drain_outbox(db, "s", rate, [{"guid": "g"}])
         assert sent == [("any;+;league", "one"), ("any;+;league", "two")]
-        assert acks[-1] == {"id": "a1", "sent": 2, "ok": True, "error": ""} and polls[0] == {"groups": [{"guid": "g"}]}
+        assert acks[-1] == {"id": "a1", "sent": 2, "ok": True, "error": ""} and polls[0] == {"groups": [{"guid": "g"}], "dm_ok": True}
         assert len(rate.sent) == 2  # proactive sends count against the shared limiter
         sent.clear()
         ITEM = {"id": "a2", "chat": "any;-;+12195550100", "texts": ["dm?"], "kind": "recap"}

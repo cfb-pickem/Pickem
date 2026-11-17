@@ -306,9 +306,35 @@ def _post(url: str, payload: dict, secret: str, timeout: float = 10) -> dict:
         return json.loads(r.read().decode()) or {}
 
 
+SEND_DM_SCRIPT = [
+    "on run argv",
+    'tell application "Messages"',
+    "set svc to 1st account whose service type = iMessage",
+    "send (item 1 of argv) to participant (item 2 of argv) of svc",
+    "end tell",
+    "end run",
+]
+
+
+def send_dm(handle: str, text: str) -> bool:
+    """A 1-on-1 text (straggler nudges): the existing DM chat if Picky has one with that
+    handle, else iMessage straight to the handle. Text and handle go in argv only."""
+    if not re.fullmatch(r"\+\d{8,15}|[^@\s]+@[^@\s]+\.[a-z]{2,}", handle or "", re.I):
+        return False
+    if send(f"any;-;{handle}", text):
+        return True
+    args = ["osascript"] + sum((["-e", ln] for ln in SEND_DM_SCRIPT), []) + [text, handle]
+    r = subprocess.run(args, capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        log.warning("dm send failed to=...%s rc=%s err=%s", handle[-4:], r.returncode, r.stderr.strip()[:200])
+    return r.returncode == 0
+
+
 def drain_outbox(db: sqlite3.Connection, secret: str, rate: RateLimit, groups: list[dict] | None) -> None:
-    """One outbox check: report groups (if given), send at most one post."""
+    """One outbox check: report groups (if given), send at most one post (a group post,
+    or a DM when the item has "to": the sidecar only hands those to a watcher that says dm_ok)."""
     payload = {"groups": groups} if groups is not None else {}
+    payload["dm_ok"] = True
     try:
         item = _post(OUTBOX_URL, payload, secret).get("item")
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
@@ -317,8 +343,9 @@ def drain_outbox(db: sqlite3.Connection, secret: str, rate: RateLimit, groups: l
     if not item:
         return
     chat, texts = item.get("chat") or "", [t for t in item.get("texts") or [] if t]
+    to = item.get("to") or ""
     sent, ok, err = 0, True, ""
-    if not is_group(db, chat):  # proactive posts only ever go to a group chat
+    if not to and not is_group(db, chat):  # group posts only ever go to a group chat
         ok, err = False, "not a group chat in Picky's Messages"
     for t in texts if ok else []:
         wait = rate.wait_needed()
@@ -327,7 +354,7 @@ def drain_outbox(db: sqlite3.Connection, secret: str, rate: RateLimit, groups: l
             break
         if wait:
             time.sleep(wait)
-        if not send(chat, t):
+        if not (send_dm(to, t) if to else send(chat, t)):
             ok, err = False, "send failed"
             break
         rate.mark()

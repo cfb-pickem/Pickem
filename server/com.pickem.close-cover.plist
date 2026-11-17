@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Close-cover alerts for the league group (close_cover.py): plain code, no model.
+  Reads the live_games poller's cache every 60 s while a pool game is live or about
+  to kick off (5 min otherwise); once a pool game is live in the 4th / OT it pulls
+  that game's ESPN summary every 15 s and posts (max 2 per game) through
+  group_outbox when the cover is within one score AND the flip is still live.
+  Kill switch: touch /Users/Agent/cfb-pickem-private/PICKY_COVER_ALERTS_OFF.
+  Install: cp to ~/Library/LaunchAgents and launchctl bootstrap gui/$UID it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.close-cover</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/close_cover.py</string>
+        <string>run</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>Nice</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/close-cover.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/close-cover.stdout.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

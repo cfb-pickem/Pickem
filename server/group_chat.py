@@ -1199,7 +1199,7 @@ async def outbox(req: Request):
         body = {}
     if isinstance(body, dict) and isinstance(body.get("groups"), list):
         group_outbox.update_group(body["groups"])
-    return {"item": group_outbox.next_item()}
+    return {"item": group_outbox.next_item(dm_ok=isinstance(body, dict) and body.get("dm_ok") is True)}
 
 
 @app.post("/outbox/ack")

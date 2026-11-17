@@ -32,6 +32,8 @@ is due (Central time):
             evening before. Names whoever the site's submission_status() says
             hasn't submitted (config name_stragglers, default ON per Charlie);
             never anyone's picks. Skipped when everyone's in.
+  nudges    straggler_nudges.py: DMs (not the group) ~2 h and ~30 min before the
+            lock to members still showing "Not yet", after the 7:00 group reminder.
   pings     During game windows: when a pool game goes final (ESPN, keyless),
             ONE short line on who it helped or hurt. One per game, games that
             end close together are batched, quiet hours 23:30-08:00.
@@ -79,6 +81,7 @@ sys.path.insert(0, str(HERE))
 import group_outbox as ob  # noqa: E402
 import playoff_race as pr  # noqa: E402
 import rare_bits  # noqa: E402
+import straggler_nudges  # noqa: E402
 import week_breakdown  # noqa: E402
 
 log = logging.getLogger("picky.posts")
@@ -972,6 +975,13 @@ def tick(dry_run: bool | None = None, now: dt.datetime | None = None, echo=print
             if slot and not ob.done(key):
                 send("remind", make_reminder(lg, ow), key,
                      expires_s=int(max(300, (lock - now).total_seconds() - 300)))
+        # straggler DMs ~2 h and ~30 min before lock, to whoever still hasn't picked (straggler_nudges.py)
+        try:
+            res = straggler_nudges.tick(lg, ow, now, dry_run=dry_run, echo=echo)
+            if res:
+                log.info("nudges week %s -> %s", ow, res)
+        except Exception as e:  # noqa: BLE001  never let it block the rest of the tick
+            log.warning("nudges failed: %r", e)
 
     # Final-score pings are OFF (Charlie, 2026-11-17: "No need to send final scores to the group").
     # Turn back on by creating cfb-pickem-private/PICKY_FINAL_PINGS.

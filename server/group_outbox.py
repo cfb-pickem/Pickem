@@ -315,10 +315,48 @@ def post(kind: str, texts: list[str], key: str, expires_s: int = 6 * 3600, quiet
     return "queued"
 
 
-def next_item(now: float | None = None) -> dict | None:
+def post_dm(team: str, handle: str, texts: list[str], key: str, expires_s: int = 3600,
+            dry_run: bool | None = None, now: dt.datetime | None = None, echo=print,
+            allow_unmapped: bool = False) -> str:
+    """Queue a 1-on-1 text (straggler nudges) to one mapped league member. Same switches as
+    post() (pause, once-only key, dry run) minus the group cap; logged as dm-* events so
+    DMs never count toward the group's daily cap or its recent-posts list. Only handles in
+    the private member map (allow_unmapped is for straggler_nudges' self-test to Picky's
+    own Apple ID). Returns paused | dup | dry-run | queued | unmapped | empty."""
+    now = now or dt.datetime.now(CT)
+    cfg = config()
+    texts = [t.strip() for t in texts if t and t.strip()]
+    h = norm_handle(handle)
+    base = {"kind": "dm", "key": key, "team": team, "to": "..." + h[-4:], "texts": texts}
+    if not texts or not h:
+        return "empty"
+    if not allow_unmapped and member_handles().get(h) != team:
+        log_event("dm-skipped", why="unmapped", **base)
+        return "unmapped"
+    dry = cfg["dry_run"] if dry_run is None else dry_run
+    if paused() and not dry:
+        log_event("dm-paused", **base)
+        return "paused"
+    if done(key):
+        return "dup"
+    if dry:
+        log_event("dm-dry-run", **base)
+        echo(f"[dry-run] dm {team} {key}:\n" + "\n".join(f"  > {t}" for t in texts))
+        mark(key, "dry-run")
+        return "dry-run"
+    item = {"id": uuid.uuid4().hex[:12], "kind": "dm", "key": key, "texts": texts, "to": h, "team": team,
+            "created": now.timestamp(), "expires": now.timestamp() + expires_s}
+    _write_private(OUTBOX / f"{int(now.timestamp())}-{item['id']}.json", json.dumps(item))
+    mark(key, "queued")
+    log_event("dm-queued", id=item["id"], **base)
+    return "queued"
+
+
+def next_item(now: float | None = None, dm_ok: bool = False) -> dict | None:
     """For the sidecar: the oldest live item, or None when paused, dry run or
     no group. Expired items are dropped (a reminder after lock is worse than
-    none)."""
+    none). DM items ({"to": handle}) only go to a watcher that says it can send
+    them (dm_ok); an older watcher would only ever send to a group."""
     cfg = config()
     if paused() or cfg["dry_run"] or not cfg.get("group_guid") or not OUTBOX.exists():
         return None
@@ -332,10 +370,14 @@ def next_item(now: float | None = None) -> dict | None:
             log_event("expired", id=item.get("id"), kind=item.get("kind"), key=item.get("key"))
             p.unlink(missing_ok=True)
             continue
+        if item.get("to") and not dm_ok:
+            continue
         if item.get("claimed_at") and now - item["claimed_at"] < 600:
             continue  # the watcher has it; give it 10 min to ack
         item["claimed_at"] = now
         _write_private(p, json.dumps(item))
+        if item.get("to"):
+            return {"id": item["id"], "texts": item["texts"], "to": item["to"], "kind": item["kind"]}
         return {"id": item["id"], "texts": item["texts"], "chat": cfg["group_guid"], "kind": item["kind"]}
     return None
 
@@ -344,7 +386,8 @@ def ack(item_id: str, sent: int, ok: bool, error: str = "") -> bool:
     for p in OUTBOX.glob(f"*-{re.sub(r'[^0-9a-f]', '', item_id)}.json"):
         item = _read_json(p, {})
         p.unlink(missing_ok=True)
-        log_event("delivered" if ok else "delivery-failed", id=item_id, kind=item.get("kind"),
+        log_event(("dm-" if item.get("to") else "") + ("delivered" if ok else "delivery-failed"), id=item_id,
+                  kind=item.get("kind"),
                   key=item.get("key"), sent=sent, of=len(item.get("texts") or []), error=error[:200])
         return True
     return False

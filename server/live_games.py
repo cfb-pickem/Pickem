@@ -195,6 +195,8 @@ def parse_scoreboard(d: dict) -> dict[str, dict]:
             g["possession"] = _side_of(g, sit.get("possession"))
             g["down_distance"] = sit.get("downDistanceText") or sit.get("shortDownDistanceText")
             g["red_zone"] = bool(sit.get("isRedZone"))
+            if _int(sit.get("awayTimeouts")) is not None and _int(sit.get("homeTimeouts")) is not None:
+                g["timeouts"] = {"away": _int(sit.get("awayTimeouts")), "home": _int(sit.get("homeTimeouts"))}
             lp = sit.get("lastPlay") or {}
             if lp.get("text"):
                 g["last_play"] = _clean_play(lp["text"])
