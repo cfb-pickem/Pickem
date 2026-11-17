@@ -89,6 +89,23 @@ def test_whos_winning_a_game_is_not_standings():
         assert lane(q) == "fact:standings", (q, router.classify(q))
 
 
+def test_drop_repeat_jabs_within_a_conversation():
+    # spar r1 2026-11-16: Bub got '0-4' four turns running, Ackbar 'chalk' three times
+    past = ["Andrew, your 0-4 last week proves you need a crystal ball, not just picks."]
+    r = router.drop_repeat_jabs("Yeah, Northwestern has to win by 3 to cover -2.5. Honestly, after your 0-4 week, "
+                                "I'm surprised you're still trying.", past)
+    assert r == "Yeah, Northwestern has to win by 3 to cover -2.5.", r
+    one = "That 0-4 week was dumber than your taste in teams."
+    assert router.drop_repeat_jabs(one, past) == one  # nothing left otherwise: keep it
+    past2 = ["I'm taking LSU -1.5. You lack the backbone to pick anything but chalk."]
+    assert router.drop_repeat_jabs("I like Texas Tech -3.5, the offense is #6. You ride the chalk like a scared kid.",
+                                   past2) == "I like Texas Tech -3.5, the offense is #6."
+    fact = router.Route("fact", "standings")
+    st = "Chuck P is 30-18 in first. Ackbar is 28-20, two back."
+    assert router.drop_repeat_jabs(st, ["Chuck P is 30-18, Ackbar 28-20."], fact) == st  # record asks repeat records
+    assert router.drop_repeat_jabs("Iowa -8.5 at Illinois.", []) == "Iowa -8.5 at Illinois."
+
+
 def test_brief_fallback():
     r = router.classify("ugh whatever man")
     assert r.lane == "full", r

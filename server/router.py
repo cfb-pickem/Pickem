@@ -388,6 +388,41 @@ def sentences(text: str) -> list[str]:
     return [p.strip() for p in _SENT_SPLIT.split((text or "").strip()) if p.strip()]
 
 
+# a jab's hook: a W-L, 'N misses', or a stock angle word. Spar r1 2026-11-16: Bub got '0-4' four turns running,
+# Ackbar 'chalk'/'backbone' three times, Liam '21 misses' twice, on pick and rules answers the banter ledger
+# never screens.
+_JAB_WL = re.compile(r"(?<![\d.-])\d{1,2}-\d{1,2}(?![\d.])")
+_JAB_HOOK = re.compile(r"\b\d+ (?:misses|losses|whiffs)\b|\bchalk\w*|\bbackbone\b|\bcoward\w*|\bspineless\b|"
+                       r"\bscared\b|\bgenius\b|\bfootball iq\b|\bbasement\b|\bbottom.?tier\b|\bcrystal ball\b|"
+                       r"\bkeep up\b|\bterrified\b", re.I)
+_RECORD_KINDS = ("record", "results", "standings", "playoff", "cover", "score")
+
+
+def _jab_hooks(text: str, records: bool = True) -> set[str]:
+    h = {m.group(0).lower() for m in _JAB_HOOK.finditer(text or "")}
+    h = {re.sub(r"^chalk\w*", "chalk", re.sub(r"^coward\w*", "coward", x)) for x in h}
+    if records:
+        h |= set(_JAB_WL.findall(text or ""))
+    return h
+
+
+def drop_repeat_jabs(reply: str, past: list[str], route=None) -> str:
+    """Cut a sentence that reuses a jab hook from Picky's earlier replies in this conversation, as long as
+    something is left (the answer stays). W-L numbers count only when the text isn't a record question."""
+    if not reply or not past:
+        return reply
+    records = not (route is not None and getattr(route, "lane", "") == "fact"
+                   and getattr(route, "kind", "") in _RECORD_KINDS)
+    used = set().union(*(_jab_hooks(p, records) for p in past))
+    if not used:
+        return reply
+    sents = sentences(reply)
+    keep = [x for x in sents if not (_jab_hooks(x, records) & used)]
+    if not keep or len(keep) == len(sents):
+        return reply
+    return " ".join(keep)
+
+
 def echo_runs(text: str, q: str, n: int = 5) -> bool:
     """A 5+ word run copied from the sender's text."""
     qw, tw = _norm(q).split(), _norm(text).split()
