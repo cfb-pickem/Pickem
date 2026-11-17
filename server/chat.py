@@ -3568,6 +3568,8 @@ def guard_note(ctx: dict, question: str) -> str:
                        if who != me else "") + tail)
         return head + "roast their picks without naming any specific pick or number." + tail
     teams = [t for g in ctx.get("games_this_week") or [] for t in (g["away"], g["home"])]
+    if SLATE_CARDS and slate_cards.covers(q, ctx):
+        return ""  # a GAME CARD rides for it (slate_cards.py): real football data, answer it; no NOT-IN-POOL / OFF-TOPIC rail
     idx = _cfbd_index()
     others = cfbd.other_teams_named(q, teams, idx) if idx else []
     if _BET_WORDS.search(q):  # 'ND vs USC': too short for other_teams_named
@@ -3576,8 +3578,6 @@ def guard_note(ctx: dict, question: str) -> str:
         others = []  # 'Notre Dame is back' is the opinion rider's, not a pool question
     if _NEWS_ASK.search(q) or (_RANK_ASK.search(q) and wants_rankings(ctx, q)) or ctx.get("live_rider"):
         others = []  # news / rankings / a live game about any team: answered from the NEWS, CFB RANKINGS or LIVE GAME FEED block
-    if others and SLATE_CARDS and slate_cards.covers(q, ctx):
-        return ""  # a GAME CARD rides for it (slate_cards.py): real football data, answer it; no NOT-IN-POOL / OFF-TOPIC rail
     if others and not cfbd.STAT_ASK.search(q) and not re.search(r"\bats\b|against the spread|record", q, re.I):
         indies = indies_named(q)
         rest = [t for t in others if t not in INDEPENDENTS]
@@ -7382,7 +7382,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
                 extra=_named_checks([("record", record_check(ctx, qtext)), ("trait", trait_word_check(ctx, qtext)),
                                      ("grounded", grounded_check(ctx, corpus, qtext)), ("news", news_claim_check(corpus)),
                                      ("pick_claim", pick_claim_check(ctx, qtext)),
-                                     ("live", live_games.claim_check(ctx.get("live_rider_games"))),
+                                     ("live", live_games.claim_check(None if "GAME CARD" in sc  # pre-game card: not live
+                                                                     else ctx.get("live_rider_games"))),
                                      ("picky_claim", picky_claim_check(ctx)), ("you_claim", picky_claim_check(ctx, "you")),
                                      ("value", value_claim_check(ctx)), ("advice_jab", advice_jab_check(ctx, qtext)),
                                      ("fav_claim", fav_claim_check(ctx)), ("card_side", card_side_check(ctx)),
