@@ -482,7 +482,7 @@ def scenario_text(ctx: dict, q: str) -> str | None:
 
 
 # 'better than wedge?', 'me or wedge whos better', 'poncho and wedge both 25-23 whos better' (k1/k2/k3): records side by side
-COMPARE_ASK = re.compile(r"\b(better|worse|ahead|behind) than [a-z]+\b|\bwho had the better\b|\bme or [a-z]+\b|\bwho'?s (better|worse)\b"
+COMPARE_ASK = re.compile(r"\b(better|worse|ahead|behind) than [a-z]+\b|\bcan i (catch|pass) [a-z]+\b|\bwho had the better\b|\bme or [a-z]+\b|\bwho'?s (better|worse)\b"
                          r"|\bwhos (better|worse|the bigger fraud|more inconsistent)\b|\b[a-z]+ (vs|or) me\b", re.I)
 
 
@@ -610,6 +610,7 @@ def rules2_text(ctx: dict, q: str) -> str | None:
 
 # keeper sparring k1 (2026-11-16): 'top 4 right now go', 'how many weeks left', 'who went 0-4 last week besides me'
 TOP4 = re.compile(r"\btop (4|four)\b", re.I)
+BACK_OF_CUT = re.compile(r"\bhow (many|far) (back|behind|off|out)( of| from)? (4th|fourth|the cut|a playoff spot|the playoffs?|top (4|four))\b", re.I)
 TOP4_LEAGUE = re.compile(r"\b(who'?s|whos|who are|who is|the)\s+top (4|four)\b|\btop (4|four)\b[^?.!]{0,12}\b(right now|rn|currently|"
                          r"as of now|today|go|now)\b|^\W*top (4|four)\W*$", re.I)
 _NATIONAL = re.compile(r"\b(cfp|ap|poll|rankings?|ranked|committee|nationally|country|playoff committee|sec|big ten|big 12|acc)\b",
@@ -698,8 +699,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "payout", "PAYOUT_ASK"
     if SELF_REC_CLAIM.search(t) and re.search(r"\b(right|tied|correct|yeah|yea|ya)\b|\?", t, re.I):
         return "record", "SELF_REC_CLAIM"
-    if (PLAYOFF_TODAY.search(t) or (TOP4.search(t) and TOP4_LEAGUE.search(t) and not _NATIONAL.search(t))) \
-            and not CFP_WORDS.search(t):  # 'College Football Playoff if it ended today' is the CFP (genius exam)
+    if ((PLAYOFF_TODAY.search(t) or (TOP4.search(t) and TOP4_LEAGUE.search(t) and not _NATIONAL.search(t)))
+            and not CFP_WORDS.search(t)) or BACK_OF_CUT.search(t):  # 'College Football Playoff if it ended today' = CFP
         return "playoff_today", "PLAYOFF_TODAY"
     if WEEKS_LEFT.search(t) and not re.search(r"\b(back|doable|chance|catch|need|make it|alive|dead|shot)\b", t, re.I):
         return "weeks_left", "WEEKS_LEFT"

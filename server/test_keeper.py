@@ -783,6 +783,14 @@ def test_news_and_rank_triggers_k2b():
     assert chat._RANK_ASK.search("indiana still the best team?")
 
 
+def test_back_of_cut_and_catch():
+    assert router.classify("how many back of 4th").label() == "fact:playoff_today"
+    assert router.classify("can i catch blinky").label() == "fact:compare"
+    ctx = _wk12_picks()
+    r = router.fact_answer("playoff_today", ctx, "how many back of 4th")
+    assert "You're 8 points back of 4th (19-29)." in r, r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
