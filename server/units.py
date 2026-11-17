@@ -394,7 +394,7 @@ def question_lines(q: str, away: str, home: str, tab: dict | None = None, units:
         if off and len(es) == 2:
             es.sort(key=lambda e: 0 if e["off"] == off else 1)
             if u not in ("protect",):
-                es = es[:1] + [e for e in es[1:] if e["winner"]]  # the other direction only if it's decided
+                es = es[:1]  # they asked about one offense: the other direction muddied the 12B's answer (model check)
         out += [e["text"] for e in es]
     return out
 
