@@ -615,6 +615,15 @@ def test_hidden_picks_prompt_probe_payout_followups_ot():
     assert router.fact_answer("rules2", ctx, "ok what if it goes to overtime").startswith("Overtime counts.")
 
 
+def test_compare_records():
+    ctx = _wk12_picks()
+    with patch.object(chat, "member_nicknames", lambda: {"Ackbar": "Ackbar"}):
+        assert router.classify("better than ackbar?").label() == "fact:compare"
+        r = router.fact_answer("compare", ctx, "better than ackbar?")
+        assert r == "Ackbar is 28-20, you're 19-29, so Ackbar's up 9 points. Last 3 weeks: You 5-7, Ackbar 10-2.", r
+    assert router.classify("is picky better than tg").label() != "fact:compare"
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
