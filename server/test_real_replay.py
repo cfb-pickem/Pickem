@@ -65,6 +65,9 @@ fx[1]["expect"] = {"lanes": ["banter"], "expected_fail": "q-x"}
 again = rr.build_fixtures("2026-11-17", "11:30", rows=rows, old=fx)
 check(again[1]["expect"].get("expected_fail") == "q-x", "build: hand labels survive a rebuild")
 
+check(rr.ask_text("Hey Picky I have a question") == "@Picky Hey Picky I have a question"
+      and rr.ask_text("@picky slots?") == "@picky slots?", "ask: a bare 'Picky' gets the literal @Picky the watcher adds")
+
 # ---- grader --------------------------------------------------------------------------------------------
 def res(fx_, reply, lane):
     return {n: (ok, d) for n, ok, d in rr.grade(fx_, reply, lane, T)}

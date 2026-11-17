@@ -62,7 +62,7 @@ LOCK = "/tmp/picky-exam.lock"
 LOCK_ENV = "PICKY_REPLAY_LOCKED"
 GROUP_MAX_CHARS = 480  # group_chat.MAX_CHARS (not imported: group_chat pulls in the whole brain)
 DM_MAX_CHARS = 1500
-TRIGGER = re.compile(r"@?\bpicky\b", re.I)
+TRIGGER = re.compile(r"@picky\b", re.I)  # the sidecar wants a literal @Picky (the watcher adds it for mentions)
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -297,6 +297,11 @@ def drop_worktree(wt: Path) -> None:
     subprocess.run(["git", "-C", str(REPO), "worktree", "remove", "--force", str(wt)], capture_output=True)
 
 
+def ask_text(q: str) -> str:
+    """What the watcher hands the sidecar for a group text: a bare 'Picky ...' was an iMessage mention."""
+    return q if TRIGGER.search(q) else "@Picky " + q
+
+
 def ask_all(fixtures: list[dict], port: int, tag: str) -> dict[str, dict]:
     """POST each fixture's ask to the side sidecar on `port`: {id: {reply, lane, secs}}."""
     import httpx
@@ -307,7 +312,7 @@ def ask_all(fixtures: list[dict], port: int, tag: str) -> dict[str, dict]:
     out = {}
     with httpx.Client(timeout=httpx.Timeout(connect=10, read=600, write=10, pool=10)) as cl:
         for fx in fixtures:
-            q = fx["q"] if TRIGGER.search(fx["q"]) else "@Picky " + fx["q"]
+            q = ask_text(fx["q"])
             t0 = time.time()
             try:
                 j = cl.post(f"http://127.0.0.1:{port}/group", headers=hdr,
