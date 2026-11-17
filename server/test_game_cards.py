@@ -20,6 +20,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+os.environ.pop("PICKY_NO_ANTHROPIC", None)  # Opus is faked here; the kill-switch tests set it themselves
 os.environ["PICKY_CFBD_DB"] = "/nonexistent/cfbd.sqlite"  # pick_brief.raw() -> None: synthetic data only
 TMP = Path(tempfile.mkdtemp(prefix="picky-cards-"))
 os.environ["PICKY_GAME_CARD_DIR"] = str(TMP)

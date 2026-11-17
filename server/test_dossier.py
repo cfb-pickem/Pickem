@@ -16,6 +16,8 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, ".")
+import os  # noqa: E402
+os.environ.pop("PICKY_NO_ANTHROPIC", None)  # research is faked here; the tests set the switch themselves
 import httpx  # noqa: E402
 
 import dossier  # noqa: E402
@@ -168,7 +170,6 @@ check("opus: Friday-night new game gets it", dossier.opus_due(None, "new", at("2
 check("opus: not again while this week's layer is fresh",
       not dossier.opus_due({"opus": {"generated_at": fri.isoformat()}}, "sat", at("2026-11-21T07:10:00")))
 check("opus: Saturday retry when Friday failed", dossier.opus_due({}, "sat", at("2026-11-21T07:10:00")))
-import os  # noqa: E402
 os.environ["PICKY_NO_ANTHROPIC"] = "1"
 check("opus: never with the kill switch on", not dossier.opus_due(None, "fri", fri))
 del os.environ["PICKY_NO_ANTHROPIC"]
