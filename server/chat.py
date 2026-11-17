@@ -3672,7 +3672,7 @@ def leader_note(ctx: dict, question: str) -> str:
 # the cache only, on news-type questions, into the latest user turn. His X
 # posts are not available (no free, ToS-clean source), so Picky says so.
 _NEWS_ASK = re.compile(
-    r"\b(news|headlines?|latest|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
+    r"\b(news|headlines?|latest|lat(?:es|st|set)|nees|neews|anything new|what'?s the word|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
     r"hot seat|buyout|transfer\w*|portal|decommit\w*|what('?s| is) (going on|happening|new)|going on in|happening in|dellenger|"
     r"tweet\w*|twitter|recruit\w*|suspend\w*|any updates?|breaking|questionable|doubtful|injury report|"
     r"availability|game[- ]time decision|(is|are|will)\b[^?.!]{0,30}\b(qb|quarterback|starter)s?\b[^?.!]{0,20}"
@@ -3978,7 +3978,8 @@ INSIDER_TOPICS = [  # (section heading starts with, question regex)
 ]
 _DELLENGER_ASK = re.compile(  # bare "ross" counts when it reads like a news ask; Charlie types "delinger"
     r"\bdel+[ei]nger\b|\bross\b.{0,30}\b(news|latest|saying|say|said|report\w*|hear\w*)\b|"
-    r"\b(news|latest|saying|say|said|report\w*|hear\w*)\b.{0,30}\bross\b", re.I)
+    r"\b(news|latest|saying|say|said|report\w*|hear\w*)\b.{0,30}\bross\b|"
+    r"\b(from|per|via) ross\b|\bross('?s)? (think\w*|take|thoughts|on the)\b|\bdoes ross think\b", re.I)
 _INSIDER_STOP = {"what", "whats", "the", "and", "about", "latest", "with", "this", "that", "does", "think", "picky",
                  "college", "football", "news", "anything", "going", "who", "whos", "any", "for", "are", "you", "how",
                  "dellenger", "ross", "say", "said", "saying", "hear", "heard", "tell", "more", "there"}

@@ -179,6 +179,17 @@ def test_general_and_typo_news_asks_get_top_stories():
     assert chat._DELLENGER_ASK.search("Whats the latest news from ross")
 
 
+def test_spar_news_and_ross_typos_trigger():
+    # spar r1 2026-11-16: 'whats the lates' got the standings ('Chuck P sitting atop the mountain')
+    for q in ("whats the lates", "whats the latst", "anything new", "whats the word on iowa qb"):
+        assert chat._NEWS_ASK.search(q), q
+    for q in ("whats good", "late game tonight?"):
+        assert not chat._NEWS_ASK.search(q), q
+    for q in ("what does ross think about the playoff", "ross on the sec", "anything from ross"):
+        assert chat._DELLENGER_ASK.search(q), q
+    assert not chat._DELLENGER_ASK.search("gross")
+
+
 # ---- citation density: 'per CBS Sports 30 min ago ... 2h ago per ClutchPoints ... 7h ago per The Athletic' ----
 
 CITED = ("Lane Kiffin is reliving a nightmare finish against Texas per CBS Sports 30 min ago. Georgia improved to "
