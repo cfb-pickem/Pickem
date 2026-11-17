@@ -786,14 +786,6 @@ BRUSH_OFFS = ["k.", "anyway.", "noted.", "sure thing.", "cool story.", "ok buddy
 CHARLIE_NO_LINES = ["Ha, nice try. Still a no, but I appreciate the effort.",
                     "Can't do that one, but you know I've got your back.",
                     "That's a no from me. Love the creativity though."]
-_MEAN_AT_YOU = re.compile(
-    r"\b(you'?re|you are|ur|u r)\s+(such\s+)?(an?\s+)?(little\s+|fucking\s+|total\s+)?(idiot|moron|loser|clown|bum|fraud|joke|"
-    r"trash|garbage|pathetic|clueless|bitch|pussy|coward|chump|hack|embarrassment|dumb|stupid|worthless|useless|soft)\b"
-    r"|\b(fuck you|screw you|shut up|stfu|eat shit|go to hell|piss off|suck it|cry about it|stay mad|cope harder)\b"
-    r"|\byour (picks?|record|season|week)\s+(is|are|was|were)\s+(a\s+)?(trash|garbage|pathetic|a joke|joke|embarrassing|"
-    r"terrible|awful|a crime scene|brutal)\b", re.I)
-
-
 def is_charlie(s: "Sender") -> bool:
     """Charlie is the one texting: his auth uid (web, or the team row a DM/group handle maps to through the
     private member map) or his team. Off when cfb-pickem-private/PICKY_CHARLIE_NICE_OFF exists."""
@@ -802,13 +794,15 @@ def is_charlie(s: "Sender") -> bool:
     return bool(s.user_id and s.user_id == chat.LEADER_USER_ID) or member_memory.is_charlie(s.team)
 
 
-def charlie_guard(reply: str) -> str:
-    """Last check on a reply to Charlie: a sentence that insults him is cut; nothing left = a warm line."""
-    if not reply or not _MEAN_AT_YOU.search(reply):
+def charlie_guard(reply: str, team: str | None = None, key: str | None = None) -> str:
+    """Last check on a reply to Charlie: a sentence that insults him (or fires a comeback) is cut; nothing left =
+    a fresh warm line."""
+    rx = picky_brain.MEAN_TO_CHARLIE
+    if not reply or not rx.search(reply):
         return reply
-    kept = " ".join(x for x in re.split(r"(?<=[.!?])\s+", reply.strip()) if not _MEAN_AT_YOU.search(x)).strip()
+    kept = " ".join(x for x in re.split(r"(?<=[.!?])\s+", reply.strip()) if not rx.search(x)).strip()
     log.info("charlie guard: cut a mean line from %r", reply[:120])
-    return kept or picky_brain.SAFE_LINES["charlie"]
+    return kept or picky_brain.charlie_line(team, key)
 
 
 def memory_check(reply: str, team: str | None, q: str, dm: bool) -> str:
@@ -1104,7 +1098,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group",
                                      force=route.lane == "fact")
                 reply = memory_check(reply, s.team, q, mode != "group")  # a quoted receipt matches its grade
-                reply = charlie_guard(reply) if charlie else reply
+                reply = charlie_guard(reply, s.team, key or chat_id) if charlie else reply
             rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
             log.info("lane: %s", route.label())
             await save_turn(key, q_hist, reply, who, lane=route.label())
@@ -1137,7 +1131,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = matchup_guard.fix(no_repeat_screen(fact_final(reply, q), q, s.team, key or chat_id, charlie=charlie))
             reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
             reply = memory_check(reply, s.team, q, mode != "group")
-            reply = charlie_guard(reply) if charlie else reply
+            reply = charlie_guard(reply, s.team, key or chat_id) if charlie else reply
         rare_bits.note_sent(reply)
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}

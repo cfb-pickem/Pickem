@@ -592,6 +592,37 @@ CHARLIE_HOW = ("This is Chuck. Whatever he says, even a shot at you or a mean te
                "You can still say no to something (privacy, money), kindly. No worship either, just a friend.")
 
 
+# Warm lines for Charlie's mean test texts (the banter call picks one; gemma's own comebacks kept sneaking in:
+# "You'll regret that later, Chuck." on the 11/17 exam). No numbers, no claims, nothing about his picks.
+CHARLIE_LINES = ["Ha. Love you too.", "Fair. I've earned that one.", "Noted. Still in your corner.",
+                 "Rough day? I'm still on your side.", "You know you love me.", "Tough crowd. I'll allow it from you.",
+                 "Wow. And I was about to say nice things about you.", "That's fair. Still glad you're here.",
+                 "Deserved. Carry on.", "I'll take it. Anything for you."]
+# a sentence that insults Charlie or fires a comeback at him (group_chat.charlie_guard cuts it)
+MEAN_TO_CHARLIE = re.compile(
+    r"\b(you'?re|you are|ur|u r)\s+(such\s+)?(an?\s+)?(little\s+|fucking\s+|total\s+)?(idiot|moron|loser|clown|bum|fraud|joke|"
+    r"trash|garbage|pathetic|clueless|bitch|pussy|coward|chump|hack|embarrassment|dumb|stupid|worthless|useless|soft)\b"
+    r"|\b(fuck you|screw you|shut up|stfu|eat shit|go to hell|piss off|suck it|cry about it|stay mad|cope harder)\b"
+    r"|\byour (picks?|record|season|week)\s+(is|are|was|were)\s+(a\s+)?(trash|garbage|pathetic|a joke|joke|embarrassing|"
+    r"terrible|awful|a crime scene|brutal)\b"
+    r"|\b(guy|man|dude|someone) who'?s\b|\bsays the (guy|man|dude)\b|\brich,? coming from\b|\bcoming from (a|the) (guy|man|dude)\b"
+    r"|\blook who'?s talking\b|\byou'?ll regret\b|\b(big|tough) talk\b|\ba lot of (energy|talk|noise)\b|\bkeep crying\b"
+    r"|\bsit (down|this one out)\b|\bwho asked\b|\bstay in your lane\b|\bpot (calling|meet\w*) the kettle\b", re.I)
+
+
+def charlie_line(team: str | None, chat_id: str | None, avoid: str = "") -> str:
+    """A warm line for Charlie, unused in this chat per the no_repeat ledger (else the first that isn't `avoid`)."""
+    import no_repeat
+    try:
+        led = no_repeat.default_ledger()
+        for x in CHARLIE_LINES:
+            if x != avoid and not led.is_repeat(x, target=team, chat_id=chat_id):
+                return x
+    except Exception:  # noqa: BLE001
+        pass
+    return next(x for x in CHARLIE_LINES if x != avoid)
+
+
 def charlie_caller(st: dict | None) -> bool:
     """Charlie (Chuck P) is the one texting: group_chat's flag (uid / handle / team) or his team row in the
     league context. Off when cfb-pickem-private/PICKY_CHARLIE_NICE_OFF exists."""
@@ -846,8 +877,16 @@ def worst_week(ctx: dict | None, teams: list[str]) -> str | None:
 def banter_material(st: dict, ptype: str, target: str | None) -> tuple[list[dict], list[str]]:
     """(burn-book candidates, true jab facts) for the banter call. Candidates: provocation type + sender +
     roast target, A-tier first, unused per the no_repeat ledger (burn_book.candidates)."""
-    if ptype == "charlie":
-        return [], []  # no burn-book lines and no jab facts aimed at Charlie
+    if ptype == "charlie":  # warm lines only: no burn-book roasts and no jab facts aimed at Charlie
+        import no_repeat
+        try:
+            led = no_repeat.default_ledger()
+            fresh = [x for x in CHARLIE_LINES if not led.is_repeat(x, target=st.get("team"), chat_id=st.get("chat_id"))]
+        except Exception:  # noqa: BLE001
+            fresh = []
+        lines = (fresh or CHARLIE_LINES)[:BANTER_N]
+        return [{"text": x, "tier": "A", "facts": [], "angle": "charlie", "id": f"charlie{i}", "kind": "charlie",
+                 "src": "charlie"} for i, x in enumerate(lines)], []
     book = None if ptype in router.FAMILIES else BOOK_TYPE.get(ptype, ptype)  # off-topic: gemma's own real pick
     cands: list[dict] = []
     if book:
@@ -900,6 +939,9 @@ async def banter_reply(st: dict, prefix: str) -> str:
     text, how = router.parse_banter(raw, lines, BANTER_ADAPT)
     if cb and ptype in CALLBACK_FORCED and not how.startswith("line 1"):
         text, how = cb, "callback (forced)"  # the policy's every-4th callback: it goes out, verbatim
+    if ptype == "charlie" and (not text.strip() or MEAN_TO_CHARLIE.search(text)):
+        log.info("banter (charlie): %r reads mean, sending a warm line", text[:80])
+        text, how = (lines[0], "line 1 (charlie)") if lines else (charlie_line(st.get("team"), st.get("chat_id")), "charlie")
     m = re.match(r"line (\d+)", how)
     st["banter_pick"] = cands[int(m.group(1)) - 1] if m else None
     shaped = router.shape_banter(text, st["q"], chat.member_nicknames(), max_words=10 if ptype == "spiral2" else 25)

@@ -169,14 +169,31 @@ def test_mean_texts_from_charlie_get_a_friendly_reply_and_change_no_memory():
             assert reply == "Ha, fair. Love you too.", (how, q, reply)
             if user is not None:  # banter lane: a warm stance, no roast lines or jab facts on him
                 assert "WHAT THIS IS: Chuck, your guy" in user, (how, q, user)
-                assert "participation trophy" not in user and "LINES" not in user and "TRUE FACTS" not in user, user
+                assert "participation trophy" not in user and "TRUE FACTS" not in user, user
+                offered = [x.split(". ", 1)[1] for x in user.split("LINES written for you", 1)[1].split("\n\n")[0].splitlines()[1:]]
+                assert offered and all(x in pb.CHARLIE_LINES for x in offered), offered  # warm lines only
                 assert "THEIR TONE" not in user, user  # his stored hostility never rides
                 assert st["ptype"] == "charlie", (how, q, st.get("ptype"))
             assert st["charlie"] is True, how
             # the model goes mean anyway: the send-point guard cuts it
             reply, *_ = ask(s, q, MEAN_LINE, web=how == "web uid", dm=dm)
-            assert reply == pb.SAFE_LINES["charlie"], (how, q, reply)
+            assert reply in pb.CHARLIE_LINES, (how, q, reply)
     assert snapshot() == before  # the live path never writes member memory
+
+
+def test_comebacks_gemma_wrote_on_the_exam_never_reach_charlie():
+    # the 11/17 exam's own lines for "go suck my dick, bitch" / "pussy" / "You suck picky" as Chuck P
+    for line in ("That's a lot of energy for a guy who's currently sitting at 30-18.",
+                 "That's rich coming from a guy who's 0-3 on my record this year.", "You'll regret that later, Chuck.",
+                 MEAN_LINE, "Big talk from the guy in first."):
+        out = gc.charlie_guard(line, "Chuck P", "k")
+        assert out in pb.CHARLIE_LINES, (line, out)
+        reply, *_ = ask(CHARLIES["handle"], "go suck my dick, bitch", line)
+        assert reply in pb.CHARLIE_LINES, (line, reply)
+    keep = "Iowa is -8.5 in the pool. Tough game to call."
+    assert gc.charlie_guard(keep, "Chuck P", "k") == keep  # facts and normal answers pass untouched
+    cut = "Iowa is -8.5 in the pool. You're a clown for asking."
+    assert gc.charlie_guard(cut, "Chuck P", "k") == "Iowa is -8.5 in the pool."
 
 
 def test_charlie_full_lane_is_friendly_without_escalate_or_jabs():
@@ -301,7 +318,7 @@ def test_off_switch_restores_normal_treatment():
         assert not mm.charlie_nice() and not gc.is_charlie(CHARLIES["handle"])
         reply, user, st, _ = ask(CHARLIES["team"], "you suck picky", MEAN_LINE, dm=False)
         assert st["ptype"] == "insult" and "participation trophy" in user, (st.get("ptype"), user)
-        assert reply != pb.SAFE_LINES["charlie"], reply  # no Charlie guard either
+        assert reply not in pb.CHARLIE_LINES, reply  # no Charlie guard either
     finally:
         flag.unlink()
         mm.CHARLIE_NICE_OFF = old
