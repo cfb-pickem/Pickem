@@ -179,6 +179,27 @@ def test_general_and_typo_news_asks_get_top_stories():
     assert chat._DELLENGER_ASK.search("Whats the latest news from ross")
 
 
+def test_spar_injury_ask_without_a_team_searches_the_pool_teams():
+    # spar r1 2026-11-16: 'Any injuries for this weeks games' got 'nothing in your news feed matches' while the
+    # feed had Houser (Illinois) and Matthews (Tennessee)
+    seen = {}
+
+    def fake_bf(q, teams=None, limit=5):
+        seen["teams"] = teams
+        return ["6h ago, per ESPN: Illinois may turn to third-string QB Boyd after Houser injury"] if teams else []
+    ps = _fake_news([])
+    for p in ps:
+        p.start()
+    try:
+        with patch.object(chat.news, "breaking_for", fake_bf):
+            note = chat.news_note("Any injuries for this weeks games", ["Iowa", "Illinois", "LSU", "Tennessee"])
+            assert "Houser" in note and seen["teams"] == ["Iowa", "Illinois", "LSU", "Tennessee"], note[:200]
+            assert "nothing in your news feed" in chat.news_note("Any injuries for this weeks games")  # no pool: as before
+    finally:
+        for p in ps:
+            p.stop()
+
+
 def test_spar_news_and_ross_typos_trigger():
     # spar r1 2026-11-16: 'whats the lates' got the standings ('Chuck P sitting atop the mountain')
     for q in ("whats the lates", "whats the latst", "anything new", "whats the word on iowa qb"):

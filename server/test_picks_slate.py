@@ -230,6 +230,19 @@ def test_slate_note_one_line_per_game_and_strongest_play():
     assert "THE PLAY: I'd take Iowa -6.5" in single and "Line gap (NOT value yet)" in single
 
 
+def test_short_game_asks_and_team_shorthand_get_the_card():
+    # spar r1 2026-11-16: 'gimme a read on lsu tenn', 'so lsu?', 'lsu or tenn', 'yo picky who covers nw minn',
+    # 'tech is overrated tho' rode no card (no opinion word / 'tenn', 'nw minn', 'tech' unknown) -> no side
+    write_slate()
+    with Clock("2026-11-16T17:00"):
+        for q, want in (("gimme a read on lsu tenn", "LSU"), ("so lsu?", "LSU"), ("lsu or tenn", "LSU"),
+                        ("yo picky who covers nw minn", "Northwestern"), ("tech is overrated tho", "Texas Tech"),
+                        ("baylor getting 3.5 at home thats free money right", "Texas Tech")):
+            assert [g["away"] for g in chat.take_games(ctx(), q)] == [want], q
+        for q in ("whats the line on iowa", "what time is lsu tenn", "any injury news on lsu"):
+            assert chat.take_games(ctx(), q) == [], q
+
+
 def test_lock_ask_gets_only_the_strongest_play():
     # spar r1 2026-11-16: 'ok whats ur lock then' got all four of Picky's own exhibition picks called 'my locks'
     for q in ("ok whats ur lock then", "whos ur lock", "best bet this wk", "lock of the week?", "whats the play this week"):

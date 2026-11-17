@@ -2565,16 +2565,29 @@ def _match_key(name) -> str:
     return re.sub(r"\bst\b", "state", _norm_team(str(name or "").replace("'", "").replace("’", "")))
 
 
+_TEAM_SHORT = {"tenn": "tennessee", "vols": "tennessee", "nw": "northwestern", "nu": "northwestern",
+               "minn": "minnesota", "gophers": "minnesota", "ill": "illinois", "illini": "illinois",
+               "hawkeyes": "iowa", "bama": "alabama", "uga": "georgia", "osu": "ohio state", "ttu": "texas tech",
+               "nd": "notre dame", "psu": "penn state", "fsu": "florida state", "mich": "michigan",
+               "zona": "arizona", "wisky": "wisconsin", "sc": "south carolina", "ole miss": "ole miss",
+               "aggies": "texas a and m", "a and m": "texas a and m", "tamu": "texas a and m", "cuse": "syracuse"}
+
+
 def games_named(question: str, games: list[dict], cap: int = 3) -> list[dict]:
     """Games whose team the question names: full names first, longest first
     ('Texas Tech' isn't 'Texas'), then '<X> State' teams by '<X>' alone
     ('Boise') when no other team is called just '<X>'."""
     q = f" {_match_key(question)} "
+    for short, full in _TEAM_SHORT.items():  # 'lsu or tenn', 'who covers nw minn' (spar r1 2026-11-16)
+        q = q.replace(f" {short} ", f" {full} ")
     names: dict[str, list[dict]] = collections.defaultdict(list)
     for g in games:
         for side in (g["Away"], g["Home"]):
             names[_match_key(side)].append(g)
     keys = sorted(names, key=len, reverse=True)
+    techs = [k for k in keys if k.endswith(" tech")]
+    if len(techs) == 1 and " tech " in q and f" {techs[0]} " not in q:  # 'tech is overrated' = the slate's only X Tech
+        q = q.replace(" tech ", f" {techs[0]} ")
     stems = {k[: -len(" state")]: k for k in keys if k.endswith(" state")}
     keys += [s for s in sorted(stems, key=len, reverse=True) if s not in names]
     out: list[dict] = []
@@ -3681,7 +3694,9 @@ _NEWS_ASK = re.compile(
 _TWEET_ASK = re.compile(r"\b(tweet\w*|twitter|x post|posts? on x|on x)\b", re.I)
 
 
-def news_note(question: str) -> str:
+def news_note(question: str, teams: list[str] | None = None) -> str:
+    """The NEWS rider. `teams`: this week's pool teams, used when an injury ask names no team ('any injuries
+    for this weeks games' found nothing while the feed had Chiles out and Houser questionable, spar r1)."""
     q = question or ""
     if not _NEWS_ASK.search(q):
         return ""
@@ -3694,7 +3709,9 @@ def news_note(question: str) -> str:
                       r"now|currently|around|sport|country|world|weekend|any|anything|big|stories|story|tell|me|us|"
                       r"you|know|hear|heard)\b",
                       "", re.sub(r"[^\w\s']", " ", q.lower()))
-        if not any(tags.values()) and len(rest.split()) >= 2:
+        if teams and not any(tags.values()) and _INJURY_ASK.search(q):
+            lines = news.breaking_for(q, teams=teams, limit=5)
+        elif not any(tags.values()) and len(rest.split()) >= 2:
             lines = []  # names something the feeds can't place (a fake team?): no keyword guessing
         elif not any(tags.values()):  # a general ask ("what's the latest nees", a typo): the top stories
             lines = news.breaking_for("latest news", limit=5)
@@ -4524,7 +4541,12 @@ TALK_LIKE_A_PERSON = ("Answer the question first: they rely on you. A quick jab 
                       "headers), and no stock openers like 'Great question' or 'Here's the breakdown'.")
 _GAME_OPINION_ASK = re.compile(r"\b(think|thoughts?|like|take|lean|play|pick|feel|confident|cover|value|win|"
                                r"who you got|who'?s got|fade|hammer|lock|sleeper|upset|break(ing)? ?down|"
-                               r"breakdown|preview|matchup|analy[sz]\w*|chances?|smash|spot)\b", re.I)
+                               r"breakdown|preview|matchup|analy[sz]\w*|chances?|smash|spot|read|covers?|covering|good|"
+                               r"bad|trap|legit|real|free money|overrated|underrated|worth|bet|safe|risky|sure|"
+                               r"should i|would you|or)\b", re.I)
+# a short text naming a pool game with no fact word is a read ask: 'so lsu?', 'ok and texas tech', 'lsu or tenn'
+_GAME_FACT_ASK = re.compile(r"\b(line|spread|o/?u|over.?under|totals?|score|kick\w*|what time|when|injur\w*|hurt|qb|"
+                            r"quarterback|tv|channel|weather|records?|ranked|rank\w*|where|stadium|odds)\b", re.I)
 
 
 # A slate question ('gimme a read on this week's games', 'who should I pick', 'what do you like this week',
@@ -4575,7 +4597,7 @@ def take_games(ctx: dict, question: str) -> list[dict]:
                                         cap=2)]
     if not ids and slate_ask(q):
         return games[:4]
-    if not _GAME_OPINION_ASK.search(q):
+    if not _GAME_OPINION_ASK.search(q) and not (ids and len(q.split()) <= 6 and not _GAME_FACT_ASK.search(q)):
         return []
     return [g for g in games if g["id"] in ids]
 
@@ -6996,7 +7018,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
             convo[-1] = {"role": "user", "content": body}
 
     # news: cache read off the event loop (first call builds the team tagger)
-    nn = await asyncio.to_thread(news_note, last.get("content", "")) if last.get("role") == "user" else ""
+    pool = [t for g in ctx.get("games_this_week") or [] for t in (g.get("away"), g.get("home")) if t]
+    nn = await asyncio.to_thread(news_note, last.get("content", ""), pool) if last.get("role") == "user" else ""
     if nn and convo[-1]["role"] == "user":
         body, q = convo[-1]["content"], last.get("content", "")
         body = (body[: -len(q)] + nn + "\n\n" + q) if q and body.endswith(q) else (nn + "\n\n" + body)
