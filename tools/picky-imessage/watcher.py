@@ -62,6 +62,7 @@ POLL_SECONDS = 3.0
 MIN_GAP = 10.0          # seconds between replies
 MAX_PER_HOUR = 60
 MAX_AGE = 600           # ignore messages older than this (watcher was down)
+EMPTY_WAIT = 10.0       # re-read a row with no text yet for this long before skipping it
 PREVIEW = 40
 
 
@@ -152,7 +153,8 @@ class RateLimit:
 
 NEW_MESSAGES = """
 SELECT m.ROWID, m.text, m.attributedBody, m.date, h.id AS handle,
-       c.guid AS chat_guid, c.style AS style, m.associated_message_type
+       c.guid AS chat_guid, c.style AS style, m.associated_message_type,
+       m.cache_has_attachments
 FROM message m
 JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
 JOIN chat c ON c.ROWID = cmj.chat_id
@@ -206,6 +208,23 @@ def msg_unix_time(date: int | None) -> float:
         return 0.0
     secs = date / 1e9 if date > 1e12 else float(date)  # nanoseconds since High Sierra
     return secs + APPLE_EPOCH
+
+
+def wait_for_text(row: dict, pending: dict, now: float) -> bool:
+    """True while a row has no text in either column yet (Messages may not have
+    finished writing it): the caller stops there and re-reads it next poll. After
+    EMPTY_WAIT it's skipped. Tapbacks and attachments are judged as before."""
+    if row.get("associated_message_type") or row.get("cache_has_attachments"):
+        return False
+    if (row["text"] or decode_attributed_body(row["attributedBody"]) or "").strip():
+        pending.pop(row["ROWID"], None)
+        return False
+    first = pending.setdefault(row["ROWID"], now)
+    if now - first < EMPTY_WAIT:
+        return True
+    pending.pop(row["ROWID"], None)
+    log.info("empty rowid=%s still blank after %.0fs, skipped", row["ROWID"], now - first)
+    return False
 
 
 def should_act(row: dict, now: float) -> tuple[bool, str]:
@@ -404,6 +423,7 @@ def main() -> int:
     state = load_state()
     rate = RateLimit()
     db = None
+    pending: dict[int, float] = {}  # rowid -> first time seen with no text
     last_outbox, last_groups = 0.0, 0.0
     log.info("watcher up, last_rowid=%s", state.get("last_rowid"))
     while True:
@@ -415,9 +435,11 @@ def main() -> int:
                     save_state(state)
             rows = db.execute(NEW_MESSAGES, (state["last_rowid"],)).fetchall()
             cols = ["ROWID", "text", "attributedBody", "date", "handle", "chat_guid", "style",
-                    "associated_message_type"]
+                    "associated_message_type", "cache_has_attachments"]
             for raw in rows:
                 row = dict(zip(cols, raw))
+                if wait_for_text(row, pending, time.time()):
+                    break  # not written yet: re-read from this row next poll
                 ok, why = should_act(row, time.time())
                 if ok:
                     handle_one(row, secret, rate, db)
@@ -445,7 +467,7 @@ def handle_one(row: dict, secret: str, rate: RateLimit, db: sqlite3.Connection |
     dm = row["style"] != GROUP_STYLE
     # DM bodies from people Picky won't answer stay out of the log
     log.info("%s rowid=%s from=...%s preview=%r", "dm" if dm else "trigger", row["ROWID"], handle[-4:],
-             "" if dm else preview(text))
+             f"<{len(text)} chars>" if dm else preview(text))
     wait = rate.wait_needed()
     if wait is None:
         log.warning("hourly cap hit, skipping rowid=%s", row["ROWID"])

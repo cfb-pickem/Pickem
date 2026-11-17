@@ -19,6 +19,11 @@ Checks, in order:
      relaunches Messages too.
   4. The watcher's latest "messages automation check" line has rc=0 (Messages
      answers Apple events, so sends won't hit -1743).
+  5. Delivery: any of Picky's sends whose chat.db row shows error != 0 (read
+     read-only) -> "delivery failed handle=...XXXX error=N", once per handle
+     per day, in the log and cfb-pickem-private/picky_delivery_failures.jsonl.
+     Report only, never a resend. (The watcher runs as picky and can't write
+     the private dir, so this lives here.)
 
 Alerts go to the coordinator side, not Charlie: ~/Library/Logs/picky-watchdog.log
 plus one line appended to the cfb-pickem project memory per problem. Only when
@@ -34,6 +39,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import time
@@ -52,6 +58,16 @@ NOTIFY = ["/Users/Agent/cfb-pickem/server/.venv/bin/python3", "-I",
           "/Users/Agent/picky-marathon/wit_eval.py", "notify"]
 AGENT_SERVICES = [("com.pickem.picky-group", "http://127.0.0.1:8768/health"),
                   ("com.pickem.chat", "http://127.0.0.1:8766/health")]
+CHAT_DB = Path("/Users/picky/Library/Messages/chat.db")
+FAILURES = PRIVATE / "picky_delivery_failures.jsonl"
+APPLE_EPOCH = 978307200
+FAILED_SENDS = """
+SELECT m.ROWID, c.chat_identifier, m.error, m.date FROM message m
+JOIN chat_message_join j ON j.message_id = m.ROWID
+JOIN chat c ON c.ROWID = j.chat_id
+WHERE m.is_from_me = 1 AND m.error != 0 AND m.date > ?
+ORDER BY m.ROWID
+"""
 STALE = 300            # s without a watcher poll before we call it dead
 BOOT_GRACE = 300       # s after boot to let launchd bring things up before judging
 TELL_CHARLIE = 24 * 3600
@@ -170,6 +186,36 @@ def decide(obs: dict, state: dict, now: float) -> tuple[list[str], dict]:
     return acts, st
 
 
+def new_failures(rows: list, logged: dict) -> tuple[list[dict], dict]:
+    """Pure: failed-send rows (rowid, handle, error, apple date ns) -> events not yet
+    reported, one per handle per (message) day. `logged` maps handle -> last day reported."""
+    logged, events = dict(logged), []
+    for rowid, handle, error, date in rows:
+        ts = date / 1e9 + APPLE_EPOCH
+        day = dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        if day <= logged.get(handle, ""):
+            continue
+        logged[handle] = day
+        events.append({"ts": int(ts), "day": day, "handle": handle, "error": error, "rowid": rowid})
+    return events, logged
+
+
+def check_deliveries(state: dict, now: float) -> None:
+    since = int((now - 26 * 3600 - APPLE_EPOCH) * 1e9)  # covers a failure just before midnight
+    try:
+        db = sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True, timeout=5)
+        rows = db.execute(FAILED_SENDS, (since,)).fetchall()
+        db.close()
+    except sqlite3.Error as e:
+        log(f"delivery check: chat.db unreadable: {e}")
+        return
+    events, state["delivery_logged"] = new_failures(rows, state.get("delivery_logged", {}))
+    for e in events:
+        log(f"delivery failed handle=...{e['handle'][-4:]} error={e['error']}")
+        with FAILURES.open("a") as f:
+            f.write(json.dumps(e) + "\n")
+
+
 def su_picky(cmd: str) -> subprocess.CompletedProcess:
     pw = sh("/usr/bin/security", "find-generic-password", "-a", "drake", "-s",
             "CFB_PICKEM__PICKY_MAC_USER_PASSWORD", "-w").stdout.strip()
@@ -252,6 +298,7 @@ def main(argv: list[str]) -> int:
             if state.get("alerted"):
                 remember(f"Picky's iMessage is back after ~{down} min.")
     new["alerted"] = sorted(alerted)
+    check_deliveries(new, now)
     STATE_FILE.write_text(json.dumps(new))
     return 0
 
