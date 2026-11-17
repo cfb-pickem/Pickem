@@ -336,10 +336,13 @@ def _pos(team: str, q: str) -> int:
     return i
 
 
-def _all_pos(team: str, tn: str) -> list[tuple[int, int]]:
+def _all_pos(team: str, tn: str, other: str = "") -> list[tuple[int, int]]:
     """Every (position, name length) a team is named at in a normalized, space-padded text."""
     n = cfbd.norm(team)
-    keys = [n] + ([n.split()[0]] if len(n.split()) > 1 and n.split()[0] not in _SHARED_FIRST else [])
+    f = n.split()[0] if n else ""
+    o = cfbd.norm(other)
+    shared = o == f or o.startswith(f + " ")  # 'Team 3' vs 'Team 35', 'Texas' vs 'Texas Tech'
+    keys = [n] + ([f] if len(n.split()) > 1 and f not in _SHARED_FIRST and not shared else [])
     out, taken = [], []
     for k in keys:
         for m in re.finditer(rf"(?<= ){re.escape(k)}(?= )", tn):
@@ -354,7 +357,7 @@ def ask_offense(q: str, away: str, home: str) -> str | None:
     'can South Carolina stop Georgia's run game' -> Georgia; 'New Mexico's defense vs Wyoming's
     offense' -> Wyoming), else None (both directions)."""
     tn = f" {cfbd.norm(re.sub(r"['’]s\b", "", q or ''))} "
-    spots = sorted((p, team, ln) for team in (away, home) for p, ln in _all_pos(team, tn))
+    spots = sorted((p, team, ln) for team in (away, home) for p, ln in _all_pos(team, tn, home if team == away else away))
     if not spots:
         return None
     other = {away: home, home: away}
