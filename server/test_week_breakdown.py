@@ -141,35 +141,32 @@ wb.tick_picks_up(FakeLeague(), 12, NOW[0], send, ready=lambda w, g: True)
 check(not sent, "8:30am after an overnight drop: still waiting for 9am")
 NOW[0] = dt.datetime(2026, 11, 17, 9, 0, tzinfo=CT)
 wb.tick_picks_up(FakeLeague(), 12, NOW[0], send, ready=lambda w, g: True)
-check([s[0] for s in sent] == ["announce"], "9:00: the announcement goes out, the breakdown waits")
-ann = sent[0][2]
-check(ann[0].startswith("Week 12 picks are up. Lock is Saturday 11am") and "Away1 -2.5 at Home1" in ann[1]
-      and "Away2 at Home2 -3.5" in ann[1] and "@Picky me here or DM me" in ann[2], "announcement: lock, framed lines, @Picky")
-ob.mark(wb.ann_key(2026, 12), "queued")  # the real post marked it at 9:00; pin the ts for the gap test
-st = ob.state()
-st["keys"][wb.ann_key(2026, 12)]["ts"] = NOW[0].timestamp()
-ob.save_state(st)
-NOW[0] = dt.datetime(2026, 11, 17, 9, 2, tzinfo=CT)
-wb.tick_picks_up(FakeLeague(), 12, NOW[0], send, ready=lambda w, g: True)
-check(len(sent) == 1, "2 minutes later: the breakdown still waits for the gap")
-NOW[0] = dt.datetime(2026, 11, 17, 9, 5, tzinfo=CT)
-wb.tick_picks_up(FakeLeague(), 12, NOW[0], send, ready=lambda w, g: True)
-check([s[0] for s in sent] == ["announce", "breakdown"] and sent[1][2] == ["intro", "game text"],
-      "4+ minutes after the announcement: the prepared breakdown goes out")
+check([s[0] for s in sent] == ["announce"] and len(sent[0][2]) == 1, "9:00: ONE text goes out")
+one = sent[0][2][0]
+check(one.startswith("Week 12 picks are up. Lock is Saturday 11am") and "Away1 -2.5 at Home1" in one
+      and "Away2 at Home2 -3.5" in one and "@Picky me here or DM me" in one and one.endswith("intro\n\ngame text"),
+      "the one text = announcement (lock, framed lines, @Picky) + the breakdown")
 NOW[0] = dt.datetime(2026, 11, 17, 9, 10, tzinfo=CT)
-check(wb.tick_picks_up(FakeLeague(), 12, NOW[0], send, ready=lambda w, g: True) == "done" and len(sent) == 2,
+check(wb.tick_picks_up(FakeLeague(), 12, NOW[0], send, ready=lambda w, g: True) == "done" and len(sent) == 1,
       "dedupe: the next tick posts nothing")
-check(len(list(ob.OUTBOX.glob("*.json"))) == 2, "exactly two outbox items for the week")
+check(len(list(ob.OUTBOX.glob("*.json"))) == 1, "exactly one outbox item for the week")
 check(len(prepared) == 1, "the breakdown was prepared once")
 NOW[0] = dt.datetime(2026, 11, 21, 11, 5, tzinfo=CT)
 check(wb.tick_picks_up(FakeLeague(), 13, NOW[0], send, ready=lambda w, g: True) == "locked", "after lock: nothing")
 
-# daytime drop posts right away; no cards yet = announcement only, breakdown waits for the cards
+# daytime drop without cards: wait (no text) up to MERGE_WAIT_S, then announce alone as one text
 sent.clear()
-NOW[0] = dt.datetime(2026, 11, 24, 14, 0, tzinfo=CT)
 lock = dt.datetime(2026, 11, 28, 11, 0, tzinfo=CT)
+NOW[0] = dt.datetime(2026, 11, 24, 14, 0, tzinfo=CT)
 r = wb.tick_picks_up(FakeLeague(), 13, NOW[0], send, ready=lambda w, g: False)
-check([s[0] for s in sent] == ["announce"] and "prepared" not in r, "2pm drop: announced at once; no cards, no breakdown yet")
+check(not sent and "prepared" not in r, "2pm drop, no cards yet: nothing posts, waiting to merge")
+NOW[0] = dt.datetime(2026, 11, 24, 17, 1, tzinfo=CT)
+wb.tick_picks_up(FakeLeague(), 13, NOW[0], send, ready=lambda w, g: False)
+check([s[0] for s in sent] == ["announce"] and len(sent[0][2]) == 1 and ob.done(wb.bd_key(2026, 13)),
+      "3h later, still no cards: the announcement goes alone as one text and no breakdown follows")
+NOW[0] = dt.datetime(2026, 11, 24, 18, 0, tzinfo=CT)
+wb.tick_picks_up(FakeLeague(), 13, NOW[0], send, ready=lambda w, g: True)
+check(len(sent) == 1, "cards arriving later never cause a second text")
 check(wb.tick_picks_up(FakeLeague(), 12, NOW[0], send) in ("done", "locked"), "week 12 stays done")
 
 # --- Thursday refresh ---

@@ -577,7 +577,8 @@ def compose(gfs: list[dict], week: int, lock_text: str, member_names: list[str] 
 # -----------------------------------------------------------------------------
 
 POOL_SIZE = 4                     # the league picks 4 games a week
-BREAKDOWN_GAP_S = 4 * 60          # breakdown goes this long after the announcement
+BREAKDOWN_GAP_S = 4 * 60          # (unused since the one-text rule)
+MERGE_WAIT_S = 3 * 3600           # wait this long for the cards before announcing without a breakdown
 REPREPARE_S = 12 * 3600           # a draft older than this is rebuilt before it posts
 POST_QUIET_END = "09:00"          # overnight drops wait for 9am (quiet hours are 23:30-08:00)
 
@@ -671,20 +672,27 @@ def tick_picks_up(lg, week: int | None, now: dt.datetime, send, writer=None, rea
         st["first_seen"] = now.timestamp()
         save_state(sea, week, st)
     did = []
+    # ONE text per week (Charlie, 2026-11-17: "just send 1 text when picks are up, not a bunch"):
+    # the announcement and the breakdown go out together as a single message. If the cards
+    # aren't ready within MERGE_WAIT_S of the games landing, the announcement goes alone
+    # (still one text) and that week has no breakdown post.
+    stale = not st.get("texts") or now.timestamp() - st.get("prepared", 0) > REPREPARE_S
+    if stale and ready(week, games):
+        st = prepare(lg, week, games, lock, now, writer)
+        did.append("prepared")
     if not ob.done(ann_key(sea, week)) and post_window(now):
-        send("announce", announce_texts(week, games, lock), ann_key(sea, week),
-             expires_s=int(max(600, (lock - now).total_seconds())))
-        did.append("announced")
-    if not ob.done(bd_key(sea, week)):
-        stale = not st.get("texts") or now.timestamp() - st.get("prepared", 0) > REPREPARE_S
-        if stale and ready(week, games):
-            st = prepare(lg, week, games, lock, now, writer)
-            did.append("prepared")
-        ann = (ob.state().get("keys") or {}).get(ann_key(sea, week)) or {}
-        if (st.get("texts") and ann.get("how") == "queued" and now.timestamp() - ann.get("ts", now.timestamp())
-                >= BREAKDOWN_GAP_S and post_window(now)):
-            send("breakdown", st["texts"], bd_key(sea, week), expires_s=int(max(600, (lock - now).total_seconds())))
-            did.append("breakdown")
+        expires = int(max(600, (lock - now).total_seconds()))
+        if st.get("texts"):
+            send("announce", ["\n\n".join(announce_texts(week, games, lock) + list(st["texts"]))],
+                 ann_key(sea, week), expires_s=expires)
+            ob.mark(bd_key(sea, week), "merged")
+            did.append("announced+breakdown")
+        elif now.timestamp() - st["first_seen"] >= MERGE_WAIT_S:
+            send("announce", ["\n\n".join(announce_texts(week, games, lock))], ann_key(sea, week), expires_s=expires)
+            ob.mark(bd_key(sea, week), "skipped-no-cards")
+            did.append("announced-alone")
+    elif ob.done(ann_key(sea, week)) and not ob.done(bd_key(sea, week)):
+        ob.mark(bd_key(sea, week), "skipped-one-text")  # announced already: never a second text
     return ",".join(did) or "waiting"
 
 
