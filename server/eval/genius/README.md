@@ -24,3 +24,20 @@ lockf -t 5400 /tmp/picky-exam.lock eval/genius/exam.sh <worktree> <tag> [--only 
 ./.venv/bin/python3 -I eval/genius/judge.py eval/genius/results/<tag>.json
 ```
 LaunchAgents (plists in tools/genius/): com.pickem.genius-nightly, com.pickem.genius-refresh.
+
+## Results (week 12, 59 items, Opus judge with the verified-data block)
+- pre-chain-fa1bad9 (Mon morning): 1/59
+- main after build round 2 (5a4bc2b): 2/59
+- picky-genius fix round 1: 14/59; round 2: 14/59; round 3: 22/59 (correctness 2.2 -> 3.75, depth 1.3 -> 2.5, reasoning 1.3 -> 2.7)
+
+What moved it (server/): `slate_cards.py` (code-computed GAME CARD for any FBS game this week: market + move + key numbers,
+implied totals, ATS splits, last 3 vs the number, SP+/EPA/run-game/explosiveness edges, rest/lookahead, last meeting,
+pick_brief's lean vs the market, sourced availability; pool games get a compact "extras" card with the league line vs the
+market), `slate_intel.py` (offline Opus availability notes + in-season coaching changes + CFP committee rankings, validated,
+LaunchAgent com.pickem.slate-intel), coach/conference/CFP notes, `pick_strategy.py` (protect/bubble/chase), and fixes to
+filters that were cutting true card facts (OFF-TOPIC rail on non-pool games, 'tit' matching 'title', the live-game claim
+check on pre-game cards, record_check on card W-Ls). Drops now log the rule that cut them.
+
+Still weak (the 12B): unit-vs-unit matchups (answers with overall SP+ instead of run D vs run game), answering the exact
+sub-question (lookahead, body clock, altitude), turning facts into a clear ATS conclusion, and "why?" follow-ups that
+repeat turn 1.
