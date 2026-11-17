@@ -3704,7 +3704,8 @@ def leader_note(ctx: dict, question: str) -> str:
 # posts are not available (no free, ToS-clean source), so Picky says so.
 _NEWS_ASK = re.compile(
     r"\b(news|headlines?|latest|lat(?:es|st|set)|lastest|latests|nees|neews|newz|anything new|what'?s the word|"
-    r"what happened|whats happened|brawl|fight(?! me)|[a-z]{4,} gone|gone yet|still employed|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
+    r"what happened|whats happened|brawl|fight(?! me)|[a-z]{4,} gone|gone yet|still employed|anything happen\w*|overnight|"
+    r"(said|say|saying) what|what did [a-z]+ (say|said)|rumou?rs?|reported|reports?|injur\w*|hurt|out for|coach\w*|fired|firing|"
     r"hot seat|buyout|transfer\w*|portal|decommit\w*|what('?s| is) (going on|happening|new)|going on in|happening in|dellenger|"
     r"tweet\w*|twitter|recruit\w*|suspend\w*|any updates?|breaking|questionable|doubtful|injury report|"
     r"availability|game[- ]time decision|(is|are|will)\b[^?.!]{0,30}\b(qb|quarterback|starter)s?\b[^?.!]{0,20}"
@@ -3726,7 +3727,7 @@ def news_note(question: str, teams: list[str] | None = None) -> str:
                       r"news|latest|lates|lastest|headlines?|going|happening|college|football|cfb|cfp|playoffs?|did|ross|dellenger|say|said|"
                       r"tweet\w*|twitter|x|update\w*|happen\w*|lately|there|been|has|have|picky|hey|so|please|right|"
                       r"now|currently|around|sport|country|world|weekend|any|anything|big|stories|story|tell|me|us|"
-                      r"you|know|hear|heard)\b",
+                      r"you|know|hear|heard|overnight|what|said)\b",
                       "", re.sub(r"[^\w\s']", " ", q.lower()))
         if teams and not any(tags.values()) and _INJURY_ASK.search(q):
             lines = news.breaking_for(q, teams=teams, limit=5)
@@ -3782,7 +3783,7 @@ _rank_memo: dict = {"at": 0.0, "data": None}
 _RANK_ASK = re.compile(
     r"\b(rank\w*|top (25|ten|10|four|4|12)|number (one|1)\b|no\.? ?1\b|#1|who'?s (no\.? ?)?(1|one)\b|cfp|"
     r"playoff (picture|race|rankings?|field|bracket|spots?|teams?)|committee|polls?|seed\w*|bracket|unbeaten|"
-    r"undefeated)\b", re.I)
+    r"undefeated|best team( in the country)?|top team)\b", re.I)
 
 
 async def load_rankings(client: httpx.AsyncClient) -> dict | None:

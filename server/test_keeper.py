@@ -777,6 +777,12 @@ def test_k2b_small():
         assert not chat.move_claim_check(ctx)("The pool line is Iowa -8.5 and the market line is also Iowa -8.5, so there is no change.")
 
 
+def test_news_and_rank_triggers_k2b():
+    for q in ("anything happen overnight in cfb", "cignetti said what"):
+        assert chat._NEWS_ASK.search(q), q
+    assert chat._RANK_ASK.search("indiana still the best team?")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
