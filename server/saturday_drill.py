@@ -270,6 +270,26 @@ def latency_stats(rows: list[dict]) -> dict:
     return out
 
 
+def watcher_model(rows: list[dict], gap: float = 10.0, send_s: float = 1.0, max_age: float = 600.0,
+                  stale_at_fetch: bool = False) -> dict:
+    """End-to-end latency of a burst through tools/picky-imessage/watcher.py as it handles rows: one at a
+    time (ask the sidecar, wait out MIN_GAP since the last send, send), a row reached more than MAX_AGE
+    after it arrived skipped as stale (stale_at_fetch: judged once when the batch is read instead).
+    rows: the sequential burst in order, each with own_s (the sidecar's time for that ask); all arrive at 0."""
+    t, last_send, lat, dropped = 0.0, None, [], 0
+    for r in rows:
+        if not stale_at_fetch and t > max_age:
+            dropped += 1
+            continue
+        done = t + float(r.get("own_s") or r.get("s") or 0)
+        send = done if last_send is None else max(done, last_send + gap)
+        last_send = send
+        t = send + send_s
+        lat.append(round(t, 1))
+    return {"n": len(rows), "answered": len(lat), "dropped_stale": dropped, "p50": round(statistics.median(lat), 1) if lat else None,
+            "p90": pct(lat, 0.90), "max": max(lat) if lat else None}
+
+
 # ---------------------------------------------------------------------------------------------------
 # trap moments: must never post (and one control that must)
 # ---------------------------------------------------------------------------------------------------
@@ -411,6 +431,8 @@ def run_burst(live_src: Path, out: Path, n: int, modes: list[str], port: int) ->
             rows = asyncio.run(go(mode))
             (out / f"burst-{mode}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
             res["modes"][mode] = latency_stats(rows)
+            if mode == "sequential":
+                res["watcher_model"] = watcher_model(rows)
             for r in sorted(rows, key=lambda r: r["s"]):
                 print(f"  {r['s']:6.1f}s {r['lane'] or '-':<16} {r['q'][:40]:<40} {str(r['reply'])[:80]}", flush=True)
     finally:
@@ -599,6 +621,10 @@ def markdown(r: dict) -> str:
         for mode, s in b["modes"].items():
             L.append(f"- {mode}: p50 {s['p50']}s, p90 {s['p90']}s, max {s['max']}s, errors {s['errors']}; lanes "
                      + ", ".join(f"{k} n={v['n']} p50 {v['p50']}s" for k, v in s["lanes"].items()))
+        if b.get("watcher_model"):
+            w = b["watcher_model"]
+            L.append(f"- through today's watcher (serial, 10 s between replies, stale after 600 s): p50 {w['p50']}s, "
+                     f"p90 {w['p90']}s, max {w['max']}s, {w['dropped_stale']} of {w['n']} asks never answered")
     else:
         L.append(f"- {b.get('error') or 'not run'}")
     rd = r["real_drain"]

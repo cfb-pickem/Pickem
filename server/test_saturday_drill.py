@@ -120,6 +120,11 @@ st = sd.latency_stats(rows)
 check(st["p50"] == 10.5 and st["p90"] == 18.0 and st["max"] == 20.0 and st["lanes"]["fact"]["n"] == 9,
       "latency: p50 / nearest-rank p90 / max / per lane")
 check(sd.latency_stats(rows + [{"s": 30.0, "lane": None, "reply": "[ERROR x]"}])["errors"] == 1, "latency: errors counted")
+wm = sd.watcher_model([{"own_s": 5.0}] * 3)
+check(wm["answered"] == 3 and wm["p50"] == 16.0 and wm["max"] == 26.0, "watcher model: serial asks + 10 s gap between sends")
+wm = sd.watcher_model([{"own_s": 40.0}] * 20)
+check(wm["dropped_stale"] == 5 and wm["answered"] == 15, "watcher model: rows reached after 600 s are skipped as stale")
+check(sd.watcher_model([{"own_s": 40.0}] * 20, stale_at_fetch=True)["dropped_stale"] == 0, "watcher model: stale judged at fetch drops none")
 check(len(sd.BURST_ASKS) >= 20 and not any("@" in q for q in sd.BURST_ASKS), "burst: 20 generic asks, no handles")
 
 print(f"\n{'all green' if not fails else 'FAILED: ' + str(len(fails))}")
