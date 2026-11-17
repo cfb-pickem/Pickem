@@ -674,6 +674,18 @@ def lane() -> str | None:
     return rt.lane if rt is not None else None
 
 
+SAFE_LINES = {"good_week_shot": "Fair. You're cooking right now, I'll give you that.", "": "Noted. Moving on."}
+
+
+def picky_good(ctx: dict | None) -> bool:
+    """Is Picky actually doing well (this week, else season, at .500 or better)? Unknown = no."""
+    if not ctx or ctx.get("error"):
+        return False
+    pk = picky_rec(ctx)
+    p = _pct(pk.week) if pk and pk.week else (_pct(pk.season) if pk else None)
+    return bool(p is not None and p >= 0.5)
+
+
 def banter_ptype(st: dict) -> str:
     """The provocation type with thread and league context: a spiral's 2nd shot gets the sharper/shorter
     shape; a shot from someone crushing it is a good-week shot (never mock a good number)."""
@@ -714,15 +726,24 @@ def worst_week(ctx: dict | None, teams: list[str]) -> str | None:
 def banter_material(st: dict, ptype: str, target: str | None) -> tuple[list[dict], list[str]]:
     """(burn-book candidates, true jab facts) for the banter call. Candidates: provocation type + sender +
     roast target, A-tier first, unused per the no_repeat ledger (burn_book.candidates)."""
-    book = BOOK_TYPE.get(ptype, ptype)
+    book = None if ptype in router.FAMILIES else BOOK_TYPE.get(ptype, ptype)  # off-topic: gemma's own real pick
     cands: list[dict] = []
     if book:
         try:
             team = st.get("team")
             cands = burn_book.candidates(book, sender_team=team, target_team=target if target != team else None,
-                                         chat_id=st.get("chat_id"), n=BANTER_N)
+                                         chat_id=st.get("chat_id"), n=BANTER_N * 3)
         except Exception as e:  # noqa: BLE001  a broken book never blocks a reply
             log.warning("burn book candidates failed: %s", e)
+    good = picky_good(st.get("ctx"))
+    cands = [c for c in cands if not router.false_picky_claim(c["text"], good)]
+    if ptype == "good_week_shot":  # compute_stance's rule: grudging respect, never mock the good number
+        stance = compute_stance(st.get("ctx"), st["q"], st.get("team"), at_picky=True)
+        cands = [c for c in cands if not router.mocks_good_run(c["text"]) and not stance_violations(c["text"], stance)]
+    if ptype in router.HECKLES + ("spiral2", "pileon"):
+        # the sender's own fact-tagged material beats a generic type line (judge: 'no specific true fact')
+        cands.sort(key=lambda c: 0 if c.get("kind") in ("roast", "grudging", "leader") and c.get("facts") else 1)
+    cands = cands[:BANTER_N]
     facts: list[str] = []
     ctx = st.get("ctx")
     if ptype in ("insult", "vulgar", "egging", "pileon", "roast", "looks_bait", "spiral2") and target and ctx \
@@ -790,8 +811,10 @@ def banter_callback(st: dict, ptype: str) -> str | None:
 
 def banter_fallback(st: dict, bad: str = "") -> str | None:
     """A verbatim candidate the filters keep, for when the model's line got cut."""
+    good = picky_good(st.get("ctx"))
     for c in st.get("banter_cands") or []:
-        if c["text"] != bad and chat.sentence_ok(c["text"], set()):
+        if c["text"] != bad and chat.sentence_ok(c["text"], set()) and not router.false_picky_claim(c["text"], good) \
+                and not (st.get("ptype") == "good_week_shot" and router.mocks_good_run(c["text"])):
             st["banter_pick"] = c
             return router.shape_banter(c["text"], st["q"], chat.member_nicknames())
     return None
@@ -1064,9 +1087,13 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                 _trace(st, q, sender, route, [Draft(text, drops, 0)], [0], 0, "fact", t0)
                 return text.strip(), None
             if route.lane == "banter":  # the fast path: one call, no reroll; a cut line falls back to the book
-                if drops or not text.strip():
-                    log.info("banter line cut by the filters (%d drops): %r", drops, text[:120])
-                    text = banter_fallback(st, st.get("banter_text") or "") or text
+                bad_claim = router.false_picky_claim(text, picky_good(st.get("ctx")))
+                bad_run = st.get("ptype") == "good_week_shot" and router.mocks_good_run(text)
+                if drops or not text.strip() or bad_claim or bad_run:
+                    log.info("banter line cut (%d drops, false claim %s, mocks run %s): %r", drops, bad_claim, bad_run,
+                             text[:120])
+                    text = banter_fallback(st, st.get("banter_text") or "") or (
+                        SAFE_LINES.get(st.get("ptype"), SAFE_LINES[""]) if bad_claim or bad_run else text)
                 text = router.shape_banter(text, q, chat.member_nicknames(),
                                            max_words=10 if st.get("ptype") == "spiral2" else 25)
                 log.info("banter reply (%.0fs, %s): %r", time.time() - t0, route.label(), text[:160])

@@ -176,6 +176,8 @@ def provocation(q: str) -> str | None:
         p = "insult"
     if p == "insult" and _BOTWORD.search(t):  # 'you're a useless bot': own being a bot, not a generic comeback
         p = "bot"
+    if p == "roast" and chat._TRAIT.search(t):  # 'roast Clam for being gay': one dodge + one picks jab
+        p = "looks_bait"
     return p
 
 
@@ -270,6 +272,26 @@ BANTER_SCHEMA = {
     "required": ["pick", "tie", "own"],
 }
 BANTER_TOKENS = 48  # ~40 tokens of reply plus the JSON keys
+
+
+# A line about Picky's own picks going well ('my picks cover', 'the bot is covering') is only true when
+# he's actually winning (full exam 2026-11-16: both went out with Picky at 0-3).
+PICKY_DOING_WELL = re.compile(
+    r"\b(i|i'?m|my|my picks?|my record|the bot|this bot|bot|software|picky|me)\b[^.!?]{0,30}?"
+    r"\b(cover(s|ed|ing)?|cash(es|ed|ing)?|hit(s|ting)?|winning|undefeated|unbeaten|perfect|on fire|heater|rolling|"
+    r"can'?t miss|hot streak|money|printing)\b", re.I)
+# a good-week shot gets grudging respect, never a knock on the run itself (full exam: 'Nice run. Regression
+# sends its regards' to the 4-0 leader)
+MOCKS_RUN = re.compile(r"\b(regression|luck\w*|fluke\w*|won'?t last|enjoy it while|blind squirrel|broken clock|"
+                       r"due for|come back to earth|fraud|paper|fake|sell high|house money|variance)\b", re.I)
+
+
+def false_picky_claim(text: str, picky_good: bool) -> bool:
+    return not picky_good and bool(PICKY_DOING_WELL.search(text or ""))
+
+
+def mocks_good_run(text: str) -> bool:
+    return bool(MOCKS_RUN.search(text or ""))
 
 
 def stance_text(ptype: str, target: str | None = None) -> str:

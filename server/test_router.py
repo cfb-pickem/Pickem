@@ -681,6 +681,49 @@ def test_team_names_only_never_real_names():
         gc.SENDER.reset(tok)
 
 
+def _c(text, kind="insult", facts=()):
+    return {"text": text, "tier": "A", "facts": list(facts), "angle": text[:12], "id": text[:8], "kind": kind,
+            "src": "opus"}
+
+
+def test_false_claims_about_picky_and_mocking_a_good_run_never_go_out():
+    """Full exam 2026-11-16 (Opus judge): 'Same as you, except my picks cover' and 'the bot is covering' with
+    Picky 0-3; 'Nice run. Regression sends its regards' to the 4-0 leader."""
+    assert router.false_picky_claim("Same as you, except my picks cover", picky_good=False)
+    assert router.false_picky_claim("You're mad at the bot and the bot is covering.", picky_good=False)
+    assert not router.false_picky_claim("Same as you, except my picks cover", picky_good=True)
+    assert not router.false_picky_claim("Your picks are a crime scene.", picky_good=False)
+    assert router.mocks_good_run("Nice run. Regression sends its regards")
+    # the fast path: Chuck P (4-0, 1st) says 'pussy'; Picky is 0-3 in the fixture
+    ctx = _wk11("Chuck P")
+    cands = [_c("You're mad at the bot and the bot is covering.", "good_week_shot"),
+             _c("Nice run. Regression sends its regards", "good_week_shot"),
+             _c("Fine, 4-0 is 4-0. Your Pit chips are still at zero though.", "grudging", ["casino"])]
+    out, calls = _banter_run("pussy", team="Chuck P", ctx=ctx, cands=cands, json_out='{"pick": 1, "tie": "", "own": ""}')
+    assert out == "Fine, 4-0 is 4-0. Your Pit chips are still at zero though.", out
+    assert "bot is covering" not in calls["json"][0]["user"] and "Regression" not in calls["json"][0]["user"]
+    # gemma's own line makes the false claim: swapped for a book line, else a safe line
+    out, _ = _banter_run("hey what's up", team="TG", ctx=_wk11("TG"), route=router.Route("banter", "insult"),
+                         cands=[], json_out='{"pick": 0, "tie": "", "own": "Same as you, except my picks cover."}')
+    assert "cover" not in out and out, out
+
+
+def test_member_material_first_and_off_topic_gets_a_real_answer():
+    ctx = _wk11("TG")
+    cands = [_c("Insult received, filed under things that also didn't cover."),
+             _c("TG is 9-20 on road teams. The road is not your friend.", "roast", ["TG road split"])]
+    out, calls = _banter_run("why are you so bad at this", team="TG", ctx=ctx, cands=cands)
+    assert out == "TG is 9-20 on road teams. The road is not your friend.", out  # the sender's real material leads
+    assert calls["json"][0]["user"].index("1. TG is 9-20") > 0
+    # off-topic family: no canned type line, gemma names a real pick
+    out, calls = _banter_run("who wins the super bowl this year", team="TG", ctx=ctx,
+                             cands=[_c("The NFL is just college football with worse fight songs.", "nfl")],
+                             json_out='{"pick": 0, "tie": "", "own": "Bills. Allen finally gets there."}')
+    assert out == "Bills. Allen finally gets there." and "LINES" not in calls["json"][0]["user"], (out, calls)
+    assert "real, specific pick" in calls["json"][0]["user"]
+    assert router.classify("Roast Clam for being gay").kind == "looks_bait"
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
