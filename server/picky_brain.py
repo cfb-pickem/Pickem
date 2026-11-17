@@ -1172,6 +1172,8 @@ def unusable(text: str) -> bool:
 
 
 _YOU = re.compile(r"\b(you|your|you're|youre|ya|u)\b", re.I)
+_OPENERS = re.compile(r"(honestly|the|a|an|and|but|so|also|plus|if|it|its|it's|that|this|they|he|she|we|i|i'm|look|yeah|well|"
+                      r"sure|just|still|then|now|my|our|their|his|her|what|when|while|with|without|at|in|on|for)[,.!]?$", re.I)
 
 
 def fact_cut(dropped: list[str] | None) -> bool:
@@ -1185,7 +1187,10 @@ def fact_cut(dropped: list[str] | None) -> bool:
             return True
         if _YOU.search(t):
             continue
-        caps = [w for w in t.split()[1:] if re.match(r"[A-Z][A-Za-z]", w) and not re.match(r"I'|I$", w)]
+        words = t.split()
+        if words and _OPENERS.match(words[0]):
+            words = words[1:]  # 'Honestly,' / 'The' / 'Also,' aren't names; 'Beamer said...' is
+        caps = [w for w in words if re.match(r"[A-Z][A-Za-z]", w) and not re.match(r"I'|I$", w)]
         if re.search(r"\d", t) or len(caps) >= 2:
             return True
     return False

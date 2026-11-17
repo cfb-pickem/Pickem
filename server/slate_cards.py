@@ -320,7 +320,8 @@ def rest_line(g: dict, idx: dict, games_ds: dict) -> str | None:
         nxt = [x for x in (t or {}).get("games") or [] if _sd(x) and _sd(x) > s]
         bit = team
         if played:
-            days = (s - _sd(max(played, key=lambda x: x["startDate"]))).days
+            # calendar days in CT (Sat night -> next Sat noon is 7 days' rest, not 6: genius ah-houston-fav)
+            days = (s.astimezone(CT).date() - _sd(max(played, key=lambda x: x["startDate"])).astimezone(CT).date()).days
             bit += f" {days} days rest" + (" (off a bye)" if days >= 13 else " (short week)" if days <= 5 else "")
         if nxt:
             n = min(nxt, key=lambda x: x["startDate"])

@@ -37,6 +37,11 @@ METEO = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
          "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=UTC&start_date={d}&end_date={d}")
 
 
+
+def _ct_date(iso: str) -> str:
+    """Kickoff date in CT (a Friday 9 PM CT game is Saturday in UTC; rest days are calendar days in CT)."""
+    return dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(CT).date().isoformat()
+
 def _ds(db, name):
     row = db.execute("select json from datasets where name=?", (name,)).fetchone()
     return json.loads(row[0]) if row else []
@@ -69,7 +74,7 @@ def team_games(team: str, games: list[dict], lines: dict, upto_week: int) -> lis
         my_spread = (sp if home else -sp) if sp is not None else None
         my_cover = (hc if home else -hc) if hc is not None else None
         pts = (g.get("homePoints"), g.get("awayPoints")) if home else (g.get("awayPoints"), g.get("homePoints"))
-        out.append({"week": g["week"], "date": g["startDate"][:10], "opp": g["awayTeam"] if home else g["homeTeam"],
+        out.append({"week": g["week"], "date": _ct_date(g["startDate"]), "opp": g["awayTeam"] if home else g["homeTeam"],
                     "site": "N" if g.get("neutralSite") else ("H" if home else "A"), "score": pts,
                     "su": None if pts[0] is None else ("W" if pts[0] > pts[1] else "L"),
                     "spread": my_spread, "cover_margin": my_cover,
@@ -183,7 +188,7 @@ def build(ids: list[int]) -> dict:
             nxt = next((x for x in sorted(games, key=lambda x: x["startDate"])
                         if x.get("week") == wk + 1 and t in (x["homeTeam"], x["awayTeam"])), None)
             last = rows[-1] if rows else None
-            rest = (dt.date.fromisoformat(g["startDate"][:10]) - dt.date.fromisoformat(last["date"])).days if last else None
+            rest = (dt.date.fromisoformat(_ct_date(g["startDate"])) - dt.date.fromisoformat(last["date"])).days if last else None
             r = recs.get(t) or {}
             teams[side] = {
                 "team": t, "conference": g[f"{side}Conference"],

@@ -91,6 +91,9 @@ def test_fact_cut():
     check("a tic is flavor", not pb.fact_cut(["I'm just here to watch the chaos."]))
     check("a true last-meeting result is the answer", pb.fact_cut(["Duke won 46-45 at Clemson, covered the -4 by 5."]))
     check("a QB status is the answer", pb.fact_cut(["Also, TCU QB Jaden Craig is questionable with an ankle injury."]))
+    check("a coach quote naming the player is the answer (genius pe-sellers)",
+          pb.fact_cut(["Beamer said he feels good about Sellers playing, but he is officially questionable because of his ankle."]))
+    check("an opener plus one name is flavor", not pb.fact_cut(["Honestly, Clemson is a mess."]))
     check("the results guard's fallback counts", pb.fact_cut(["facts_sentence"]))
     check("nothing cut", not pb.fact_cut([]) and not pb.fact_cut(None))
 
