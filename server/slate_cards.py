@@ -46,7 +46,8 @@ _PICK_WORDS = re.compile(
     r"wind\w*|cold|travel\w*|altitude|rest\w*|bye|motivat\w*|bowl|revenge|rivalry|history|last time|h2h|trends?|records?|"
     r"lookahead|letdown|key numbers?|hook|why|best case|change your mind|playing|starting|out|hurt|good|"
     r"chances?|beat|win\w*|lose|losing|score\w*|stop|handle|edge|coach\w*|fired|hot seat|mov(e|ed|ing)|happened|"
-    r"open(ed)?)\b|(?<![\w.])[+-]\d{1,2}(\.5)?\b", re.I)
+    r"open(ed)?|number|against the|too many|clock|flying|trip|time zone|kickoff|night game)\b"
+    r"|(?<![\w.])[+-]\d{1,2}(\.5)?\b", re.I)
 
 
 _ADV: dict = {}
@@ -485,6 +486,11 @@ def match_games(named: list[str], games: list[dict], pool_ids: set) -> list[dict
     return [g for g in out if g["id"] not in pool_ids]
 
 
+def football_ask(q: str) -> bool:
+    """A question about the game (any '?' or betting/football words), not a statement like 'Notre Dame is back.'"""
+    return "?" in (q or "") or bool(_PICK_WORDS.search(q or ""))
+
+
 def covers(question: str, ctx: dict) -> bool:
     """Cheap, sync (no network): would slate_note put a GAME CARD on this text?
     chat.guard_note uses it to skip its 'NOT IN THE POOL: no spread, no pick' rider."""
@@ -492,7 +498,7 @@ def covers(question: str, ctx: dict) -> bool:
         idx = cfbd.load_index()
     except Exception:  # noqa: BLE001
         return False
-    if not idx or not _PICK_WORDS.search(question or ""):
+    if not idx or not football_ask(question):
         return False
     games = upcoming_games(idx, dt.datetime.now(dt.timezone.utc))
     pool_ids = {int(g["id"]) for g in ctx.get("games_this_week") or [] if str(g.get("id", "")).isdigit()}
@@ -644,7 +650,7 @@ async def slate_note(question: str, ctx: dict, prior: list[str] | None = None) -
     coach = coach_note(q, idx, named)
     picks = match_games(named, games, set())  # pool games too: the card adds the move, splits, h2h, news
     whole = bool(_SLATE_ASK.search(q)) and not picks
-    if (not picks and not whole) or (picks and not _PICK_WORDS.search(q)):
+    if (not picks and not whole) or (picks and not football_ask(q)):
         return coach
     import espn
     chosen = picks[:MAX_CARDS] if picks else notable(games, idx)

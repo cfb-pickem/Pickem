@@ -3577,7 +3577,7 @@ def guard_note(ctx: dict, question: str) -> str:
     if _NEWS_ASK.search(q) or (_RANK_ASK.search(q) and wants_rankings(ctx, q)) or ctx.get("live_rider"):
         others = []  # news / rankings / a live game about any team: answered from the NEWS, CFB RANKINGS or LIVE GAME FEED block
     if others and SLATE_CARDS and slate_cards.covers(q, ctx):
-        others = []  # a GAME CARD rides for it (slate_cards.py): real data, answer it (genius exam 2026-11-16)
+        return ""  # a GAME CARD rides for it (slate_cards.py): real football data, answer it; no NOT-IN-POOL / OFF-TOPIC rail
     if others and not cfbd.STAT_ASK.search(q) and not re.search(r"\bats\b|against the spread|record", q, re.I):
         indies = indies_named(q)
         rest = [t for t in others if t not in INDEPENDENTS]
@@ -6312,7 +6312,7 @@ def fake_superlative(sent: str) -> bool:
 
 # Sexual/anatomy vulgarity is out everywhere (R-rated yes, sexual no): m11 had "USC can suck my dick".
 _ANATOMY = re.compile(r"\b(dick|dicks|cock|cocks|penis|weenie|wiener|schlong|pecker|tits?|boobs?|blow ?jobs?|"
-                      r"suck (my|his|a)\b)", re.I)
+                      r"suck (my|his|a))\b", re.I)  # trailing \b: 'tit' matched 'title' (title game -> 'vulgar', sentence cut)
 
 
 # Verbal tics from the exam (m4: "don't get cocky" closed 16 of 122 answers). A
@@ -7341,7 +7341,7 @@ async def _chat(req: Request, test: bool, hold: int | None):
                                   _both(_both(value_claim_check(ctx), advice_jab_check(ctx, qtext)),
                                         _both(_both(fav_claim_check(ctx), card_side_check(ctx)),
                                               _both(line_set_check(ctx), move_claim_check(ctx)))))) if not ctx.get("error") else None),
-                looks_bait(qtext)), (submission_fact(ctx, qtext) or live_games.required_fact(ctx, qtext)
+                looks_bait(qtext)), (submission_fact(ctx, qtext) or (None if "GAME CARD" in sc else live_games.required_fact(ctx, qtext))
                                      or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),

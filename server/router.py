@@ -36,6 +36,7 @@ import callbacks
 import chat
 import news
 import pick_strategy
+import slate_cards
 import playoff_race
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
@@ -103,6 +104,9 @@ PLAYOFF_TODAY = re.compile(r"\b(ended today|ends today|if the season ended|as it
                            r"|\bwho('?s| is| would| will)? (make|makes|making|get|gets|be) (in(to)? )?(the )?playoffs?\b"
                            r"|\bwho'?s in the playoffs\b|\bprojected (playoff )?(field|seeds?)\b"
                            r"|\bcurrent (playoff )?(seeds?|field)\b|\bwho are the (4|four) (seeds|playoff teams)\b", re.I)
+# the real College Football Playoff, not the league's (genius exam 2026-11-16)
+CFP_WORDS = re.compile(r"\b(college football playoff|cfp|committee|selection committee|playoff (rankings?|bracket)|"
+                       r"rankings?|ranked|12-team|12 team|bracket)\b", re.I)
 # 'who you got in Northwestern at Minnesota?': a side + line from the game card
 PICK_ASK = re.compile(r"\bwho covers\b(?=\s+\S)|\bwho (you|ya|u|do you|would you|d'?you) (got|like|taking|take|have|pick|picking)\b"
                       r"|\bwho sh?o?u?l?d\s*i\s*n?\s*(take|pick|go with|ride)\b|\b(your|ur) (pick|play|lean) (in|for|on)\b"
@@ -633,7 +637,7 @@ def rules_answer(q: str, n_teams: int | None = None) -> str | None:
 def fact_intent(q: str) -> tuple[str, str] | None:
     """(intent, rule) for a factual question code can answer exactly, else None."""
     t = (q or "").replace("’", "'")
-    if playoff_race.is_need_question(t):
+    if playoff_race.is_need_question(t) and not CFP_WORDS.search(t):
         return "playoff", "playoff_race.is_need_question"
     if PLAYER_LATEST.search(t) and not chat.games_named(t, []):
         return "qb", "PLAYER_LATEST"  # 'whats the latest on castellanos': the cards' note, else the full brain + news
@@ -694,7 +698,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "payout", "PAYOUT_ASK"
     if SELF_REC_CLAIM.search(t) and re.search(r"\b(right|tied|correct|yeah|yea|ya)\b|\?", t, re.I):
         return "record", "SELF_REC_CLAIM"
-    if PLAYOFF_TODAY.search(t) or (TOP4.search(t) and TOP4_LEAGUE.search(t) and not _NATIONAL.search(t)):
+    if (PLAYOFF_TODAY.search(t) or (TOP4.search(t) and TOP4_LEAGUE.search(t) and not _NATIONAL.search(t))) \
+            and not CFP_WORDS.search(t):  # 'College Football Playoff if it ended today' is the CFP (genius exam)
         return "playoff_today", "PLAYOFF_TODAY"
     if WEEKS_LEFT.search(t) and not re.search(r"\b(back|doable|chance|catch|need|make it|alive|dead|shot)\b", t, re.I):
         return "weeks_left", "WEEKS_LEFT"
@@ -774,6 +779,8 @@ def from_brief(route: Route, intent: str, asking: str, q: str) -> Route:
     """The fallback (plan 2d): no rule matched, so the existing understand pass decides. A bare insult or
     plain banter with no real question goes to the banter path; everything else stays on the full brain."""
     if route.lane != "full" or route.mixed or intent not in ("insult", "banter"):
+        return route
+    if slate_cards.covers(q, {}):  # 'UCLA flying to Ann Arbor. Body clock thing?' is a football question, not banter
         return route
     if _REAL_Q.search(_strip_shot(q or "")):
         return route
@@ -1554,6 +1561,8 @@ def pick_text(ctx: dict, q: str) -> str | None:
     named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]}
                                  for g in ctx.get("games_this_week") or []])
     games = [g for g in chat.take_games(ctx, q)][:2]
+    if not named and not games and slate_cards.covers(q, ctx):
+        return None  # names a non-pool game ('Ohio State or Nebraska, who you got?'): the full brain + its GAME CARD
     if not named or not games:  # 'who should I pick this week?' names no game: EVERY game's call (live 2026-11-16,
         return slate_text(ctx, q)  # it answered only the first two)
     out = []
