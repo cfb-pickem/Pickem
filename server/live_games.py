@@ -879,6 +879,40 @@ _COMMON = {"long", "young", "black", "white", "green", "gray", "grey", "hall", "
            "still", "right", "know", "lead", "score", "drive", "time", "play", "says", "said", "news", "week", "picks"}
 
 
+_TEAMS = {"stamp": None, "names": set()}
+
+
+def _known_teams() -> set:
+    """Division I team names (lowercase) from the local CFBD cache (never the API); empty if it's missing."""
+    try:
+        import cfbd
+        ix = cfbd.load_index() or {}
+        if ix.get("fetched_at") != _TEAMS["stamp"]:
+            _TEAMS["names"] = {str(k).lower() for k in (ix.get("by_team") or {})}
+            _TEAMS["stamp"] = ix.get("fetched_at")
+    except Exception:  # noqa: BLE001 - nice to have
+        pass
+    return _TEAMS["names"]
+
+
+def missing_teams(question: str, games: dict, known: set | None = None) -> list[str]:
+    """Teams the question names that have no game in the feed ('Texas A&M', 'Oregon' when only Oregon State plays)."""
+    known = _known_teams() if known is None else known
+    if not known or not question:
+        return []
+    feed = {k.lower() for g in games.values() for side in ("away", "home") for k, _ in _name_keys(g[side])}
+    q, out = question, []
+    for name in sorted(known, key=len, reverse=True):
+        if len(name) < 4:
+            continue
+        rx = rf"(?<![\w']){re.escape(name)}(?![\w&])(?!\s+(?:A&M|Tech|State|St\b))"
+        if re.search(rx, q, re.I):
+            if name not in feed:
+                out.append(name.title().replace("A&m", "A&M"))
+            q = re.sub(rx, " | ", q, flags=re.I)
+    return out[:2]
+
+
 def named_games(question: str, games: dict) -> list[dict]:
     """Games whose team the question names (longest names first)."""
     hits, taken = [], question or ""
@@ -1057,9 +1091,21 @@ def rider(question: str, pool: dict | None = None, refresh: bool = True, now: fl
         return "", []
     hit = games_for(question, games, list(pool) or data.get("pool_ids") or [])
     named = {g["id"] for g in named_games(question, games)}
+    missing = missing_teams(question, games) if not named else []
+    if missing and not _PICKS_ASK.search(question or ""):
+        hit = [g for g in hit if g["id"] in named]  # the generic fallback's games aren't what they asked about
     hit = [g for g in hit if g.get("state") in ("in", "post") or g["id"] in pool or g["id"] in named]
     # finals only when the question is about that game or nothing is live; skip stale finals from days ago
+    miss_txt = "".join(
+        f"\n  NOT IN THE LIVE FEED: {m} has no game in the feed right now, so there's no live score for {m}"
+        + "".join(f" ({t} is a different team: don't give its numbers as {m}'s)"
+                  for t in sorted({g[s_]['name'] for g in games.values() for s_ in ('away', 'home')
+                                   if g[s_]['name'].lower().startswith(m.lower().split(' ')[0]) and g[s_]['name'] != m}))
+        + ". Say you don't have a live score for it." for m in missing)
     if not hit:
+        if miss_txt:
+            return ("LIVE GAME FEED (ESPN): what the feed knows about the team(s) asked about." + miss_txt,
+                    [{"id": "_missing", "missing": missing}])
         return "", []
     if refresh:
         if ensure_fresh([g["id"] for g in hit if is_live(g)]):
@@ -1078,7 +1124,7 @@ def rider(question: str, pool: dict | None = None, refresh: bool = True, now: fl
     if not live_now:
         head = head.replace("These are the CURRENT facts", "No game named here is live; these are the latest facts")
     body = "\n".join(game_block(g, pool.get(g["id"]), now) for g in hit)
-    body += no_injury_lines(question, hit)
+    body += no_injury_lines(question, hit) + miss_txt
     hit = [{**g, "cover_margin": cover_margin(pool[g["id"]], g), "cover_side": cover_side(pool[g["id"]], g),
             "in_pool": True} if g["id"] in pool else {**g, "in_pool": False if pool else None} for g in hit]
     return head + "\n" + body, hit
@@ -1255,6 +1301,15 @@ def required_fact(ctx: dict, question: str) -> tuple | None:
     q = question or ""
     hit = ctx.get("live_rider_games") or []
     if not hit or not q:
+        return None
+    miss = [m for g in hit if g.get("id") == "_missing" for m in g["missing"]]
+    if miss:
+        return (lambda t: bool(re.search(r"don'?t (have|see)|no (live )?(score|game|data)|not in (my|the) (live )?feed|"
+                                         r"isn'?t (playing|on|in)|not (playing|on)", t, re.I)),
+                f" I don't have a live score for {miss[0]}: no game of theirs in my live feed right now.")
+    hit = [g for g in hit if g.get("id") != "_missing"]
+    ctx = {**ctx, "live_rider_games": hit}
+    if not hit:
         return None
     if _Q_PICKS.search(q) and not named_games(q, {g["id"]: g for g in hit}):
         return picks_fact(ctx)
@@ -1453,6 +1508,8 @@ def claim_check(games: list[dict]):
         return seg
 
     def check(sent: str) -> bool:
+        if re.search(r"\b(\d+|a|one|few) seconds? ago\b", sent, re.I):
+            return False  # the feed never knows the second ('about 1 second ago')
         segs = segments(sent)
         for (g, ok_pairs, names, scorers, known, injured), seg in zip(gs, segs):
             if seg is None:
@@ -1495,6 +1552,37 @@ def claim_check(games: list[dict]):
                 for m in _MARGIN.finditer(seg):
                     if int(m.group(1)) != cur and not re.search(r"\b(cover|spread|line|number)\b", seg, re.I):
                         return False
+            hk = [k for k, _ in _name_keys(g["home"])]
+            ak = [k for k, _ in _name_keys(g["away"])]
+            if any(re.search(rf"(?<![\w']){re.escape(h_)}\s+(?:at|@)\s+{re.escape(a_)}(?!\w)", seg, re.I) for h_ in hk for a_ in ak):
+                return False  # 'Missouri State at New Mexico State': home and away swapped
+            if g.get("state") in ("in", "post"):  # 'as of 30:00' at halftime: a game clock the feed never showed
+                clocks = {str(g.get("clock") or "")} if g.get("state") == "in" and "HALFTIME" not in str(g.get("status_name") or "").upper() else set()
+                clocks |= {str(x.get("clock")) for x in (g.get("scoring") or []) + (g.get("key") or []) + (g.get("injuries") or [])}
+                clocks |= {str(c["clock"]) for q_ in (g.get("qb") or {}).values() for c in q_.get("changes") or []}
+                clocks |= {str(x["clock"]) for lst in (g.get("turnovers") or {}).values() for x in lst}
+                clocks |= {c.lstrip("0") or "0:00" for c in list(clocks)}
+                for m in re.finditer(r"\b(?:as of|with)\s+(\d{1,2}:\d{2})\b", seg, re.I):
+                    if m.group(1) not in clocks and m.group(1).lstrip("0") not in clocks:
+                        return False
+            if re.search(r"\bon the board\b|\bopened the scoring\b|\bfirst (score|points|td|touchdown)\b", seg, re.I) \
+                    and g.get("scoring_n", 0) == len(g.get("scoring") or []):
+                firsts_by_team = {}
+                for x in g.get("scoring") or []:
+                    firsts_by_team.setdefault(x["team"], x.get("text") or "")
+                named_p = {w.lower() for w in re.findall(r"\b[A-Z][a-z'\-]{2,}\b", seg)} & (known | {
+                    w.lower() for x in g.get("scoring") or [] for w in re.findall(r"[A-Z][a-z'\-]{2,}", x.get("text") or "")})
+                named_p -= {w.lower() for n in names for w in n.split()}
+                if named_p and not any(named_p & {w.lower() for w in re.findall(r"[A-Z][a-z'\-]{2,}", t_)}
+                                       for t_ in firsts_by_team.values()):
+                    return False  # 'Searcy put them on the board' when Clark scored first
+            m_q = re.search(r"\b(two|three|both|\d) (?:of (?:their|the) )?(?:qbs|quarterbacks)\b", seg, re.I)
+            if m_q and _INJ_WORD.search(seg):
+                n_inj = sum(1 for x in g.get("injuries") or [] if x.get("qb"))
+                w_ = m_q.group(1).lower()
+                n_say = int(w_) if w_.isdigit() else {"two": 2, "both": 2, "three": 3}[w_]
+                if n_say != n_inj:
+                    return False  # 'two of their QBs are reported injured' when one is
             team_words = {w.lower() for n in names for w in n.split()}
             for m in re.finditer(r"\b([A-Z][a-z'\-]+) ([A-Z][a-z'\-]+)\b", seg):  # 'Austin Manning' for Arch Manning
                 ok_first = (g.get("firsts") or {}).get(m.group(2).lower())

@@ -374,6 +374,20 @@ class Exam80Fixes(unittest.TestCase):
         self.assertEqual(L.named_games("North Texas score?", only_tex), [])
         self.assertEqual([g["id"] for g in L.named_games("Texas LSU score?", gs)], [TEX])
 
+    def test_missing_team_and_claim_cuts(self):
+        t = R._ts("2026-11-15T03:06:40Z")
+        gs = self._games(t)
+        known = {"texas", "texas a&m", "oregon", "oregon state", "lsu"}
+        self.assertEqual(L.missing_teams("what's the Texas A&M score?", gs, known), ["Texas A&M"])
+        self.assertEqual(L.missing_teams("how's Oregon doing?", gs, known), ["Oregon"])
+        self.assertEqual(L.missing_teams("Texas LSU score?", gs, known), [])
+        c = L.claim_check([gs[TEX]])
+        self.assertFalse(c("Austin Manning has thrown 1 interception."))
+        self.assertFalse(c("Arch Manning has thrown 1 interception."))
+        self.assertTrue(c("Arch Manning has thrown 2 interceptions."))
+        self.assertFalse(c("That happened about 1 second ago."))
+        self.assertFalse(c("LSU at Texas is a good one."))
+
     def test_two_players_hurt_on_one_play(self):
         g = state(UTSA, at(UTSA, r"T\.Jackson, #20 Z\.Morris injured", after=30))
         hurt = {x["player"]: x for x in g["injuries"]}

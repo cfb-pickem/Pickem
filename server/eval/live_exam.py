@@ -50,6 +50,10 @@ WF, NEB, BOI, UNC, LSU, UTSA, HAW, OT = ("401858301", "401858525", "401860914", 
                                          "401862827", "401864537", "401870796")
 POOL_IDS = (WF, BOI, UTSA, HAW)
 PERSONA = "Chuck P"
+# a slice of the local CFBD Division I team list (what live_games.missing_teams reads), frozen for the fast mode
+KNOWN_TEAMS = {"texas", "texas a&m", "lsu", "oregon", "oregon state", "boise state", "ohio state", "wake forest", "smu",
+               "north texas", "utsa", "hawai'i", "north dakota state", "nebraska", "rutgers", "north carolina",
+               "louisville", "new mexico state", "missouri state", "alabama", "georgia", "michigan"}
 
 
 def load_pool(d: Path = DATA) -> tuple[dict, dict]:
@@ -113,7 +117,9 @@ class Truth:
         s = self.at(gid, t)
         hd = f"{s['away']} at {s['home']}"
         if s["state"] == "pre":
-            return f"{hd}: NOT STARTED at this moment (no score yet)."
+            ko = dt.datetime.fromtimestamp(R.kickoff(self.games[gid]) - 300, dt.timezone(dt.timedelta(hours=-6)))
+            return (f"{hd}: NOT STARTED at this moment (no score yet); scheduled kickoff ~{ko:%-I:%M %p} CT"
+                    + (f"; league line {self.pool[gid]['home']} {self.pool[gid]['line']:+g}" if gid in self.pool else "") + ".")
         per = {1: "1Q", 2: "2Q", 3: "3Q", 4: "4Q"}.get(s["period"], "OT")
         when = "FINAL" + ("/OT" if (s["period"] or 0) > 4 else "") if s["state"] == "post" else (
             "HALFTIME" if "HALFTIME" in s["status"] else f"LIVE {s['clock']} {per}")
@@ -130,8 +136,9 @@ class Truth:
             when_p = f"Q{(p.get('period') or {}).get('number')} {(p.get('clock') or {}).get('displayValue')}"
             if p.get("isTurnover") or ty in _TO_TYPES or "TURNOVER ON DOWNS" in tx.upper():
                 tos.append(f"{when_p} {re.sub(r'#[0-9]+ ', '', tx)[:150]}")
-            for m in re.finditer(r"#\d{1,2} ([A-Z][^#,]*?) injured on the play", tx):
-                inj.append(f"{when_p} {m.group(1)}")
+            for ml in re.finditer(r"((?:#\d{1,2} [A-Z][^#,]*?(?:,| and)? ?)+) injured on the play", tx):
+                for m in re.finditer(r"#\d{1,2} ([A-Z][^#,]*?)(?:,| and|$)", ml.group(1).strip()):
+                    inj.append(f"{when_p} {m.group(1).strip()}")
             for m in re.finditer(r"#\d{1,2} ([A-Z][A-Za-z.'\- ]+?(?: Jr\.| II| III| IV)?) (?:pass|sacked|scrambles)", tx):
                 passers.setdefault(m.group(1), when_p)
         if tos:
@@ -306,8 +313,8 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
         [r"Oregon State( \+13\.5)?( is)? not covering|Oregon State isn\'?t covering|you\'?re not covering"], [BOI], expect={"cover": (BOI, "Oregon State", 1.5)})
     add("boi-half-why", "followup", "boihalf", "why?", [r"13\.5|line|spread|points"], [], [BOI], follow="boi-half-cover",
         rider=[r"13\.5"])
-    add("oregon-wrong-team", "trick", "boihalf", "how's Oregon doing?", [],
-        [r"Oregon (is|are) (up|down|leading|trailing|losing|winning)", r"Ducks"], [BOI], rider=[],
+    add("oregon-wrong-team", "trick", "boihalf", "how's Oregon doing?", [NO_INFO + r"|Oregon State|no (live )?(score|game)"],
+        [r"Oregon (is|are) (up|down|leading|trailing|losing|winning)", r"Ducks"], [BOI], rider=[r"NOT IN THE LIVE FEED: Oregon"],
         key="Oregon (the Ducks) is not in the feed; Oregon State trails Boise State 32-20 at halftime. A 32-20 is only OK "
             "if it's clearly Oregon State's game.")
 
@@ -368,7 +375,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
         [r"\byes\b", r"Manning (was|got|is) (hurt|injured)", r"confirmed"], [LSU], rider=[],
         key="No injury reported for Arch Manning in the feed.")
     add("aggies-wrong-team", "trick", "lsu3", "what's the Texas A&M score?", [NO_INFO + r"|A&M|(isn'?t|not) (even )?in (our|the) pool"],
-        [r"A&M (is |are )?(up|down|leads|trails|winning|losing)", r"A&M \d"], [LSU], rider=[],
+        [r"A&M (is |are )?(up|down|leads|trails|winning|losing)", r"A&M \d"], [LSU], rider=[r"no live score for Texas A&M"],
         key="Texas A&M is not in the feed; Texas (at LSU, 21-10 LSU) is a different team.")
 
     # --- UTSA 3Q: Jimerson (backup) TD pass, 21-10 ---------------------------------------------------
@@ -553,6 +560,7 @@ def fast(answers: str | None = None, verbose: bool = False) -> dict:
     import live_games as L
     importlib.reload(L)
     L._overlay.clear()
+    L._known_teams = lambda: KNOWN_TEAMS  # the CFBD team list, frozen for CI
     p = L.Poller(cache=Path(os.environ["PICKY_LIVE_CACHE"]), pool_ids_fn=lambda: list(POOL_IDS))
     recorded = {}
     if answers:
@@ -731,7 +739,8 @@ For each item list every WRONG FACT in the answer: a score, margin, cover status
 yardage, play type, time, injury or QB claim that contradicts FACTS or isn't supported by them (an invented event,
 a guessed injury severity, a future result, a made-up line). Jokes, opinions, trash talk and awkward wording are NOT
 wrong facts. Saying "reported"/"per ESPN" is fine; full first names matching the initials in FACTS are fine. A game the
-FACTS say isn't started must get no score. If the question names a team not in FACTS, the bot must not give another
+FACTS say isn't started must get no score. A player's team, position or full first name from the box score
+(not shown here) is fine when it doesn't contradict FACTS. If the question names a team not in FACTS, the bot must not give another
 team's numbers as that team's. League facts that aren't about these games (the asker's season record, standings,
 "first place", past weeks) are out of scope: don't flag them, EXCEPT a claim that this week's picks/games already
 won, lost or covered when FACTS show those games unfinished or not started. Then say whether it answers what was
