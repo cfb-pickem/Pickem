@@ -37,9 +37,9 @@ MAX_CARDS = 2
 BOARD_ROWS = 12
 HORIZON = dt.timedelta(days=9)
 
-_SLATE_ASK = re.compile(
-    r"\b(this week'?s?|the slate|slate|key numbers?|hooks?|value (this|on the)|where'?s the value|line moves?|"
-    r"lines? (moved|moving)|lookahead|look-ahead|letdown|sandwich|trap games?|best bets?|biggest (line )?moves?)\b", re.I)
+_SLATE_ASK = re.compile(  # a market-wide ask; 'who should I take this week?' is the pool's (the pick lane answers it)
+    r"\b(key numbers?|hooks?|line moves?|lines? (moved|moving)|biggest (line )?moves?|lookahead|look-ahead|letdown|"
+    r"sandwich|trap games?|the slate|notable games|around the country|other games)\b", re.I)
 _PICK_WORDS = re.compile(
     r"\b(lines?|spreads?|cover\w*|ats|take|lay\w*|getting|value|picks?|who (you|ya|do you) (got|like|taking)|side|"
     r"points?|totals?|over|under|injur\w*|qbs?|quarterbacks?|backups?|matchups?|defen[cs]e|offen[cs]e|run\w*|pass\w*|rush\w*|weather|"
@@ -161,7 +161,7 @@ def _rec(rows: list[dict]) -> str:
     return f"{c}-{l_}" + (f"-{p}" if p else "")
 
 
-def ats_line(team: str, rows: list[dict], t: dict | None) -> str:
+def ats_line(team: str, rows: list[dict], t: dict | None, short: bool = False) -> str:
     graded = [r for r in rows if r["cover"] is not None]
     fav = [r for r in graded if r["spread"] < 0]
     dog = [r for r in graded if r["spread"] > 0]
@@ -171,7 +171,7 @@ def ats_line(team: str, rows: list[dict], t: dict | None) -> str:
     s = f"{team}{f' ({rec})' if rec else ''}: ATS {_rec(graded)}"
     s += f" (fav {_rec(fav)}, dog {_rec(dog)}, home {_rec(home)}, road {_rec(road)})"
     last = []
-    for r in graded[-3:]:
+    for r in ([] if short else graded[-3:]):
         res = "push" if r["cover"] == 0 else f"{'covered' if r['cover'] > 0 else 'missed'} by {abs(r['cover']):g}"
         last.append(f"{'vs' if r['home'] else 'at'} {r['opp']} {r['pts'][0]}-{r['pts'][1]} as {r['spread']:+g}, {res}")
     if last:
@@ -239,11 +239,12 @@ def league_vs_market(g: dict, league_home: float, espn_market: dict | None) -> l
         m = (_line(g) or {}).get("spread")
     L = float(league_home)
     lfav, lsp = (home, L) if L < 0 else (away, -L)
-    out = [f"  LEAGUE LINE (pool game; graded against this, locks Tue 11 AM CT; before then say 'value if it holds "
-           f"through the lock'): {_fmt_spread(lfav, lsp)}"]
+    out = [f"  League line {_fmt_spread(lfav, lsp)} (locks Tue 11 AM CT)"]
     if m is None or float(m) == L:
-        out[0] += " = the market right now (it can still move until the lock)."
+        out[0] += " = the market now."
         return out
+    out[0] = (f"  LEAGUE LINE (graded against this; locks Tue 11 AM CT, so before then say 'value if it holds through "
+              f"the lock'): {_fmt_spread(lfav, lsp)}")
     m = float(m)
     mfav, msp = (home, m) if m < 0 else (away, -m)
     value = home if m < L else away
@@ -387,9 +388,16 @@ def card(g: dict, idx: dict, espn_notes: dict | None, games_ds: dict, ask: str =
     head = (f"GAME CARD (computed from CFBD + ESPN; answer their football question from it, straight, and don't "
             f"bring up whether it's a pool game): "
             f"{away} at {home}{' (neutral site)' if meta.get('neutralSite') else ''}, {when}{', ' + where if where else ''}.")
+    if league_home is not None:  # pool game: the pool's game card has the market, factors and lean; add only what it lacks
+        L = [f"GAME CARD extras (CFBD/ESPN): {away} at {home}."] + league_vs_market(g, league_home, (espn_notes or {}).get("market"))
+        for team in (away, home):
+            L.append("  " + ats_line(team, team_rows(team, idx, g["startDate"]), cfbd.resolve_team(team, idx), short=True))
+        lm = last_meeting(g)
+        if lm:
+            L.append(lm)
+        nl = news_lines(away, home, g["id"])
+        return "\n".join(L + [x for x in nl if not x.startswith("  These are")][:3])
     L = [head] + market_line(g, (espn_notes or {}).get("market"))
-    if league_home is not None:
-        L += league_vs_market(g, league_home, (espn_notes or {}).get("market"))
     for team in (away, home):
         t = cfbd.resolve_team(team, idx)
         L.append("  " + ats_line(team, team_rows(team, idx, g["startDate"]), t))

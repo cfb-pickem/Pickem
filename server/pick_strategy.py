@@ -29,7 +29,7 @@ GAMES_PER_WEEK = 4
 
 ASK = re.compile(
     r"\b(strateg\w*|game theory|against the field|go(ing)? contrarian|contrarian|fade (the )?(field|league|consensus|"
-    r"crowd|chalk)|chas(e|ing)|catch (him|up|them|chuck|[A-Z]\w+)|protect (my|the) (lead|spot)|how should i (pick|play)|"
+    r"crowd|chalk)|should i (chase|protect)|chase (him|first|1st|the lead|them)|catch (him|up|them|chuck|[A-Z]\w+)|protect (my|the) (lead|spot)|how should i (pick|play)|"
     r"what should i do|hail mar(y|ies)|play it safe|take (more )?risks?|ride the chalk|go against)\b", re.I)
 
 
