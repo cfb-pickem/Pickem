@@ -356,6 +356,41 @@ PRIVACY_PROBE = re.compile(
     r"of the|our)?|other (people|guys|members)'?s?|the league'?s|every)\b[^?.!]{0,12}\bpicks?\b", re.I)
 
 
+# rules phrasings league_rules.answer misses (keeper k1 chunks 3-4): jackpot/slots, ties, forgetting, away on game day,
+# can the commish fix it
+RULES_EXTRA = re.compile(
+    r"\b(jackpot|slots?)\b|\bcan (games?|it|they) (tie|push)\b|\b(a )?ties?\b[^?.!]{0,15}\b(happen|possible|count)\b"
+    r"|\b(forget|forgot|miss|missed) (to pick|picking|my picks?|totally|the deadline|the lock)\b|\bdo i get a zero\b"
+    r"|\b(pick|picks) for me\b|\btext (u|you) my picks\b|\b(on a plane|away|wedding|out of town|traveling)\b[^?.!]{0,40}\bpicks?\b"
+    r"|\bcan (chuck|the commish|the commissioner|commish) (fix|change|enter|edit|redo)\b", re.I)
+
+
+def rules2_text(ctx: dict, q: str) -> str | None:
+    t = q or ""
+    if re.search(r"\b(jackpot|slots?)\b", t, re.I) and league_rules is not None:
+        txt = league_rules.current_text()
+        i = txt.find("LET THE SLOTS DECIDE")
+        if i < 0:
+            return None
+        bullets = [b.strip("- ").strip() for b in txt[i:].split("\n")[1:4] if b.startswith("- ")]
+        out = " ".join(bullets[:2])
+        if re.search(r"\b(have i|did i|ever) (ever )?(hit|won|popped)\b|\bhit it\b", t, re.I):
+            out += " I can't see who's hit it from here; the football on the picks page shows the odds."
+        return out or None
+    if re.search(r"\btie|push\b", t, re.I):
+        return rules_answer("what happens on a push", n_teams=len(ctx.get("teams") or []) or None)
+    if re.search(r"\b(forget|forgot|miss|missed|zero)\b", t, re.I):
+        return rules_answer("what if i forget to pick", n_teams=len(ctx.get("teams") or []) or None)
+    if re.search(r"\b(pick|picks) for me\b|\btext (u|you) my picks\b|\b(plane|away|wedding|out of town|traveling)\b", t, re.I):
+        when = chat._kickoff(str(ctx["week_unlock"])) if ctx.get("week_unlock") else "the week's first kickoff"
+        return (f"I can't enter picks for anyone. Get them in on the site before the first kickoff ({when}), or "
+                "choose \"Let the slots decide\" and the site flips a coin for you at lock. After the lock only Chuck can "
+                "enter a pick.")
+    if re.search(r"\b(chuck|commish|commissioner)\b", t, re.I):
+        return ("Yep, the commissioner can enter, change or delete anyone's pick, even after the lock. It's Chuck's call.")
+    return None
+
+
 # keeper sparring k1 (2026-11-16): 'top 4 right now go', 'how many weeks left', 'who went 0-4 last week besides me'
 TOP4 = re.compile(r"\btop (4|four)\b", re.I)
 TOP4_LEAGUE = re.compile(r"\b(who'?s|whos|who are|who is|the)\s+top (4|four)\b|\btop (4|four)\b[^?.!]{0,12}\b(right now|rn|currently|"
@@ -438,6 +473,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "slate", "SLATE_READ"
     if chat.wants_rules(t) and rules_answer(t):
         return "rules", "league_rules.answer"
+    if RULES_EXTRA.search(t):
+        return "rules2", "RULES_EXTRA"
     if RECORD_Q.search(t):
         return "record", "RECORD_Q"
     if RESULTS_Q.search(t) and not re.search(r"\b(season|on the year|all year)\b", t, re.I):
@@ -1692,7 +1729,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
               "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
               "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text,
-              "others": others_text, "short": short_text, "value": value_text}.get(kind)
+              "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

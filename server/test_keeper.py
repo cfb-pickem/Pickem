@@ -574,6 +574,18 @@ def test_value_lane():
                  "Pick it on the matchup."), r
 
 
+def test_rules_extra():
+    ctx = _wk12_picks()
+    ctx["week_unlock"] = "2026-11-21T11:00:00"
+    for q in ("whats the jackpot thing", "can games tie in this", "what if i forget totally", "lol do i get a zero",
+              "im on a plane sat morning can u pick for me", "can chuck fix it"):
+        assert router.classify(q).label() in ("fact:rules2", "fact:rules"), q
+    assert router.fact_answer("rules2", ctx, "whats the jackpot thing").startswith("Instead of picking a side")
+    r = router.fact_answer("rules2", ctx, "im on a plane sat morning can u pick for me")
+    assert r.startswith("I can't enter picks for anyone. Get them in on the site before the first kickoff (Sat 11:00 AM CT)"), r
+    assert router.fact_answer("rules2", ctx, "can chuck fix it").startswith("Yep, the commissioner can")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
