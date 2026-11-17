@@ -195,6 +195,33 @@ SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{
 # game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
 CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
 CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden"}
+# 'freeman needs a lock before 11 and dont say northwestern' (k2: a jab, no pick, 119 s): the strongest card call,
+# skipping a game the text rules out
+LOCK_PICK = re.compile(r"\b(needs?|gimme|give me|got|whats|what'?s|ur|your|any|best) (a |ur |your |the )?(lock|best bet|best play)\b"
+                       r"|\block of the (week|wk)\b|\bbest bet\b", re.I)
+_NOT_THIS = re.compile(r"\b(?:dont|don'?t|not|no|besides|other than|except|skip)\s+(?:say\s+|give me\s+|the\s+)?([a-z][a-z .&']{1,20}?)\b(?=[,.!?]|$|\s+(?:and|or|again|this|pls|please))", re.I)
+
+
+def lock_pick_text(ctx: dict, q: str) -> str | None:
+    import game_cards
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker") and not g.get("winner")]
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    skip = set()
+    for m in _NOT_THIS.finditer(q or ""):
+        skip |= {n["id"] for n in chat.games_named(m.group(1), gl)}
+    cards = [(g, c) for g in games if g["id"] not in skip and (c := _card_for(ctx, g))]
+    if not cards:
+        return None
+    best = game_cards.strongest([c for _, c in cards])
+    if not best:
+        return None
+    lk = game_cards.is_locked(best)
+    rs = [r for r in game_cards._reasons(best, lk) if r]
+    why = say_reason(rs[0], best, lk) if rs else ""
+    word = best["confidence"].get("word") or "lean"
+    pre = "Fine, not that one. " if skip else ""
+    return (f"{pre}{best['lean']['label']}" + (f": {why[0].upper() + why[1:]}." if why else ".")
+            + (" Nothing this week is a real lock though, it's a " + word + "." if word in ("slight lean", "coin flip") else ""))
 # 'so illinois got value now?' -> 'Nah.' (k1b); 'so nw is the value side?' -> a chalk jab (k1a)
 VALUE_ASK = re.compile(r"\b(value|free points?|better number|any edge|edge on)\b(?![^?.!]*\b(bet|meal|menu)\b)", re.I)
 
@@ -568,6 +595,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if (LINE_MOVE.search(t) or LINE_MOVE_BARE.search(t)) and not re.search(r"\b(gonna|going to|will it|keep moving|before (11|the lock|lock|tuesday))\b"
                                             r"(?![^?.!]*\bafter\b)", t, re.I):
         return "line_move", "LINE_MOVE"
+    if LOCK_PICK.search(t) and not re.search(r"\b(when|what time|lines? lock|locks? at|time)\b", t, re.I):
+        return "lock_pick", "LOCK_PICK"
     if VALUE_ASK.search(t):
         return "value", "VALUE_ASK"
     if CONF_ASK.search(t):
@@ -1905,7 +1934,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text,
               "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text,
               "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text,
-              "jackpot_hit": jackpot_hit_text}.get(kind)
+              "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

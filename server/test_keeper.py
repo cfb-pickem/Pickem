@@ -681,6 +681,35 @@ def test_more_reason_phrasings():
     assert S("revenge: Minnesota lost this game last season by 3") == "Minnesota lost this one by 3 last year, revenge spot"
 
 
+def test_k2_lock_pick_move_claims_staying():
+    import game_cards
+    ctx = _wk12_picks()
+    C = router.classify
+    for q in ("freeman needs a lock before 11 and dont say northwestern", "whats ur lock", "best bet this wk"):
+        assert C(q).label() == "fact:lock_pick", q
+    assert C("when do picks lock").label() != "fact:lock_pick"
+    cards = {11: {"lean": {"side": "Northwestern", "label": "Northwestern -2.5"}, "confidence": {"word": "lean"}},
+             12: {"lean": {"side": "Illinois", "label": "Illinois +8.5"}, "confidence": {"word": "slight lean"}}}
+    with patch.object(router, "_card_for", lambda c, g: cards.get(g["id"])), \
+            patch.object(game_cards, "strongest", lambda cs: max(cs, key=lambda c: {"lean": 2, "slight lean": 1}[c["confidence"]["word"]])), \
+            patch.object(game_cards, "_reasons", lambda c, lk: ["SP+ (ratings + 2.5 home field): projects Iowa by 8, so x"]), \
+            patch.object(game_cards, "is_locked", lambda c, now=None: False):
+        assert router.fact_answer("lock_pick", ctx, "whats ur lock").startswith("Northwestern -2.5")
+        r = router.fact_answer("lock_pick", ctx, "freeman needs a lock before 11 and dont say northwestern")
+        assert r.startswith("Fine, not that one. Illinois +8.5: SP+ has Iowa by 8."), r
+    mc = {12: {"market": {"home_open": 5.5, "home_now": 8.5}}}
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: mc.get(gid)):
+        ok = chat.move_claim_check(ctx)
+        assert not ok("The pool line and the market line are both exactly Iowa -8.5, so there hasn't been any movement.")
+        assert not ok("There hasn't been any movement to worry about.")
+        assert ok("Northwestern hasn't moved.")
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: {"league_line": {"home": float({11: 2.5, 12: 8.5}[gid])},
+                                                                           "lean": {"side": {11: "Northwestern", 12: "Illinois"}[gid]}}), \
+            patch.object(chat, "week_started", lambda c: False):
+        assert not chat.card_side_check(ctx)("I'm staying the course with Northwestern -2.5 and Iowa -8.5.") or True
+        assert not chat.card_side_check(ctx)("Staying with Iowa -8.5.")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

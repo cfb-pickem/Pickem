@@ -6347,7 +6347,8 @@ def value_claim_check(ctx: dict):
     return ok
 
 
-_MY_PICK = re.compile(r"\b(i'?m (taking|going with|sticking with|riding|rolling with|backing|on)|i'?d (take|go with|ride|back|lean)|"
+_MY_PICK = re.compile(r"\b(i'?m (taking|going with|sticking with|riding|rolling with|backing|on|staying with|staying the course with|with)|"
+                      r"stay(ing)? (the course )?with|i'?ve got|my guys? (is|are)|i'?d (take|go with|ride|back|lean)|"
                       r"my (picks?|calls?|locks?|play|lean) (is|are|was)|i (like|took|picked|lean)|go with|take|sticking with|"
                       r"lock (it )?in)\b", re.I)
 _YOUR_PICK = re.compile(r"\b(you('?ve)? (got|have|took|picked|are on|'re on)|your (pick|picks))\b", re.I)
@@ -6398,6 +6399,32 @@ def line_set_check(ctx: dict):
     if ctx.get("error") or not ctx.get("games_this_week") or lines_locked(ctx):
         return None
     return lambda sent: not (_SET_CLAIM.search(sent or "") and not _SET_OK.search(sent or ""))
+
+
+_NO_MOVE = re.compile(r"\b(no|hasn'?t been any|hasn'?t been|without|zero) (real )?(line )?(movement|move)\b|\bhasn'?t moved\b|"
+                      r"\bdidn'?t move\b|\bnot moved\b|\bnothing'?s moved\b|\bstill at the opener\b", re.I)
+
+
+def move_claim_check(ctx: dict):
+    """'There hasn't been any movement' about a game whose market moved since open (keeper k2: 'both exactly Iowa
+    -8.5, so there hasn't been any movement' after Iowa went -5.5 -> -8.5) is cut."""
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    moved = {}
+    for g in games:
+        c = game_cards.load_card(ctx.get("current_week"), g["id"])
+        m = (c or {}).get("market") or {}
+        if m.get("home_open") is not None and m.get("home_now") is not None and m["home_open"] != m["home_now"]:
+            moved[g["id"]] = g
+    if not moved:
+        return None
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+
+    def ok(sent: str) -> bool:
+        if not _NO_MOVE.search(sent or ""):
+            return True
+        named = {n["id"] for n in games_named(re.sub(r"['’]s\b", "", sent), gl, cap=4)}
+        return bool(named) and not (named & set(moved))
+    return ok
 
 
 _FAV_WORD = re.compile(r"\b(favou?rites?|favou?red|chalk|laying (the )?points|lay(ing)? \d)\b", re.I)
@@ -7285,7 +7312,8 @@ async def _chat(req: Request, test: bool, hold: int | None):
                             _both(_both(_both(pick_claim_check(ctx, qtext), live_games.claim_check(ctx.get("live_rider_games"))),
                                         _both(picky_claim_check(ctx), picky_claim_check(ctx, "you"))),
                                   _both(_both(value_claim_check(ctx), advice_jab_check(ctx, qtext)),
-                                        _both(_both(fav_claim_check(ctx), card_side_check(ctx)), line_set_check(ctx))))) if not ctx.get("error") else None),
+                                        _both(_both(fav_claim_check(ctx), card_side_check(ctx)),
+                                              _both(line_set_check(ctx), move_claim_check(ctx)))))) if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or live_games.required_fact(ctx, qtext)
                                      or required_fact(ctx, qtext) or rankings_fact(rn))
                 if not ctx.get("error")
