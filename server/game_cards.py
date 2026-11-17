@@ -73,6 +73,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))  # launchd runs python3 -I (no script dir on the path)
 import enrich  # noqa: E402
 import pick_brief  # noqa: E402
+import rivalries  # noqa: E402
 
 log = logging.getLogger("picky.game_cards")
 CT = ZoneInfo("America/Chicago")
@@ -491,6 +492,8 @@ def backtest(data: dict, lines_rows: list, idx: dict | None = None, full_seasons
         dog = (g["Away"] if fav == g["Home"] else g["Home"]) if fav else None
         tally("underdog", dog, g)
         tally("home", g["Home"], g)
+        if rivalries.rivalry(g["Away"], g["Home"]):  # factor 24's folk rule, on the league line
+            tally("rivalry_dog", dog, g)
         mc = close.get(g["GameId"])
         if not mc:
             continue
@@ -541,6 +544,7 @@ def cmd_backtest() -> dict:
     data = lore.load(lore.service_key())
     lines = (pick_brief.raw("lines") or []) + (pick_brief.raw("lines_prev") or [])
     res = backtest(data, lines, chat._cfbd_index(), full_seasons=(max(g["cfb_season"] for g in data["games"]),))
+    res["rivalry_fbs_close"] = rivalries.backtest(lines)  # every FBS rivalry game vs the closing line
     res["generated_at"] = now_ct().isoformat(timespec="seconds")
     import dossier as dz
     dz.write_atomic(BACKTEST_FILE, res)

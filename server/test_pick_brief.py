@@ -178,8 +178,8 @@ check("brief names the ATS framing and the league line",
 check("brief recommends with the line", "RECOMMENDATION: Texas A&M +7.5" in note, note)
 check("brief is short", len(note.splitlines()) <= 12, len(note.splitlines()))
 full = pb.full_note(s)
-check("full table lists never-available factors", "Never available (no source): depth chart, rivalry, CFP seeding" in full,
-      full[-200:])
+check("every factor has a source now: no 'never available' line", "Never available" not in full
+      and pb.live_count() == {"live": 41, "partial": 19, "none": 0}, (full[-200:], pb.live_count()))
 check("wants_full", pb.wants_full("why?") and pb.wants_full("give me everything") and not pb.wants_full("who covers?"))
 check("weights documented as in the module docstring", pb.W_VALUE_BIG == 6 and pb.W_QB_OUT == 4 and pb.W_SP == 2)
 

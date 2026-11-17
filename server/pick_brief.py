@@ -44,6 +44,8 @@ import sqlite3
 from pathlib import Path
 
 import cfbd
+import rivalries
+import title_race
 
 # -----------------------------------------------------------------------------
 # weights and thresholds
@@ -55,6 +57,10 @@ W_SP, W_FPI, W_SRS, W_EFF = 2, 1, 0.5, 1
 W_MED, W_LIGHT = 1, 0.5
 W_INJ, W_INJ_MAX = 0.5, 1.5
 W_THEORY = 1
+# rivalry (#24): the folk rule says lean to the dog; rivalries.backtest() says rivalry dogs went 63-82 ATS (43%,
+# 95% CI 36-52%) vs the closing line in 2025-26 FBS games (other dogs 50%). No evidence for a dog lean: weight 0,
+# the game is flagged and the doc reports the number. Revisit if a bigger sample says otherwise.
+W_RIVALRY = 0.0
 HOME_FIELD = 2.5            # points; same as chat.SP_HOME_FIELD and picky_picks.HOME_FIELD
 PLAYS_PER_GAME = 68
 KEY_NUMBERS = (3, 7, 10, 14)
@@ -82,7 +88,7 @@ STATUS = {
     11: ("partial", "dossier + news.json keyword match"),
     12: ("partial", "dossier + news.json keyword match"),
     13: ("partial", "dossier + news.json keyword match"),
-    14: ("none", "no depth-chart feed"),
+    14: ("partial", "news.json + dossier items: starter named, benched, promoted, 'will start', QB1 (info only; no depth-chart feed)"),
     15: ("partial", "news.json + dossier + insider notes keyword match"),
     16: ("partial", "insider notes coaching-carousel section + news.json"),
     17: ("partial", "CFBD lines: team ATS this season as favorite/underdog (no multi-year coach ATS)"),
@@ -92,9 +98,9 @@ STATUS = {
     21: ("live", "CFBD schedule, scores and lines (last week's upset win)"),
     22: ("live", "CFBD schedule + SP+"),
     23: ("live", "CFBD last season's lines/scores"),
-    24: ("none", "no rivalry list in any cached source"),
+    24: ("live", "rivalries.py: maintained list of 118 FBS rivalry and trophy games (weight 0 per the backtest)"),
     25: ("live", "CFBD records + schedule"),
-    26: ("partial", "ESPN AP rank + CFBD conference record (no clinch/elimination feed)"),
+    26: ("live", "title_race.py: CFBD conference records + remaining schedule (title-game clinch/elimination, out of the CFP); ESPN AP rank fallback"),
     27: ("live", "CFBD schedule (last home game)"),
     28: ("partial", "ESPN AP rank (committee incentive approximated by a top-12 AP team)"),
     29: ("live", "CFBD lines: home team's home ATS this season"),
@@ -125,7 +131,7 @@ STATUS = {
     54: ("partial", "news.json + insider notes (realignment) naming the team"),
     55: ("partial", "news.json + insider notes (revenue sharing / NIL) naming the team"),
     56: ("partial", "news.json keyword match (investigation, AD change, coach search)"),
-    57: ("none", "no clinch, seeding or resting-starters feed"),
+    57: ("partial", "title_race.py: a clinched title-game spot in the last regular-season game = resting-starter risk (no committee seeding feed)"),
     58: ("live", "Supabase graded picks (both seasons): each rival's tendencies"),
     59: ("live", "Supabase graded picks: predicted league lean from past tendencies"),
     60: ("live", "Supabase standings: asker's gap to the leader / playoff cut line"),
@@ -1013,8 +1019,20 @@ def f_h2h(g: dict, ta, th, prev_lines: list | None) -> list[dict]:
     return out
 
 
-def f_stakes(g: dict, notes: dict | None, ta, th) -> list[dict]:
+def f_stakes(g: dict, notes: dict | None, ta, th, race: dict | None = None) -> list[dict]:
+    """26 (title stakes) from title_race's clinch/elimination math, else the AP-rank proxy; 28 style points."""
     out = []
+    sa, sh = (race or {}).get(g["away"]), (race or {}).get(g["home"])
+    if sa and sh:
+        dead = {side: s["cfp"] == "out" and s["title"] in ("eliminated", None) for side, s in ((g["away"], sa), (g["home"], sh))}
+        if dead[g["away"]] != dead[g["home"]]:
+            live, gone = (g["away"], g["home"]) if dead[g["home"]] else (g["home"], g["away"])
+            out.append(F(26, live, W_LIGHT, f"title stakes: {title_race.line(race[live])}; {title_race.line(race[gone])}"))
+        elif any(s["title"] == "clinched" for s in (sa, sh)):
+            s = sa if sa["title"] == "clinched" else sh
+            out.append(F(26, None, 0, f"title stakes: {title_race.line(s)}", flag=True))
+    if out:
+        race = None  # the clinch math decided #26: skip the AP proxy below
     ranks = {g["away"]: ((notes or {}).get("away") or {}).get("ap_rank"),
              g["home"]: ((notes or {}).get("home") or {}).get("ap_rank")}
     recs = {g["away"]: (ta or {}).get("record"), g["home"]: (th or {}).get("record")}
@@ -1027,13 +1045,49 @@ def f_stakes(g: dict, notes: dict | None, ta, th) -> list[dict]:
             continue
         l = int(m.group(2))
         alive[side] = bool(ranks[side]) and l <= 2
-    if len(alive) == 2 and alive[g["away"]] != alive[g["home"]]:
+    if race is not None and len(alive) == 2 and alive[g["away"]] != alive[g["home"]]:
         side = g["away"] if alive[g["away"]] else g["home"]
         out.append(F(26, side, W_LIGHT, f"title stakes: {side} (AP #{ranks[side]}, {recs[side]}) is in the playoff "
                                         f"race, {_other(g, side)} ({recs[_other(g, side)]}) isn't"))
     if fav and ranks.get(fav) and ranks[fav] <= 12 and not ranks.get(_other(g, fav)):
         out.append(F(28, fav, W_LIGHT, f"style points: {fav} (AP #{ranks[fav]}) wants a big win for the committee"))
     return out
+
+
+def f_cfp_incentive(g: dict, race: dict | None) -> list[dict]:
+    """57: a team that has clinched its title-game spot, in its last regular-season game, may rest starters."""
+    out = []
+    for side, s in (race or {}).items():
+        if s and s["title"] == "clinched" and s["last_game"]:
+            out.append(F(57, _other(g, side), W_LIGHT, f"resting starters: {title_race.line(s)}, and this is its last "
+                                                      "regular-season game", flag=True))
+    return out
+
+
+def f_rivalry(g: dict) -> list[dict]:
+    """24: a listed rivalry. Folk rule: the dog covers more; weight W_RIVALRY (0, see the backtest)."""
+    name = rivalries.rivalry(g["away"], g["home"])
+    if not name:
+        return []
+    sp = float(g["line"])
+    dog = g["away"] if sp < 0 else g["home"] if sp > 0 else None
+    return [F(24, dog, W_RIVALRY if dog else 0, f"rivalry: {name}" + (f" ({dog} is the underdog; rivalry dogs went "
+                                                                     "63-82 ATS vs the close in 2025-26, so no lean)"
+                                                                     if dog else ""), flag=True)]
+
+
+_DEPTH = re.compile(r"\b(will start|named (\w+ ){0,2}(the |as the )?(starter|starting \w+)|QB1|benched|promoted|first career start|"
+                    r"takes? over (as|at) (the )?(starter|starting|quarterback|QB)|earn(s|ed)? the start\w*|"
+                    r"starting job|depth chart|replac\w+ \w+( \w+)? as (the )?starter)\b", re.I)
+
+
+def f_depth(g: dict, side: str, items: list[dict]) -> list[dict]:
+    """14: depth-chart news for one team (starter named, benched, promoted), newest item first. Info only."""
+    for it in sorted(items or [], key=lambda i: str(i.get("date") or ""), reverse=True):
+        txt = _intel_text(it)
+        if _DEPTH.search(txt):
+            return [F(14, None, 0, f"depth chart ({side}): {_short(txt, 120)} ({_intel_src(it)})", flag=True)]
+    return []
 
 
 def f_qb_run(g, ta, th, idx, notes, adv_rows) -> list[dict]:
@@ -1239,6 +1293,7 @@ def build(g: dict, notes: dict | None = None, idx: dict | None = None, extras: d
     for side, t, ns in ((g["away"], ta, "away"), (g["home"], th, "home")):
         factors += f_personnel(g, side, t, idx, (notes or {}).get(ns), items[side])
         factors += f_off_field(g, side, items[side])
+        factors += f_depth(g, side, items[side])
     c = f_cause(g, mv if mv and mv["w"] else None, items, {g["away"]: ta, g["home"]: th}, idx)
     if c:
         factors.append(c)
@@ -1254,7 +1309,13 @@ def build(g: dict, notes: dict | None = None, idx: dict | None = None, extras: d
     factors += f_qb_run(g, ta, th, idx, notes, adv_rows)
     factors += f_kicker(g, ta, th, idx)
     factors += f_h2h(g, ta, th, raw("lines_prev"))
-    factors += f_stakes(g, notes, ta, th)
+    race = {}
+    if games_raw and gstart:
+        tbl = title_race.table(games_raw, gstart)
+        race = {side: title_race.status(t["name"], games_raw, gstart, tbl) for side, t in ((g["away"], ta), (g["home"], th)) if t}
+    factors += f_rivalry(g)
+    factors += f_stakes(g, notes, ta, th, race)
+    factors += f_cfp_incentive(g, race)
     factors += game_theory(g, asker, standings or [], tend or {})
     return score(g, factors, locked, lock_at)
 
@@ -1323,7 +1384,8 @@ def full_note(b: dict) -> str:
     if b["missing"]:
         lines.append("Nothing notable or no data for this game: " + ", ".join(NAMES[n] for n in b["missing"]))
     nos = [NAMES[n] for n, (st, _) in STATUS.items() if st == "none"]
-    lines.append("Never available (no source): " + ", ".join(nos))
+    if nos:
+        lines.append("Never available (no source): " + ", ".join(nos))
     return "\n".join(lines)
 
 

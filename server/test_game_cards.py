@@ -86,7 +86,7 @@ def test_card_locked_line_vs_market_value_and_key_number():
     assert c["lean"]["label"] == "Oklahoma -7.5" and c["reasons"][0].startswith("line value")
     assert 1 <= len(c["reasons"]) <= gc.MAX_REASONS
     assert c["move"]["why"].startswith("line move: opened Oklahoma -7.5, now Oklahoma -10.5")
-    assert "Rivalry game (underdogs historically cover more)" in " ".join(c["no_source"]) or c["no_source"]
+    assert c["no_source"] == []  # every factor has a source since 2026-11-16 (14, 24, 26, 57)
 
 
 def test_before_the_lock_says_not_locked():

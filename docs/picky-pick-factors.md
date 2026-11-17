@@ -6,7 +6,7 @@ The league is graded only against the spread, so each factor counts for how it m
 
 ## Status (2026-11-16, computed in server/pick_brief.py)
 
-Each line below ends with **live** (computed for every game that has the data), **partial** (computed only when a source has something, or an approximation; the source says which) or **no source** (skipped, never guessed). Totals: 39 live, 18 partial, 3 no source. `pick_brief.STATUS` is the single source of truth; `test_pick_brief.py` fails if this column drifts from it.
+Each line below ends with **live** (computed for every game that has the data), **partial** (computed only when a source has something, or an approximation; the source says which) or **no source** (skipped, never guessed). Totals: 41 live, 19 partial, 0 no source. `pick_brief.STATUS` is the single source of truth; `test_pick_brief.py` fails if this column drifts from it.
 
 How a pick is scored: every factor puts its weight on the side it helps COVER the league line (never who wins). Heavy: line value vs the market (3 for a 0.5-1.4 pt gap, 6 for 1.5+, +1 across a key number) and starting QB status (out 4, doubtful 2, questionable 1). Medium (1-2): SP+ projection 2, FPI 1, a 1.5+ pt line move, bye, short week, lookahead, letdown, revenge, travel/body clock, altitude, other key injuries (0.5 each, max 1.5), and league game theory 1. Light (0.5): every matchup stat, team ATS splits, recent ATS form, head-to-head, splits, weather and the rest. Context (0): explains or flags without moving the lean. The side with more weight is the lean; "strong" needs 4+ with the other side at most a third of that. A hand-set heuristic, not a trained model. None of this runs at reply time: `server/game_cards.py` computes it OFFLINE into one cached card per slate game (built at slate-set, after the Tue 11 AM CT line lock, Fri 5 PM and Sat 7 AM; LaunchAgent com.pickem.game-cards), adds per-member game theory from graded picks only and a written case / counter-case from Opus, and live Picky only reads the card (a rider in the latest user turn) and phrases it.
 
@@ -26,7 +26,7 @@ How a pick is scored: every factor puts its weight on the side it helps COVER th
 11. Suspensions and academic ineligibility → **partial**: dossier + news.json keyword match
 12. Late-season opt-outs and draft prospects sitting → **partial**: dossier + news.json keyword match
 13. Transfer-portal departures midseason → **partial**: dossier + news.json keyword match
-14. Depth-chart changes in the last two weeks → **no source**: no depth-chart feed
+14. Depth-chart changes in the last two weeks → **partial**: news.json + dossier items: starter named, benched, promoted, 'will start', QB1 (info only; no depth-chart feed)
 
 ## Coaching and situation
 15. Coaching change, interim coach, or a coach already announced as leaving → **partial**: news.json + dossier + insider notes keyword match
@@ -38,9 +38,9 @@ How a pick is scored: every factor puts its weight on the side it helps COVER th
 21. Letdown spot: after a huge win or a rivalry game → **live**: CFBD schedule, scores and lines (last week's upset win)
 22. Sandwich game between two big games → **live**: CFBD schedule + SP+
 23. Revenge game (lost to this opponent last year, especially if embarrassed) → **live**: CFBD last season's lines/scores
-24. Rivalry game (underdogs historically cover more) → **no source**: no rivalry list in any cached source
+24. Rivalry game (underdogs historically cover more) → **live**: rivalries.py: maintained list of 118 FBS rivalry and trophy games (weight 0 per the backtest)
 25. Bowl eligibility on the line (5-win teams) → **live**: CFBD records + schedule
-26. CFP / conference-title stakes; clinched or eliminated teams → **partial**: ESPN AP rank + CFBD conference record (no clinch/elimination feed)
+26. CFP / conference-title stakes; clinched or eliminated teams → **live**: title_race.py: CFBD conference records + remaining schedule (title-game clinch/elimination, out of the CFP); ESPN AP rank fallback
 27. Senior Day / last home game → **live**: CFBD schedule (last home game)
 28. Committee "style points" incentive to run up the score (helps big favorites cover) → **partial**: ESPN AP rank (committee incentive approximated by a top-12 AP team)
 
@@ -77,7 +77,7 @@ How a pick is scored: every factor puts its weight on the side it helps COVER th
 54. Realignment bitterness (a team leaving its conference, a grudge game) → **partial**: news.json + insider notes (realignment) naming the team
 55. Revenue-sharing / NIL roster turmoil and midseason departures → **partial**: news.json + insider notes (revenue sharing / NIL) naming the team
 56. Program turmoil: investigations, AD changes, coach-search distraction → **partial**: news.json keyword match (investigation, AD change, coach search)
-57. CFP format and seeding incentives (bye race, resting starters late) → **no source**: no clinch, seeding or resting-starters feed
+57. CFP format and seeding incentives (bye race, resting starters late) → **partial**: title_race.py: a clinched title-game spot in the last regular-season game = resting-starter risk (no committee seeding feed)
 
 ## League game theory
 58. Key rivals' past tendencies (favorites/dogs, home teams, their own fan team, following the crowd) → **live**: Supabase graded picks (both seasons): each rival's tendencies
@@ -92,8 +92,10 @@ Every graded 2025-26 pool game, weeks 1-15, no tiebreakers (107 games), each sid
 - Line value 0.5-1 point: 20-23, 47% [33-61%]
 - Line value that crosses a key number: 25-19, 57% [42-70%]
 - Follow a 1.5+ point market move (open to close): 27-29, 48%
-- The whole weighted lean, 2026 only: 23-19, 55% [40-69%]; "strong" leans 8-5. In-sample (it uses this season's ratings, so it flatters itself)
+- The whole weighted lean, 2026 only: 22-19, 54% [39-68%]; "strong" leans 9-4. In-sample (it uses this season's ratings, so it flatters itself). Rerun 2026-11-16 after factors 14/24/26/57 got sources (was 23-19, strong 8-5)
 - Baselines: home team 64-43 (60%), underdog 43-64 (40%)
+- Rivalry underdog (factor 24, `rivalries.backtest`, every FBS-vs-FBS game with a CFBD closing line, 2025 + 2026 to date): **63-82, 43%** [36-52%] vs 50% for all other underdogs (639-630). 2025 alone 36-54 (40%), 2026 so far 27-28. The "rivalry dogs cover" rule doesn't hold here, so factor 24 flags the game with weight 0 instead of leaning to the dog. On the league's own pool games vs the league line, rivalry dogs went 7-15 (32%) [16-53%], against 40% for all pool underdogs: a tiny sample pointing the same way.
+- Title stakes (factor 26) and resting starters (57) come from `title_race.py`: top 2 by conference record make the title game; a team has clinched when at most one rival can still reach its conference wins, and is out when two rivals already have more wins than its best case (tiebreakers not modeled, so it's conservative). Out of the CFP = out of its title game and a Group of 6 team or 3+ losses. It never says anyone is in.
 
 Read it straight: only the big line-value gap looks better than a coin flip, and even that sample is small enough that 50% is inside the interval. The card words confidence from these buckets (coin flip / slight lean / lean / "I like it" only for a strong lean with 1.5+ points of value) and never calls anything a lock.
 
