@@ -469,6 +469,35 @@ def test_picky_never_contradicts_his_card_calls():
         assert ok("I'm taking Northwestern -2.5.")
 
 
+def test_brief_banter_kept_full_for_football_followups():
+    import picky_brain as pb
+    ctx = _wk12_picks()
+    last = "I'd take Illinois +8.5. The only real concern is Houser."
+    for q in ("8.5 is a lot for a road team", "agree or no", "so the move is legit", "illinois +8.5 at home feels like free points"):
+        assert pb.football_thread({"q": q, "ctx": ctx, "last_reply": last}), q
+    for q in ("you suck picky", "lol", "pussy", "whats for dinner"):
+        assert not pb.football_thread({"q": q, "ctx": ctx, "last_reply": last}), q
+    assert not pb.football_thread({"q": "agree or no", "ctx": ctx, "last_reply": "Pizza is elite."})
+
+
+def test_others_and_short_follow_ups():
+    ctx = _wk12_picks()
+    assert router.classify("what about the others").label() == "fact:others"
+    assert router.classify("too long").label() == "fact:short"
+    slate = ("My 2 calls:\nNorthwestern -2.5 (slight lean): SP+ has Northwestern by about 10\nIllinois +8.5 (slight lean): "
+             "SP+ has Iowa by 8\nBest play: Northwestern -2.5.")
+    assert router.fact_answer("short", ctx, "too long ||| " + slate) == \
+        "Northwestern -2.5, Illinois +8.5. Best: Northwestern -2.5.", router.fact_answer("short", ctx, "too long ||| " + slate)
+    assert router.fact_answer("short", ctx, "too long ||| Pizza rules.") is None
+    cards = {11: {"lean": {"side": "Northwestern", "label": "Northwestern -2.5"}, "confidence": {"word": "lean"}}}
+    import game_cards
+    with patch.object(router, "_card_for", lambda c, g: cards.get(g["id"])), \
+            patch.object(game_cards, "_reasons", lambda c, lk: ["SP+ (ratings + 2.5 home field): projects Northwestern by 9.7, so x"]), \
+            patch.object(game_cards, "is_locked", lambda c, now=None: False):
+        r = router.fact_answer("others", ctx, "what about the others ||| I'd take Illinois +8.5.")
+        assert r == "The rest: Northwestern -2.5 (lean): SP+ has Northwestern by about 10.", r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

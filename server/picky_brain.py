@@ -930,6 +930,9 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         rt = st.get("route")
         if rt is not None:  # the router's fallback: no rule matched, the brief decides (plan 2d)
             nr = router.from_brief(rt, st["brief"].intent, st["brief"].asking, st["q"])
+            if nr is not rt and nr.lane == "banter" and football_thread(st):
+                log.info("route (from brief): kept full, a football follow-up (%r)", st["q"][:60])
+                nr = rt
             if nr is not rt:
                 log.info("route (from brief): %s -> %s", rt.label(), nr.label())
                 rt.__dict__.update(nr.__dict__)
@@ -1052,6 +1055,29 @@ def _trace(st: dict, q: str, sender: str, route, drafts: list, eligible_idx: lis
                             "ptype": st.get("ptype"), "brief": (st["brief"] or Brief()).__dict__,
                             "drafts": [d.__dict__ for d in drafts], "eligible": eligible_idx,
                             "pick": pick, "how": how, "secs": round(time.time() - t0, 1)}) + "\n")
+
+
+_BALL = re.compile(r"\b(line|spread|cover\w*|pick\w*|take|taking|lock\w*|qb|quarterback|defen[cs]e|offense|dog|favou?rite\w*|"
+                   r"points?|road|home|moved?|value|odds|game|upset|bet|safe\w*|sure|agree|why|then|outright|trap|"
+                   r"injur\w*|healthy|hurt|out|playing|legit|stay away|night game)\b|[+-]\d", re.I)
+
+
+def football_thread(st: dict) -> bool:
+    """A text the brief called banter that's really ball: it names a pool game, or it's a short football
+    follow-up to Picky's last reply about a pool game ('tenn tho? really', '8.5 is a lot for a road team', 'ok so
+    baylor then', 'agree or no'). Shit talk ('you suck') never counts. Keeper k1 judge: 17 of 42 misses were
+    real follow-ups answered with a quip on the banter path."""
+    q = st.get("q") or ""
+    if router.provocation(q) or router.BARE_INSULT.search(q):
+        return False
+    ctx = st.get("ctx") or {}
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]
+    if not gl:
+        return False
+    if chat.games_named(re.sub(r"['’]s\b", "", q), gl):
+        return True
+    last = re.sub(r"['’]s\b", "", st.get("last_reply") or "")
+    return bool(chat.games_named(last, gl)) and len(q.split()) <= 12 and bool(_BALL.search(q))
 
 
 _DODGE = re.compile(r"^\s*(i do picks, not paperwork\.\s*)?next question\.?\s*$", re.I)

@@ -190,7 +190,51 @@ SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{
 # 'whats ur confidence 1-10' (k1 live: briefed as banter -> 'I do picks, not paperwork'): the card's confidence for the
 # game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
 CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
-CTX_KINDS = {"conf", "defend"}
+CTX_KINDS = {"conf", "defend", "others", "short"}
+# k1 judge: 'what about the others' after a pick meant the other games (got other members' hidden picks);
+# 'too long' / 'just the teams' after the slate meant the short version
+OTHERS_ASK = re.compile(r"^\W*(ok\s+|and\s+|so\s+)?(what about |how about |and )?(the )?(others|other (games?|ones|3|three|2|two)|rest( of (them|em|the games))?)\W*$"
+                        r"|\b(what about|how about|and) the (others|other (games?|ones|3|three|2|two)|rest)\b", re.I)
+SHORT_ASK = re.compile(r"^\W*(too long|tldr|tl;?dr|just the (teams|picks|sides|calls)|short(er)? version|shorter|"
+                       r"cliff ?notes|no essay|just give me the (teams|picks|sides))\W*$", re.I)
+
+
+def others_text(ctx: dict, q: str) -> str | None:
+    text, _, last = re.sub(r"['’]s\b", "", q or "").partition(" ||| ")
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
+    done = {n["id"] for n in chat.games_named(last, gl, cap=4)}
+    if not done or len(done) >= len(games):
+        return None
+    out = []
+    for g in games:
+        if g["id"] in done:
+            continue
+        c = _card_for(ctx, g)
+        if not c:
+            continue
+        import game_cards
+        lk = game_cards.is_locked(c)
+        rs = [r for r in game_cards._reasons(c, lk) if r]
+        out.append(f"{c['lean']['label']} ({c['confidence'].get('word') or 'lean'})" + (f": {say_reason(rs[0], c, lk)}" if rs else ""))
+    return ("The rest: " + "; ".join(out) + ".") if out else None
+
+
+def short_text(ctx: dict, q: str) -> str | None:
+    text, _, last = (q or "").partition(" ||| ")
+    if not re.search(r"\bcalls?:|My \d calls|I'd take", last):
+        return None
+    labs = _LABEL.findall(last)
+    seen, out = set(), []
+    for team, num in labs:
+        t = team.strip()
+        if t.lower() in seen or t.lower() in ("sp", "the league", "we get"):
+            continue
+        seen.add(t.lower())
+        out.append(f"{t} {num}")
+    out = [x for x in out if not x.startswith(("SP", "FPI"))][:4]
+    best = re.search(r"Best play: (.+?)\.(?:\s|$)", last)
+    return (", ".join(out) + "." + (f" Best: {best.group(1)}." if best else "")) if out else None
 # pushback on Picky's own call ('8.5 is a lot for a road team', 'bielema always plays iowa close', 'ok so baylor then'):
 # keeper k1 live run, Picky said 'I'd take Illinois +8.5' then 'Iowa ... They'll smother Illinois.'
 PUSHBACK = re.compile(r"\b(tho|though|but|nah|really|you sure|u sure|always|never|overrated|a lot|too (many|much)|trap|"
@@ -309,6 +353,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "line_move", "LINE_MOVE"
     if CONF_ASK.search(t):
         return "conf", "CONF_ASK"
+    if OTHERS_ASK.search(t):
+        return "others", "OTHERS_ASK"
+    if SHORT_ASK.search(t):
+        return "short", "SHORT_ASK"
     if FLIP_ASK.search(t):
         return "flip", "FLIP_ASK"
     if MY_PICKS.search(t) and not re.search(r"\blast (week|wk)\b|\bweek \d+\b", t, re.I):
@@ -1569,7 +1617,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
               "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
               "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
-              "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text}.get(kind)
+              "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text,
+              "others": others_text, "short": short_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
