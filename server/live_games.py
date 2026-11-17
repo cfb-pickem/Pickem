@@ -1228,7 +1228,7 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "")
 
 _Q_PICKS = _PICKS_ASK
 _Q_COVER = re.compile(r"\bcover\w*\b|\bspread\b|\bagainst the (line|number)\b", re.I)
-_Q_TOTAL = re.compile(r"\btotal\b|\bcombined\b|\bhow many points\b|\bpace\b|\bover\b|\bunder\b", re.I)
+_Q_TOTAL = re.compile(r"\btotal\b|\bcombined\b|\bhow many points\b|\bpace\b|\bthe over\b|\bthe under\b", re.I)
 _Q_SCORER = re.compile(r"\bwho scored\b|\bhow did\b.{0,40}\bscore\b|\bwho (threw|caught|ran)\b|\bwhat (just )?happened\b|"
                        r"\blast (score|td|touchdown)\b|\bscored (that|the) (last|td)\b", re.I)
 _Q_QB = re.compile(r"\bqb\b|\bquarterback\b", re.I)
@@ -1583,6 +1583,21 @@ def claim_check(games: list[dict]):
                 n_say = int(w_) if w_.isdigit() else {"two": 2, "both": 2, "three": 3}[w_]
                 if n_say != n_inj:
                     return False  # 'two of their QBs are reported injured' when one is
+            m_t = re.search(r"\b([A-Z][a-z'\-]+) (?:threw|tossed) (?:that|the|a|an|his)\b[^.?!]{0,12}\b(?:pick|int|interception)\b", seg)
+            if m_t and g.get("_ints") and m_t.group(1).lower() not in g["_ints"] \
+                    and m_t.group(1).lower() not in {w.lower() for n in names for w in n.split()}:
+                return False  # 'Zeke Martinez threw that pick' (Boise's 2-pt passer; Murphy threw it)
+            for m in re.finditer(r"\b(no|zero|one|two|three|four|five|\d) (?:td|tds|touchdowns?)\b", seg, re.I):
+                before = re.findall(r"\b([A-Z][a-z'\-]+)\b", seg[max(0, m.start() - 60):m.start()])
+                tally = {re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", n).split(" ")[-1].lower(): v
+                         for n, v in (g.get("tds") or {}).items()}
+                last = next((w.lower() for w in reversed(before) if w.lower() in tally), None)
+                if last and g.get("scoring_n", 0) >= 0:  # 'Rasean Jones has 1 touchdown' when he has 2
+                    v = tally[last]
+                    n = {"no": 0, "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5}.get(m.group(1).lower())
+                    n = int(m.group(1)) if n is None else n
+                    if n not in (v["rush"] + v["rec"] + v["return"], v["pass"]):
+                        return False
             team_words = {w.lower() for n in names for w in n.split()}
             for m in re.finditer(r"\b([A-Z][a-z'\-]+) ([A-Z][a-z'\-]+)\b", seg):  # 'Austin Manning' for Arch Manning
                 ok_first = (g.get("firsts") or {}).get(m.group(2).lower())
