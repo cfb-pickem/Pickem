@@ -86,6 +86,7 @@ from starlette.requests import Request as StarletteRequest  # noqa: E402
 import burn_book  # noqa: E402  (no-repeat screen at the send point)
 import callbacks  # noqa: E402
 import chat  # noqa: E402
+import flag_flub  # noqa: E402
 import group_outbox  # noqa: E402
 import live_flag  # noqa: E402
 import live_games  # noqa: E402
@@ -287,6 +288,10 @@ VIEWER = Viewer()
 SENDER: contextvars.ContextVar[Sender | None] = contextvars.ContextVar("picky_group_sender", default=None)
 # "group" | "dm" (a mapped member's DM: the site, unmodified) | "dm-public"
 MODE: contextvars.ContextVar[str] = contextvars.ContextVar("picky_group_mode", default="group")
+
+
+# when the current /group request started (the exchange log's "secs")
+REQ_T0: contextvars.ContextVar[float] = contextvars.ContextVar("picky_group_t0", default=0.0)
 
 
 # The last few group messages before the @ (any sender, @ or not), from the
@@ -708,6 +713,12 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
         row = {"ts": round(now), "mode": key.split(":", 1)[0], "team": team, "q": question, "a": reply}
         if lane:  # which router exit answered (scorecard: fact / banter / full / jailbreak)
             row["lane"] = lane
+        # for the nightly flub loop: a handle-free chat id, the reply time, and side/exam traffic marked
+        row["chat"] = flag_flub.chat_hash(key)
+        if REQ_T0.get():
+            row["secs"] = round(now - REQ_T0.get(), 1)
+        if os.environ.get("PICKY_SIDE") or EXAM_CHATS or ":exam-" in key:
+            row["side"] = 1
         rows = EXCHANGE_LOG.read_text().splitlines() if EXCHANGE_LOG.exists() else []
         cut = now - EXCHANGE_DAYS * 86400
         rows = [r for r in rows if r.strip() and json.loads(r).get("ts", 0) >= cut] + [json.dumps(row)]
@@ -1037,6 +1048,9 @@ async def group(req: Request):
             EXAM_CHATS and chat_id.startswith("exam-")):
         log.info("group skipped: not the league group")  # Charlie 2026-11-16: league group only
         return {"reply": None}
+    flagged = flag_reply(handle, text, chat_id, dm)  # "bad picky": queued for the flub loop, no reply spam
+    if flagged is not None:
+        return flagged
     if maintenance.active():  # brain in the shop (flag file or Ollama down): canned line, no model
         m = load_members().get(norm_handle(handle)) or {}
         if dm and not (m or body.get("allowlisted")):
@@ -1045,6 +1059,7 @@ async def group(req: Request):
         log.info("maintenance reply sender=%s sent=%s", handle[-4:] or "?", bool(line))
         return {"reply": line}
     t0 = time.time()
+    REQ_T0.set(t0)
     recent = body.get("recent") if isinstance(body.get("recent"), list) else None
     callbacks.CHAT.set((chat_id, VIEWER.sender(handle).team, dm))  # for the exam rider (PICKY_CALLBACK_RIDER=1)
     with live_flag.held():  # side sidecars/exams pause their model calls while a member waits
@@ -1060,6 +1075,28 @@ async def group(req: Request):
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]),
              out.get("lane") or "-")
     return {"reply": out["reply"] or None, "image": out["image"], "lane": out.get("lane")}
+
+
+FLAG_ACK = "Noted."  # DMs only; the group gets nothing back
+
+
+def flag_reply(handle: str, text: str, chat_id: str, dm: bool) -> dict | None:
+    """A mapped member's "bad picky" / "that's wrong": the previous Picky exchange in this chat goes
+    to the private flub queue (flag_flub.py) for tonight's flub loop. Returns the /group response
+    (no reply in the group, a one-word ack in a DM), or None when this isn't a member's flag."""
+    if not flag_flub.is_flag(strip_trigger(text)) or not load_members().get(norm_handle(handle)):
+        return None
+    key = history_key(chat_id, handle, dm)
+    turns = load_history(key)
+    ctx = [{"q": u["content"], "a": a["content"]} for u, a in zip(turns[-2::2], turns[-1::2])
+           if u["role"] == "user" and a["role"] == "assistant"]
+    try:
+        fid = flag_flub.log_flub(strip_trigger(text), source="dm" if dm else "group", chat=key or "",
+                                 context=ctx or None)
+        log.info("flub flagged by sender=%s: %s", handle[-4:] or "?", fid)
+    except (OSError, ValueError):
+        log.warning("flub flag not logged", exc_info=True)
+    return {"reply": FLAG_ACK if dm else None, "lane": "flag"}
 
 
 def _check_secret(req: Request) -> None:

@@ -1,0 +1,20 @@
+2026-11-16 01:59:58,001 INFO HTTP Request: GET https://example.invalid/rest/v1/teams "HTTP/1.1 200 OK"
+2026-11-16 11:58:46,100 INFO route: full (no rule)
+2026-11-16 11:59:10,200 WARNING prime failed: 
+2026-11-16 11:59:30,300 INFO brief: {"asking": "who to pick",
+  "intent": "question"}
+2026-11-16 11:59:40,400 INFO sentence filter dropped: 'There is no line value on any of these games. '
+2026-11-16 12:00:01,500 INFO lane: full
+2026-11-16 12:00:01,510 INFO dm reply sender=0001 mapped=True 75.2s chars=31 image=False lane=full
+2026-11-16 12:02:49,000 INFO route: fact:pick (PICK_ASK)
+2026-11-16 12:03:00,400 INFO sentence filter dropped: "Illinois +8.5 (slight lean): sP+ projects Iowa by 8"
+2026-11-16 12:03:00,450 INFO fact reply lost part of the answer (1 drops): sending the code answer
+2026-11-16 12:03:00,700 INFO dm reply sender=0001 mapped=True 12.0s chars=80 image=False lane=fact:pick
+2026-11-16 12:04:40,000 INFO route: full (no rule)
+2026-11-16 12:04:59,000 INFO results guard: dropped ["states a line 8 that isn't in the data"]; appended the facts
+2026-11-16 12:05:00,300 INFO dm reply sender=0001 mapped=True 20.0s chars=52 image=False lane=full
+2026-11-16 12:59:30,000 INFO route: full (no rule)
+2026-11-16 12:59:50,000 INFO banter line cut (1 drops, false claim False, mocks run False): 'Next question.'
+2026-11-16 13:00:00,600 INFO group reply sender=0002 mapped=True 30.5s chars=43 image=False lane=full
+2026-11-16 15:00:00,100 INFO maintenance reply sender=0003 sent=True
+INFO:     127.0.0.1:50000 - "POST /group HTTP/1.1" 200 OK
