@@ -153,6 +153,14 @@ LINE_MOVE = re.compile(
 LINE_MOVE_BARE = re.compile(r"\b(move|moved|moving)\?\s*$", re.I)  # 'nw minny move?': only with a pool game named
 
 
+# Tuesday morning (k2): 'is it locked yet', 'are the lines locked', 'what are the lines', 'whats the line on iowa'
+LINES_LOCKED_Q = re.compile(r"\b(is|are|r)\s+(it|the lines?|lines|the spreads?|spreads|the numbers?|they|things)\s+(locked|locked in|frozen|final|set)( yet| now| in)?\b"
+                            r"|\bhas (it|the line|the lines) locked\b|\blocked yet\b", re.I)
+LINES_NOW = re.compile(r"\bwhat('?s| are| is|s)? (the |this week'?s |this wks? |our |the current )?(lines?|spreads?|numbers)\b(?! lock)"
+                       r"|\bwhat'?s the (line|spread) (on|for|in)\b|\bwhats the (line|spread) (on|for|in)\b"
+                       r"|\b(lines?|spreads?) (this week|for the week|rn|right now)\b", re.I)
+
+
 # 'remind me what i got this week' / 'what did i pick' (k1, k2): the sender's own picks, read back in a DM only
 MY_PICKS = re.compile(r"\bwhat (did|do|have|'?d) i (pick|picked|take|took|got|get|have)\b|\bwhat'?s my picks\b|\bwhat are my picks\b"
                       r"|\bremind me what i (got|picked|took|have)\b|\bmy picks (this week|again|so far)\b"
@@ -192,6 +200,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if playoff_race.is_need_question(t):
         return "playoff", "playoff_race.is_need_question"
+    if LINES_LOCKED_Q.search(t):
+        return "lines_locked", "LINES_LOCKED_Q"
+    if LINES_NOW.search(t) and not re.search(r"\b(lock|locks|move|moved|moving|value|why)\b", t, re.I):
+        return "lines_now", "LINES_NOW"
     if (LINE_MOVE.search(t) or LINE_MOVE_BARE.search(t)) and not re.search(r"\b(gonna|going to|will it|keep moving|before (11|the lock|lock|tuesday))\b"
                                             r"(?![^?.!]*\bafter\b)", t, re.I):
         return "line_move", "LINE_MOVE"
@@ -1074,6 +1086,47 @@ def line_move_text(ctx: dict, q: str) -> str | None:
     return " ".join(parts)
 
 
+def _line_lock(ctx: dict):
+    import datetime as dt
+    starts = []
+    for g in ctx.get("games_this_week") or []:
+        try:
+            starts.append(dt.datetime.fromisoformat(str(g.get("start"))).replace(tzinfo=None))
+        except ValueError:
+            pass
+    if not starts or league_rules is None:
+        return None
+    return league_rules.line_lock_at(min(starts))
+
+
+def lines_locked_text(ctx: dict, q: str) -> str | None:
+    lk = _line_lock(ctx)
+    if lk is None:
+        return None
+    now = chat._now_ct_naive()
+    if now >= lk:
+        return f"Yep, the lines locked {lk.strftime('%A')} at 11:00 AM CT. " + (lines_now_text(ctx, "") or "")
+    left = lk - now
+    h, m = divmod(int(left.total_seconds()) // 60, 60)
+    when = (f"{h}h {m}m" if h else f"{m} minutes") if left.days == 0 else f"{left.days} day{'s' if left.days > 1 else ''}"
+    return (f"Not yet. Lines lock {lk.strftime('%A')} 11:00 AM CT (noon Eastern), about {when} from now. "
+            "Picks stay open until the first kickoff Saturday.")
+
+
+def lines_now_text(ctx: dict, q: str) -> str | None:
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker") and g.get("line") is not None]
+    named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]) if q else []
+    ids = {n["id"] for n in named}
+    rows = [f"{_fav(float(g['line']), g['away'], g['home'])}" + (f" at {g['home']}" if float(g["line"]) >= 0 else f" vs {g['away']}")
+            for g in games if not ids or g["id"] in ids]
+    if not rows:
+        return None
+    lk = _line_lock(ctx)
+    locked = lk is not None and chat._now_ct_naive() >= lk
+    tail = " (locked)." if locked else f". {'They' if len(rows) > 1 else 'It'} can still move until the Tuesday 11 AM CT lock."
+    return ("Our line: " if len(rows) == 1 else "This week's lines: ") + ", ".join(rows) + tail
+
+
 def my_picks_text(ctx: dict, q: str) -> str | None:
     """The sender's own week picks. In a DM ctx carries them (the member's own session); in the group they're
     hidden from the context, so the answer says where to look instead of guessing."""
@@ -1232,7 +1285,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
-              "my_picks": my_picks_text, "line_move": line_move_text}.get(kind)
+              "my_picks": my_picks_text, "line_move": line_move_text, "lines_locked": lines_locked_text,
+              "lines_now": lines_now_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

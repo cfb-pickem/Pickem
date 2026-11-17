@@ -248,6 +248,29 @@ def test_line_moves_from_cards():
         assert r.startswith("Once the line locks (Tuesday 11:00 AM CT) the pool line is frozen"), r
 
 
+def test_lines_now_and_locked_yet():
+    import datetime as dt
+    ctx = _wk12_picks()
+    C = router.classify
+    assert C("is it locked yet").label() == "fact:lines_locked"
+    assert C("are the lines locked").label() == "fact:lines_locked"
+    assert C("what are the lines").label() == "fact:lines_now"
+    assert C("whats the line on iowa").label() == "fact:lines_now"
+    with patch.object(chat, "_now_ct_naive", lambda: dt.datetime(2026, 11, 17, 8, 30)):
+        assert router.fact_answer("lines_locked", ctx, "is it locked yet") == (
+            "Not yet. Lines lock Tuesday 11:00 AM CT (noon Eastern), about 2h 30m from now. "
+            "Picks stay open until the first kickoff Saturday.")
+        assert router.fact_answer("lines_now", ctx, "what are the lines") == (
+            "This week's lines: Northwestern -2.5 at Minnesota, Iowa -8.5 at Illinois. They can still move until the "
+            "Tuesday 11 AM CT lock.")
+        assert router.fact_answer("lines_now", ctx, "whats the line on iowa") == (
+            "Our line: Iowa -8.5 at Illinois. It can still move until the Tuesday 11 AM CT lock.")
+    with patch.object(chat, "_now_ct_naive", lambda: dt.datetime(2026, 11, 17, 12, 0)):
+        r = router.fact_answer("lines_locked", ctx, "is it locked yet")
+        assert r.startswith("Yep, the lines locked Tuesday at 11:00 AM CT. This week's lines: Northwestern -2.5 at "
+                            "Minnesota, Iowa -8.5 at Illinois (locked)."), r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
