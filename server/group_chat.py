@@ -57,6 +57,7 @@ The handle map is private: /Users/Agent/cfb-pickem-private/picky_group_members.j
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import hmac
 import json
@@ -134,6 +135,9 @@ GROUP_RIDER = (
 )
 DM_RIDER = ("\n\nTEXT MESSAGE: you're texting this member 1-on-1 over iMessage. Plain text only: "
             "no markdown, no headers, no bullet lists.")
+# the site's chat box (POST /web, forwarded by chat.py /chat): the DM pipeline, a web rider in place of iMessage
+WEB_RIDER = ("\n\nWEB CHAT: this member is chatting with you in the league website's chat box. Plain text only: "
+             "no markdown, no headers, no bullet lists.")
 PUBLIC_DM_RIDER = (
     "\n\nTEXT MESSAGE: you're texting 1-on-1 over iMessage with someone who isn't matched to a "
     "league team. Plain text, no markdown. Never reveal anyone's picks for games that haven't "
@@ -290,6 +294,10 @@ SENDER: contextvars.ContextVar[Sender | None] = contextvars.ContextVar("picky_gr
 MODE: contextvars.ContextVar[str] = contextvars.ContextVar("picky_group_mode", default="group")
 
 
+# True for a /web request (the site's chat box): mode "dm" with the caller's own site session
+WEB: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_group_web", default=False)
+
+
 # when the current /group request started (the exchange log's "secs")
 REQ_T0: contextvars.ContextVar[float] = contextvars.ContextVar("picky_group_t0", default=0.0)
 
@@ -387,7 +395,7 @@ def _you_block(ctx: dict) -> str:
 
 def _system_tail(ctx: dict) -> str:
     if _site():
-        return _orig_system_tail(ctx) + DM_RIDER
+        return _orig_system_tail(ctx) + (WEB_RIDER if WEB.get() else DM_RIDER)
     if MODE.get() == "dm-public":
         return _orig_system_tail(ctx) + PUBLIC_DM_RIDER + (
             " This person isn't matched to a team: treat them as a league member and don't guess who.")
@@ -408,6 +416,7 @@ chat.OLLAMA_OPTIONS["num_predict"] = TEXT_NUM_PREDICT
 # up to 4 drafts per text, each one a chat.py request: the per-user limit is per draft
 chat.RATE_LIMIT_PER_MIN = 40
 chat._verify_jwt = _verify_jwt
+chat.WEB_BRAIN = False  # the drafts call chat.chat in-process: never forward them back here
 chat._build_context = _build_context
 chat.you_block = _you_block
 chat._system_tail = _system_tail
@@ -867,7 +876,7 @@ def history_key(chat_id: str, handle: str, dm: bool) -> str | None:
 
 
 async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
-                 allowlisted: bool = False, recent: list | None = None) -> dict | None:
+                 allowlisted: bool = False, recent: list | None = None, web: dict | None = None) -> dict | None:
     """{"reply", "image"}, or None when a DM sender isn't allowed. A Chinese
     text (or 'reply in Chinese') is answered in English by the normal pipeline,
     every filter and guard included, and the checked reply is translated
@@ -875,7 +884,7 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     q0 = strip_trigger(text)
     zh = picky_zh.mode(q0)
     if not zh:
-        return await _answer(handle, text, chat_id, dm, allowlisted, recent)
+        return await _answer(handle, text, chat_id, dm, allowlisted, recent, web)
     if dm and not allowlisted and not load_members().get(norm_handle(handle)):
         return None  # same gate _answer applies, before spending a model call
     asked = picky_zh.strip_request(q0)
@@ -884,7 +893,7 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     # no league prefix for this pass: with the league data in front of it the 9B answered the question
     # instead of translating it (replay 2026-11-16). The draft passes re-prime the prefix right after.
     en = asked if not picky_zh._HAN.search(asked) else (await picky_zh.to_english(asked) or asked)
-    out = await _answer(handle, en, chat_id, dm, allowlisted, recent)
+    out = await _answer(handle, en, chat_id, dm, allowlisted, recent, web)
     if out and out.get("reply") and not out.get("image"):
         out["reply_en"] = out["reply"]
         out["reply"] = await picky_zh.to_chinese(out["reply"], zh, picky_brain.LAST_PREFIX["text"])
@@ -892,11 +901,15 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
 
 
 async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
-                  allowlisted: bool = False, recent: list | None = None) -> dict | None:
+                  allowlisted: bool = False, recent: list | None = None, web: dict | None = None) -> dict | None:
+    """`web` (POST /web): {"sender": Sender, "jwt": the caller's own site session, "history": the widget's
+    turns}. Runs exactly as a mapped member's DM (mode "dm": chat.py unmodified with their session)."""
     async with httpx.AsyncClient() as c:
         await VIEWER.session(c)  # also refreshes teams + Picky's uid
-        s = VIEWER.sender(handle)
-        if dm and s.user_id:
+        s = web["sender"] if web else VIEWER.sender(handle)
+        if web:
+            mode, jwt = "dm", web["jwt"]
+        elif dm and s.user_id:
             mode, jwt = "dm", await VIEWER.member_session(c, s.user_id)
         elif dm and allowlisted:
             mode, jwt, s = "dm-public", VIEWER.jwt, Sender(handle=s.handle)
@@ -906,6 +919,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             mode, jwt = "group", VIEWER.jwt
     token, mtok = SENDER.set(s), MODE.set(mode)
     rtok = RECENT.set(recent_block(recent) if mode == "group" else "")
+    wtok = WEB.set(bool(web))
     try:
         q = strip_trigger(text)[:2000]
         live_games.LIVE_NEED.set({})  # filled by the drafts below (chat -> live_games.required_fact)
@@ -914,7 +928,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         if chat._BLINKS_ASK.search(q) and not re.search(r"blinkstradamus", q, re.I):
             q += " (Blinkstradamus)"
         q_hist = q
-        key = history_key(chat_id, handle, dm)
+        key = ("web:" + s.user_id) if web else history_key(chat_id, handle, dm)
         who = s.handle if mode == "group" else None
         route = router.classify(q)
         if THREAD_RULES:
@@ -944,7 +958,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 await save_turn(key, q_hist, reply, who, lane=route.label())
                 return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
             route.lane, route.kind, route.why = "full", "", "recall: nothing callable in this chat"
-        messages = load_history(key, sender=who) + [{"role": "user", "content": q}]
+        messages = (web["history"] if web else load_history(key, sender=who)) + [{"role": "user", "content": q}]
         body = json.dumps({"messages": messages, "supabase_jwt": jwt, "mode": "leaderboard"}).encode()
 
         async def receive():
@@ -1014,6 +1028,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
     finally:
+        WEB.reset(wtok)
         RECENT.reset(rtok)
         MODE.reset(mtok)
         SENDER.reset(token)
@@ -1080,6 +1095,56 @@ async def group(req: Request):
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]),
              out.get("lane") or "-")
     return {"reply": out["reply"] or None, "image": out["image"], "lane": out.get("lane")}
+
+
+def web_history(msgs: list) -> list[dict]:
+    """The widget's earlier turns as the brain's thread turns (same cap and shape as load_history)."""
+    out = [{"role": m["role"], "content": str(m["content"])[:2000]} for m in msgs
+           if isinstance(m, dict) and m.get("role") in ("user", "assistant") and m.get("content")]
+    out = out[-chat.MAX_HISTORY_TURNS * 2:]
+    while out and out[0]["role"] != "user":
+        out = out[1:]
+    return out
+
+
+def web_sender(uid: str) -> Sender:
+    """A site user -> their team by auth uid (Picky's team map), the way a DM handle maps to a team."""
+    t = next((t for t in VIEWER.teams.values() if t.get("user_id") == uid), None)
+    if not t:
+        return Sender(handle="web:" + uid[:8], user_id=uid)
+    name = next((m.get("name") for m in load_members().values()
+                 if (m.get("team") or "").lower() == t["team_name"].lower()), None)
+    return Sender(handle="web:" + uid[:8], team=t["team_name"], team_id=t["team_id"], user_id=uid, name=name)
+
+
+@app.post("/web")
+async def web(req: Request):
+    """The site's chat box, forwarded by chat.py /chat: {supabase_jwt, messages, test}. The caller's own
+    session is verified here again and runs the mapped-member DM path (router lanes + picky_brain + the
+    send-point checks), with the widget's history as the thread. {"reply": None} = chat.py falls back."""
+    _check_secret(req)
+    body = await req.json()
+    jwt = str(body.get("supabase_jwt") or "")
+    msgs = body.get("messages") if isinstance(body.get("messages"), list) else []
+    if not jwt or not msgs or not isinstance(msgs[-1], dict) or msgs[-1].get("role") != "user":
+        raise HTTPException(status_code=400, detail="messages required")
+    if maintenance.active():
+        return {"reply": None, "lane": "maintenance"}
+    async with httpx.AsyncClient() as c:
+        uid = await _orig_verify_jwt(c, jwt)
+        await VIEWER.session(c)
+    s = web_sender(uid)
+    text = str(msgs[-1].get("content") or "")[:2000]
+    t0 = time.time()
+    REQ_T0.set(t0)
+    held = contextlib.nullcontext() if body.get("test") else live_flag.held()
+    with held:
+        out = await answer(s.handle, text, chat_id="web:" + uid, dm=True, allowlisted=True,
+                           web={"sender": s, "jwt": jwt, "history": web_history(msgs[:-1])})
+    out = out or {}
+    log.info("web reply mapped=%s %.1fs chars=%d lane=%s test=%s", bool(s.team), time.time() - t0,
+             len(out.get("reply") or ""), out.get("lane") or "-", bool(body.get("test")))
+    return {"reply": out.get("reply") or None, "lane": out.get("lane")}
 
 
 FLAG_ACK = "Noted."  # DMs only; the group gets nothing back

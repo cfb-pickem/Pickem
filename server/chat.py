@@ -7222,6 +7222,53 @@ async def league_ctx(client: httpx.AsyncClient, jwt: str, user_id: str, mode: st
     return ctx
 
 
+# Web Picky = text Picky (Charlie 2026-11-17: "live at noon w the same brain"). A signed-in caller's
+# text question is forwarded to the group sidecar's POST /web, which runs the mapped-member DM path
+# (router lanes + picky_brain + every send-point check) with their own session and the widget's history.
+# Pictures stay here. Any sidecar failure falls back to this file's single-draft pipeline below.
+# PICKY_WEB_BRAIN=0 = the old path only. group_chat.py sets WEB_BRAIN = False in its own process.
+WEB_BRAIN = os.environ.get("PICKY_WEB_BRAIN", "1") != "0"
+WEB_BRAIN_URL = os.environ.get("PICKY_WEB_BRAIN_URL") or "http://127.0.0.1:8768/web"
+WEB_BRAIN_TIMEOUT = 240.0
+_web_secret: list = []
+
+
+def _web_brain_secret() -> str | None:
+    if not _web_secret:
+        try:
+            r = subprocess.run(["security", "find-generic-password", "-a", "drake", "-s",
+                                "CFB_PICKEM__PICKY_GROUP_SECRET", "-w"], capture_output=True, text=True, timeout=10)
+            _web_secret.append(os.environ.get("PICKY_GROUP_SECRET") or r.stdout.strip() or None)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+    return _web_secret[0]
+
+
+async def _web_brain(req: Request, test: bool, jwt: str, messages: list):
+    """One SSE text event with the brain's reply; on any failure, this file's own pipeline."""
+    reply, t0 = None, time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(WEB_BRAIN_TIMEOUT, connect=5.0)) as c:
+            r = await c.post(WEB_BRAIN_URL, headers={"X-Picky-Group-Secret": _web_brain_secret() or ""},
+                             json={"supabase_jwt": jwt, "messages": messages, "test": test})
+        if r.status_code == 200:
+            reply = (r.json() or {}).get("reply")
+            log.info("web brain %.1fs lane=%s", time.monotonic() - t0, (r.json() or {}).get("lane"))
+        else:
+            log.warning("web brain HTTP %s: %s", r.status_code, r.text[:200])
+    except Exception as e:  # noqa: BLE001 - the old pipeline answers instead
+        log.warning("web brain failed after %.1fs: %r", time.monotonic() - t0, e)
+    if reply:
+        yield _sse({"content": reply})
+        yield "data: [DONE]\n\n"
+        return
+    log.info("web brain: no reply, falling back to the single-draft pipeline")
+    resp = await _chat(req, False, None, brain=False)
+    async for chunk in resp.body_iterator:
+        if not (isinstance(chunk, str) and chunk.startswith(":")):
+            yield chunk
+
+
 @app.post("/chat")
 async def chat(req: Request):
     # a member request preempts test traffic the moment it arrives, before
@@ -7236,7 +7283,7 @@ async def chat(req: Request):
         raise
 
 
-async def _chat(req: Request, test: bool, hold: int | None):
+async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
     body = await req.json()
     messages = body.get("messages") or []
     jwt = body.get("supabase_jwt") or ""
@@ -7262,6 +7309,12 @@ async def _chat(req: Request, test: bool, hold: int | None):
         if last.get("role") == "user" and wants_image(last.get("content", "")):
             return StreamingResponse(
                 _gated(test, hold, lambda: _with_opener(opener, _image_stream(last["content"][:2000], user_id))),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+        if brain and WEB_BRAIN and last.get("role") == "user":
+            return StreamingResponse(
+                _keepalive(_gated(test, hold, lambda: _web_brain(req, test, jwt, messages))),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
