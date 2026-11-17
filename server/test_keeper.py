@@ -224,6 +224,30 @@ def test_my_picks_dm_only():
         assert r.startswith("You haven't put in any picks this week."), r
 
 
+def test_line_moves_from_cards():
+    import game_cards
+    ctx = _wk12_picks()
+    cards = {11: {"league_line": {"home": 2.5, "text": "Northwestern -2.5 / Minnesota +2.5", "locked": False,
+                                  "lock_at": "2099-11-17T11:00:00"}, "market": {"home_now": 3.0, "home_open": 3.0}},
+             12: {"league_line": {"home": 8.5, "text": "Iowa -8.5 / Illinois +8.5", "locked": False,
+                                  "lock_at": "2099-11-17T11:00:00"}, "market": {"home_now": 8.5, "home_open": 5.5}}}
+    C = router.classify
+    for q in ("did anything move overnight", "did the iowa line move", "nw minny move?", "any line movement",
+              "does the pool line ever change after 11"):
+        assert C(q).label() == "fact:line_move", q
+    assert C("is iowa gonna keep moving before 11").label() != "fact:line_move"
+    with patch.object(game_cards, "load_card", lambda wk, gid, base=None: cards.get(gid)), \
+            patch.object(game_cards, "is_locked", lambda c, now=None: False):
+        r = router.fact_answer("line_move", ctx, "did anything move overnight")
+        assert r == ("Iowa went from -5.5 to -8.5 (3 toward Iowa) since open. No move on Northwestern -3 (we have "
+                     "Northwestern -2.5). League lines follow the market until they lock Tuesday 11:00 AM CT."), r
+        r = router.fact_answer("line_move", ctx, "nw minny move?")
+        assert r.startswith("No move: the market's had Northwestern -3 since open (we have Northwestern -2.5)."), r
+        assert router.fact_answer("line_move", ctx, "whats ur move?") is None
+        r = router.fact_answer("line_move", ctx, "does the pool line ever change after 11")
+        assert r.startswith("Once the line locks (Tuesday 11:00 AM CT) the pool line is frozen"), r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

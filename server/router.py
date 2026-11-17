@@ -143,6 +143,16 @@ PICK_AFTER_LINE_LOCK = re.compile(
     re.I)
 LOCK_ASK2 = re.compile(r"\bpicks? (lock|due|close)\b[^?.!]{0,10}\b(when|what time)\b|\bwhat'?s the deadline\b|\bwhats the deadline\b"
                        r"|\bwhen'?s the actual deadline\b|\bdeadline (sat|saturday)\b", re.I)
+# 'did anything move overnight', 'did the iowa line move', 'nw minny move?', 'does the pool line change after 11' (k1/k2;
+# spar r1: 'did the line move' got 'the pool and market lines are within a point', no move)
+LINE_MOVE = re.compile(
+    r"\b(lines?|spreads?|numbers?|odds)\b[^?.!]{0,25}\b(move|moved|moving|movement|change|changed|changing|shift\w*|jump\w*)\b"
+    r"|\bdid (anything|any( of the)? lines?|it|that|the line|the spread|any(thing)? of them)\b[^?.!]{0,20}\bmove\b"
+    r"|\bwhat('?s| has)? moved\b|\bany (line )?movement\b|\bmoved? overnight\b"
+    r"|\bwhen did (it|that|the line) (move|change|happen)\b", re.I)
+LINE_MOVE_BARE = re.compile(r"\b(move|moved|moving)\?\s*$", re.I)  # 'nw minny move?': only with a pool game named
+
+
 # 'remind me what i got this week' / 'what did i pick' (k1, k2): the sender's own picks, read back in a DM only
 MY_PICKS = re.compile(r"\bwhat (did|do|have|'?d) i (pick|picked|take|took|got|get|have)\b|\bwhat'?s my picks\b|\bwhat are my picks\b"
                       r"|\bremind me what i (got|picked|took|have)\b|\bmy picks (this week|again|so far)\b"
@@ -182,6 +192,9 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if playoff_race.is_need_question(t):
         return "playoff", "playoff_race.is_need_question"
+    if (LINE_MOVE.search(t) or LINE_MOVE_BARE.search(t)) and not re.search(r"\b(gonna|going to|will it|keep moving|before (11|the lock|lock|tuesday))\b"
+                                            r"(?![^?.!]*\bafter\b)", t, re.I):
+        return "line_move", "LINE_MOVE"
     if MY_PICKS.search(t) and not re.search(r"\blast (week|wk)\b|\bweek \d+\b", t, re.I):
         return "my_picks", "MY_PICKS"
     if PICK_AFTER_LINE_LOCK.search(t):
@@ -1012,6 +1025,55 @@ def _and(xs: list[str]) -> str:
     return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
 
 
+def _fav(home_line: float, away: str, home: str) -> str:
+    if home_line == 0:
+        return "a pick'em"
+    return f"{home if home_line < 0 else away} -{chat._num(abs(home_line))}"
+
+
+def line_move_text(ctx: dict, q: str) -> str | None:
+    """Line moves from the game cards: where each market line opened vs now, the league line, lock state.
+    Named game(s) only when the text names one. No causes (the card's news match is a guess)."""
+    import game_cards
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games])
+    ids = {n["id"] for n in named}
+    if not ids and not LINE_MOVE.search(q or ""):
+        return None  # 'whats ur move?': not a line question
+    cards = [(g, game_cards.load_card(ctx.get("current_week"), g["id"])) for g in games if not ids or g["id"] in ids]
+    cards = [(g, c) for g, c in cards if c and (c.get("market") or {}).get("home_now") is not None]
+    if not cards:
+        return None
+    locked = all(game_cards.is_locked(c) for _, c in cards)
+    if re.search(r"\bafter (the )?(lock|11|tuesday|it locks)\b|\bonce it locks\b", q or "", re.I):
+        return ("Once the line locks (Tuesday 11:00 AM CT) the pool line is frozen for the week. The books can keep "
+                "moving after that; we don't.")
+    moved, still, gaps = [], [], []
+    for g, c in cards:
+        m = c["market"]
+        o, n = m.get("home_open"), m["home_now"]
+        fo, fn = _fav(o if o is not None else n, g["away"], g["home"]), _fav(n, g["away"], g["home"])
+        lg = float(c["league_line"]["home"])
+        ours = f" (we have {_fav(lg, g['away'], g['home'])})" if lg != float(n) else ""
+        if o is None or o == n:
+            still.append(f"{fn}{ours}")
+        else:
+            toward = g["away"] if n > o else g["home"]
+            same = fo.split(" -")[0] == fn.split(" -")[0] and " -" in fo and " -" in fn
+            moved.append((f"{fo.split(' -')[0]} went from -{fo.split(' -')[1]} to -{fn.split(' -')[1]}" if same
+                          else f"{fo} became {fn}") + f" ({chat._num(abs(n - o))} toward {toward}){ours}")
+    parts = []
+    if moved:
+        parts.append(_and(moved) + " since open.")
+    if still:
+        parts.append(("No move on " + _and(still) + ".") if moved else
+                     ("No move: the market's had " + _and(still).replace(" (we", " since open (we", 1)
+                      + ("" if "(we" in _and(still) else " since open") + "."))
+    parts.append("League lines are locked for the week." if locked else
+                 "League lines follow the market until they lock Tuesday 11:00 AM CT.")
+    return " ".join(parts)
+
+
 def my_picks_text(ctx: dict, q: str) -> str | None:
     """The sender's own week picks. In a DM ctx carries them (the member's own session); in the group they're
     hidden from the context, so the answer says where to look instead of guessing."""
@@ -1170,7 +1232,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,
-              "my_picks": my_picks_text}.get(kind)
+              "my_picks": my_picks_text, "line_move": line_move_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
