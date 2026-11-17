@@ -578,6 +578,9 @@ def build_item(v: dict, cand: dict, facts: dict) -> tuple[dict | None, str]:
             "judge": str(it.get("judge") or "")[:400], "why": str(v.get("why") or "")[:200]}
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(it.get("expires") or "")):
         item["expires"] = it["expires"]
+    elif any(_REC.search(t) for t in lists["must_include"] + lists["any_of"]) and cand.get("ts"):
+        # a W-L record or score as a key is this week's truth: it goes stale with the week
+        item["expires"] = (dt.datetime.fromtimestamp(cand["ts"], CT).date() + dt.timedelta(days=6)).isoformat()
     if cand.get("a") and all(ok for _n, ok, _d in item_results(item, cand["a"])):
         return None, "the flubbed reply passes it"
     blob = json.dumps(item)
@@ -864,9 +867,12 @@ def _fix(date: str, flubs: list[dict]) -> dict:
                              cwd=str(fix_wt), tools="Bash,Read,Edit,Write,Glob,Grep", output_format="text")
         res["opus_rc"] = p.returncode
         if _sh(["git", "status", "--porcelain"], cwd=fix_wt).stdout.strip():
-            _sh(["git", "add", "-A", "server"], cwd=fix_wt)
+            _sh(["git", "add", "-A", "--", "server/*.py"], cwd=fix_wt)
             _sh(["git", "commit", "-q", "-m", f"flub fix {date}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"],
                 cwd=fix_wt)
+        left = _sh(["git", "status", "--porcelain"], cwd=fix_wt).stdout.split("\n")
+        if any(x.strip() for x in left):  # the exam would test files that never ship
+            return res | {"why": f"left uncommitted files (not shippable): {', '.join(x[3:] for x in left if x.strip())[:200]}"}
         changed = _sh(["git", "diff", "--name-only", "origin/main...HEAD"], cwd=fix_wt).stdout.split()
         res["changed"] = changed
         if not changed:

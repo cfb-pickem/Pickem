@@ -148,6 +148,7 @@ check(pub[0]["turns"] == ["whats the latest news"], "@Picky stripped from turns"
 check(all(r["persona"] == "mid" for r in pub), "public items ask as a generic member")
 check(not any(n in json.dumps(pub) for n in ("Alpha", "Beta", "Charlie", "30-18")), "no member names/records in public")
 check(prv[0]["persona"] == "me" and prv[0]["must_include"] == ["30-18"], "record item went private with its persona")
+check(prv[0].get("expires") == "2026-11-22", f"a record key without expires ages out in 6 days {prv[0].get('expires')}")
 check(stat.S_IMODE(os.stat(FL / "items-private.json").st_mode) == 0o600, "private items file is 0600")
 check(pub[1]["expires"] == "2026-11-21", "expiry kept")
 again = fl.items(D)
@@ -170,6 +171,7 @@ git("clone", "-q", str(bare), str(main_tree))
 (main_tree / "server" / "eval").mkdir(parents=True)
 (main_tree / "server" / "eval" / "flub_items.json").write_text("[]\n")
 (main_tree / "README").write_text("x\n")
+(main_tree / ".gitignore").write_text("server/cache\nserver/.venv\n")  # as in the real repo
 git("add", "-A", cwd=main_tree)
 git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init", cwd=main_tree)
 git("push", "-q", "origin", "main", cwd=main_tree)
@@ -255,6 +257,54 @@ calls = []
 with patch.object(fl, "_fix", side_effect=lambda d, f: calls.append(f) or {"status": "rejected", "why": "x"}):
     r = fl.fix_round(D)
 check(r["status"] == "rejected" and calls and all(f["category"] != "slow" for f in calls[0]), "fix gets the non-slow flubs")
+
+# the fix round end to end against the temp remote (Opus, the suite, the exams and launchctl faked)
+import picky_claude  # noqa: E402
+
+git("checkout", "-q", "README", cwd=main_tree)
+git("pull", "-q", "--ff-only", cwd=main_tree)
+flubs = [{"category": "wrong fact", "why": "x", "q": "q", "a": "a", "signals": []}]
+
+
+def fake_fix(files):
+    def run(prompt, **kw):
+        assert kw["tools"] and "prompt_prefix" in prompt and kw["cwd"].endswith("2099-02-01")
+        for name, body in files.items():
+            (Path(kw["cwd"]) / name).parent.mkdir(parents=True, exist_ok=True)
+            (Path(kw["cwd"]) / name).write_text(body)
+        return subprocess.CompletedProcess([], 0, "", "")
+    return run
+
+
+def exams(fix_det):
+    return lambda path: dict(base, det_pass=fix_det) if "flub-fix" in str(path) else dict(base)
+
+
+gitenv = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+common = dict(REPO=main_tree, alltests_fails=lambda wt: set(), run_exam_locked=lambda wt, port, tag: Path(tag),
+              _reload=lambda lb: "ok", _healthy=lambda u: True)
+
+
+def fix_with(files, fix_det):
+    with patch.multiple(fl, **common, exam_summary=exams(fix_det)), patch.dict(os.environ, gitenv), \
+            patch.object(picky_claude, "run", fake_fix(files)):
+        return fl._fix("2099-02-01", flubs)
+
+
+before = git("rev-parse", "main", cwd=bare)
+r = fix_with({"server/foo.py": "X = 1\n"}, 81)
+check(r["status"] == "rejected" and "no regression test" in r["why"], f"fix without a test is rejected ({r['why']})")
+r = fix_with({"server/foo.py": "X = 1\n", "server/test_foo.py": "pass\n", "tools/x.txt": "x"}, 81)
+check(r["status"] == "rejected" and "tools/" in r["why"], f"fix outside server/*.py is rejected ({r['why']})")
+r = fix_with({"server/foo.py": "X = 1\n", "server/test_foo.py": "pass\n"}, 79)
+check(r["status"] == "rejected" and "det. pass 79 < baseline 80" in r["why"] and git("rev-parse", "main", cwd=bare) == before,
+      "a fix that regresses the exam doesn't ship")
+r = fix_with({"server/foo.py": "X = 1\n", "server/test_foo.py": "pass\n"}, 81)
+check(r["status"] == "shipped" and git("rev-parse", "main", cwd=bare) != before, f"a clean fix ships to main ({r['why']})")
+check((main_tree / "server" / "foo.py").exists() and r["reload"] == {lb: "ok" for lb in fl.SERVICES}
+      and all(r["health"].values()), "main tree fast-forwarded, services reloaded, health checked")
+check(not Path("/private/tmp/picky-flub-fix-2099-02-01").exists() and
+      "flub-fix-2099-02-01" not in git("branch", "--list", cwd=main_tree), "worktrees and branch cleaned up")
 
 # exam_summary on a tiny results file
 res_f = TMP / "res.json"
