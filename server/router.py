@@ -350,6 +350,51 @@ FLIP_ASK = re.compile(r"\bshould i (flip|change|switch)( any| anything| somethin
                       r"|\b(flip|change|switch) (any|anything)\b|\banything i should (flip|change|switch)\b"
                       r"|\bwhat should i (flip|change|switch)\b|\bcheck my picks\b|\bhow do my picks look\b"
                       r"|\bgrade my picks\b|\bthoughts on my picks\b", re.I)
+# k1 chunk 3: 'whos chasing me' / 'if i go 4-0 this week' / 'and if i go 0-4' got 'I do picks, not paperwork'
+CHASE_ASK = re.compile(r"\bwho'?s (chasing|behind|catching|closest to|close to|right behind|on) (me|my tail|us)\b"
+                       r"|\bwhos (chasing|behind|catching|closest to) me\b|\bwho can catch me\b|\bwho'?s closest to me\b", re.I)
+SCENARIO_ASK = re.compile(r"\bif (i|we) (go|went|end up) ([0-4])-([0-4])\b", re.I)
+
+
+def chase_text(ctx: dict, q: str) -> str | None:
+    st = ctx.get("standings_ytd") or []
+    me = (ctx.get("you") or {}).get("team_name")
+    row = next((r for r in st if r["team"] == me), None)
+    if not row:
+        return None
+    near = [r for r in st if r["team"] != me and 0 <= row["w"] - r["w"] <= 4]
+    if not near:
+        return f"Nobody's within 4 of you at {row['w']}-{row['l']}. You've got room."
+    by = {}
+    for r in near:
+        by.setdefault(row["w"] - r["w"], []).append(r["team"])
+    parts = [f"{_and(ts)} {'tied with you' if gap == 0 else f'{gap} back'}" for gap, ts in sorted(by.items())]
+    return f"Closest to you ({row['w']}-{row['l']}): " + "; ".join(parts) + "."
+
+
+def scenario_text(ctx: dict, q: str) -> str | None:
+    m = SCENARIO_ASK.search(q or "")
+    st = ctx.get("standings_ytd") or []
+    me = (ctx.get("you") or {}).get("team_name")
+    row = next((r for r in st if r["team"] == me), None)
+    if not m or not row:
+        return None
+    w, l = int(m.group(3)), int(m.group(4))
+    if w + l != 4:
+        return None
+    pts = row["w"] + w
+    out = f"Go {w}-{l} and you're at {pts}."
+    passers = [r["team"] for r in st if r["team"] != me and r["w"] <= row["w"] and r["w"] + 4 > pts]
+    ahead = [r["team"] for r in st if r["team"] != me and row["w"] < r["w"] < pts + 1]
+    if not passers:
+        out += " Nobody behind you can pass you this week."
+    else:
+        out += f" {_and(passers[:4])} could pass you with a big enough week."
+    if ahead and w >= 3:
+        out += f" You'd catch {_and(ahead[:3])} if they slip."
+    return out
+
+
 # 'better than wedge?', 'me or wedge whos better', 'poncho and wedge both 25-23 whos better' (k1/k2/k3): records side by side
 COMPARE_ASK = re.compile(r"\b(better|worse|ahead|behind) than [a-z]+\b|\bwho had the better\b|\bme or [a-z]+\b|\bwho'?s (better|worse)\b"
                          r"|\bwhos (better|worse|the bigger fraud|more inconsistent)\b|\b[a-z]+ (vs|or) me\b", re.I)
@@ -512,6 +557,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "short", "SHORT_ASK"
     if FLIP_ASK.search(t):
         return "flip", "FLIP_ASK"
+    if CHASE_ASK.search(t):
+        return "chase", "CHASE_ASK"
+    if SCENARIO_ASK.search(t):
+        return "scenario", "SCENARIO_ASK"
     if COMPARE_ASK.search(t) and not re.search(r"\b(picky|you|u|ur|your)\b", t, re.I):
         return "compare", "COMPARE_ASK"
     if HIDDEN_ASK.search(t) and not re.search(r"\blast (week|wk)\b|\bweek \d+\b|\b(picky|you|u|ya|i|me)\b(?= (pick|take|took|have|on)\b)", t, re.I):
@@ -1803,7 +1852,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "lines_now": lines_now_text, "spread": spread_text, "upset": upset_text,
               "qb": qb_text, "flip": flip_text, "conf": conf_text, "defend": defend_text,
               "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text,
-              "hidden": hidden_text, "compare": compare_text}.get(kind)
+              "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

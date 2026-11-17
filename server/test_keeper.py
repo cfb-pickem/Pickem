@@ -624,6 +624,19 @@ def test_compare_records():
     assert router.classify("is picky better than tg").label() != "fact:compare"
 
 
+def test_chase_and_scenario():
+    ctx = _wk12_picks()
+    ctx["you"] = {"team_id": 6, "team_name": "Chuck P"}
+    assert router.classify("whos chasing me").label() == "fact:chase"
+    assert router.classify("and if i go 0-4").label() == "fact:scenario"
+    r = router.fact_answer("chase", ctx, "whos chasing me")
+    assert r.startswith("Closest to you (30-18): Ackbar 2 back;"), r
+    assert router.fact_answer("scenario", ctx, "if i go 4-0 this week") == \
+        "Go 4-0 and you're at 34. Nobody behind you can pass you this week."
+    r = router.fact_answer("scenario", ctx, "and if i go 0-4")
+    assert r.startswith("Go 0-4 and you're at 30. Ackbar") and "could pass you" in r, r
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
