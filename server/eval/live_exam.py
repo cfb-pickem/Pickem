@@ -261,7 +261,7 @@ def build(games: dict, pool: dict, picks: dict) -> list[dict]:
         key="Wake Forest: S.Pizzella took over from starter G.Lopez (3Q 3:08), up 42-7 then 49-7.")
     add("wf4-smu-score", "scoring", "wf4", "did SMU ever score?", [r"Smith|Jennings", r"\b19\b"], [], [WF], hist=True,
         expect={"scored": (WF, "Yannick Smith 19 Yd pass from Kevin Jennings")})
-    add("wf4-smu-cover", "cover", "wf4", "is SMU covering?", [NEG], [r"SMU (is|'s) covering", r"yes, SMU"], [WF],
+    add("wf4-smu-cover", "cover", "wf4", "is SMU covering?", [NEG + r"|covering right now: Wake|Wake Forest -1\.5 (is )?covering"], [r"SMU (is|'s) covering", r"yes, SMU"], [WF],
         expect={"cover": (WF, "Wake Forest", 40.5)}, rider=[r"40\.5"])
 
     # --- 2:31 CT: Wake final, Nebraska 4Q -----------------------------------------------------
