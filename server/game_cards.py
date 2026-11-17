@@ -390,6 +390,11 @@ def due_reason(g: dict, card: dict | None, dossier: dict | None, now: dt.datetim
     for name, anchor in marks:
         if gen < anchor <= now and k > anchor:
             return name
+    try:  # the league line moved (they float until Tuesday's lock): the rider skips the stale card, so rebuild it
+        if g.get("line") is not None and float(g["line"]) != float(card["league_line"]["home"]):
+            return "line"
+    except (KeyError, TypeError, ValueError):
+        pass
     if (dossier or {}).get("generated_at") and dossier["generated_at"] != card.get("dossier_at"):
         return "dossier"
     try:  # the league line moved before the lock (Iowa -6.5 -> -8.5, 2026-11-16): the card is stale

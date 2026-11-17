@@ -67,6 +67,12 @@ def test_due_new_lock_fri_sat_dossier_and_never_after_kick():
     assert gc.due_reason(G, c, {"generated_at": "a"}, at("2026-11-21T08:00")) is None
     assert gc.due_reason(G, None, None, at("2026-11-21T11:01")) is None  # kicked off
     assert gc.due_reason({**G, "Status": "final"}, None, None, at("2026-11-15T20:00")) is None
+    # spar r1 2026-11-16: Iowa's league line moved -6.5 -> -8.5 before the lock; the card kept "2 points of value"
+    # and the rider skipped it until Friday. A moved league line rebuilds the card; an unchanged one doesn't.
+    cl = {"generated_at": at("2026-11-16T08:00").isoformat(), "league_line": {"home": -7.5}}
+    assert gc.due_reason(G, cl, None, at("2026-11-16T18:00")) is None
+    assert gc.due_reason({**G, "line": -10.5}, cl, None, at("2026-11-16T18:00")) == "line"
+    assert gc.due_reason({**G, "line": -10.5}, cl, None, at("2026-11-21T11:01")) is None  # kicked off
 
 
 def test_plist_schedule_and_no_maintenance_mode():
