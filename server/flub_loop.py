@@ -239,8 +239,9 @@ def _match(rows: list[dict], replies: list[dict]) -> None:
 
 
 def _same_chat(a: dict, b: dict) -> bool:
-    if a.get("chat") and b.get("chat"):
-        return a["chat"] == b["chat"]
+    """The same member in the same chat (the group's chat id is shared by everyone in it)."""
+    if a.get("chat") and b.get("chat") and a["chat"] != b["chat"]:
+        return False
     return a.get("mode") == b.get("mode") and a.get("team") == b.get("team")
 
 
@@ -355,15 +356,12 @@ def harvest(date: str, dry: bool = False) -> dict:
 
 
 def mark_consumed(ids: set, date: str) -> None:
-    q = flag_flub.queue_path()
-    try:
-        recs = [json.loads(ln) for ln in q.read_text().splitlines() if ln.strip()]
-    except (OSError, ValueError):
-        return
-    for r in recs:
-        if r.get("id") in ids and not r.get("consumed"):
-            r["consumed"] = date
-    write_private(q, "".join(json.dumps(r) + "\n" for r in recs))
+    def mark(recs):
+        for r in recs:
+            if r.get("id") in ids and not r.get("consumed"):
+                r["consumed"] = date
+        return recs
+    flag_flub.rewrite_queue(mark)
 
 
 # ---------------------------------------------------------------------------------------------------

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -88,8 +89,29 @@ def _append(path: Path, rec: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)  # the nightly harvest rewrites this file under the same lock
         f.write(json.dumps(rec) + "\n")
     os.chmod(path, 0o600)
+
+
+def rewrite_queue(fn) -> None:
+    """Rewrite the queue in place under the append lock: fn(records) -> records."""
+    path = queue_path()
+    try:
+        f = open(path, "r+")
+    except OSError:
+        return
+    with f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        recs = []
+        for ln in f.read().splitlines():
+            try:
+                recs.append(json.loads(ln))
+            except ValueError:
+                continue
+        f.seek(0)
+        f.write("".join(json.dumps(r) + "\n" for r in fn(recs)))
+        f.truncate()
 
 
 def log_flub(text: str = "", image: str | None = None, note: str = "", source: str = "coordinator",
