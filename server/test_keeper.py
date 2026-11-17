@@ -785,7 +785,7 @@ def test_news_and_rank_triggers_k2b():
 
 def test_back_of_cut_and_catch():
     assert router.classify("how many back of 4th").label() == "fact:playoff_today"
-    assert router.classify("can i catch blinky").label() == "fact:compare"
+    # 'can i catch blinky' belongs to pick_strategy (genius job's strategy lane), not compare
     ctx = _wk12_picks()
     r = router.fact_answer("playoff_today", ctx, "how many back of 4th")
     assert "You're 8 points back of 4th (19-29)." in r, r
