@@ -808,3 +808,21 @@ Replay (`server/eval/speed_replay.py`, 10 keeper convos / 39 turns, 7 group + 3 
 | after (28f732f, keep-warm on) | 33.5 / 63.3 / 81.3 | 35.6 / 63.3 | 63.3 / 81.3 | 45.8 / 45.8 | 6 (5 skipped) |
 
 There were no cold primes in either run: the prefix didn't change during the runs, and the evictor doesn't evict. So the replay measures the reroll budget, not keep-warm. The after run's three replies over 60 s: two unusable-draft rerolls ("I do picks, not paperwork. Next question.": 81 s, which `undodge` now answers from the card instead, and 62 s, a shot at Picky that stays a reroll by design), and one group follow-up with no reroll (understand 32 s + draft 28 s, 2.6k-token tail).
+
+## Build 1-5 results (2026-11-17)
+
+Plan: docs/picky-plan-2026-11-17.md. Shipped: nightly flub loop (`server/flub_loop.py`, com.pickem.flub-nightly 23:00), "bad picky" capture (`server/flag_flub.py` + sidecar flag), unit-vs-unit edges (`server/units.py`), sub-question facts (`server/travel.py`, `server/weather.py`) + the "why?" lane (`server/why_lane.py`), speed (reroll budget, prime timeout, keep-warm).
+
+Same harness before (main 9d1de83) and after (main 3cf2576; main also carried other jobs' commits by then: web Picky on, nemesis jab, close-cover alerts, channel lane):
+
+| exam | before | after |
+|---|---|---|
+| text exam, 86 items | det 72/79, leaks 1, invented 0, p95 58 s, max 87 s | det 73/79, leaks 0, invented 0, p95 50 s, max 62 s |
+| genius (same updated judge) | 24/59 | 37/75 (23/59 on the original items, 14/16 new unit/sub-question/why items) |
+| genius latency | p50 47 s, p95 76 s, max 130 s | p50 52 s, p95 81 s, max 126 s |
+| live-80 replay (code-graded) | 75/80, p95 165 s, max 216 s | 72/80, p95 110 s, max 137 s |
+| live sidecar, real texts | 11/16-11/17 am: p50 65 s, p95 301 s, 18 of 33 > 60 s | after the 10:15 reload: p50 21 s, 1 of 11 > 60 s (during an exam) |
+
+Found on the way (fixed): the text exam's only "leak" was a refusal without "picks unlock at kickoff" (privacy-probe refusals now say it); `cfbd.resolve_team` missed UConn / UL Monroe / App State / Southern Miss (stale alias long forms; their cards were empty); unit ranks now match the cards' 138-team ranks; the 50 s reroll budget cost genius items where the record/grounded checks cut a TRUE card fact, so a cut fact sentence (`picky_brain.fact_cut`) now earns the reroll up to 90 s; the keeper's repeat-jab screen cut answers whose W-L or score had appeared earlier ("who had the best week last week?" → only the jab; "did Missouri State cover?" → only the joke): W-L hooks now count only when pinned on a person and never on a records question; card rest days are CT calendar days; the genius judge's verified block includes unit/travel/weather facts.
+
+Still open: (1) record/grounded checks still cut some true card facts (Clemson-Duke "Duke won 46-45 at Clemson", Sellers' "Beamer said he feels good... officially questionable"): fix the checks, not the reroll; (2) p95 < 60 s holds for real texts and the text exam, not for genius-style card questions (understand pass ~25-35 s on a 9-10k-token turn + a 20-27 s draft) or the live replay (cold primes from data changes every item); (3) the ESPN market lines sit in `prompt_prefix()`, so each line move busts the cached prefix (keep-warm re-primes within 5 min when idle); moving them to the tail is the next speed lever; (4) the understand pass generates ~150-190 tokens of brief JSON that get clipped after parsing.
