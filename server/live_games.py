@@ -1230,7 +1230,7 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "")
 _Q_PICKS = _PICKS_ASK
 _Q_COVER = re.compile(r"\bcover\w*\b|\bspread\b|\bagainst the (line|number)\b", re.I)
 _Q_TOTAL = re.compile(r"\btotal\b|\bcombined\b|\bhow many points\b|\bpace\b|\bthe over\b|\bthe under\b", re.I)
-_Q_SCORER = re.compile(r"\bwho scored\b|\bhow did\b.{0,40}\bscore\b|\bwho (threw|caught|ran)\b|\bwhat (just )?happened\b|"
+_Q_SCORER = re.compile(r"\bwho scored\b|\bhow did\b.{0,40}\b(score|get|put up|tie|end|win|take the lead|go ahead)\b|\bwho (threw|caught|ran)\b|\bwhat (just )?happened\b|"
                        r"\blast (score|td|touchdown)\b|\bscored (that|the) (last|td)\b", re.I)
 _Q_QB = re.compile(r"\bqb\b|\bquarterback\b", re.I)
 _Q_SCORE = re.compile(r"\bscores?\b|\bwho'?s winning\b|\bwinning\b|\bleading\b|\bhow'?s\b.{0,40}\b(doing|going)\b|"
@@ -1248,6 +1248,13 @@ def _target(ctx: dict, question: str) -> list[dict]:
     hit = ctx.get("live_rider_games") or []
     games = {g["id"]: g for g in hit}
     named = [games[g["id"]] for g in named_games(question, games)] if question else []
+    if not named and question:  # 'how many picks has Arch Manning thrown': a player only one feed game has
+        words = {w.lower() for w in re.findall(r"[A-Za-z][a-z'\-]{3,}", question)} - _COMMON
+        named = [g for g in hit if words & {p.lower() for p in g.get("players") or []}]
+        if len(named) > 1:  # 'Rasean Jones' vs LSU's Dilin Jones: the first name decides
+            named = [g for g in named if any(f.lower() in words for last in words
+                                             for f in (g.get("firsts") or {}).get(last, []))] or named
+        named = named if len(named) == 1 else []
     return named or (hit if ctx.get("live_followup") else [])
 
 
@@ -1373,6 +1380,50 @@ def _required_fact(ctx: dict, question: str) -> tuple | None:
     if _Q_TOTAL.search(q) and not _Q_PICKS.search(q):
         tot = a + h
         return (lambda t, tot=tot: bool(re.search(_num_rx(tot), t)), f" {tot} total points so far ({score}, {when}).")
+    if _INJ_WORD.search(q) or re.search(r"\bback in\b|\breturned\b|\bcome back\b", q, re.I):
+        words = {w.lower() for w in re.findall(r"[A-Za-z][a-z'\-]{3,}", q)} - _COMMON
+        inj = g.get("injuries") or []
+        named_p = [w for w in words if w in {x.lower() for x in g.get("players") or []}]
+        qb_ask = bool(_Q_QB.search(q))
+        hits_ = [x for x in inj if _abbr_key(x["player"]).split(".", 1)[-1].lower() in named_p
+                 or (qb_ask and x.get("qb") and (not named_p))]
+        if named_p and not hits_ and not qb_ask:  # 'did Kienholz get hurt?' with no report
+            nm = named_p[0].capitalize()
+            return (lambda t: bool(re.search(r"\bno\b|\bnot\b|n't\b|nothing|none", t, re.I)),
+                    f" No injury reported for {nm} in the live feed ({when}).")
+        if hits_:
+            x = sorted(hits_, key=lambda y: _tkey(y["period"], y["clock"]))[-1]
+            who = x.get("full_name") or x["player"]
+            last = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", who).split(".")[-1].split(" ")[-1]
+            back = (f", back in the game {period_label(x['returned'][0])} {x['returned'][1]}" if x.get("returned")
+                    else ", not seen on a play since" if st == "in" else "")
+            if re.search(r"\bback in\b|\breturned\b|\bcome back\b", q, re.I):
+                return ((lambda t: bool(re.search(r"\byes\b|back in", t, re.I))) if x.get("returned") else
+                        (lambda t: bool(re.search(r"\bno\b|\bnot\b|n't\b", t, re.I))),
+                        f" {who} was reported injured on the play {period_label(x['period'])} {x['clock']}{back}.")
+            return (lambda t, last=last: last.lower() in t.lower() and bool(re.search(r"injur|hurt|went down", t, re.I)),
+                    f" Reported per ESPN's play-by-play: {(x.get('team') + ' ') if x.get('team') else ''}"
+                    f"{'QB ' if x.get('qb') else ''}{who} injured on the play {period_label(x['period'])} {x['clock']}{back}.")
+        if qb_ask and not named_p:
+            return (lambda t: bool(re.search(r"\bno\b|\bnot\b|n't\b|nothing|none", t, re.I)),
+                    f" No QB injury reported in the live feed for {hd} ({when}).")
+        if not named_p and not qb_ask and inj and re.search(r"\bany\b|\banyone\b|\bwho\b", q, re.I):
+            names_ = [x.get("full_name") or x["player"] for x in sorted(inj, key=lambda y: _tkey(y["period"], y["clock"]))]
+            lasts = [re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", n).split(".")[-1].split(" ")[-1] for n in names_]
+            return (lambda t, lasts=lasts: any(l_.lower() in t.lower() for l_ in lasts),
+                    " Reported injured on the play (ESPN play-by-play): " + ", ".join(
+                        f"{x.get('full_name') or x['player']} {period_label(x['period'])} {x['clock']}"
+                        for x in sorted(inj, key=lambda y: _tkey(y["period"], y["clock"]))[-5:]) + ".")
+    if re.search(r"\bturnovers?\b|\bturned it over\b|\bgiveaways?\b|\bturn(ed)? the ball over\b", q, re.I) and g.get("detail"):
+        to = g.get("turnovers") or {}
+        if not any(to.values()):
+            return (lambda t: bool(re.search(r"\bno\b|none|zero|clean|n't", t, re.I)), f" No turnovers so far ({when}).")
+        parts = "; ".join(f"{tm} {len(xs)} (" + ", ".join(f"{(x.get('who') + ' ') if x.get('who') else ''}{x['kind']}"
+                                                        f"{' returned for a TD' if x.get('td') else ''} "
+                                                        f"{period_label(x['period'])} {x['clock']}" for x in xs) + ")"
+                          for tm, xs in to.items())
+        return (lambda t: bool(re.search(r"intercept|\bpick|\bINT\b|fumbl|turnover", t, re.I)),
+                f" Turnovers so far: {parts}.")
     if _Q_QB.search(q):
         names = [t for t in (g["away"], g["home"]) if any(re.search(rf"(?<![\w']){re.escape(k)}(?!\w)", q, 0 if cs_ else re.I)
                                                           for k, cs_ in _name_keys(t))]
@@ -1431,11 +1482,21 @@ def _required_fact(ctx: dict, question: str) -> tuple | None:
         sc = list(g.get("scoring") or [])
         teams = [t["name"] for t in (g["away"], g["home"]) if any(
             re.search(rf"(?<![\w']){re.escape(k)}(?!\w|'(?!s\b))", q, 0 if cs_ else re.I) for k, cs_ in _name_keys(t))]
-        if len(teams) == 1:
+        about_team = re.search(r"\bscored for\b|\bfor (the )?\w+\b.{0,12}$|\bhow did (the )?(?!the\b)[\w' .&]+?\b(score|get|put up|tie|take|go)\b"
+                               r"|'s (td|touchdown|score|first|last)\b|\btheir\b", q, re.I) \
+            and not re.search(r"\bgame\b.{0,15}\bend\b|\bwhat (just )?happened\b", q, re.I)
+        if len(teams) == 1 and about_team:
             sc = [x for x in sc if x["team"] == teams[0]]
         if not sc:
             return None
         pick = sc[0] if re.search(r"\bfirst\b", q, re.I) else sc[-1]
+        if re.search(r"\bwhat (just )?happened\b", q, re.I) and st == "in" and g.get("last_play") \
+                and "under a minute" not in (since(pick, g) or "") and not re.match(r"about [1-4] min", since(pick, g) or ""):
+            lp = g["last_play"]  # nothing scored lately: the last play is what just happened
+            key_w = [w for w in re.findall(r"\b[A-Z]\.[A-Z][a-z'\-]+", lp)]
+            if key_w:
+                last = key_w[0].split(".")[-1]
+                return (lambda t, last=last: last.lower() in t.lower(), f" Last play ({when}): {lp}.")
         if re.search(r"\bfirst\b", q, re.I) and g.get("scoring_n", 0) > len(g.get("scoring") or []):
             return None  # the first score scrolled out of the feed's last 6
         who = _scorer(pick)
@@ -1644,7 +1705,8 @@ def claim_check(games: list[dict]):
                 bad = {w for w in words if w in known and w not in scorers}
                 if bad:
                     return False
-            if _INJ_WORD.search(seg):
+            if _INJ_WORD.search(seg) and not re.search(r"\bno (injury|report)|\bnot (hurt|injured|reported)|\bnothing\b|"
+                                                       r"\bhasn'?t been reported|\bno sign\b|\bno word\b", seg, re.I):
                 named = {w for w in words if w in known}
                 if named and not (named & injured):
                     return False

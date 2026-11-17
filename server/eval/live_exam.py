@@ -50,6 +50,11 @@ WF, NEB, BOI, UNC, LSU, UTSA, HAW, OT = ("401858301", "401858525", "401860914", 
                                          "401862827", "401864537", "401870796")
 POOL_IDS = (WF, BOI, UTSA, HAW)
 PERSONA = "Chuck P"
+# items whose answer code computes (live_games.required_fact): a wrong/missing number can't reach the user
+FACT_CATS = {"score", "cover", "qb", "scoring", "total", "picks", "turnover", "what", "injury"}
+FACT_IDS = {"pre-score", "pre-cover", "tex-pre-who-won", "boi-not-started", "lsu-not-pool", "ot-final-cover",
+            "boi1-thrower", "kienholz-rumor", "manning-rumor", "aggies-wrong-team", "oregon-wrong-team"}
+NO_FACT_OK = {"unc4-drive"}  # 'what did UNC do on their last drive': the rider's key plays carry it
 # a slice of the local CFBD Division I team list (what live_games.missing_teams reads), frozen for the fast mode
 KNOWN_TEAMS = {"texas", "texas a&m", "lsu", "oregon", "oregon state", "boise state", "ohio state", "wake forest", "smu",
                "north texas", "utsa", "hawai'i", "north dakota state", "nebraska", "rutgers", "north carolina",
@@ -578,6 +583,9 @@ def fast(answers: str | None = None, verbose: bool = False) -> dict:
         rider = L.apply_to_ctx(ctx, it["q"], refresh=False, prev=prev)  # what chat.py does (prev = last user turn)
         fact = L.required_fact(ctx, it["q"])
         text = rider + "\n" + (fact[1] if fact else "")
+        if fact is None and (it["cat"] in FACT_CATS or it["id"] in FACT_IDS) and it["id"] not in NO_FACT_OK:
+            fails.append(f"{it['id']}: no computed answer (the code-side guarantee) for a factual question")
+        n_checks += 1
         for rx in it["rider"]:
             n_checks += 1
             if not re.search(rx, text, re.I | re.S):
