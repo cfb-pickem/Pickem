@@ -432,7 +432,7 @@ def test_confidence_from_the_card_and_thread():
         r = router.fact_answer("conf", ctx, "fine whats ur confidence 1-10 ||| Maybe, but Iowa's defense is ranked #1.")
         assert r == "About a 5 on Illinois +8.5. Slight lean: SP+ has Iowa by 8.", r
         r = router.fact_answer("conf", ctx, "whats ur confidence 1-10 ||| ")
-        assert r.startswith("Depends on the game: Northwestern -2.5 6, Illinois +8.5 5."), r
+        assert r == "Depends on the game. Northwestern -2.5 is a 6 out of 10, Illinois +8.5 more like a 5. Nothing this week is a lock.", r
 
 
 def test_pushback_stands_by_the_call():

@@ -326,8 +326,12 @@ def conf_text(ctx: dict, q: str) -> str | None:
         cards = [c for g in games if (c := _card_for(ctx, g))]
         if not cards:
             return None
-        parts = [f"{c['lean']['label']} {CONF_NUM.get(c['confidence'].get('word'), 4)}" for c in cards]
-        return "Depends on the game: " + ", ".join(parts) + ". Nothing on this slate is better than a 7."
+        nums = [(c["lean"]["label"], CONF_NUM.get(c["confidence"].get("word"), 4)) for c in cards]
+        top = max(n for _, n in nums)
+        best = [lab for lab, n in nums if n == top]
+        low = [lab for lab, n in nums if n == min(x for _, x in nums) and n != top]
+        return (f"Depends on the game. {_and(best)} {'is' if len(best) == 1 else 'are'} a {top} out of 10"
+                + (f", {_and(low)} more like a {min(n for _, n in nums)}" if low else "") + ". Nothing this week is a lock.")
     g = next(x for x in games if x["id"] == named[0]["id"])
     c = _card_for(ctx, g)
     if not c:
