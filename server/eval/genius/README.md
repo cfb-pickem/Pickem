@@ -41,3 +41,12 @@ check on pre-game cards, record_check on card W-Ls). Drops now log the rule that
 Still weak (the 12B): unit-vs-unit matchups (answers with overall SP+ instead of run D vs run game), answering the exact
 sub-question (lookahead, body clock, altitude), turning facts into a clear ATS conclusion, and "why?" follow-ups that
 repeat turn 1.
+
+## Units lane (2026-11-17)
+16 items added: `un-*` unit-vs-unit matchups (run game vs run D, pass vs pass D, pass rush vs protection, turnovers,
+pace/big plays), `sq-*` exact sub-questions (lookahead, time zones/body clock, altitude), `wy-*` multi-turn "why?"
+follow-ups (turn 2/3 must add a NEW reason or say there's nothing more). Keys are computed from the CFBD cache by
+`server/units.py`, `server/travel.py` and `slate_cards.lookahead_line`. Code behind them: GAME CARDs put a
+"UNIT QUESTION" / "SUB-QUESTION" line first (units.py edges ranked across FBS; travel.py venue table; weather.py
+forecasts cached by the hourly slate-intel tick, at most every 6 h), and `server/why_lane.py` answers bare "why?" /
+"how come" / "why not X?" with the next unused card reason (router fact lane `why`).
