@@ -439,7 +439,10 @@ class Exam80Fixes(unittest.TestCase):
             self.assertTrue(chk("UTSA's covering by 13.5"))
             ctx = X.fake_ctx(pool, picks, GAMES, tr, t)
             L.apply_to_ctx(ctx, "what's the Texas A&M score?", refresh=False)
-            self.assertIsNone(L.required_fact(ctx, "what's the Texas A&M score?"))
+            # no Texas A&M game in the feed: nothing to check when the team isn't known (no CFBD cache), else
+            # 0babef5's 'no live score for X' (never another team's numbers): either way, env-independent
+            rf = L.required_fact(ctx, "what's the Texas A&M score?")
+            self.assertTrue(rf is None or "no game of theirs in my live feed" in rf[1], rf)
             ctx = X.fake_ctx(pool, picks, GAMES, tr, t)
             L.apply_to_ctx(ctx, "how are my picks doing?", refresh=False)
             chk, sent = L.required_fact(ctx, "how are my picks doing?")

@@ -99,7 +99,7 @@ def test_before_the_lock_says_not_locked():
     c = card(now="2026-11-16T09:00", notes={"market": {"home_now": -7.5}})
     assert not c["league_line"]["locked"] and c["value"] is None
     assert c["confidence"]["word"] == "coin flip"
-    assert "not locked yet, locks Tue 11 AM CT" in "\n".join(gc.card_lines(c, None, True))
+    assert "not locked yet, locks Tue 11 AM CT" in "\n".join(gc.card_lines(c, None, True, now=at("2026-11-16T09:00")))
 
 
 def test_confidence_scales_with_edge_and_backtest():

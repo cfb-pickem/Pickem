@@ -71,7 +71,7 @@ def test_translation_retries_once_then_falls_back_to_english():
 def test_answer_translates_in_and_out_and_leaves_english_alone():
     seen = []
 
-    async def fake_answer(handle, text, chat_id="", dm=False, allowlisted=False, recent=None):
+    async def fake_answer(handle, text, chat_id="", dm=False, allowlisted=False, recent=None, web=None):
         seen.append(text)
         return {"reply": "Chuck P is 1st at 30-18, two games up on Ackbar.", "image": None, "mode": "group"}
 
