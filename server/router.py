@@ -970,6 +970,11 @@ def sentences(text: str) -> list[str]:
 # Ackbar 'chalk'/'backbone' three times, Liam '21 misses' twice, on pick and rules answers the banter ledger
 # never screens.
 _JAB_WL = re.compile(r"(?<![\d.-])\d{1,2}-\d{1,2}(?![\d.])")
+# live-80 2026-11-17: 'did Missouri State cover?' lost 'Missouri State won 27-21 in OT, but I don't have the spread'
+# because an earlier reply had the same score; scores and game states aren't jabs
+_PERSON_WL = re.compile(r"\b(you|your|you'?re|ya|u|he|his|he'?s|she|her|they'?re|their|i'?m|my|me)\b", re.I)
+_GAME_WL = re.compile(r"\b(won|beat|leads?|leading|trails?|trailing|final|score[sd]?|OT|overtime|quarter|half(time)?|[1-4]Q|"
+                      r"tied|in the (1st|2nd|3rd|4th))\b", re.I)
 _JAB_HOOK = re.compile(r"\b\d+ (?:misses|losses|whiffs)\b|\bchalk\w*|\bbackbone\b|\bcoward\w*|\bspineless\b|"
                        r"\bscared\b|\bgenius\b|\bfootball iq\b|\bbasement\b|\bbottom.?tier\b|\bcrystal ball\b|"
                        r"\bkeep up\b|\bterrified\b", re.I)
@@ -979,8 +984,10 @@ _RECORD_KINDS = ("record", "results", "standings", "playoff", "cover", "score")
 def _jab_hooks(text: str, records: bool = True) -> set[str]:
     h = {m.group(0).lower() for m in _JAB_HOOK.finditer(text or "")}
     h = {re.sub(r"^chalk\w*", "chalk", re.sub(r"^coward\w*", "coward", x)) for x in h}
-    if records:
-        h |= set(_JAB_WL.findall(text or ""))
+    if records:  # a W-L pinned on a person ('you're 0-4'), never a game score ('Missouri State won 27-21 in OT')
+        for sent in re.split(r"(?<=[.!?])\s+", text or ""):
+            if _PERSON_WL.search(sent) and not _GAME_WL.search(sent):
+                h |= set(_JAB_WL.findall(sent))
     return h
 
 

@@ -109,6 +109,8 @@ def test_drop_repeat_jabs_within_a_conversation():
     wk11 = ["You went 4-0 in week 11, clean sweep: UTSA +2.5 and Wake Forest -1.5 covered."]
     assert router.drop_repeat_jabs(best, wk11, None, "Who had the best week last week?") == best  # the W-L IS the answer
     assert router.drop_repeat_jabs(best, wk11, None, "u suck") != best  # a jab that reuses the 4-0: still cut
+    ot = "Missouri State won 27-21 in OT, but I don't have the spread for that one. No line, no cover talk."
+    assert router.drop_repeat_jabs(ot, ["Missouri State pulled off the 27-21 win in OT."], None, "did Missouri State cover?") == ot
 
 
 def test_brief_fallback():
