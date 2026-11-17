@@ -308,5 +308,92 @@ with open(TMP / "exchanges.jsonl", "a") as f:
 got = mm.real_rows(ts("2026-11-18T00:00:00"), ts("2026-11-19T00:00:00"))
 check([r["q"] for r in got] == ["real one"], "side=1 and team-null rows skipped")
 
+# ---------------------------------------------------------------------------------------------------
+print("-- lines_for prefix matching (the 'SEC' vs 'SECSPN' gap), careful with short tokens")
+Q = lambda q: mm._tokens(q)
+check(mm.token_hits("SEC media", Q("SEC media"), "the SECSPN media cabal") == 2, "'SEC' hits 'SECSPN' (+ 'media')")
+check(mm.token_hits("sec media", Q("sec"), "the SECSPN media cabal") == 1, "lowercase league shorthand 'sec' hits 'SECSPN'")
+check(mm.token_hits("sec", Q("sec"), "my second favorite team") == 0, "'sec' never hits 'second'")
+check(mm.token_hits("sec", Q("sec"), "Second-guessing the Secret Service") == 0, "...or a capitalized 'Second'/'Secret'")
+check(mm.token_hits("ten", Q("ten"), "TENNESSEE IS FRAUDULENT") == 0, "a short lowercase non-acronym never prefix-matches")
+check(mm.token_hits("finebaum", Q("finebaum"), "Paul Finebaum's show") == 1, "5+ letter word hits its possessive")
+check(mm.token_hits("iowa", Q("iowa"), "Iowans love punting") == 0, "4-letter word: whole word only")
+check(mm.token_hits("georgia", Q("georgia"), "Georgian food") == 0, "plural/possessive only, not any longer word")
+reset()
+t0 = ts("2026-11-17T12:00:00")
+m = mm._empty("Bravo")
+m["items"] = [{"id": "s1", "kind": "beef", "subkind": "", "text": "Mocks the 'SECSPN media cabal'",
+               "quote": "the SECSPN media cabal", "about": [], "date": "2026-11-17", "ts": t0, "source": "group",
+               "msg": {"id": "x", "ts": t0, "chat": "grp"}}]
+mm.save(m)
+check(any("SECSPN" in x for x in mm.lines_for("Bravo", "the SEC is bought and paid for", [], limit=1)),
+      "lines_for: his 'SEC' question surfaces his group SECSPN beef")
+check(not mm.lines_for("Bravo", "my second pick this week", [], limit=1), "...a 'second' question doesn't")
+
+# ---------------------------------------------------------------------------------------------------
+print("-- Charlie (Chuck P): his texts never log treatment / beefs / lines; stance always warm")
+reset()
+crow = row("Chuck P", "you suck picky, I'm way better than you, and Iowa covers easy", "2026-11-18T12:00:00", mode="dm")
+orow = row("Bravo", "you suck picky", "2026-11-18T12:01:00", mode="dm")
+
+
+def charlie_fake(prompt):
+    return {"items": [{"msg_id": crow["msg_id"], "member": "Chuck P", "kind": k, "subkind": sk, "text": t, "quote": q,
+                       "about": []} for k, sk, t, q in (("beef", "", "Beef with Picky", "I'm way better than you"),
+                                                        ("line", "", "you suck picky", "you suck picky"),
+                                                        ("fact", "other", "Thinks Iowa covers", "Iowa covers easy"))],
+            "receipts": [], "treatment": [{"msg_id": crow["msg_id"], "label": "hostile"},
+                                          {"msg_id": orow["msg_id"], "label": "hostile"}]}
+
+
+mems, rep = mm.merge(charlie_fake(""), [crow, orow], None)
+check(mems["Chuck P"]["items"] and all(x["kind"] == "fact" for x in mems["Chuck P"]["items"]),
+      "Charlie: fact kept, beef + line dropped")
+check(not mems["Chuck P"]["treatment"]["events"] and rep["dropped"].get("charlie") == 3, "Charlie: no treatment event")
+check(len(mems["Bravo"]["treatment"]["events"]) == 1, "anyone else's hostile text is still labeled")
+m = mm._empty("Chuck P")
+m["treatment"]["events"] = [{"msg_id": f"h{i}", "ts": t0 + i, "date": "2026-11-17", "source": "dm", "label": "hostile",
+                             "quote": "x"} for i in range(5)] + [{"msg_id": "n", "ts": t0, "date": "2026-11-17",
+                                                                  "source": "dm", "label": "neutral", "quote": ""}]
+m["items"] = [{"id": "b", "kind": "beef", "subkind": "", "text": "beef", "quote": "q", "about": [], "date": "2026-11-17",
+               "ts": t0, "source": "dm", "msg": {"id": "h0", "ts": t0, "chat": ""}}]
+mm.save(m)
+check(mm.stance_hint("Chuck P", dm=True, caller="Chuck P", now=t0 + 60)["stance"] == "warm",
+      "Charlie's stance_hint is warm even with stored hostile events")
+out = mm.scrub_charlie()
+m = mm.load("Chuck P")
+check(out == {"team": "Chuck P", "hostile_events": 5, "items": 1} and [e["label"] for e in m["treatment"]["events"]] == ["neutral"]
+      and not m["items"], "scrub_charlie clears hostile events and beefs/lines, keeps the rest")
+flag = TMP / "PICKY_CHARLIE_NICE_OFF"
+_old_flag, mm.CHARLIE_NICE_OFF = mm.CHARLIE_NICE_OFF, flag
+flag.write_text("")
+mems, rep = mm.merge(charlie_fake(""), [crow, orow], None, mems={})
+check(any(e["msg_id"] == crow["msg_id"] for e in mems["Chuck P"]["treatment"]["events"]) and not mm.is_charlie("Chuck P"),
+      "off switch (PICKY_CHARLIE_NICE_OFF): Charlie is treated like anyone")
+flag.unlink()
+mm.CHARLIE_NICE_OFF = _old_flag
+
+# ---------------------------------------------------------------------------------------------------
+print("-- send-point receipt check")
+reset()
+m = mm._empty("Alpha Dogs")
+m["receipts"] = [dict(rc("cover", side="Iowa", game=1), id="r1", claim="Iowa covers easy", date="2026-11-18",
+                      source="group", msg={"id": "z", "ts": 0, "chat": "grp"}, status="graded", result="hit",
+                      score="Illinois 17, Iowa 24"),
+                 dict(rc("win", side="Northwestern", game=4), id="r2", claim="Northwestern wins outright",
+                      date="2026-11-18", source="dm", msg={"id": "y", "ts": 0, "chat": "dm"})]
+mm.save(m)
+txt, cut = mm.check_receipts("You said Iowa covers easy and it missed. Brutal.", "Alpha Dogs")
+check(txt == "Brutal." and len(cut) == 1, "a hit quoted as a miss is cut")
+txt, cut = mm.check_receipts("You said Iowa covers easy. It cashed, 24-17.", "Alpha Dogs")
+check(not cut, "the right verdict and score stay")
+txt, cut = mm.check_receipts("Alpha Dogs said Iowa covers easy, final 30-3, nailed it.", "Bravo", "how did his call do")
+check(cut, "another game's score on a named member's receipt is cut")
+txt, cut = mm.check_receipts("You said Northwestern wins outright and it hit.", "Alpha Dogs", dm=True)
+check(cut, "a verdict on a call that isn't final is cut")
+txt, cut = mm.check_receipts("You said Northwestern wins outright and it hit.", "Alpha Dogs", dm=False)
+check(not cut, "a DM receipt isn't in play in the group (not visible, not checked)")
+check(mm.check_receipts("Iowa covered, you're up 2.", "Alpha Dogs")[1] == [], "pick talk without a 'said' isn't a receipt")
+
 print(f"\n{'ALL OK' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

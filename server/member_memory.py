@@ -1,9 +1,13 @@
 """
 Picky's member memory: what he remembers about each league member, built offline.
 
-BUILT, NOT WIRED (2026-11-17). Nothing in the live reply path (chat.py, group_chat.py,
-picky_brain.py, router.py) imports this yet. Wiring is a separate step that needs Charlie's OK;
-see "WIRING" at the bottom of this docstring.
+WIRED LIVE 2026-11-17 (Charlie's go, 14:42 CT): group_chat.answer runs the forget handler and the
+send-point receipt check; picky_brain adds one lines_for rider line to the user turn and falls back to
+stance_hint (cold -> sharp, warm -> friendly) when no record stance fires. See "WIRING" below.
+
+  CHARLIE IS ALWAYS NICE (Charlie, 2026-11-17: "Always be nice to me tho bc i have to send him test
+  messages that are mean sometimes"). Chuck P's messages never log treatment events, beefs or lines, and
+  his stance_hint is always warm. Off switch: touch cfb-pickem-private/PICKY_CHARLIE_NICE_OFF.
 
   STORE. One private 0600 JSON file per member: cfb-pickem-private/member_memory/<team>.json
   (PICKY_MEMBER_MEMORY_DIR overrides; never this public repo). Each file holds:
@@ -47,8 +51,9 @@ see "WIRING" at the bottom of this docstring.
     member_memory.py backfill [--since 2026-11-15]   everything since Picky went live
     member_memory.py grade                           grade pending receipts only
     member_memory.py forget <team> "<text>" [--dm]   run the forget handler by hand
+    member_memory.py scrub-charlie                   clear hostile events + beefs/lines his test texts left
 
-  WIRING (later, with Charlie's OK):
+  WIRING (live since 2026-11-17):
     1. group_chat.answer (or picky_brain after the brief): if is_forget(text) -> forget(team, text,
        dm) and reply with its "reply"; skip the model.
     2. picky_brain: rider = lines_for(team, q, named_teams, dm=is_dm); put the lines in the draft
@@ -93,6 +98,9 @@ SUBKINDS = ("favorite_team", "alma_mater", "hates_team", "other")
 TIER = {"receipt": 0, "beef": 1, "fact": 2, "joke": 3, "line": 4}
 CLAIM_KINDS = ("cover", "win", "margin", "week_best", "week_record")
 LABELS = {"hostile": -1.0, "neutral": 0.0, "friendly": 1.0}
+CHARLIE_TEAM = os.environ.get("PICKY_CHARLIE_TEAM", "Chuck P")  # Charlie's team row (chat.LEADER_USER_ID's team)
+CHARLIE_NICE_OFF = PRIVATE / "PICKY_CHARLIE_NICE_OFF"            # touch it to treat Charlie like anyone else
+CHARLIE_SKIP_KINDS = ("beef", "line")                             # never stored from his (often test) messages
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -520,6 +528,30 @@ def treatment_score(events: list[dict], now: float | None = None) -> tuple[float
     return (num / den if den else 0.0), den
 
 
+def charlie_nice() -> bool:
+    """Charlie-always-nice is on unless cfb-pickem-private/PICKY_CHARLIE_NICE_OFF exists."""
+    return not CHARLIE_NICE_OFF.exists()
+
+
+def is_charlie(team: str | None) -> bool:
+    """Charlie's team (Chuck P) with the always-nice rule on. His mean texts are tests: they never
+    shape memory or stance."""
+    return bool(team) and team == CHARLIE_TEAM and charlie_nice()
+
+
+def scrub_charlie() -> dict:
+    """Clear what his test texts already left: hostile treatment events and beef / line items."""
+    mem = load(CHARLIE_TEAM)
+    ev = mem["treatment"]["events"]
+    keep_ev = [e for e in ev if e.get("label") != "hostile"]
+    keep_it = [x for x in mem["items"] if x.get("kind") not in CHARLIE_SKIP_KINDS]
+    out = {"team": CHARLIE_TEAM, "hostile_events": len(ev) - len(keep_ev), "items": len(mem["items"]) - len(keep_it)}
+    if out["hostile_events"] or out["items"]:
+        mem["treatment"]["events"], mem["items"] = keep_ev, keep_it
+        save(mem)
+    return out
+
+
 def visible(owner: str, source: str, caller: str | None, dm: bool) -> bool:
     """THE privacy rule: group material is fine anywhere; DM material only back to the same member
     in a DM."""
@@ -532,6 +564,9 @@ def stance_hint(team: str, dm: bool = False, caller: str | None = None, now: flo
                 mem: dict | None = None) -> dict:
     """{"stance": cold|neutral|warm, "score", "weight", "hint", "why": [dated quotes]}. Only events
     visible to this caller/context count (so a member's DM behavior never shapes a group reply)."""
+    if is_charlie(team):  # Charlie (2026-11-17): always warm, whatever his texts say
+        return {"stance": "warm", "score": 1.0, "weight": 0.0, "why": [],
+                "hint": f"{team} is Charlie: always warm and friendly with him, whatever he says."}
     mem = mem or load(team)
     now = now if now is not None else now_ts()
     evs = [e for e in mem["treatment"]["events"] if visible(team, e.get("source", "dm"), caller, dm)]
@@ -719,6 +754,9 @@ def merge(extracted: dict, rows: list[dict], lg: League | None, mems: dict | Non
         if it.get("kind") not in KINDS:
             drop("bad kind")
             continue
+        if is_charlie(r["team"]) and it["kind"] in CHARLIE_SKIP_KINDS:
+            drop("charlie")  # his mean texts are tests: no beefs, no lines
+            continue
         quote, text = (it.get("quote") or "").strip(), (it.get("text") or "").strip()[:160]
         if not _in_text(quote, r["q"]):
             drop("quote not in message")
@@ -809,6 +847,9 @@ def merge(extracted: dict, rows: list[dict], lg: League | None, mems: dict | Non
         if not r or t.get("label") not in LABELS:
             drop("bad label")
             continue
+        if is_charlie(r["team"]):
+            drop("charlie")  # never scored: his stance is always warm
+            continue
         mem = mem_of(r["team"])
         if any(e["msg_id"] == r["msg_id"] for e in mem["treatment"]["events"]):
             continue
@@ -822,7 +863,7 @@ def merge(extracted: dict, rows: list[dict], lg: League | None, mems: dict | Non
 
 
 # ---------------------------------------------------------------------------------------------------
-# retrieval (not wired)
+# retrieval (picky_brain's MEMBER MEMORY rider)
 # ---------------------------------------------------------------------------------------------------
 
 _STOP = set("the a an and or but to of in on at for is are was were be been i you he she it we they me my your "
@@ -833,6 +874,32 @@ _STOP = set("the a an and or but to of in on at for is are was were be been i yo
 
 def _tokens(s) -> set:
     return {w for w in norm(s).split() if len(w) >= 3 and w not in _STOP}
+
+
+_WORD = re.compile(r"[A-Za-z0-9&']+")
+# league shorthand that shows up glued into bigger words ("SECSPN", "ACCN", "B1Gcast")
+ACRONYMS = {"sec", "acc", "b1g", "pac", "aac", "mwc", "cfp", "espn", "fbs", "fcs", "nil", "bcs", "cbs", "fox", "abc"}
+_PLURAL = ("s", "'s", "es", "'")
+
+
+def token_hits(question: str, qtok: set, blob) -> int:
+    """How many question tokens hit the blob. Whole words, plus two careful prefix rules:
+    an acronym (all caps in the question, or league shorthand like SEC/ACC) hits an ALL-CAPS blob word it
+    starts ("SEC" -> "SECSPN", never "second"); a 5+ letter word hits its plural/possessive
+    ("finebaum" -> "finebaum's"). Short lowercase words never prefix-match."""
+    blob = " ".join(blob) if isinstance(blob, (list, tuple)) else str(blob or "")
+    btok = _tokens(blob)
+    caps = {w.lower() for w in _WORD.findall(blob) if len(w) >= 4 and w.isupper()}
+    acr = {w.lower() for w in _WORD.findall(question or "") if len(w) >= 2 and w.isupper()} | ACRONYMS
+    n = 0
+    for t in qtok:
+        if t in btok:
+            n += 1
+        elif t in acr and any(c.startswith(t) and c != t for c in caps):
+            n += 1
+        elif len(t) >= 5 and any(w.startswith(t) and w[len(t):] in _PLURAL for w in btok):
+            n += 1
+    return n
 
 
 def named_members(question: str) -> list[str]:
@@ -900,7 +967,7 @@ def _lines_for(sender_team, question, named_teams, dm, limit):
         blob = " ".join(" ".join(f) if isinstance(f, (list, tuple)) else str(f or "") for f in fields)
         s = sum(3 for t in teams_q if _matches(t, blob))
         s += sum(3 for t in subjects if t != sender_team and _matches(t, blob))
-        s += len(qtok & _tokens(blob))
+        s += token_hits(question, qtok, blob)
         return s
 
     for owner in subjects + others:
@@ -942,7 +1009,89 @@ def _lines_for(sender_team, question, named_teams, dm, limit):
 
 
 # ---------------------------------------------------------------------------------------------------
-# forget handler (not wired)
+# send-point receipt check (group_chat): a quoted call must say what its graded result says
+# ---------------------------------------------------------------------------------------------------
+
+_CALL = re.compile(r"\b(said|says|called|predicted|prediction|claimed|guaranteed|swore|promised|receipts?)\b", re.I)
+_SAYS_HIT = re.compile(r"\b(nailed( it)?|called it|cashed|hit|correct|covered|came through|was money)\b", re.I)
+_SAYS_MISS = re.compile(r"\b(miss(ed)?|whiff(ed)?|blew( it)?|wrong|brick(ed)?|didn'?t cover|failed|busted|swing and a miss)\b", re.I)
+_SAYS_PUSH = re.compile(r"\bpush(ed)?\b", re.I)
+_SCORE = re.compile(r"\b(\d{1,3})\s*-\s*(\d{1,3})\b")
+_FOLLOW = re.compile(r"^\W*(it|that( one)?|this|which|and it|they|nope|yep|yeah)\b", re.I)
+
+
+def _mentions(r: dict, sent: str) -> bool:
+    """The sentence quotes this receipt: its claim text, or its side named next to a 'said/called' word."""
+    c = norm(r.get("claim"))
+    if len(c) >= 6 and c in norm(sent):
+        return True
+    side = r.get("side") or ""
+    return bool(side) and _matches(side, sent) and bool(_CALL.search(sent))
+
+
+def receipt_wrong(r: dict, sent: str) -> bool:
+    """The sentence states a verdict or a final score its graded result doesn't back."""
+    hit, miss, push = bool(_SAYS_HIT.search(sent)), bool(_SAYS_MISS.search(sent)), bool(_SAYS_PUSH.search(sent))
+    if r.get("status") != "graded":
+        return hit or miss or push  # not final yet: no verdict
+    res = r.get("result")
+    if res == "hit" and miss and not hit:
+        return True
+    if res == "miss" and hit and not miss:
+        return True
+    if res == "push" and (hit or miss) and not push:
+        return True
+    pts = {int(x) for x in re.findall(r"\b\d{1,3}\b", r.get("score") or "")}
+    for a, b in _SCORE.findall(sent):
+        if pts and not {int(a), int(b)} <= pts:
+            return True  # a final score that isn't this game's
+    return False
+
+
+def check_receipts(reply: str, sender_team: str | None, question: str = "", dm: bool = False) -> tuple[str, list[str]]:
+    """(reply, dropped sentences). Every receipt the reply could be quoting (the sender's, plus any member the
+    question or reply names, visible in this context) is held to its graded result in code: a sentence with
+    the wrong verdict, a verdict on a call that isn't final, or another game's score is cut. If that cuts
+    everything, the true receipt line goes out instead. Never raises."""
+    try:
+        return _check_receipts(reply or "", sender_team, question or "", dm)
+    except Exception:  # noqa: BLE001  (a memory bug must never block a reply)
+        return reply, []
+
+
+def _check_receipts(reply, sender_team, question, dm):
+    if not reply.strip():
+        return reply, []
+    owners = list(dict.fromkeys(([sender_team] if sender_team else []) + named_members(question + " " + reply)))
+    recs = [r for o in owners for r in load(o)["receipts"]
+            if r.get("status") != "void" and visible(o, r.get("source", "dm"), sender_team, dm)]
+    if not recs:
+        return reply, []
+    sents = re.split(r"(?<=[.!?])\s+", reply.strip())
+    keep, dropped, bad, prev = [], [], None, []
+    for x in sents:
+        about = [r for r in recs if _mentions(r, x)]
+        if not about and prev and _FOLLOW.match(x):
+            about = prev  # "You said Iowa covers easy. It hit, 31-10.": the follow-up is about the same call
+        wrong = next((r for r in about if receipt_wrong(r, x)), None)
+        prev = about
+        if wrong:
+            dropped.append(x)
+            bad = bad or wrong
+        else:
+            keep.append(x)
+    if not dropped:
+        return reply, []
+    out = " ".join(keep).strip()
+    if not out:
+        res = bad.get("result") or "not final yet"
+        out = (f"Receipt check: {bad['who']} said \"{bad['claim']}\". Final: {bad['score']}, that's a {res}."
+               if bad.get("status") == "graded" else f"Receipt check: {bad['who']} said \"{bad['claim']}\". Not final yet.")
+    return out, dropped
+
+
+# ---------------------------------------------------------------------------------------------------
+# forget handler
 # ---------------------------------------------------------------------------------------------------
 
 _FORGET = re.compile(
@@ -1129,12 +1278,16 @@ def main(argv=None) -> int:
     f.add_argument("team")
     f.add_argument("text")
     f.add_argument("--dm", action="store_true")
+    sub.add_parser("scrub-charlie")
     a = ap.parse_args(argv)
     if a.cmd == "show":
         print(show(a.team, a.q))
         return 0
     if a.cmd == "forget":
         print(json.dumps(forget(a.team, a.text, dm=a.dm)))
+        return 0
+    if a.cmd == "scrub-charlie":
+        print(json.dumps(scrub_charlie()))
         return 0
     _l = _lock()  # noqa: F841  (held for the run)
     today = dt.datetime.now(CT).date()
