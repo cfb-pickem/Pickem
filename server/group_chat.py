@@ -1136,21 +1136,23 @@ async def outbox_ack(req: Request):
 # -----------------------------------------------------------------------------
 # keep-warm (speed lane 2026-11-17): rebuild a cold prefix while nobody waits
 # -----------------------------------------------------------------------------
-# chat._prime leaves gemma's checkpoint inside the shared prefix. Any other gemma user (exam sidecars,
-# :8766, batch jobs) or a data change (new prefix) made the next member text pay a ~55-60 s prefill
-# (live log 2026-11-16: 'prime: 53-60s' before nearly every reply over 60 s). Every KEEP_WARM_EVERY s,
+# chat._prime leaves gemma's checkpoint inside the shared prefix. A data change (new prefix: ESPN lines and
+# win probabilities, standings, finals) or a model reload made the next member text pay a ~55-60 s prefill
+# (live log 2026-11-16: 'prime: 53-60s' before nearly every reply over 60 s; in the keeper side logs every
+# cold prime came with a new prefix hash). Plain traffic from other gemma users mostly doesn't evict it
+# (llama.cpp's RAM prompt cache restores it in ~2-5 s). Every KEEP_WARM_EVERY s,
 # once no text has been in flight for KEEP_WARM_IDLE s, this primes the prefix the next text would use:
 # ~0.3 s of Ollama when it's still warm. Evictions: the latest prefix (the last text's, or the last
 # build's) is re-primed every tick, no Supabase read. Data changes: every KEEP_WARM_CTX_EVERY s it
 # rebuilds the context a group text would get (chat.league_ctx -> prompt_prefix; ~80 KB of Supabase
-# reads, so not every minute: ~350 MB/month at 600 s). Live sidecar
+# reads, so not every minute: ~0.7 GB/month at 300 s; ESPN notes come from espn.py's cache). Live sidecar
 # only: off in side sidecars (PICKY_GROUP_EXAM=1, PICKY_SIDE=1, any port but 8768) unless
 # PICKY_KEEP_WARM=1; PICKY_KEEP_WARM=0 turns it off anywhere. No Python lock is shared with /group:
 # a text that lands mid-prime only queues behind it in Ollama, and finds the prefix warm.
 
 KEEP_WARM_EVERY = float(os.environ.get("PICKY_KEEP_WARM_EVERY", "60"))
 KEEP_WARM_IDLE = float(os.environ.get("PICKY_KEEP_WARM_IDLE", "20"))
-KEEP_WARM_CTX_EVERY = float(os.environ.get("PICKY_KEEP_WARM_CTX_EVERY", "600"))
+KEEP_WARM_CTX_EVERY = float(os.environ.get("PICKY_KEEP_WARM_CTX_EVERY", "300"))
 KEEP_WARM_MIN_FREE = 10  # % free memory (kern.memorystatus_level); under it, no extra model work
 EXAM_LOCK = os.environ.get("PICKY_EXAM_LOCK", "/tmp/picky-exam.lock")  # "" = don't check
 WARM = {"inflight": 0, "last": 0.0, "hash": None, "at": 0.0, "built": 0.0, "task": None}

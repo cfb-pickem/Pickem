@@ -50,7 +50,9 @@ MODEL = "gemma4:12b-it-qat"
 DEFAULT_IDS = ["k2-c05", "k2-c25", "k2-c40", "k2-c10", "k2-c02", "k2-c39", "k2-c20",  # group
                "k2-c01", "k2-c26", "k2-c14"]                                            # dm
 
-# ~3k tokens of a system prompt nothing else uses: the batch job that takes the slot between texts
+# ~3k tokens of a system prompt nothing else uses: the batch job that takes the slot between texts. Measured
+# 2026-11-17: it does NOT evict the league prefix (llama.cpp's RAM prompt cache restores it in ~4 s); the
+# cold primes that matter come from prefix changes (data), which this replay only gets when they happen.
 EVICTOR_SYSTEM = "You are a weather summarizer for a regional newsroom. Station log follows.\n" + "\n".join(
     f"Station {i:03d}: temp {40 + i % 37} F, wind {i % 23} mph from {['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][i % 8]}, "
     f"humidity {30 + i % 61}%, pressure {990 + i % 41} hPa, visibility {1 + i % 10} mi."
@@ -174,8 +176,17 @@ def log_facts(path: Path) -> dict:
         text = path.read_text(errors="replace")
     except OSError:
         return out
-    for m in re.finditer(r"INFO prime: ([\d.]+)s", text):
-        out["cold_primes"] += float(m.group(1)) > 20
+    # a cold prime is "absorbed" when the keep-warm paid it (its 'keep-warm: primed ... (was cold)' line
+    # follows within a second), else a member text waited for it
+    lines = text.splitlines()
+    for i, ln in enumerate(lines):
+        m = re.search(r"INFO prime: ([\d.]+)s", ln)
+        if m and float(m.group(1)) > 20:
+            out["cold_primes"] += 1
+            if any("keep-warm: primed" in x and "was cold" in x for x in lines[i + 1:i + 4]):
+                out["cold_absorbed_by_keep_warm"] = out.get("cold_absorbed_by_keep_warm", 0) + 1
+            else:
+                out["cold_paid_by_texts"] = out.get("cold_paid_by_texts", 0) + 1
     out["prime_failed"] = text.count("prime failed")
     out["reroll_runs"] = text.count("reroll runs:")
     out["reroll_skipped"] = text.count("reroll skipped:")
