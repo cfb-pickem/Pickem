@@ -190,9 +190,14 @@ async def test_prime_timeout():
 
     with patch.object(chat, "MODEL", "gemma4:12b-it-qat"):
         await chat._prime(FakeClient(), "prefix")
-    t = got.get("timeout")
-    check("prime has its own read timeout (not the caller's 30/60 s)",
-          t is not None and t.read == chat.PRIME_TIMEOUT and chat.PRIME_TIMEOUT >= 120, repr(t))
+        t = got.get("timeout")
+        check("prime has its own read timeout (not the caller's 30/60 s)",
+              t is not None and t.read == chat.PRIME_TIMEOUT and chat.PRIME_TIMEOUT >= 120, repr(t))
+        long = FakeClient()
+        long.timeout = chat.httpx.Timeout(connect=5.0, read=420.0, write=10.0, pool=5.0)
+        await chat._prime(long, "prefix")
+        check("a caller with a longer timeout keeps it (site stream: 420 s)", got["timeout"].read == 420.0,
+              repr(got["timeout"]))
 
 
 async def test_cold_prime_fallback():

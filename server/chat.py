@@ -5522,8 +5522,9 @@ async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
     else:
         return
     try:
+        read = max(PRIME_TIMEOUT, getattr(getattr(c, "timeout", None), "read", None) or 0.0)  # never shorter
         r = await c.post(f"{OLLAMA}/api/{endpoint}", json=payload,
-                         timeout=httpx.Timeout(connect=5.0, read=PRIME_TIMEOUT, write=10.0, pool=5.0))
+                         timeout=httpx.Timeout(connect=5.0, read=read, write=10.0, pool=5.0))
         if r.status_code == 200:
             d = r.json()
             log.info("prime: %.1fs (prefix %s)", (d.get("prompt_eval_duration") or 0) / 1e9,
