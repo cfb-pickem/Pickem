@@ -12,33 +12,39 @@ Nobody maintains this. LaunchAgent com.pickem.picky-dossier runs
   - "sat": refresh after Saturday 7 AM CT;
   - never for a game that has kicked off. A failed game backs off 2 hours.
 
-Per game:
-  1. Leads, deterministic (no LLM): team-tagged items from news.py's RSS
-     cache and r/CFB's public RSS (www.reddit.com/r/CFB/.rss; no login, no
-     app; skipped quietly when Reddit blocks it).
-  2. `claude -p` via picky_claude.run (Opus on Charlie's subscription;
-     ANTHROPIC_API_KEY is stripped so it can never bill an API key), web tools only
-     (--tools WebSearch,WebFetch), zero MCP servers, neutral cwd outside the
-     home dir, hard timeout. Output is schema-checked JSON.
+Code first (Charlie, 2026-11-16: "auto feed pipelines for him so you dont need
+an opus call every time"). Every run, per game, with no model at all:
+  1. Leads: team-tagged items from news.py's RSS cache (headline, outlet,
+     byline, date, players, injury status) and r/CFB's public RSS
+     (www.reddit.com/r/CFB/.rss; no login; skipped quietly when blocked).
+  2. code_research(): one extractive claim per lead (the headline itself, its
+     URL and date; injury status from news.py's tag or infer_status()), so
+     nothing gets words or a source it doesn't have.
   3. validate(): schema, kinds, dates, URL required, paywalled/paid sites
      dropped (247, On3, Action Network, The Athletic), Reddit can only be a
-     rumor or an opinion, every URL fetched (404 / dead host = dropped), and
-     rumors kept out of the facts section.
-  4. A two-sentence summary by Picky's own local model (Ollama, only while
-     chat is idle), accepted only if every name and number in it appears in
-     the claims; otherwise a rule-built summary.
-  5. An analyst take (analyst.py): one more `claude -p` call, no tools, over
-     a numbered brief of the computed signals + the claims above: pick vs the
-     pool line, confidence, 3-5 cited reasons, the best counter, a quotable
-     line, what the market is missing. Validated; on failure the previous
-     take is carried over. Picky's computed lean stays authoritative.
-  6. Atomic write to cache/dossiers/<week>/<game_id>.json. On any failure
-     the previous good dossier stays.
+     rumor, rumors kept out of the facts section.
+  4. rule_summary(): the top injury / news claims, verbatim.
+
+Opus enrichment (enrich.py), at most once a week per game: the first run in
+the Friday 5 PM - Sunday window (the "fri" refresh, a Friday-night "new", or a
+"sat" retry) when the game has no fresh Opus layer, or on demand
+(`run --opus`). `claude -p` via picky_claude.run (Opus on Charlie's
+subscription, ANTHROPIC_API_KEY stripped, web tools only, zero MCP servers,
+neutral cwd, hard timeout) researches the game; its claims are validated
+(every URL fetched, 404 / dead host dropped) and kept in d["opus"]. The same
+run writes the analyst take (analyst.py, one no-tools call). Later code runs
+carry the Opus layer and the take while they're fresh (6 days); a newer code
+injury report on the same player replaces Opus's. Anthropic down,
+PICKY_NO_ANTHROPIC=1 or a failed run = the code dossier alone (plus the last
+good Opus layer while fresh).
+
+Atomic write to cache/dossiers/<week>/<game_id>.json. On any failure the
+previous good dossier stays.
 
 The dossier only explains. chat.py never lets it move the computed lean,
 and member answers never show source URLs (they stay here for grounding).
 
-CLI:  dossier.py run [--force] [--week N] [--game ID] [--out DIR] [--no-local] [--now ISO]
+CLI:  dossier.py run [--force] [--opus | --no-opus] [--week N] [--game ID] [--out DIR] [--now ISO]
       dossier.py takes [--week N] [--game ID] [--now ISO]   (rebuild only the analyst takes)
       dossier.py status
       dossier.py validate FILE      (re-run the validator on a raw JSON file)
@@ -68,6 +74,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import analyst  # noqa: E402
 import cfbd  # noqa: E402
+import enrich  # noqa: E402
 import picky_claude  # noqa: E402
 
 log = logging.getLogger("picky.dossier")
@@ -84,9 +91,8 @@ FAIL_BACKOFF_S = 2 * 3600
 KEEP_WEEKS = 3
 MAX_CLAIMS = 14
 MAX_AGE_DAYS = 30
-OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-CHAT_HEALTH = os.environ.get("PICKY_CHAT_HEALTH", "http://127.0.0.1:8766/health")
-LOCAL_MODEL = os.environ.get("PICKEM_CHAT_MODEL", "gemma4:12b-it-qat")
+MAX_LEADS = 12
+REDDIT_RUMORS = 3
 REDDIT_RSS = ["https://www.reddit.com/r/CFB/.rss", "https://www.reddit.com/r/CFB/new/.rss"]
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
@@ -234,19 +240,26 @@ def _mentions(text: str, team: str) -> bool:
     return any(f" {x} " in n for x in names if len(x) >= 3)
 
 
-def news_leads(away: str, home: str, limit: int = 8) -> list[dict]:
+def news_items() -> list[dict]:
+    """news.py's cached items ([] when the cache is unreadable)."""
     try:
         import news
-        items = list((news.load_cache().get("items") or {}).values())
+        return list((news.load_cache().get("items") or {}).values())
     except Exception as e:  # noqa: BLE001
         log.warning("news cache unreadable: %s", e)
         return []
+
+
+def news_leads(away: str, home: str, limit: int = MAX_LEADS, items: list[dict] | None = None) -> list[dict]:
+    items = news_items() if items is None else items
     keys = {cfbd.norm(away), cfbd.norm(home)}
     hits = [it for it in items if keys & {cfbd.norm(t) for t in it.get("teams") or []}
             or _mentions(it.get("title", ""), away) or _mentions(it.get("title", ""), home)]
     hits.sort(key=lambda it: it.get("date") or "", reverse=True)
     return [{"title": it["title"], "url": it["link"], "date": (it.get("date") or "")[:10],
-             "source": it.get("source"), "summary": it.get("summary") or ""} for it in hits[:limit]]
+             "source": it.get("source"), "summary": it.get("summary") or "", "author": it.get("author"),
+             "teams": it.get("teams") or [], "players": it.get("players") or [], "kind": it.get("kind"),
+             "topics": it.get("topics") or [], "status": it.get("status")} for it in hits[:limit]]
 
 
 def parse_reddit_rss(xml_text: str) -> list[dict]:
@@ -464,25 +477,8 @@ def validate(raw: dict, now: dt.datetime, url_status: dict[str, str] | None = No
 
 
 # -----------------------------------------------------------------------------
-# summary: Picky's local model, checked; rule-built fallback
+# code research, summary, merge with the weekly Opus layer
 # -----------------------------------------------------------------------------
-
-_CAP = re.compile(r"\b[A-Z][a-zA-Z'’.-]+(?:\s+[A-Z][a-zA-Z'’.-]+)*")
-_NUM = re.compile(r"\b\d+(?:\.\d+)?\b")
-_COMMON = {"The", "A", "An", "He", "She", "They", "It", "His", "Their", "Both", "Week", "Saturday", "Friday",
-           "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Coach", "Head", "Per", "According"}
-
-
-def summary_grounded(summary: str, source_text: str) -> bool:
-    """Every capitalized name and every number in the summary appears in the claims."""
-    src = source_text.lower()
-    for m in _CAP.finditer(summary):
-        for w in m.group(0).split():
-            w = re.sub(r"['’]s$", "", w.strip(".,;:'’\"")).strip("'’")
-            if w and w not in _COMMON and w.lower() not in src:
-                return False
-    return all(n in source_text for n in _NUM.findall(summary))
-
 
 def rule_summary(secs: dict) -> str:
     facts = secs["facts"]
@@ -493,102 +489,82 @@ def rule_summary(secs: dict) -> str:
     return " ".join(c["text"] if c["text"].endswith(".") else c["text"] + "." for c in pick)
 
 
-def _chat_idle(client: httpx.Client) -> bool:
-    try:
-        g = client.get(CHAT_HEALTH, timeout=3).json().get("gate") or {}
-        return g.get("members_active", 1) == 0 and not g.get("test_busy")
-    except Exception:  # noqa: BLE001
+def _side(x: dict, away: str, home: str) -> str:
+    tags = {cfbd.norm(t) for t in x.get("teams") or []}
+    a = cfbd.norm(away) in tags or _mentions(x.get("title", ""), away)
+    h = cfbd.norm(home) in tags or _mentions(x.get("title", ""), home)
+    return "both" if a == h else "away" if a else "home"
+
+
+def code_research(g: dict, leads: list[dict], rleads: list[dict]) -> dict:
+    """The research step without a model: one claim per cached lead, worded by its own
+    headline, with the lead's URL, outlet and date. Same shape as the Opus researcher's
+    output, so validate() treats both alike."""
+    away, home = g["Away"], g["Home"]
+    claims = []
+    for x in leads:
+        title = re.sub(r"\s+", " ", str(x.get("title") or "")).strip()
+        injury = x.get("kind") == "injury" or "injury" in (x.get("topics") or [])
+        c = {"text": title, "kind": "injury" if injury else "fact", "team": _side(x, away, home),
+             "players": list(x.get("players") or []), "source_url": x.get("url") or "",
+             "source_name": x.get("source") or "", "date": x.get("date") or "", "confidence": "medium"}
+        if injury and x.get("status") in STATUSES:
+            c["status"] = x["status"]
+        claims.append(c)
+    for x in rleads[:REDDIT_RUMORS]:
+        claims.append({"text": re.sub(r"\s+", " ", x.get("title") or "").strip(), "kind": "rumor",
+                       "team": _side(x, away, home), "players": [], "source_url": x.get("url") or "",
+                       "source_name": "r/CFB", "date": x.get("date") or "", "confidence": "low"})
+    return {"claims": claims, "searched": [],
+            "notes": f"code extraction over {len(leads)} news-cache and {len(rleads[:REDDIT_RUMORS])} r/CFB items"}
+
+
+def merge(code: dict, opus: dict | None, now: dt.datetime) -> dict:
+    """Code claims + the Opus layer's, newest first per section. An Opus claim goes when it has
+    aged past MAX_AGE_DAYS, repeats a code claim, or is an injury report on a player a code
+    report of the same date or newer covers (the newer report wins)."""
+    out = {}
+    seen = set()
+    code_inj = {}
+    for c in code["facts"]:
+        if c["kind"] == "injury":
+            for pl in c.get("players") or []:
+                code_inj[pl.lower()] = max(code_inj.get(pl.lower(), ""), c.get("date") or "")
+    for k in ("facts", "opinions", "rumors"):
+        rows = [dict(c, by="code") for c in code[k]]
+        for c in (opus or {}).get(k) or []:
+            try:
+                old = (now.date() - dt.date.fromisoformat(str(c.get("date"))[:10])).days > MAX_AGE_DAYS
+            except ValueError:
+                old = True
+            newer = c.get("kind") == "injury" and any(
+                code_inj.get(pl.lower(), "") >= str(c.get("date") or "") for pl in c.get("players") or []
+                if pl.lower() in code_inj)
+            if not old and not newer:
+                rows.append(dict(c, by="opus"))
+        uniq = []
+        for c in sorted(rows, key=lambda c: c.get("date") or "", reverse=True):
+            key = re.sub(r"\W+", " ", c["text"].lower()).strip()
+            if key not in seen:
+                seen.add(key)
+                uniq.append(c)
+        out[k] = uniq
+    n = 0
+    for k in ("facts", "opinions", "rumors"):  # cap total, facts first
+        out[k] = out[k][: max(0, MAX_CLAIMS - n)]
+        n += len(out[k])
+    return out
+
+
+def opus_due(prev: dict | None, trigger: str, now: dt.datetime) -> bool:
+    """The weekly Opus layer: the first run between Friday 5 PM and Sunday 5 PM CT (the "fri"
+    refresh, a Friday-night "new", or a "sat" retry after a failed Friday) when the game has no
+    fresh Opus layer yet. Never with the kill switch on."""
+    if not enrich.available() or trigger not in ("new", "fri", "sat"):
         return False
-
-
-def local_summary(client: httpx.Client, g: dict, secs: dict) -> tuple[str, str]:
-    """(summary, by). Picky's own model writes it when chat is idle; it's kept
-    only if grounded in the claims, else the rule-built one."""
-    facts = secs["facts"] + secs["opinions"]
-    if not facts:
-        return rule_summary(secs), "rule"
-    claims_txt = "\n".join(f"- [{c['kind']}] {c['text']}" for c in facts)
-    if not _chat_idle(client):
-        return rule_summary(secs), "rule"
-    prompt = (f"Game: {g['Away']} at {g['Home']}.\nVerified notes:\n{claims_txt}\n\n"
-              "Write at most two short plain sentences summarizing the most important availability news "
-              "above for someone about to pick this game. Use only names and numbers from the notes; "
-              "label opinions as opinions. No predictions.\nSummary:")
-    try:
-        r = client.post(f"{OLLAMA}/api/generate", timeout=90, json={
-            "model": LOCAL_MODEL, "prompt": prompt, "stream": False, "think": False,
-            "keep_alive": os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h"),  # don't cut chat's keep_alive to 5m
-            "options": {"num_ctx": 16384, "temperature": 0.1, "num_predict": 120}})
-        r.raise_for_status()
-        s = re.sub(r"\s+", " ", r.json().get("response") or "").strip()
-    except Exception as e:  # noqa: BLE001
-        log.warning("local summary failed: %s", e)
-        return rule_summary(secs), "rule"
-    if 20 <= len(s) <= 400 and summary_grounded(s, claims_txt + f" {g['Away']} {g['Home']}"):
-        return s, LOCAL_MODEL
-    log.info("local summary rejected (ungrounded): %s", s[:400])
-    return rule_summary(secs), "rule"
-
-
-LOCAL_PROMPT = """Game: {away} (away) at {home} (home), kickoff {kick}. Today is {today}.
-Below are news items about these teams (headline + the outlet's own blurb), numbered.
-Pull out up to {max_claims} short claims a fan would want before picking this game: injuries and
-availability, quarterback status, suspensions, coaching changes. Use ONLY what an item's own text says;
-copy names and numbers exactly; skip items that don't bear on this game. For each claim give the item
-number it came from. kind: injury (availability), fact (other news), insider_opinion (a named person's
-view). team: away, home or both. If nothing applies, return an empty list.
-
-{items}"""
-
-LOCAL_SCHEMA = {"type": "object", "properties": {"claims": {"type": "array", "items": {
-    "type": "object", "properties": {
-        "item": {"type": "integer"}, "text": {"type": "string"},
-        "kind": {"type": "string", "enum": ["fact", "injury", "insider_opinion"]},
-        "team": {"type": "string", "enum": ["away", "home", "both"]},
-        "players": {"type": "array", "items": {"type": "string"}}},
-    "required": ["item", "text", "kind", "team", "players"]}}}, "required": ["claims"]}
-
-
-def local_research(client: httpx.Client, g: dict, leads: list[dict], now: dt.datetime) -> dict:
-    """Anthropic down: the same claims shape from Picky's own model (Ollama, only while chat is
-    idle) over the news-cache leads news.py already fetched (headline + feed blurb). A claim keeps
-    its item's URL and date, and every name and number in it must be in that item's text, so
-    nothing gets a source it doesn't have. Then the normal validator runs. Raises when chat is busy
-    or the model fails (the caller keeps the previous dossier)."""
-    items = [x for x in leads if x.get("url") and x.get("date")][:MAX_CLAIMS]
-    if not items:
-        return {"claims": [], "notes": "local fallback: no news-cache leads for this game"}
-    if not _chat_idle(client):
-        raise RuntimeError("local fallback: chat is busy")
-    k = kickoff(g)
-    prompt = LOCAL_PROMPT.format(away=g["Away"], home=g["Home"], today=now.strftime("%A %Y-%m-%d"),
-                                 kick=k.strftime("%a %b %-d, %-I:%M %p CT") if k else "TBD", max_claims=MAX_CLAIMS,
-                                 items="\n".join(f"{i + 1}. [{x['date']}, {x.get('source') or 'news'}] {x['title']}. "
-                                                 f"{x.get('summary') or ''}" for i, x in enumerate(items)))
-    r = client.post(f"{OLLAMA}/api/chat", timeout=300, json={
-        "model": LOCAL_MODEL, "stream": False, "think": False, "format": LOCAL_SCHEMA,
-        "messages": [{"role": "user", "content": prompt}],
-        "options": {"num_ctx": 16384, "temperature": 0.1, "num_predict": 1200}})
-    r.raise_for_status()
-    out = json.loads((r.json().get("message") or {}).get("content") or "{}")
-    claims, skipped = [], 0
-    for c in out.get("claims") or []:
-        i = c.get("item") if isinstance(c, dict) else None
-        if not isinstance(i, int) or not 1 <= i <= len(items):
-            skipped += 1
-            continue
-        x = items[i - 1]
-        src = f"{x['title']} {x.get('summary') or ''} {g['Away']} {g['Home']}"
-        text = str(c.get("text") or "").strip()
-        players = [str(p) for p in c.get("players") or [] if str(p).lower() in src.lower()]
-        if not text or not summary_grounded(text, src):
-            skipped += 1
-            continue
-        claims.append({"text": text, "kind": c.get("kind"), "team": c.get("team"), "players": players,
-                       "source_url": x["url"], "source_name": x.get("source") or "", "date": x["date"],
-                       "confidence": "medium"})
-    return {"claims": claims, "searched": [], "notes": f"local fallback over {len(items)} news-cache items "
-                                                        f"({skipped} ungrounded claims skipped)"}
+    if enrich.fresh(((prev or {}).get("opus") or {}).get("generated_at"), now):
+        return False
+    return now - _last(now, 4, 17) < dt.timedelta(days=2)
 
 
 # -----------------------------------------------------------------------------
@@ -630,41 +606,53 @@ def prune_weeks(base: Path, keep: int = KEEP_WEEKS) -> None:
 
 
 def build_one(client: httpx.Client, g: dict, season: int, week: int, trigger: str, now: dt.datetime,
-              prev: dict | None, use_local: bool = True, research=run_claude, take_fn=None) -> dict:
-    """A new dossier for one game, or raises (caller keeps the previous one)."""
+              prev: dict | None, opus: bool = False, research=run_claude, take_fn=None,
+              items: list[dict] | None = None) -> dict:
+    """A new dossier for one game, or raises (caller keeps the previous one). The code path
+    always runs; opus=True adds this week's Opus layer (its failure never fails the dossier)."""
     away, home = g["Away"], g["Home"]
-    leads = news_leads(away, home)
+    items = news_items() if items is None else items
+    if not items and prev:
+        raise RuntimeError("news cache empty or unreadable; keeping the previous dossier")
+    leads = news_leads(away, home, items=items)
     rstatus, rleads = reddit_leads(client, away, home)
-    researcher = f"claude -p {picky_claude.MODEL} (web search, free public sources)"
-    try:
-        raw = research(build_prompt(g, season, week, leads + rleads, now))
-    except Exception as e:  # noqa: BLE001 - Anthropic down / timeout / bad run
-        if not use_local:
-            raise
-        log.warning("game %s research failed (%s); local fallback", g["GameId"], str(e)[:200])
-        raw = local_research(client, g, leads, now)
-        researcher = f"local {LOCAL_MODEL} over news-cache leads (Anthropic unavailable)"
-    urls = sorted({str(c.get("source_url") or "") for c in raw.get("claims") or [] if isinstance(c, dict)})
-    status = check_urls(client, [u for u in urls if _url_ok(u)])
-    secs, dropped = validate(raw, now, status)
-    n = sum(len(v) for v in secs.values())
-    prev_n = sum(len((prev or {}).get(k) or []) for k in ("facts", "opinions", "rumors"))
-    if n == 0 and prev_n:
-        raise RuntimeError(f"empty result ({len(dropped)} dropped) but the previous dossier had {prev_n} claims")
-    summary, by = local_summary(client, g, secs) if use_local else (rule_summary(secs), "rule")
+    code_secs, dropped = validate(code_research(g, leads, rleads), now)
+    layer = None
+    if opus:
+        try:
+            raw = research(build_prompt(g, season, week, leads + rleads, now))
+            urls = sorted({str(c.get("source_url") or "") for c in raw.get("claims") or [] if isinstance(c, dict)})
+            status = check_urls(client, [u for u in urls if _url_ok(u)])
+            secs, odrop = validate(raw, now, status)
+            n = sum(len(v) for v in secs.values())
+            prev_n = sum(len(((prev or {}).get("opus") or {}).get(k) or []) for k in ("facts", "opinions", "rumors"))
+            if n == 0 and prev_n:
+                raise RuntimeError(f"empty Opus result ({len(odrop)} dropped) but the previous layer had {prev_n}")
+            layer = {"generated_at": now.isoformat(timespec="seconds"), "trigger": trigger,
+                     "researcher": f"claude -p {picky_claude.MODEL} (web search, free public sources)", **secs,
+                     "dropped": odrop, "searched": [str(x)[:120] for x in (raw.get("searched") or [])][:12],
+                     "notes": str(raw.get("notes") or "")[:400]}
+        except Exception as e:  # noqa: BLE001 - Anthropic down / timeout / bad run: code dossier stands
+            log.warning("game %s Opus layer failed (%s); code dossier only", g["GameId"], str(e)[:200])
+    if layer is None and enrich.fresh(((prev or {}).get("opus") or {}).get("generated_at"), now):
+        layer = prev["opus"]
+    secs = merge(code_secs, layer, now)
     d = {
-        "schema": 1, "season": season, "week": week, "game_id": g["GameId"], "away": away, "home": home,
+        "schema": 2, "season": season, "week": week, "game_id": g["GameId"], "away": away, "home": home,
         "kickoff": g.get("Start (CT)"), "generated_at": now.isoformat(timespec="seconds"), "trigger": trigger,
-        "researcher": researcher,
-        "summary": summary, "summary_by": by, **secs,
-        "dropped": dropped, "searched": [str(x)[:120] for x in (raw.get("searched") or [])][:12],
-        "notes": str(raw.get("notes") or "")[:400],
+        "researcher": "code (news cache + r/CFB)" + (" + Opus layer " + layer["generated_at"] if layer else ""),
+        "summary": rule_summary(secs), "summary_by": "rule", **secs,
+        "dropped": dropped, "notes": (layer or {}).get("notes", ""),
         "leads": {"news": len(leads), "reddit": len(rleads), "reddit_status": rstatus},
     }
+    if layer:
+        d["opus"] = layer
     # take_fn None = the real no-tools take, but only with the real researcher (tests pass fakes)
     take_fn = take_fn or (run_take_claude if research is run_claude else None)
-    if take_fn:
+    if opus and layer is not None and layer is not (prev or {}).get("opus") and take_fn:
         add_take(d, g, season, week, now, prev, take_fn)
+    elif (prev or {}).get("analyst_take") and enrich.fresh(prev["analyst_take"].get("generated_at"), now):
+        d["analyst_take"] = prev["analyst_take"]  # this week's take, still fresh
     return d
 
 
@@ -703,8 +691,10 @@ def _take_lock() -> bool:
 
 
 def run(force: bool = False, week: int | None = None, only_game: int | None = None, base: Path | None = None,
-        use_local: bool = True, db=None, research=run_claude, now: dt.datetime | None = None,
+        opus: bool | None = None, db=None, research=run_claude, now: dt.datetime | None = None,
         take_fn=None) -> dict:
+    """opus None = on the weekly schedule (opus_due), True = on demand for every built game
+    (still never with the kill switch on), False = code only."""
     base = base or DOSSIER_DIR
     now = now or now_ct()
     db = db or Supa()
@@ -726,20 +716,22 @@ def run(force: bool = False, week: int | None = None, only_game: int | None = No
         log.info("week %s: %d pool games, nothing due", wk, len(games))
         return {"ok": True, "slate": True, "week": wk, "built": 0}
     built, failed = [], []
+    items = news_items()
     with httpx.Client(timeout=20) as c:
         for g, reason, prev in todo[:MAX_GAMES_PER_RUN]:
             gid = str(g["GameId"])
             t0 = time.time()
+            use_opus = (enrich.available() if opus else False) if opus is not None else opus_due(prev, reason, now)
             try:
-                d = build_one(c, g, season, wk, reason, now, prev, use_local=use_local, research=research,
-                              take_fn=take_fn)
+                d = build_one(c, g, season, wk, reason, now, prev, opus=use_opus, research=research,
+                              take_fn=take_fn, items=items)
                 write_atomic(path_for(wk, gid, base), d)
                 state[gid] = {"ok_at": time.time(), "trigger": reason}
                 built.append(gid)
                 log.info("week %s game %s (%s at %s) %s: %d facts, %d opinions, %d rumors, %d dropped, "
-                         "summary by %s, reddit %s, %.0fs", wk, gid, g["Away"], g["Home"], reason,
+                         "%s, reddit %s, %.0fs", wk, gid, g["Away"], g["Home"], reason,
                          len(d["facts"]), len(d["opinions"]), len(d["rumors"]), len(d["dropped"]),
-                         d["summary_by"], d["leads"]["reddit_status"], time.time() - t0)
+                         d["researcher"], d["leads"]["reddit_status"], time.time() - t0)
             except Exception as e:  # noqa: BLE001 - keep the last good dossier, back off
                 state[gid] = dict(state.get(gid) or {}, failed_at=time.time(), error=str(e)[:300])
                 failed.append(gid)
@@ -784,7 +776,7 @@ def status(base: Path | None = None) -> dict:
             "game": f"{j.get('away')} at {j.get('home')}", "generated_at": j.get("generated_at"),
             "trigger": j.get("trigger"), "facts": len(j.get("facts") or []),
             "opinions": len(j.get("opinions") or []), "rumors": len(j.get("rumors") or []),
-            "summary_by": j.get("summary_by"),
+            "researcher": j.get("researcher"),
             "take": (f"{j['analyst_take']['pick']} ({j['analyst_take']['confidence']})"
                      + (" STALE" if j["analyst_take"].get("stale") else "")) if j.get("analyst_take") else None}
     return out
@@ -798,7 +790,8 @@ def main(argv=None) -> int:
     ap.add_argument("--week", type=int)
     ap.add_argument("--game", type=int)
     ap.add_argument("--out", type=Path)
-    ap.add_argument("--no-local", action="store_true")
+    ap.add_argument("--opus", action="store_true", help="on demand: add the Opus layer to every built game")
+    ap.add_argument("--no-opus", action="store_true", help="code only, even on the weekly schedule")
     ap.add_argument("--now", help="pretend it's this CT time (testing on a past slate), e.g. 2026-11-13T17:30")
     a = ap.parse_args(argv)
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -820,7 +813,8 @@ def main(argv=None) -> int:
     now = dt.datetime.fromisoformat(a.now).replace(tzinfo=CT) if a.now else None
     try:
         res = (takes(week=a.week, only_game=a.game, base=a.out, now=now) if a.cmd == "takes" else
-               run(force=a.force, week=a.week, only_game=a.game, base=a.out, use_local=not a.no_local, now=now))
+               run(force=a.force, week=a.week, only_game=a.game, base=a.out, now=now,
+                   opus=True if a.opus else False if a.no_opus else None))
     except Exception as e:  # noqa: BLE001 - never crash-loop launchd; log and retry next tick
         log.exception("dossier run failed: %s", e)
         return 1

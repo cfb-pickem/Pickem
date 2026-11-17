@@ -4,8 +4,8 @@ Kill-switch test (checklist 9): Picky keeps working with Anthropic down.
 Every Anthropic call goes through picky_claude.run (Opus, guard, empty MCP, no
 API key, usage log). With PICKY_NO_ANTHROPIC=1 and every claude spawn rigged
 to blow up: live riders, lock reminders, group posts (recap / preview /
-saturday / pings), Picky's weekly pick logic and the dossier (local gemma
-fallback, faked here) all still produce output. No network, no claude, no GPU.
+saturday / pings), Picky's weekly pick logic and the dossier (pure code over
+the news cache) all still produce output. No network, no claude, no GPU.
 
 Run:  ./.venv/bin/python3 -I test_anthropic_down.py
 """
@@ -226,61 +226,31 @@ d = picky_picks.decide({"GameId": 1, "Away": "Utah", "Home": "Iowa", "line": -3.
                        {"market": {"details": "IOWA -6.5"}, "home": {"abbr": "IOWA"}, "away": {"abbr": "UTAH"}}, None)
 check("weekly pick logic works with Anthropic down", d.get("pick") == "Iowa" and d.get("method") == "value", d)
 
-# -- dossier: local gemma fallback over the news-cache leads (Ollama faked) ---------------------------
-LEADS = [{"title": "Iowa QB Mark Gronowski questionable vs Utah", "url": "https://www.example-news.com/iowa/qb",
-          "date": "2026-11-19", "source": "ESPN", "summary": "Coach Kirk Ferentz said Gronowski is day-to-day."},
-         {"title": "Utah's defense ranks 12th nationally", "url": "https://www.example-news.com/utah/d",
-          "date": "2026-11-18", "source": "CBS Sports", "summary": "The Utes allow 18 points a game."}]
-GEMMA = {"claims": [
-    {"item": 1, "text": "Iowa QB Mark Gronowski is questionable; Kirk Ferentz says he is day-to-day.", "kind": "injury",
-     "team": "home", "players": ["Mark Gronowski"]},
-    {"item": 2, "text": "Utah allows 14 points a game.", "kind": "fact", "team": "away", "players": []},  # wrong number
-    {"item": 2, "text": "Utah star Devon Smith is out for the season.", "kind": "injury", "team": "away",
-     "players": ["Devon Smith"]},                                                                        # invented
-    {"item": 7, "text": "Iowa is 7-3.", "kind": "fact", "team": "home", "players": []}]}                  # no such item
-CALLS = {"chat": 0}
-
-
-def handler(busy):
-    import httpx
-
-    def h(req):
-        if req.url.path == "/health":
-            return httpx.Response(200, json={"gate": {"members_active": 1 if busy else 0, "test_busy": False}})
-        if req.url.path == "/api/chat":
-            CALLS["chat"] += 1
-            body = json.loads(req.content)
-            assert body["model"] == "gemma4:12b-it-qat" and body["stream"] is False, body
-            return httpx.Response(200, json={"message": {"content": json.dumps(GEMMA)}})
-        if req.url.path == "/api/generate":
-            return httpx.Response(500)  # the summary falls back to the rule-built one
-        return httpx.Response(200, text="ok")  # source URL checks
-    return h
-
-
+# -- dossier: pure code over the news cache, no model of any kind -------------------------------------
+NEWS = [{"title": "Iowa QB Mark Gronowski questionable vs Utah", "link": "https://www.example-news.com/iowa/qb",
+         "date": "2026-11-19T12:00:00+00:00", "source": "ESPN", "teams": ["Iowa"], "players": ["Mark Gronowski"],
+         "kind": "injury", "topics": ["injury"], "status": "questionable", "summary": "Day-to-day, per the coach."},
+        {"title": "Utah's defense ranks 12th nationally", "link": "https://www.example-news.com/utah/d",
+         "date": "2026-11-18T12:00:00+00:00", "source": "CBS Sports", "teams": ["Utah"], "players": [],
+         "kind": None, "topics": [], "status": None, "summary": ""}]
 import httpx  # noqa: E402
 
 G = {"GameId": 1, "Away": "Utah", "Home": "Iowa", "line": -3.5, "Status": None, "Start (CT)": "2026-11-21T14:30:00",
      "tiebreaker": False}
-wed = dt.datetime(2026, 11, 19, 10, 0, tzinfo=dossier.CT)
+fri = dt.datetime(2026, 11, 20, 17, 30, tzinfo=dossier.CT)  # inside the weekly Opus window: the switch still wins
 dossier._reddit_cache = ("ok", [])
-with patch.object(dossier, "news_leads", lambda a, h, limit=8: LEADS), patch.object(dossier, "LOCAL_MODEL", "gemma4:12b-it-qat"), \
-        patch.object(dossier.analyst, "build_take", lambda g, d, season, week, now, research: research("brief")):
-    with httpx.Client(transport=httpx.MockTransport(handler(False))) as c:
-        dd = dossier.build_one(c, G, 2026, 12, "new", wed, None, use_local=True)  # real run_claude: refuses
-    check("dossier built locally with Anthropic down", dd["researcher"].startswith("local gemma4:12b-it-qat")
-          and CALLS["chat"] == 1, dd.get("researcher"))
-    facts = dd["facts"] + dd["opinions"] + dd["rumors"]
-    check("only the grounded local claim survives, with its lead's URL and date",
-          len(facts) == 1 and facts[0]["source_url"] == LEADS[0]["url"] and facts[0]["date"] == "2026-11-19"
-          and facts[0]["players"] == ["Mark Gronowski"], facts)
-    check("no analyst take invented (Anthropic down, no previous)", "analyst_take" not in dd, dd.get("analyst_take"))
-    with httpx.Client(transport=httpx.MockTransport(handler(True))) as c:
-        try:
-            dossier.build_one(c, G, 2026, 12, "fri", wed, dd, use_local=True)
-            check("busy chat: local fallback waits (previous dossier stays)", False)
-        except RuntimeError as e:
-            check("busy chat: local fallback waits (previous dossier stays)", "busy" in str(e), str(e))
+NET = []
+with httpx.Client(transport=httpx.MockTransport(lambda req: NET.append(str(req.url)) or httpx.Response(500))) as c:
+    check("weekly Opus layer not due with the kill switch on", not dossier.opus_due(None, "fri", fri))
+    dd = dossier.build_one(c, G, 2026, 12, "fri", fri, None, opus=dossier.opus_due(None, "fri", fri), items=NEWS)
+facts = dd["facts"] + dd["opinions"] + dd["rumors"]
+check("dossier built from code with Anthropic down", dd["researcher"].startswith("code") and "opus" not in dd
+      and len(facts) == 2 and all(f["by"] == "code" for f in facts), dd.get("researcher"))
+check("code claims keep their lead's URL, date and injury status",
+      dd["facts"][0]["source_url"] == NEWS[0]["link"] and dd["facts"][0]["date"] == "2026-11-19"
+      and dd["facts"][0]["status"] == "questionable" and dd["summary"].startswith("Iowa QB Mark Gronowski"), dd["facts"])
+check("no network or model call on the code path", not NET, NET)
+check("no analyst take invented (Anthropic down, no previous)", "analyst_take" not in dd, dd.get("analyst_take"))
 dossier._reddit_cache = None
 
 check("no claude spawned anywhere with the kill switch on", not SPAWNS, SPAWNS)
