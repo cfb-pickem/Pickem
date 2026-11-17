@@ -1098,6 +1098,7 @@ def football_thread(st: dict) -> bool:
     return bool(chat.games_named(last, gl)) and len(q.split()) <= 12 and bool(_BALL.search(q))
 
 
+REACTIONS = ["Fair.", "Can't argue with that.", "Yep.", "Ha. Fair enough.", "Tough to argue.", "That's about right."]
 _DODGE = re.compile(r"^\s*(i do picks, not paperwork\.\s*)?next question\.?\s*$", re.I)
 
 
@@ -1172,6 +1173,8 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                                            max_words=10 if st.get("ptype") == "spiral2" else 25)
                 if route.why.startswith("brief") or "brief" in route.why:
                     text = undodge(st, text, last_reply)  # a real question the brief misread as banter
+                    if _DODGE.match(text or ""):  # casual chat ('so just me', 'thats not bad'): react, don't brush off
+                        text = REACTIONS[sum(map(ord, q)) % len(REACTIONS)]
                 text = fresh_jab(st, text, recent_picky or [])
                 import no_repeat
                 if no_repeat.banned_tic(text):  # one-line banter keeps its tic past debot ('...go to your head')

@@ -580,7 +580,7 @@ def test_rules_extra():
     for q in ("whats the jackpot thing", "can games tie in this", "what if i forget totally", "lol do i get a zero",
               "im on a plane sat morning can u pick for me", "can chuck fix it"):
         assert router.classify(q).label() in ("fact:rules2", "fact:rules"), q
-    assert router.fact_answer("rules2", ctx, "whats the jackpot thing").startswith("Instead of picking a side")
+    assert router.fact_answer("rules2", ctx, "whats the jackpot thing").startswith('Pick "Let the slots decide"')
     r = router.fact_answer("rules2", ctx, "im on a plane sat morning can u pick for me")
     assert r.startswith("I can't enter picks for anyone. Get them in on the site before the first kickoff (Sat 11:00 AM CT)"), r
     assert router.fact_answer("rules2", ctx, "can chuck fix it").startswith("Yep, the commissioner can")
@@ -644,6 +644,20 @@ def test_jackpot_history():
     assert router.classify("has anyone hit the jackpot").label() == "fact:jackpot_hit"
     assert router.fact_answer("jackpot_hit", ctx, "have i ever hit it") == \
         "Nobody's hit it this season: 230 slots pulls and the football hasn't popped."
+
+
+def test_k1c_fixes():
+    ctx = _wk12_picks()
+    ctx["teams"] = [r["team"] for r in ctx["standings_ytd"]]
+    for q in ("im not last right", "where does that put me", "where am i"):
+        assert router.classify(q).label() == "fact:standings", q
+    with patch.object(chat, "load_lore", lambda: {}):
+        r = router.fact_answer("standings", ctx, "im not last right")
+        assert r.startswith("You're 14th at 19-29") and "Next up: Kevin Culligan, 2 points ahead." in r, r
+    assert router.fact_answer("payout", ctx, "how much does 2nd get") == "2nd gets the buy-in back plus $25, so $100."
+    ctx["jackpot"] = {"pulls_since_pop": 230, "last_pop_at": None}
+    r = router.fact_answer("rules2", ctx, "whats the jackpot thing")
+    assert r.startswith('Pick "Let the slots decide"') and "Nobody's hit it this season" in r, r
 
 
 if __name__ == "__main__":

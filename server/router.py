@@ -351,6 +351,8 @@ FLIP_ASK = re.compile(r"\bshould i (flip|change|switch)( any| anything| somethin
                       r"|\bwhat should i (flip|change|switch)\b|\bcheck my picks\b|\bhow do my picks look\b"
                       r"|\bgrade my picks\b|\bthoughts on my picks\b", re.I)
 # k1 chunk 3: 'whos chasing me' / 'if i go 4-0 this week' / 'and if i go 0-4' got 'I do picks, not paperwork'
+SELF_PLACE = re.compile(r"^\W*(where am i|where('?s| does| did) (that|this) (put|leave)s? me|(am i|im not|i'?m not|am i in) (in )?last( place)?|"
+                        r"what place am i|what am i in)\b", re.I)
 CHASE_ASK = re.compile(r"\bwho'?s (chasing|behind|catching|closest to|close to|right behind|on) (me|my tail|us)\b"
                        r"|\bwhos (chasing|behind|catching|closest to) me\b|\bwho can catch me\b|\bwho'?s closest to me\b", re.I)
 SCENARIO_ASK = re.compile(r"\bif (i|we) (go|went|end up) ([0-4])-([0-4])\b", re.I)
@@ -499,11 +501,11 @@ def rules2_text(ctx: dict, q: str) -> str | None:
         i = txt.find("LET THE SLOTS DECIDE")
         if i < 0:
             return None
-        bullets = [b.strip("- ").strip() for b in txt[i:].split("\n")[1:4] if b.startswith("- ")]
-        out = " ".join(bullets[:2])
-        if re.search(r"\b(have i|did i|ever) (ever )?(hit|won|popped)\b|\bhit it\b", t, re.I):
-            out += " I can't see who's hit it from here; the football on the picks page shows the odds."
-        return out or None
+        if "Let the slots decide" not in txt[i:i + 400]:
+            return None
+        jp = jackpot_hit_text(ctx, q)
+        return ("Pick \"Let the slots decide\" and the site flips a coin for your side at lock. Every slots pick is a pull on "
+                "the jackpot: if it pops on yours, you get the point no matter who covers." + (f" {jp}" if jp else ""))
     if re.search(r"\bovertime\b|\b\d?ot\b", t, re.I):
         return "Overtime counts. It's graded on the final score, OT included, against the locked line."
     if re.search(r"\btie|push\b", t, re.I):
@@ -574,6 +576,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "short", "SHORT_ASK"
     if FLIP_ASK.search(t):
         return "flip", "FLIP_ASK"
+    if SELF_PLACE.search(t):
+        return "standings", "SELF_PLACE"
     if CHASE_ASK.search(t):
         return "chase", "CHASE_ASK"
     if SCENARIO_ASK.search(t):
@@ -1084,7 +1088,12 @@ def standings_text(ctx: dict, q: str) -> str | None:
     if named:
         return " ".join(place(r, r["team"]) for r in named[:2])
     if row and _SELF_ASK.search(q) and not re.search(r"\bwho\b", q, re.I):
-        return place(row, "You")
+        out = place(row, "You")
+        above = [r for r in st if r["w"] > row["w"]]
+        if row["rank"] == st[-1]["rank"] and above and re.search(r"\blast\b", q or "", re.I):  # 'im not last right'?
+            nxt_w = min(r["w"] for r in above)
+            out += f" Next up: {_names([r['team'] for r in above if r['w'] == nxt_w], me)}, {_pts(nxt_w - row['w'])} ahead."
+        return out
     if re.search(r"\b(last|bottom)\b", q, re.I):
         lr = [r["team"] for r in st if r["rank"] == st[-1]["rank"]]
         return f"{_cap(_names(lr, me))} {_is(lr, me)} in last at {st[-1]['w']}-{st[-1]['l']}."
@@ -1292,6 +1301,15 @@ def lock_text(ctx: dict, q: str) -> str | None:
 
 def payout_answer(ctx: dict, q: str) -> str | None:
     n = len(ctx.get("teams") or []) or None
+    place = re.search(r"\b(1st|first|2nd|second|3rd|third)\b", q or "", re.I)
+    if place and n:  # one place asked: one sentence, not the rulebook (keeper k1c: verbatim rules recital)
+        m = chat.payout_math(n)
+        k = place.group(1).lower()
+        if k in ("1st", "first"):
+            return f"1st takes the rest of the pot: ${m['first']:,} with {n} of us in at ${chat.BUY_IN}."
+        if k in ("2nd", "second"):
+            return f"2nd gets the buy-in back plus $25, so ${m['second']}."
+        return f"3rd gets the ${m['third']} buy-in back."
     a = rules_answer(q, n_teams=n)
     if a:
         return a
