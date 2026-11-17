@@ -65,6 +65,12 @@ FACT_BUDGET = float(os.environ.get("PICKY_FACT_BUDGET", "90"))
 # answer / book line goes out alone while the prime finishes in the background for the next text
 PRIME_WAIT = float(os.environ.get("PICKY_PRIME_WAIT", "10"))
 JUDGE_BUDGET = 170.0   # seconds: no judge pass after this (the watcher waits 240)
+# Burst load (Saturday drill 2026-11-17): with one Ollama slot, every full-lane text's understand pass
+# queued behind the others' and hit its 60 s timeout anyway (8 of 8 in a 20-text burst), so each of those
+# replies paid a wasted minute and went out without a brief. With BUSY_SKIP_BRIEF or more OTHER full-lane
+# texts in flight the brief is skipped up front (the same no-brief path a timeout takes). 0 = never skip.
+BUSY_SKIP_BRIEF = int(os.environ.get("PICKY_BUSY_SKIP_BRIEF", "2"))
+_FULL_INFLIGHT = [0]  # full-lane run() calls in flight in this process
 
 # draft i: sampling and angle. Draft 0 is the old single answer (temp 0.2); 1-2 run hot with min_p
 # (Qwen3.5's card suggests ~0.7+ for chat; the filters and the judge guard the facts).
@@ -987,12 +993,17 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             log.info("stance: %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         rule = (league_rules.answer(st["q"]) or "") if chat.wants_rules(st["q"]) else ""
         tb = time.time()
-        st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
-                                       st.get("last_reply", ""), stance=stance_rider(st["stance"]),
-                                       **({"notes": nb} if (nb := brief_notes(st["q"])) else {}),
-                                       **({"live": lv} if (lv := (st.get("ctx") or {}).get("live_rider")) else {}),
-                                       **({"rules": rule} if rule else {}),
-                                       **({"card": cb} if (cb := slate_block(messages)) else {}))
+        busy = _FULL_INFLIGHT[0] - 1
+        if BUSY_SKIP_BRIEF and busy >= BUSY_SKIP_BRIEF:
+            log.info("understand skipped: %d other full-lane texts in flight", busy)
+            st["brief"] = Brief(asking="")
+        else:
+            st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
+                                         st.get("last_reply", ""), stance=stance_rider(st["stance"]),
+                                         **({"notes": nb} if (nb := brief_notes(st["q"])) else {}),
+                                         **({"live": lv} if (lv := (st.get("ctx") or {}).get("live_rider")) else {}),
+                                         **({"rules": rule} if rule else {}),
+                                         **({"card": cb} if (cb := slate_block(messages)) else {}))
         st["brief_secs"] = time.time() - tb  # a reroll doesn't redo this: run() takes it out of the draft's time
         rt = st.get("route")
         if rt is not None:  # the router's fallback: no rule matched, the brief decides (plan 2d)
@@ -1240,6 +1251,8 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
 
     tok, otok = STATE.set(st), chat.OPTIONS_OVERRIDE.set(st["options"])
     rtok = chat.REGEN_OK.set(regen_ok)
+    full = route.lane == "full"
+    _FULL_INFLIGHT[0] += full
     try:
         drafts: list[Draft] = []
         dsecs = 0.0
@@ -1331,6 +1344,7 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
         _trace(st, q, sender, route, drafts, [d.idx for d in pool], pick.idx, how, t0)
         return undodge(st, pick.text, last_reply, prior_q), None
     finally:
+        _FULL_INFLIGHT[0] -= full
         chat.REGEN_OK.reset(rtok)
         chat.OPTIONS_OVERRIDE.reset(otok)
         STATE.reset(tok)
