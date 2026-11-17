@@ -60,6 +60,7 @@ os.environ.setdefault("PICKY_SIDE", "1")
 sys.path.append(str(HERE.parent))
 import checks  # noqa: E402
 import live_flag  # noqa: E402
+import fact_items  # noqa: E402
 import group_items  # noqa: E402
 import questions  # noqa: E402
 from truth import Truth, chat  # noqa: E402
@@ -174,14 +175,15 @@ def group_handles() -> dict[str, str]:
     return {m["team"]: (m.get("handles") or [""])[0] for m in d.get("members") or [] if m.get("team")}
 
 
-async def ask_group(client, url, secret, handle, text, chat_id, recent) -> tuple[str, float]:
+async def ask_group(client, url, secret, handle, text, chat_id, recent, dm: bool = False) -> tuple[str, float]:
     """One text through the group sidecar (/group) as the member with `handle`.
     (reply, seconds). The sidecar keeps the per-chat history, so multi-turn
     items share one chat id."""
     for attempt in range(3):  # a Supabase blip is a 502 from the sidecar: not Picky's answer
         t0 = time.time()
         r = await client.post(url, headers={"X-Picky-Group-Secret": secret},
-                              json={"handle": handle, "text": text, "chat": chat_id, "recent": recent})
+                              json={"handle": handle, "text": text, "chat": "" if dm else chat_id,
+                                    "recent": [] if dm else recent, **({"dm": True} if dm else {})})
         if r.status_code < 500:
             break
         print(f"  sidecar {r.status_code}, retry in 15s", flush=True)
@@ -203,6 +205,10 @@ def grade(item: dict, answers: list[str], t: Truth, P: dict) -> list:
                               checks.check_no_slurs(a)):
             res.append((f"{name}" + (f"@t{i + 1}" if len(answers) > 1 else ""), ok, det))
     res.append(checks.check_ack(answers))
+    if item["id"].startswith("fx-"):  # fact exam: strict, label-aware audit of every answer
+        for i, a in enumerate(answers):
+            n, ok, d = fact_items.fact_audit(a, t, caller)
+            res.append((n + (f"@t{i + 1}" if len(answers) > 1 else ""), ok, d))
     try:
         res += [(n, bool(ok), d) for n, ok, d in item["check"](answers, t, P)]
     except Exception as e:  # noqa: BLE001 - a broken check is a failed check, loudly
@@ -236,7 +242,7 @@ def gates(results: list[dict], judge: dict) -> dict:
         if "privacy" in names or j.get("leak") or (r["cat"] == "privacy" and v == "fail"
                                                    and names & {"says_unlocks_at_kickoff", "unlock_language"}):
             out["privacy leaks"] += 1
-        if "record_claims" in names or j.get("invented") or names & {
+        if "record_claims" in names or "fact_audit" in names or j.get("invented") or names & {
                 "no_numbers", "no_invented_record", "no_invented_number", "admits_no_data", "admits_fake",
                 "admits_fake_or_not_in_pool", "no_such_member", "no_invented_pick", "intel_traceable"}:
             out["invented data"] += 1
@@ -388,8 +394,12 @@ async def run(args):
         if args.replay:
             install_replay(frozen)
     t = await Truth().load()
-    P = group_items.personas(t) if args.text else questions.personas(t)
-    items = group_items.all_items(t) if args.text else questions.build(t)
+    if args.facts:  # adversarial fact exam (eval/fact_items.py): text path, DMs + group
+        args.text = True
+        P, items = fact_items.personas(t), fact_items.build(t)
+    else:
+        P = group_items.personas(t) if args.text else questions.personas(t)
+        items = group_items.all_items(t) if args.text else questions.build(t)
     if args.only:
         keys = set(args.only.split(","))
         items = [i for i in items if i["id"] in keys or i["cat"] in keys]
@@ -458,9 +468,12 @@ async def run(args):
                     now = time.time()
                     recent = [{"handle": jwts.get(who) or "", "text": txt, "ts": now - 60 + k, "from_me": False}
                               for k, (who, txt) in enumerate(it.get("recent") or [])] if ti == 0 else []
-                    text = (it.get("raw") if ti == 0 and it.get("raw") else f"@Picky {q}")
+                    dm = bool(it.get("dm"))
+                    if dm and ti == 0 and args.hist:  # DM history is per handle: start every item clean
+                        Path(args.hist).write_text("{}")
+                    text = (it.get("raw") if ti == 0 and it.get("raw") else (q if dm else f"@Picky {q}"))
                     a, total = await ask_group(client, url, secret, jwts[it["persona"]], text,
-                                               f"exam-{tag}-{it['id']}", recent)
+                                               f"exam-{tag}-{it['id']}", recent, dm=dm)
                     history.append({"role": "assistant", "content": a})
                     answers.append(a)
                     r["turns"].append({"q": text, "a": a, "ttft": total, "total": total, "preemptions": 0,
@@ -665,7 +678,7 @@ async def regrade(runrec: dict) -> dict:
 # directly, bypassing the gate: run those only when the league is quiet.)
 NO_MODEL_TESTS = ["test_privacy.py", "test_standings.py", "test_cfbd.py", "test_rules.py", "test_picky_player.py",
                   "test_leader.py", "test_opinions.py", "test_daddyfreeman.py", "test_gate.py", "test_results.py",
-                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "test_router.py", "test_callbacks.py", "test_live_flag.py", "test_anthropic_down.py", "eval/test_checks.py", "eval/test_truth_bundle.py", "test_scorecard.py", "test_picks_slate.py", "test_keeper.py", "test_speed.py", "test_nemesis.py"]
+                  "test_live.py", "test_news.py", "test_persona.py", "test_lore.py", "test_edge.py", "test_dossier.py", "test_intel.py", "test_analyst.py", "test_picky_brain.py", "test_router.py", "test_callbacks.py", "test_live_flag.py", "test_anthropic_down.py", "eval/test_checks.py", "eval/test_truth_bundle.py", "test_scorecard.py", "test_picks_slate.py", "test_keeper.py", "test_speed.py", "test_nemesis.py", "test_fact_guard.py"]
 
 
 def no_model() -> int:
@@ -700,6 +713,8 @@ def main():
     ap.add_argument("--url")
     ap.add_argument("--group", default="", help="ask through a group sidecar, e.g. http://127.0.0.1:8781/group")
     ap.add_argument("--text", action="store_true", help="the text-path exam (eval/group_items.py)")
+    ap.add_argument("--facts", action="store_true", help="the adversarial fact exam (eval/fact_items.py), text path")
+    ap.add_argument("--hist", default="", help="side sidecar's PICKY_IMESSAGE_HISTORY file (reset per DM item)")
     ap.add_argument("--local", action="store_true")
     ap.add_argument("--only", default="")
     ap.add_argument("--tag", default="")

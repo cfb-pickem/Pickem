@@ -92,6 +92,7 @@ import group_outbox  # noqa: E402
 import live_flag  # noqa: E402
 import live_games  # noqa: E402
 import maintenance  # noqa: E402
+import fact_guard  # noqa: E402
 import matchup_guard  # noqa: E402
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
 import picky_brain  # noqa: E402
@@ -383,6 +384,9 @@ async def _build_context(client, jwt, user_id, mode="leaderboard", rival_predict
     if s and s.team:
         ctx["you"] = {"team_id": s.team_id, "team_name": s.team}
     ctx["you_have_picks_this_week"] = None
+    box = CTX_BOX.get()
+    if box is not None:
+        box["ctx"] = ctx
     return ctx
 
 
@@ -443,6 +447,8 @@ chat.self_intrusion_off_topic = (
 # as nonsense ("That's not luck..." after the opener that answered the question
 # was dropped). Count drops per attempt so answer() can reroll.
 DROPS: contextvars.ContextVar[list | None] = contextvars.ContextVar("picky_group_drops", default=None)
+# the league ctx this text's drafts were built on (filled by _build_context), for the final fact pass
+CTX_BOX: contextvars.ContextVar[dict | None] = contextvars.ContextVar("picky_group_ctx", default=None)
 _orig_sentence_ok = chat.sentence_ok
 
 
@@ -901,6 +907,41 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     return out
 
 
+def fact_final(reply: str, q: str) -> str:
+    """Last fact pass on the outgoing text, every lane that drafted on a league ctx (brain drafts, banter
+    lines, burn-book picks): a sentence tying a member / the sender / Picky to a wrong W-L, place or gap,
+    or repeating the question's false premise, is dropped (fact_guard). If nothing true is left, the
+    sender's real record and place go out instead of a wrong fact."""
+    box = CTX_BOX.get()
+    ctx = (box or {}).get("ctx")
+    if not reply or not ctx or ctx.get("error"):
+        return reply
+    try:
+        ok = fact_guard.member_claim_check(ctx, q, chat.load_lore(), ctx.get("picky_player"),
+                                           monday_window=chat.prev_week_stale(ctx))
+        echo = fact_guard.premise_echo_check(ctx, q, chat.same_team)
+    except Exception as e:  # noqa: BLE001 - a broken guard never blocks a reply
+        log.warning("fact_final skipped: %s", e)
+        return reply
+    if ok is None and echo is None:
+        return reply
+    parts = re.split(r"(?<=[.!?])\s+", reply.strip())
+    keep = [p for p in parts if (ok is None or ok(p)) and (echo is None or echo(p))]
+    if len(keep) == len(parts):
+        return reply
+    log.info("fact_final dropped %d sentence(s): %r", len(parts) - len(keep), [p for p in parts if p not in keep])
+    if keep:
+        return " ".join(keep)
+    prem = fact_guard.premise_facts(ctx, q, chat.same_team)
+    if prem:
+        return "Not quite: " + re.sub(r"^they say .*?FALSE: ", "", prem[0]).replace("their real", "your real") \
+            .replace("they're", "you're").replace("they took", "you took") + "."
+    me = (ctx.get("you") or {}).get("team_name")
+    row = next((r for r in ctx.get("standings_ytd") or [] if r["team"] == me), None)
+    return (f"For the record, you're {row['w']}-{row['l']}, {fact_guard._ordinal(row['rank'])} in the league."
+            if row else reply)
+
+
 async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                   allowlisted: bool = False, recent: list | None = None, web: dict | None = None) -> dict | None:
     """`web` (POST /web): {"sender": Sender, "jwt": the caller's own site session, "history": the widget's
@@ -922,6 +963,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     rtok = RECENT.set(recent_block(recent) if mode == "group" else "")
     wtok = WEB.set(bool(web))
     stok = chat.SKIP_RATE.set(True)  # in-process: one shared session, the watcher rate-limits (chat.SKIP_RATE)
+    ctok = CTX_BOX.set({})
     try:
         q = strip_trigger(text)[:2000]
         live_games.LIVE_NEED.set({})  # filled by the drafts below (chat -> live_games.required_fact)
@@ -1000,6 +1042,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 reply = router.nick_names(reply, chat.member_nicknames())  # team names, never real names
                 reply = no_repeat_screen(reply, q, s.team, key or chat_id, route)
                 reply = router.drop_repeat_jabs(reply, past[-3:], route, q)  # same jab hook as an earlier turn
+                reply = fact_final(reply, q)  # wrong member W-L / place / gap / echoed false premise: dropped
                 reply = live_games.final_guard(reply) if route.lane != "fact" else reply
                 reply = matchup_guard.fix(reply)  # a flipped "Home at Away" of a known game, swapped back
                 # Ackbar (sender or named) always gets a real-fact jab; code lanes never carry one (Charlie 11/17)
@@ -1034,12 +1077,13 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             log.info("%s reroll %d: filter dropped %d sentence(s)", mode, i + 1, len(drops))
         _, reply, image = best
         if not image:
-            reply = matchup_guard.fix(no_repeat_screen(reply, q, s.team, key or chat_id))
+            reply = matchup_guard.fix(no_repeat_screen(fact_final(reply, q), q, s.team, key or chat_id))
             reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
         rare_bits.note_sent(reply)
         await save_turn(key, q_hist, reply, who)
         return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
     finally:
+        CTX_BOX.reset(ctok)
         chat.SKIP_RATE.reset(stok)
         WEB.reset(wtok)
         RECENT.reset(rtok)

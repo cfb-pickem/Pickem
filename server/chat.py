@@ -42,6 +42,7 @@ import cfbd
 import dossier
 import edge
 import espn
+import fact_guard
 import board_voice
 import freshness
 import game_cards
@@ -6364,6 +6365,19 @@ _TICS = re.compile(r"\b(don'?t get cocky|sitting pretty|the rest of us|here to w
                    r"so maybe you should|go(es|ing)? to (your|his|her|their) head|let that sink in)\b", re.I)  # board-voice tic, 11/16
 
 
+def week_cards(ctx: dict) -> dict:
+    """This week's pool game cards by game id (market now/open for the line-number check)."""
+    out = {}
+    for g in ctx.get("games_this_week") or []:
+        try:
+            c = game_cards.load_card(ctx.get("current_week"), g["id"])
+        except Exception:  # noqa: BLE001
+            c = None
+        if c:
+            out[str(g["id"])] = c
+    return out
+
+
 def _named_checks(checks: list):
     """All the per-sentence fact checks as one callable; logs which one dropped a sentence (genius exam
     2026-11-17: true game-card facts were being cut and the log couldn't say by what)."""
@@ -7458,6 +7472,13 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
         body = (body[: -len(q)] + sa + "\n\n" + q) if q and body.endswith(q) else (sa + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
     lq = last.get("content", "") if last.get("role") == "user" else ""
+    # a false premise in the question ('since I'm 33-15', 'Boise covered right?'): code says it's false and
+    # gives the truth, nearest the question, so the model corrects it instead of running with it
+    pn = fact_guard.premise_note(ctx, lq, same_team) if lq and not ctx.get("error") else ""
+    if pn and convo[-1]["role"] == "user":
+        body, q = convo[-1]["content"], lq
+        body = (body[: -len(q)] + pn + "\n\n" + q) if q and body.endswith(q) else (pn + "\n\n" + body)
+        convo[-1] = {"role": "user", "content": body}
     facts = (results_facts(ctx, lq) if lq and not ctx.get("error")
              and (not sa or re.search(r"\bhow (am|'?m) i doing\b", lq, re.I))
              and not (wants_rules(lq) and not re.search(r"\bmy (picks?|week|record)\b|\bdid i\b", lq, re.I))
@@ -7493,7 +7514,12 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
                                      ("picky_claim", picky_claim_check(ctx)), ("you_claim", picky_claim_check(ctx, "you")),
                                      ("value", value_claim_check(ctx)), ("advice_jab", advice_jab_check(ctx, qtext)),
                                      ("fav_claim", fav_claim_check(ctx)), ("card_side", card_side_check(ctx)),
-                                     ("line_set", line_set_check(ctx)), ("move_claim", move_claim_check(ctx))])
+                                     ("line_set", line_set_check(ctx)), ("move_claim", move_claim_check(ctx)),
+                                     ("member", fact_guard.member_claim_check(
+                                         ctx, qtext, load_lore(), ctx.get("picky_player"),
+                                         monday_window=prev_week_stale(ctx), card=sc)),
+                                     ("line_num", fact_guard.line_num_check(ctx, week_cards(ctx), corpus)),
+                                     ("premise_echo", fact_guard.premise_echo_check(ctx, qtext, same_team))])
                 if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or (None if "GAME CARD" in sc else live_games.required_fact(ctx, qtext))
                                      or (None if sc else required_fact(ctx, qtext)) or rankings_fact(rn))

@@ -1,0 +1,123 @@
+"""fact_guard: member W-L / place / gap claims, pool line numbers, wrong premises (offline, synthetic league)."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import fact_guard as fg  # noqa: E402
+
+CTX = {
+    "current_week": 12,
+    "you": {"team_name": "Alpha"},
+    "standings_ytd": [
+        {"rank": 1, "team": "Alpha", "w": 30, "l": 18},
+        {"rank": 2, "team": "Bravo", "w": 28, "l": 20},
+        {"rank": 3, "team": "Charlie Team", "w": 27, "l": 21},
+        {"rank": 3, "team": "Delta", "w": 27, "l": 21},
+        {"rank": 5, "team": "Echo", "w": 23, "l": 25},
+        {"rank": 6, "team": "Zulu", "w": 19, "l": 29},
+    ],
+    "weekly_records": {
+        "Alpha": {10: [3, 1], 11: [4, 0]}, "Bravo": {10: [4, 0], 11: [3, 1]},
+        "Charlie Team": {10: [3, 1], 11: [3, 1]}, "Delta": {10: [3, 1], 11: [2, 2]},
+        "Echo": {10: [2, 2], 11: [1, 3]}, "Zulu": {10: [3, 1], 11: [1, 3]},
+    },
+    "last_week": {"week": 11, "games": [
+        {"away": "North Texas", "home": "UTSA", "away_pts": 16, "home_pts": 35, "line": 2.5, "covered": "UTSA",
+         "picks": {"Alpha": "UTSA", "Bravo": "North Texas", "Zulu": "North Texas"}},
+        {"away": "Oregon State", "home": "Boise State", "away_pts": 41, "home_pts": 46, "line": -13.5,
+         "covered": "Oregon State", "picks": {"Alpha": "Oregon State", "Bravo": "Boise State"}},
+    ]},
+    "games_this_week": [
+        {"id": 1, "away": "Iowa", "home": "Illinois", "line": 8.5},
+        {"id": 2, "away": "LSU", "home": "Tennessee", "line": 1.5},
+    ],
+    "picky_player": {"season": [0, 3], "last_week": [0, 3]},
+}
+LORE = {"members": {"Alpha": ["Alpha, stats-page oddity: Alpha is 3-7 in Texas games over the last two seasons."]}}
+
+
+def same(a, b):
+    return (a or "").lower() == (b or "").lower()
+
+
+def check():
+    return fg.member_claim_check(CTX, "", LORE, CTX["picky_player"])
+
+
+def test_true_member_claims_pass():
+    ok = check()
+    for s in ["You're 30-18 on the season and in 1st place.", "Bravo is 28-20, 2 points behind first.",
+              "Zulu is in last place at 19-29.", "You went 4-0 last week.", "7-1 lately is legit.",
+              "You're 3-7 in Texas games over the last two seasons, though.", "I'm 0-3 this year.",
+              "Charlie Team and Delta are tied for 3rd.", "Echo sits 5th, 7 back of first.",
+              "You're sitting at 30-18 for the season, while I'm out here 0-3.",
+              "You're not 33-15, you're 30-18."]:
+        assert ok(s), s
+
+
+def test_wrong_member_claims_drop():
+    ok = check()
+    for s in ["Your 33-15 record is nice.", "You're 5-3 lately.", "Bravo is in 3rd place.", "You're third.",
+              "Zulu is 3 points behind first.", "I'm 9-2 on the season.", "Echo went 4-0 last week.",
+              "Echo is in last place.", "You're 30-18 overall and 4 wins ahead of 4th."]:
+        assert not ok(s), s
+
+
+def test_monday_window_last_week_means_either():
+    # Monday after week 11 went final: the pool's current week is still 11 and its 'last week' is 10
+    mon = dict(CTX, current_week=11, last_week=dict(CTX["last_week"], week=10))
+    ok = fg.member_claim_check(mon, "", LORE, CTX["picky_player"], monday_window=True)
+    assert ok("Bravo went 4-0 last week.")  # week 10, the pool's 'last week'
+    assert ok("Bravo went 3-1 last week.")  # week 11, the week that just ended
+    assert not ok("Bravo went 1-3 last week.")
+
+
+def test_line_numbers():
+    cards = {"1": {"market": {"home_now": 6.5, "home_open": 7.0}}}
+    ok = fg.line_num_check(CTX, cards, corpus="Alpha's week-10 miss: LSU -5.5 vs Alabama")
+    assert ok("Iowa -8.5 in the pool.")
+    assert ok("The market has Iowa -6.5.")
+    assert ok("Tennessee +1.5 is live.")
+    assert ok("You missed on LSU -5.5 two weeks ago.")  # printed in the prompt
+    assert not ok("Iowa -6.0 is the number.")
+    assert not ok("Grab Tennessee +4.5.")
+
+
+def test_premises():
+    pf = lambda q, ctx=CTX: fg.premise_facts(ctx, q, same)  # noqa: E731
+    assert "30-18" in pf("since I'm 33-15 on the season, should I play it safe?")[0]
+    assert pf("I'm 30-18, who should I take") == []
+    assert pf("now that I'm in first who's chasing me") == []
+    zulu = dict(CTX, you={"team_name": "Zulu"})
+    assert "6th" in pf("now that I'm in first, who's chasing me?", zulu)[0]
+    assert "took UTSA" in pf("why did I take North Texas last week? that was dumb")[0]
+    assert "Oregon State covered" in pf("Boise State covered last week right?")[0]
+    assert pf("UTSA covered last week right?") == []
+    assert "16" in pf("UTSA North Texas ended 45-16 right?")[0]
+    assert "Iowa -8.5" in pf("Iowa -15.5 in the pool this week, easy money right?")[0]
+    note = fg.premise_note(CTX, "since I'm 33-15 on the season, should I play it safe?", same)
+    assert note.startswith("PREMISE CHECK") and "33-15" in note
+
+
+def test_premise_echo():
+    e = fg.premise_echo_check(CTX, "since I'm 33-15 on the season, should I play it safe?", same)
+    assert not e("At 33-15 you can coast.")
+    assert e("You're not 33-15, you're 30-18.")
+    assert fg.premise_echo_check(CTX, "who's in first?", same) is None
+
+
+if __name__ == "__main__":
+    fails = 0
+    for name, f in list(globals().items()):
+        if name.startswith("test_"):
+            try:
+                f()
+                print("ok  ", name)
+            except AssertionError as ex:
+                fails += 1
+                print("FAIL", name, ex)
+    sys.exit(1 if fails else 0)
