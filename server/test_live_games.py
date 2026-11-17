@@ -400,9 +400,11 @@ class Exam80Fixes(unittest.TestCase):
         self.assertIsNone(g["possession"])
         self.assertEqual(g["receiving"], "Texas")
         txt = L.game_block(g)
-        self.assertIn("Turnovers so far (all of them): ", txt)
+        self.assertIn("A.Manning threw an INT 2Q 9:58", txt)
         self.assertIn("Texas gets the ball next", txt)
         self.assertNotIn("LSU ball", txt)
+        b = state("401860914", at("401860914", r"R\.Jones caught at OSU21, for 26 yards", after=40))  # tagged 'Pass Reception'
+        self.assertEqual((b["possession"], b["receiving"]), (None, "Oregon State"))
 
     def test_claim_check_multi_game_and_side(self):
         t = R._ts("2026-11-15T02:13:30Z")

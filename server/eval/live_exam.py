@@ -152,6 +152,12 @@ class Truth:
             out.append("Reported 'injured on the play' (ESPN play-by-play): " + "; ".join(inj))
         if passers:
             out.append("Passers so far (first dropback): " + "; ".join(f"{k} ({v})" for k, v in passers.items()))
+        if s["state"] == "in" and s["scoring"]:
+            w = next((p["wallclock"] for p in s["plays"] if p.get("id") and s["scoring"] and
+                      re.sub(r"\s+", " ", p.get("text") or "").startswith(s["scoring"][-1]["text"][:20])), None)
+            lastw = max((R._ts(p["wallclock"]) for p in s["plays"] if p.get("wallclock")), default=None)
+            if w and lastw:
+                out.append(f"The last score happened about {int((t - R._ts(w)) // 60)} min ago in real time.")
         if s["state"] == "in" and s["last_play"]:
             out.append(f"Last play: {re.sub(r'#[0-9]+ ', '', s['last_play'])[:200]}")
         cv = self.cover(gid, t)

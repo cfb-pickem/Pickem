@@ -417,7 +417,7 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
         g["red_zone"] = yte is not None and yte <= 20
         lty = (last.get("type") or {}).get("text") or ""
         sc_last = scoring[-1] if scoring and scoring[-1].get("id") == last.get("id") else None
-        if sc_last and ("Touchdown" in lty or lty in ("Field Goal Good", "Safety") or "Touchdown" in sc_last["type"]):
+        if sc_last:  # the last play is in scoringPlays (ESPN tags some TDs 'Pass Reception')
             # the play that just scored: its end state is the goal line, not who has the ball next
             scorer = next((t for t in (g["away"], g["home"]) if t["name"] == sc_last["team"]), None)
             if scorer:
@@ -1007,8 +1007,9 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
             f"{team} {q.get('current') or q.get('starter')}" for team, q in (g.get("qb") or {}).items()) + ".")
     if g.get("detail") and st in ("in", "post"):
         to = g.get("turnovers") or {}
-        lines.append("  Turnovers so far (all of them): " + ("; ".join(
-            f"{team} {len(xs)} (" + ", ".join(f"{x.get('who') + ' ' if x.get('who') else ''}{x['kind']}"
+        lines.append("  Turnovers so far (all of them, by the team that GAVE the ball away): " + ("; ".join(
+            f"{team} {len(xs)} (" + ", ".join(f"{x.get('who') + ' ' if x.get('who') else ''}"
+                                               f"{'threw an INT' if x['kind'] == 'INT' else x['kind']}"
                                                f"{' returned for a TD' if x.get('td') else ''} {period_label(x['period'])} "
                                                f"{x['clock']}" for x in xs) + ")" for team, xs in to.items())
                                                                     or "none") + ".")
@@ -1184,6 +1185,7 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "")
         if prev and not named_games(question, load().get("games") or {}) and _FOLLOWUP.search(question or ""):
             text, hit = rider(f"{prev} {question}", pool, refresh=refresh)  # 'how long ago was that?': last question's game
             ctx["live_followup"] = bool(text) and bool(named_games(prev, {g["id"]: g for g in hit}))
+            ctx["live_prev_q"] = prev if ctx["live_followup"] else ""
         if not text:
             text, hit = rider(question, pool, refresh=refresh)
         if not text and prev:  # any other follow-up the feed can't place on its own
@@ -1332,6 +1334,8 @@ def final_guard(reply: str) -> str:
 
 def _required_fact(ctx: dict, question: str) -> tuple | None:
     q = question or ""
+    if ctx.get("live_followup") and ctx.get("live_prev_q") and re.match(r"\s*(why|how come|and why|so)\b", q, re.I):
+        q = f"{ctx['live_prev_q']} {q}"  # 'why?' after 'is Oregon State covering?': the cover math, not a pick take
     hit = ctx.get("live_rider_games") or []
     if not hit or not q:
         return None
@@ -1685,6 +1689,18 @@ def claim_check(games: list[dict]):
                     n = int(m.group(1)) if n is None else n
                     if n not in (v["rush"] + v["rec"] + v["return"], v["pass"]):
                         return False
+            if g.get("state") == "in" and re.search(r"\b(has|have|with|got|gets) the ball\b|\bon offense\b", seg, re.I):
+                owner = g[g["possession"]]["name"] if g.get("possession") in ("away", "home") else g.get("receiving")
+                m_b = re.search(r"\b(has|have|with|got|gets) the ball\b|\bon offense\b", seg, re.I)
+                pre_txt = seg[:m_b.start()]
+                said = None
+                for side in ("away", "home"):
+                    for k, _ in _name_keys(g[side]):
+                        for mm in re.finditer(rf"(?<![\w']){re.escape(k)}(?!\w)", pre_txt, 0 if k.isupper() else re.I):
+                            if said is None or mm.start() > said[0]:
+                                said = (mm.start(), g[side]["name"])
+                if owner and said and said[1] != owner and not re.search(r"\bnot\b|n't\b", pre_txt[said[0]:], re.I):
+                    return False  # 'Boise State ... with the ball' right after Boise scored (Oregon State gets it)
             team_words = {w.lower() for n in names for w in n.split()}
             for m in re.finditer(r"\b([A-Z][a-z'\-]+) ([A-Z][a-z'\-]+)\b", seg):  # 'Austin Manning' for Arch Manning
                 ok_first = (g.get("firsts") or {}).get(m.group(2).lower())
