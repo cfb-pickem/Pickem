@@ -90,6 +90,11 @@ COVERING_NOW = re.compile(
     rf"|\bis ({_T}) covering\b|\bwhat'?s the score\b|\bscore (of|in) the\b|\bwhat'?s ({_T}) (up|down) by\b"
     rf"|\bhow'?s the ({_T}) game\b"
     rf"|\b(how many|how much|what)( points)? (do|does) ({_T}) need to cover\b", re.I)  # live, not rules/playoff (drill 11/17)
+# game-state asks score_text answers from the live feed in code (Saturday drill 11/17: these went to the full brain,
+# ~22 s each in the one-slot queue during a burst). 'covering' ones before kickoff are pick asks: score_text steps aside.
+LIVE_STATE = re.compile(
+    r"\bwho('?s|s| has|'?s got| got) (got )?the ball\b|\bhow much time('?s|s| is)? left\b|\btime left (in|on) the\b"
+    rf"|\bdid ({_T}) (just )?score\b|^\W*({_T}) covering\W*$|\bwho'?s covering ({_T})\b", re.I)
 DID_COVER = re.compile(rf"\bdid ({_T}) (cover|hit)\b|\bwho covered\b|\bdid (it|they|that) cover\b", re.I)
 RESULTS_Q = re.compile(
     r"\bhow('?d| did) (i|we|my picks?|my week)\b[^?.!]{0,20}\b(do|go|look|end up|turn out)\b"
@@ -697,6 +702,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "lock", "LOCK_ASK"
     if COVERING_NOW.search(t):
         return "score", "COVERING_NOW"
+    if LIVE_STATE.search(t):
+        return "score", "LIVE_STATE"
     if DID_COVER.search(t):
         return "cover", "DID_COVER"
     if PAYOUT_ASK.search(t) and (chat._MONEY_ASK.search(t) or re.search(r"\b(1st|2nd|3rd|first|second|third)\b", t, re.I)):
@@ -1399,6 +1406,9 @@ def score_text(ctx: dict, q: str) -> str | None:
     named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games])
     if not named:
         return None
+    if re.search(r"\bcovering\b", q, re.I) and not any(
+            (by_id.get(n["id"]) or {}).get("Status") in ("in_progress", "final") for n in named):
+        return None  # 'who's covering X' before kickoff = who will cover: a pick ask, not a score
     out = [state(next(g for g in games if g["id"] == n["id"])) for n in named[:2]]
     return None if any(x is None for x in out) else " ".join(out)
 
