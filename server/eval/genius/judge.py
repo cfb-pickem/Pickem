@@ -32,7 +32,7 @@ RUBRIC = """You grade "Picky", a trash-talking bot that texts with friends in a 
 For each item you get the member's question(s), Picky's reply (or replies, for multi-turn pushback), an ANSWER KEY written from verified data (CFBD stats, ESPN odds, cited news) with: must_include (what a genius answer contains), must_not_claim (known errors), the expected lean (or "none"/"any"/"conditional"), extra verified facts, and the CURRENT MARKET pulled when the exam ran (lines move during the week: a number that matches the current market or the key's open/current within ~1 point is correct).
 
 Score each 1-5:
-- correctness: are the facts and numbers right vs the key/market? 5 = every checkable claim right; 3 = mostly right with a small slip; 1 = a key fact wrong (wrong QB, wrong favorite, wrong record).
+- correctness: are the facts and numbers right vs the key/market/ALSO VERIFIED data? 5 = every checkable claim right; 3 = mostly right with a small slip; 1 = a key fact wrong (wrong QB, wrong favorite, wrong record).
 - depth: does it use the factors that matter for THIS question (the must_include items, the relevant stats/ATS/injury/situational facts)? 5 = hits the key factors specifically; 3 = one relevant factor or generic; 1 = nothing relevant, or a dodge.
 - reasoning: does it connect the facts to an ATS conclusion correctly (a side vs the number, or an honest 'no strong lean' / conditional when the key says so)? Straight-up 'X wins' framing for a pick question caps this at 2. If the question isn't a pick question, grade whether the logic is sound. 5 = sharp and correct; 1 = wrong logic or wrong conclusion (e.g. calls Clemson the value side when the key says Duke).
 - honesty: 5 = no invented facts, and says 'don't know / not confirmed' where the key says it's unknown; 1 = invents injuries, stats, records, rankings or news. Claims not in the key are invented ONLY if they are specific football claims (numbers, injuries, results, names) that you can't verify from the key or well-established CFB knowledge; opinions and jokes are fine. Saying "I don't know / not in my data" is NEVER dishonest (if the key has the answer, that costs correctness and depth, not honesty). Jabs about the member's own league picks or record are checked by other tests: ignore them here unless they contradict the key.
@@ -64,11 +64,46 @@ def _market_line(market: dict, gid) -> str:
     return s
 
 
-def block(tag: str, r: dict, key: dict, market: dict) -> str:
+def verified(games: list, facts: dict) -> str:
+    """Per-game verified data (the fact pack + sourced availability notes): true claims Picky makes from his
+    data sources that the key doesn't list must not count as invented."""
+    out = []
+    try:
+        intel = json.loads((HERE.parents[1] / "cache" / "slate_intel.json").read_text())
+    except Exception:  # noqa: BLE001
+        intel = {}
+    for gid in games or []:
+        g = (facts.get("games") or {}).get(str(gid))
+        if not g:
+            continue
+        bits = [f"{g['away']} at {g['home']}, {g['kickoff_ct']}, {g['venue'].get('name')}"]
+        for side in ("away", "home"):
+            t = g["teams"][side]
+            last = "; ".join(f"{x['site']} {x['opp']} {x['score'][0]}-{x['score'][1]} as {x['spread']:+g} {x['ats']}"
+                             for x in t["games"][-4:] if x.get("spread") is not None)
+            bits.append(f"{t['team']} {t['record']} (conf {t['conf_record']}), SP+ #{t['sp_rank']} (off #{t['sp_off_rank']}, "
+                        f"def #{t['sp_def_rank']}), ATS {t['cfbd_ats']} splits {t['ats_splits_computed']}, rest {t['days_rest']}d, "
+                        f"next {t['next_week']}; last 4: {last}")
+        if g.get("h2h_2025"):
+            bits.append("2025 meeting: " + "; ".join(f"{h['score']} (home line {h['home_spread']})" for h in g["h2h_2025"]))
+        if g.get("weather"):
+            bits.append(f"forecast at kickoff: {g['weather']}")
+        ig = (intel.get("games") or {}).get(str(gid)) or {}
+        for c in (ig.get("facts") or [])[:5]:
+            bits.append(f"sourced ({c.get('source_name')}, {c.get('date')}): {c.get('text')}")
+        out.append("  " + " | ".join(bits))
+    for c in (intel.get("coaching") or [])[:8]:
+        out.append(f"  coaching change (sourced {c.get('date')}): {c.get('text')}")
+    return "\n".join(out)
+
+
+def block(tag: str, r: dict, key: dict, market: dict, facts: dict | None = None) -> str:
     convo = "\n".join(f"  Member: {t['q']}\n  Picky: {t['a']}" for t in r["turns"])
     mk = "\n".join(f"  game {g}: {_market_line(market, g)}" for g in r["games"]) or "  (no specific game)"
     return (f"### {tag} [{r['cat']}] asked by league member {r['persona']}\n{convo}\n"
-            f"ANSWER KEY: {json.dumps(key, ensure_ascii=False)}\nCURRENT MARKET:\n{mk}")
+            f"ANSWER KEY: {json.dumps(key, ensure_ascii=False)}\nCURRENT MARKET:\n{mk}"
+            + (f"\nALSO VERIFIED (Picky's data sources; a claim matching these is true, not invented):\n{v}"
+               if facts is not None and (v := verified(r["games"], facts)) else ""))
 
 
 def judge_run(path: Path) -> dict:
@@ -77,11 +112,13 @@ def judge_run(path: Path) -> dict:
     _q, items = G.load_items()
     keys = {i["id"]: i["key"] for i in items}
     res = [r for r in run["results"] if r["id"] in keys]
+    facts = G.load_facts(run["week"])
     verdicts = {}
     for b in range(0, len(res), BATCH):
         chunk = res[b:b + BATCH]
         tags = {f"Q{n + 1:02d}": r for n, r in enumerate(chunk)}
-        prompt = RUBRIC + "\n\n## ITEMS\n\n" + "\n\n".join(block(t, r, keys[r["id"]], run["market"]) for t, r in tags.items())
+        prompt = RUBRIC + "\n\n## ITEMS\n\n" + "\n\n".join(block(t, r, keys[r["id"]], run["market"], facts)
+                                                            for t, r in tags.items())
         for attempt in range(2):
             try:
                 out = dossier.run_claude(prompt, 900, SCHEMA, "")
