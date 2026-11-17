@@ -373,6 +373,7 @@ def test_qb_status_from_cards():
                      "missed his second straight game with an upper-body injury."), r
         assert router.fact_answer("qb", ctx, "nw qb status").startswith("Latest I've got: Aidan Chiles")
         assert router.fact_answer("qb", ctx, "hows iowa qb") is None  # nothing on file: the full brain
+    assert router.classify("any news on the LSU quarterback?").label() != "fact:qb"
 
 
 if __name__ == "__main__":

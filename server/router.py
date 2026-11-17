@@ -224,8 +224,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if playoff_race.is_need_question(t):
         return "playoff", "playoff_race.is_need_question"
-    if QB_ASK.search(t):
-        return "qb", "QB_ASK"
+    if QB_ASK.search(t) and not re.search(r"\b(news|latest|lates|report\w*|rumou?r\w*|update\w*|word on|anything on|any news)\b", t, re.I):
+        return "qb", "QB_ASK"  # a news-style ask keeps the news feed (NEWS QUESTION rider)
     if SPREAD_EXPLAIN.search(t):
         return "spread", "SPREAD_EXPLAIN"
     if UPSET_ASK.search(t) and not re.search(r"\b(natty|national|title|cfp|playoff|heisman|bowl)\b", t, re.I):

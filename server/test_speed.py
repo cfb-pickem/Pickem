@@ -44,7 +44,7 @@ import picky_brain as pb  # noqa: E402
 
 # a fresh, empty news cache: the news rider rides ('nothing in your feed') without the live feed
 Path(os.environ["PICKY_NEWS_CACHE"]).write_text(json.dumps(
-    {"fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "items": []}))
+    {"fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "items": {}}))
 
 FIX = json.loads((HERE / "eval" / "fixtures" / "speed-ctx-wk12.json").read_text())
 NOW = dt.datetime.fromisoformat(FIX["captured_ct"])
