@@ -24,6 +24,7 @@ Nothing here is hosted: local Ollama only.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import json
 import logging
@@ -49,6 +50,15 @@ log = logging.getLogger("picky-brain")
 USE_JUDGE = os.environ.get("PICKY_JUDGE") == "1"
 N_DRAFTS = 3 if USE_JUDGE else 1
 DRAFT_BUDGET = 105.0   # seconds: no new draft starts after this
+# Speed lane 2026-11-17 (p95 < 60 s): the reroll after a cut draft runs only when its projected finish
+# (elapsed + the last draft's own time + margin) fits SOFT_BUDGET, or when the draft is unusable (empty,
+# a bare dodge, < UNUSABLE_WORDS words) and the finish still fits DRAFT_BUDGET. Draft 1 wins 3 rerolls in 5.
+SOFT_BUDGET = float(os.environ.get("PICKY_SOFT_BUDGET", "50"))
+REROLL_MARGIN = 3.0
+UNUSABLE_WORDS = 4
+# fact wrap / banter line: wait this long for the prefix prime; a cold one (~60 s prefill) means the code
+# answer / book line goes out alone while the prime finishes in the background for the next text
+PRIME_WAIT = float(os.environ.get("PICKY_PRIME_WAIT", "10"))
 JUDGE_BUDGET = 170.0   # seconds: no judge pass after this (the watcher waits 240)
 
 # draft i: sampling and angle. Draft 0 is the old single answer (temp 0.2); 1-2 run hot with min_p
@@ -236,10 +246,16 @@ def judge_user(question: str, sender: str, brief: Brief, drafts: list[str]) -> s
     return "\n\n".join(L)
 
 
+class PrimeSlow(ValueError):
+    """The prefix prime didn't finish within the caller's prime_wait (a cold prefill)."""
+
+
 async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperature: float,
-                     num_predict: int, timeout: float) -> str:
+                     num_predict: int, timeout: float, prime_wait: float | None = None) -> str:
     """One non-streamed Ollama call that shares the prefix checkpoint. num_ctx
-    must match chat.OLLAMA_OPTIONS or Ollama reloads the model."""
+    must match chat.OLLAMA_OPTIONS or Ollama reloads the model. prime_wait: a
+    caller with a code fallback gives up (PrimeSlow) when the prime takes longer;
+    the prime keeps running in the background."""
     payload = {"model": chat.MODEL, "stream": False, "format": schema,
                "messages": [{"role": "system", "content": prefix + tail}, {"role": "user", "content": user}],
                "options": {**chat.OLLAMA_OPTIONS, "temperature": temperature, "num_predict": num_predict},
@@ -247,8 +263,15 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
     if chat.OLLAMA_THINK is not None:
         payload["think"] = chat.OLLAMA_THINK == "true"
     await live_flag.wait_clear()  # side sidecars yield to a live text
+    if prime_wait is not None:
+        t = chat.start_prime(prefix)
+        done, _ = await asyncio.wait({t}, timeout=prime_wait)
+        if not done:
+            log.info("prime still running after %.0fs (cold prefix): code fallback, prime continues", prime_wait)
+            raise PrimeSlow("cold prefix")
     async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=timeout, write=10.0, pool=5.0)) as c:
-        await chat._prime(c, prefix)
+        if prime_wait is None:
+            await chat._prime(c, prefix)
         r = await c.post(f"{chat.OLLAMA}/api/chat", json=payload)
         r.raise_for_status()
         d = r.json()
@@ -788,7 +811,7 @@ async def banter_reply(st: dict, prefix: str) -> str:
     t0 = time.time()
     try:
         raw = await _json_call(prefix, router.BANTER_TAIL, user, router.BANTER_SCHEMA, 0.6, router.BANTER_TOKENS,
-                               BANTER_TIMEOUT)
+                               BANTER_TIMEOUT, prime_wait=PRIME_WAIT)
     except (httpx.HTTPError, ValueError) as e:
         log.warning("banter call failed: %s", e)
         raw = ""
@@ -866,7 +889,7 @@ async def fact_reply(st: dict, prefix: str, answer: str) -> str:
     try:
         raw = await _json_call(prefix, router.FACT_TAIL, router.fact_user(st["q"], answer, st.get("sender", ""),
                                                                           jab=rt.mixed, leader=leader),
-                               router.FACT_SCHEMA, 0.6, router.FACT_TOKENS, 30.0)
+                               router.FACT_SCHEMA, 0.6, router.FACT_TOKENS, 30.0, prime_wait=PRIME_WAIT)
         line = (json.loads(raw[raw.find("{"): raw.rfind("}") + 1]) or {}).get("line") if "{" in (raw or "") else ""
     except (httpx.HTTPError, ValueError, AttributeError) as e:
         log.warning("fact wrap failed: %s", e)
@@ -955,12 +978,14 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
         if st["stance"]:
             log.info("stance: %s (%s)", st["stance"]["stance"], st["stance"]["who"])
         rule = (league_rules.answer(st["q"]) or "") if chat.wants_rules(st["q"]) else ""
+        tb = time.time()
         st["brief"] = await understand(prefix, st["q"], st.get("sender", ""), st.get("recent", ""),
                                        st.get("last_reply", ""), stance=stance_rider(st["stance"]),
                                        **({"notes": nb} if (nb := brief_notes(st["q"])) else {}),
                                        **({"live": lv} if (lv := (st.get("ctx") or {}).get("live_rider")) else {}),
                                        **({"rules": rule} if rule else {}),
                                        **({"card": cb} if (cb := slate_block(messages)) else {}))
+        st["brief_secs"] = time.time() - tb  # a reroll doesn't redo this: run() takes it out of the draft's time
         rt = st.get("route")
         if rt is not None:  # the router's fallback: no rule matched, the brief decides (plan 2d)
             nr = router.from_brief(rt, st["brief"].intent, st["brief"].asking, st["q"])
@@ -1008,6 +1033,7 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     st["options"].update(SAMPLING[i])  # read by chat._ollama_stream via OPTIONS_OVERRIDE
     if st.get("shots") and messages and messages[0].get("role") == "system":
         messages = messages[:1] + st["shots"] + messages[1:]  # example exchanges as real turns, before the history
+    st["gen_t0"] = time.time()  # for the results guard's regen budget (regen_ok)
     async for x in _orig_ollama_stream(insert_rider(messages, rider, st["q"]), prefix):
         yield x
 
@@ -1116,6 +1142,29 @@ def football_thread(st: dict) -> bool:
     return bool(chat.games_named(last, gl)) and len(q.split()) <= 12 and bool(_BALL.search(q))
 
 
+_BARE_DODGE = re.compile(r"^\s*(?:i do picks, not paperwork\.?\s*)?(?:next question\.?)?\s*$", re.I)
+
+
+def unusable(text: str) -> bool:
+    """A draft not worth sending over a reroll: empty after the cuts, a bare dodge ('Next question.',
+    'I do picks, not paperwork.'), or under UNUSABLE_WORDS words."""
+    t = (text or "").strip()
+    return not t or bool(_BARE_DODGE.match(t)) or len(re.findall(r"[a-z0-9']+", t.lower())) < UNUSABLE_WORDS
+
+
+def reroll_ok(elapsed: float, draft_secs: float, texts: list[str]) -> tuple[bool, str]:
+    """(run the extra draft?, why). It costs about what the last draft did (the understand pass isn't
+    redone): run it when the projected finish fits SOFT_BUDGET, or when every draft so far is unusable
+    and the finish fits DRAFT_BUDGET."""
+    proj = elapsed + draft_secs + REROLL_MARGIN
+    if proj <= SOFT_BUDGET:
+        return True, f"projected {proj:.0f}s <= soft {SOFT_BUDGET:.0f}s"
+    bad = all(unusable(t) for t in texts)
+    if bad and proj <= DRAFT_BUDGET:
+        return True, f"draft unusable, projected {proj:.0f}s <= {DRAFT_BUDGET:.0f}s"
+    return False, f"projected {proj:.0f}s > {DRAFT_BUDGET if bad else SOFT_BUDGET:.0f}s" + (" (unusable)" if bad else "")
+
+
 REACTIONS = ["Fair.", "Can't argue with that.", "Yep.", "Ha. Fair enough.", "Tough to argue.", "That's about right."]
 _DODGE = re.compile(r"^\s*(i do picks, not paperwork\.\s*)?next question\.?\s*$", re.I)
 
@@ -1152,15 +1201,27 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
     route = route if route is not None else router.Route("full", why="no router")
     st = {"q": q, "sender": sender, "team": team, "recent": recent, "last_reply": last_reply, "brief": None, "ammo": None,
           "prefix": None, "idx": 0, "options": dict(SAMPLING[0]), "route": route, "chat_id": chat_id}
+    def regen_ok() -> bool:  # chat's results guard: a regen costs about one generation
+        now = time.time()
+        return (now - t0) + (now - st.get("gen_t0", now)) + REROLL_MARGIN <= SOFT_BUDGET
+
     tok, otok = STATE.set(st), chat.OPTIONS_OVERRIDE.set(st["options"])
+    rtok = chat.REGEN_OK.set(regen_ok)
     try:
         drafts: list[Draft] = []
+        dsecs = 0.0
         for i in range(N_DRAFTS + 1):
             if i == N_DRAFTS and (not drafts or any(d.drops == 0 and d.text.strip() for d in drafts)):
                 break  # the extra draft only when every draft so far was cut by the filters
             if i and time.time() - t0 > DRAFT_BUDGET:
                 break
+            if i == N_DRAFTS:
+                go, why = reroll_ok(time.time() - t0, dsecs, [d.text for d in drafts])
+                log.info("reroll %s: %s", "runs" if go else "skipped", why)
+                if not go:
+                    break
             st["idx"] = i
+            td = time.time()
             try:
                 text, drops, image = await draft()
             except Exception:
@@ -1168,6 +1229,7 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                     raise
                 log.warning("draft %d failed; judging the %d we have", i + 1, len(drafts), exc_info=True)
                 break
+            dsecs = time.time() - td - st.pop("brief_secs", 0.0)
             if image:
                 return text, image
             text = chat.fix_last_week(text, st.get("ctx"))  # 'LSU last week' about week 10, the Monday after 11
@@ -1235,5 +1297,6 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
         _trace(st, q, sender, route, drafts, [d.idx for d in pool], pick.idx, how, t0)
         return undodge(st, pick.text, last_reply, prior_q), None
     finally:
+        chat.REGEN_OK.reset(rtok)
         chat.OPTIONS_OVERRIDE.reset(otok)
         STATE.reset(tok)

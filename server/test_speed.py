@@ -83,7 +83,7 @@ DOSSIER = {"generated_at": "2026-11-16T17:00:00-06:00", "summary": "Iowa QB Hank
 CALLS: list[dict] = []
 
 
-async def _json_call(prefix, tail, user, schema, temperature, num_predict, timeout):
+async def _json_call(prefix, tail, user, schema, temperature, num_predict, timeout, **k):
     p = (schema or {}).get("properties") or {}
     kind = "understand" if "asking" in p else "banter" if "pick" in p else "fact" if "line" in p else "json"
     CALLS.append({"kind": kind, "prefix": prefix,
