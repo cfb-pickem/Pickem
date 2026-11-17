@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Picky's member memory (server/member_memory.py nightly), 22:30 CT, before the 23:00 flub loop:
+  the last 3 days' unprocessed real exchanges -> one offline Opus pass (picky_claude, no tools) ->
+  code-validated facts / beefs / jokes / lines / receipts / treatment labels -> receipts graded in
+  code against all_games finals -> private files in /Users/Agent/cfb-pickem-private/member_memory/.
+  Zero local Ollama. Never texts anyone. NOT WIRED: nothing in the live reply path reads the output
+  yet, so this is harmless until Charlie OKs wiring. Kill switch: PICKY_NO_ANTHROPIC=1 (grading only).
+  Install: see tools/member-memory/README.md.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pickem.member-memory</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/Agent/cfb-pickem/server/.venv/bin/python3</string>
+        <string>-I</string>
+        <string>/Users/Agent/cfb-pickem/server/member_memory.py</string>
+        <string>nightly</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/Agent/cfb-pickem/server</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>22</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/member-memory.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/Agent/cfb-pickem/server/logs/member-memory.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/Agent</string>
+        <key>TERM</key>
+        <string>dumb</string>
+        <key>DISABLE_AUTOUPDATER</key>
+        <string>1</string>
+    </dict>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
