@@ -463,7 +463,7 @@ TOPICS = [
                r"(won'?t|will not) play|(will|to) miss (the )?(rest|remainder|season|year|games?|saturday|time|several|multiple|next|\d+|one|two|three|four|six)\b|status (for|vs|against)|availability|\bhurt\b|"
                r"\bankle\b|\bknee\b|\bhamstring\b|\bshoulder\b|cleared to (play|return)"),
     ("suspension", r"suspen\w*|ineligib\w*|arrest\w*|dismiss\w* from|charged with|NCAA investigation"),
-    ("coaching", r"\bfire[sd]?\b|firing|\bhire[sd]?\b|hiring|coach(ing)? search|hot seat|buyout|interim coach|"
+    ("coaching", r"\bfire[sd]?\b(?! back| up)|firing|\b(he'?s|he is) out at\b|\bhire[sd]?\b|hiring|coach(ing)? search|hot seat|buyout|interim coach|"
                  r"carousel|contract extension|steps? down|resign\w*|parts? ways|\bretir\w*|"
                  r"(new|next) (head )?coach\b|(coaching|head coach(ing)?) (job|opening|vacancy|search)|"
                  r"coordinator (hire|search|fired|out)"),
@@ -494,9 +494,13 @@ _REPORTED = re.compile(r"\b(report(s|ed|edly)?|sources?|per (sources|a source)|a
                        r"told (espn|the athletic|on3|cbs|yahoo|reporters? off)|in talks|frontrunner|front-runner)\b",
                        re.I)
 _OFFICIAL = re.compile(r"\b(announc\w+|officially|confirm\w*|statement|has been (fired|hired|named|suspended|"
-                       r"dismissed)|fires|fired|names|named|hires|hired|undergoes|underwent|ruled out|suspends|"
-                       r"suspended|signs|signed|steps down|resigns|retires|fines|fined|reprimand\w*|(coach|sarkisian|school|program|team)\b"
-                       r"[^.]{0,40}\b(said|says|announced))\b", re.I)
+                       r"dismissed)|fires(?! back)|(?<!\bget )(?<!\bgetting )(?<!\bbe )(?<!\bon )(?<!\bthe )fired(?! up)|commits to|committed to|names|named|hires|hired|undergoes|underwent|ruled out|suspends|"
+                       r"suspended|signs|signed|steps down|resigns|retires|fines|fined|reprimand\w*)\b", re.I)
+# "coach X said" confirms only an event (injury, firing, ...), not pregame quotes
+_SAID = re.compile(r"\b(coach|sarkisian|school|program|team)\b[^.]{0,40}\b(said|says|announced)\b", re.I)
+_EVENT = {"injury", "suspension", "coaching", "portal", "recruiting"}
+# a headline arguing for a move is a take ("Michigan has to fire Whittingham"), never reported/confirmed
+_OPINION = re.compile(r"\b(ha(ve|s) to|should|must|needs? to) (fire|hire|move on from)\b", re.I)
 _SOFT = re.compile(r"\b(expected to|is set to|set to (hire|become|be named)|plans? to|nearing|finaliz\w+|"
                    r"targeting|likely to|intends? to|considering|candidate)\b", re.I)
 
@@ -522,8 +526,11 @@ def classify(text: str) -> dict:
     t = text or ""
     # a named source / "reportedly" beats everything; then an official word ("fires",
     # "coach X said"); then soft language ("expected to", "likely to")
-    label = "reported" if _REPORTED.search(t) else "confirmed" if _OFFICIAL.search(t) else \
+    official = _OFFICIAL.search(t) or (_SAID.search(t) and _EVENT & set(topics))
+    label = "reported" if _REPORTED.search(t) else "confirmed" if official else \
         "reported" if _SOFT.search(t) else None
+    if _OPINION.search(head):
+        label = None
     injury = "injury" in topics
     status = injury_state(head) or injury_state(text) if injury else None
     return {"topics": topics, "kind": "injury" if injury else None, "status": status, "label": label}
@@ -586,7 +593,9 @@ def same_story(a: dict, b: dict, team_words: set[str] = frozenset()) -> bool:
     sa, sb = (set(re.findall(r"[a-z0-9']{4,}", (x.get("summary") or "").lower())) for x in (a, b))
     if len(sa) >= 6 and _jacc(sa, sb) >= 0.6:
         return True  # same wire blurb under two headlines
-    if _jacc(_words(a), _words(b)) >= 0.5:
+    # team names alone ('michigan state ... oregon visits') don't make two headlines alike
+    wa, wb = _words(a), _words(b)
+    if _jacc(wa, wb) >= 0.5 and len(wa & wb - team_words) >= 2:
         # "X vs Y prediction, pick, odds" / "rankings" headlines look alike across games
         return bool(ents) or not {"betting", "rankings"} & set((a.get("topics") or []) + (b.get("topics") or []))
     if not ents or len(a.get("teams") or []) > 4 or len(b.get("teams") or []) > 4:
@@ -595,7 +604,7 @@ def same_story(a: dict, b: dict, team_words: set[str] = frozenset()) -> bool:
     if set(a.get("players") or []) & set(b.get("players") or []) and topic:
         return True
     shared = _names(a, team_words) & _names(b, team_words)
-    return len(shared) >= 2 or (len(shared) == 1 and bool(topic) and _jacc(_words(a), _words(b)) >= 0.25)
+    return len(shared) >= 2 or (len(shared) == 1 and bool(topic) and _jacc(wa, wb) > 0.25)
 
 
 def _tier(it: dict) -> int:
