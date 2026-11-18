@@ -364,5 +364,61 @@
   ],
   "src": "synthetic",
   "why": "speed lanes 2026-11-17 (was the full brain)"
+ },
+ {
+  "q": "who's the backup QB for Ohio State?",
+  "ok": [
+   "fact:backup_qb"
+  ],
+  "src": "synthetic",
+  "why": "personnel lanes 2026-11-18 (plan phase 4)"
+ },
+ {
+  "q": "what's QB2 done for LSU this year?",
+  "ok": [
+   "fact:backup_qb"
+  ],
+  "src": "synthetic",
+  "why": "personnel lanes 2026-11-18 (plan phase 4)"
+ },
+ {
+  "q": "how has the backup quarterback done for Clemson?",
+  "ok": [
+   "fact:backup_qb"
+  ],
+  "src": "synthetic",
+  "why": "personnel lanes 2026-11-18 (plan phase 4)"
+ },
+ {
+  "q": "any injuries that matter for Iowa vs Illinois?",
+  "ok": [
+   "fact:injury_impact"
+  ],
+  "src": "synthetic",
+  "why": "personnel lanes 2026-11-18 (plan phase 4)"
+ },
+ {
+  "q": "Tennessee lost their top receiver, does it matter?",
+  "ok": [
+   "fact:injury_impact"
+  ],
+  "src": "synthetic",
+  "why": "personnel lanes 2026-11-18 (plan phase 4)"
+ },
+ {
+  "q": "who's out for Michigan this week?",
+  "ok": [
+   "fact:injury_impact"
+  ],
+  "src": "synthetic",
+  "why": "personnel lanes 2026-11-18 (plan phase 4)"
+ },
+ {
+  "q": "Oregon without its starting left tackle, big deal?",
+  "ok": [
+   "fact:injury_impact"
+  ],
+  "src": "synthetic",
+  "why": "personnel lanes 2026-11-18 (plan phase 4)"
  }
 ]
