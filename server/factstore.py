@@ -221,7 +221,7 @@ def _team_sheets(ds: dict, polls_d: dict, now: float) -> dict[str, dict]:
         if t["coach"]:
             f.append(_fact("coach", name, "head", t["coach"], f"{t['coach']} coaches {name}", "CFBD coaches", as_cfbd))
         t["ats_profile"] = ats_profile(t["results"])
-        f += _ats_profile_facts(name, t["ats_profile"], as_cfbd)
+        f += ats_profile_facts(name, t["ats_profile"], as_cfbd)
         t["facts"] = f
         out[name] = t
     return out
@@ -261,7 +261,7 @@ def ats_profile(results: list[dict]) -> dict:
     return p
 
 
-def _ats_profile_facts(name: str, p: dict, as_of: str) -> list[dict]:
+def ats_profile_facts(name: str, p: dict, as_of: str) -> list[dict]:
     if not p["games"]:
         return []
     src = "CFBD lines + results (DraftKings line)"

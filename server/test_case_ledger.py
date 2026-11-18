@@ -149,6 +149,23 @@ def test_lean_label_and_word():
     assert m["lean"] == TT and m["labels"][BAY] == "Baylor +3.5" and m["word"] in ("coin flip", "slight lean"), m["word"]
 
 
+def test_report_text_is_cut_to_the_source_and_truncated_pieces_drop():
+    g = {"id": 9, "away": "LSU", "home": "Tennessee", "line": 1.5, "start": "2099-11-21T14:30:00"}
+    fs = [dict(F(8, "LSU", 1, "QB status: Tennessee QB George MacIntyre is questionable (Tennessee QB George MacIntyre hurt "
+                              "his right knee at Texas A&M; Josh Heupel said he is working toward playing vs LSU,..., "
+                              "Yahoo Sports)"), flag=False),
+          dict(F(10, "LSU", 0.5, "key injuries (Tennessee): Tennessee's top wide receiver Mike Matthews and big-play "
+                                 "running back Daune Morris are...; Tennessee RB Daune Morris is out for the season"),
+               flag=False),
+          dict(F(10, "Tennessee", 0.5, "key injuries (LSU): LSU LB Harold Perkins sustained the..."), flag=False)]
+    with Patch(None):
+        led = CL.from_brief(PB.score(g, fs))
+    qb = next(r for r in led["rows"] if r["kind"] == "QB status")
+    assert qb["text"] == "Tennessee QB George MacIntyre is questionable (per Yahoo Sports)", qb["text"]
+    inj = [r for r in led["rows"] if r["kind"] == "injuries"]
+    assert [r["text"] for r in inj] == ["Tennessee RB Daune Morris is out for the season"], [r["text"] for r in inj]
+
+
 # --- pick + why -----------------------------------------------------------------------------------------------
 
 def test_pick_turn_one_is_the_lean_plus_top_two_reasons():
@@ -288,6 +305,17 @@ def test_qb_trigger_from_an_availability_note():
     ts = CL.qb_triggers(notes, ours=BAY, other=TT)
     assert len(ts) == 1 and "ruled out" in ts[0]["text"], ts
     assert CL.qb_triggers(notes[1:], ours=TT, other=BAY) == [], "a WR note is not a QB flip"
+
+
+def test_season_ending_qb_is_no_trigger_and_one_per_team():
+    notes = [{"team": BAY, "status": "out", "players": ["Tait Reynolds"], "text": "Baylor QB Tait Reynolds suffered a "
+              "season-ending meniscus tear and had surgery.", "source_name": "Yahoo", "date": "2026-11-16"},
+             {"team": BAY, "status": "out", "players": ["Al Smith"], "text": "Baylor QB Al Smith (ankle) is out this week.",
+              "source_name": "Yahoo", "date": "2026-11-16"},
+             {"team": BAY, "status": "out", "players": ["Bo Jones"], "text": "Baylor QB Bo Jones (hand) is out.",
+              "source_name": "Yahoo", "date": "2026-11-16"}]
+    ts = CL.qb_triggers(notes, ours=TT, other=BAY)
+    assert [t["fact"]["subject"] for t in ts] == ["Al Smith"], ts
 
 
 def test_wind_trigger_only_for_a_total_outdoors():

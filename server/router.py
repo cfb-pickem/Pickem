@@ -1105,11 +1105,15 @@ def ats_profile_text(ctx: dict, q: str) -> str | None:
     computed verdict in lean words. Every number comes from facts_used."""
     named = factstore.teams_named(q)
     t = factstore.team(named[0]) if named else None
-    p = (t or {}).get("ats_profile")
-    if not p:
+    if not t:
         return None
     name = t["name"]
-    fx = {f["id"].rsplit(".", 1)[-1]: f for f in t.get("facts") or [] if f["kind"] == "ats"}
+    p = t.get("ats_profile")
+    facts = list(t.get("facts") or [])
+    if not p:  # a store built before the profile existed: same computation from the sheet's results
+        p = factstore.ats_profile(t.get("results") or [])
+        facts += factstore.ats_profile_facts(name, p, t.get("as_of") or "")
+    fx = {f["id"].rsplit(".", 1)[-1]: f for f in facts if f["kind"] == "ats"}
     if not p["games"]:
         return f"I don't have any lines on record for {name} this season, so no ATS read."
     used = [fx["calc_overall"]]

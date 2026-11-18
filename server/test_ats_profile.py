@@ -124,6 +124,24 @@ def test_cfbd_consensus_record_named_when_it_differs():
     assert out and f"{t['ats']['w']}-{t['ats']['l']}" in out and "consensus" in out, out
 
 
+def test_lane_works_on_a_store_built_before_ats_profile():
+    """The live store is rebuilt every 5 min; until the new build lands a sheet may lack ats_profile."""
+    import json
+    st = json.loads(TF.built()["path"].read_text())
+    for t in st["teams"].values():
+        t.pop("ats_profile", None)
+        t["facts"] = [f for f in t["facts"] if not (f["kind"] == "ats" and f["id"].rsplit(".", 1)[-1] != "overall")]
+    old = TF.TMP / "old-store.json"
+    old.write_text(json.dumps(st))
+    import router
+    FS.use(old, TF.inputs(), now=TF.NOW)
+    try:
+        out = router.ats_profile_text({}, "how's Duke against the number?")
+    finally:
+        FS.use(None, None)
+    assert out and out.startswith("Duke is 8-2 against the number") and FS.unsupported(out, out.facts_used) == [], out
+
+
 def test_unknown_team_is_none():
     assert lane("how's the Montana Tech Moose Riders ATS") is None
 

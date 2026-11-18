@@ -63,6 +63,25 @@ def say(r: str, c: dict | None = None, locked: bool = False) -> str:
     return router.say_reason(r, c, locked)
 
 
+_REPORT = re.compile(r"^(?P<head>.+? (?:is|are) (?:out|doubtful|questionable|a game-time decision|day-to-day|limited)\b.*?) "
+                     r"\((?P<body>.*), (?P<src>[^,()]{2,60})\)$", re.S)
+_CUT = re.compile(r"(\.\.\.|…)|\b(out for|out of|miss the|for the|sustained the|in)\s*$")
+
+
+def _tidy(n: int | None, said: str) -> str | None:
+    """A report-quoting reason the way a person says it: the status + the source, not the quoted report
+    ('... is questionable (per Yahoo Sports)'); injury lists lose the pieces the report cut off mid-sentence. None
+    when nothing whole is left."""
+    if KINDS.get(n) == "QB status":
+        m = _REPORT.match(said or "")
+        if m:
+            return f"{m.group('head')} (per {m.group('src').strip()})"
+    if KINDS.get(n) == "injuries":
+        keep = [x.strip() for x in (said or "").split("; ") if x.strip() and not _CUT.search(x.strip())]
+        return "; ".join(keep) or None
+    return None if _CUT.search((said or "").strip()) and n else said
+
+
 def _slug(s) -> str:
     return re.sub(r"[^a-z0-9]+", "_", factstore.norm(str(s))).strip("_")
 
@@ -148,8 +167,8 @@ def from_card(c: dict, locked: bool | None = None) -> dict:
             n = f["n"] if f else _guess_n(raw)
             if n in SKIP_N:
                 continue
-            said = (game_cards.value_text(c, lk) if raw.startswith("line value:") else None) or say(raw, c, lk)
-            r = _row(gid, side, len(rows), raw, said, n, float(f["w"]) if f else None, "factor", as_of)
+            said = (game_cards.value_text(c, lk) if raw.startswith("line value:") else None) or _tidy(n, say(raw, c, lk))
+            r = said and _row(gid, side, len(rows), raw, said, n, float(f["w"]) if f else None, "factor", as_of)
             if r:
                 rows.append(r)
         case = c.get("case") or {}
@@ -178,7 +197,8 @@ def from_brief(b: dict, as_of: str = "") -> dict:
     rows: list[dict] = []
     for side in (away, home):
         for f in sorted((f for f in b.get("factors") or [] if _is_reason(f, side)), key=lambda f: (-f["w"], f["n"])):
-            r = _row(gid, side, len(rows), f["why"], say(f["why"]), f["n"], float(f["w"]), "factor", as_of)
+            said = _tidy(f["n"], say(f["why"]))
+            r = said and _row(gid, side, len(rows), f["why"], said, f["n"], float(f["w"]), "factor", as_of)
             if r:
                 rows.append(r)
         rows += _unit_rows(gid, side, away, home, len(rows), as_of)
@@ -309,16 +329,22 @@ def line_trigger(our_line: float) -> dict | None:
 
 
 _QB = re.compile(r"\bQB\d?\b|quarterback", re.I)
+_GONE = re.compile(r"season[- ]ending|for the (season|year)|rest of the season|surgery|\btorn\b|\bACL\b", re.I)
 
 
 def qb_triggers(notes: list[dict], ours: str, other: str) -> list[dict]:
     """A QB status flip on an availability note: our QB questionable -> ruled out flips us; theirs questionable or
     out -> cleared to play flips us."""
-    out = []
+    out, teams = [], set()
     for a in notes or []:
         st = (a.get("status") or "").lower()
         if not _QB.search(a.get("text") or "") or not a.get("players") or not a.get("team"):
             continue
+        if st == "out" and _GONE.search(a.get("text") or ""):
+            continue  # season-ending: nothing to flip
+        if factstore.norm(a["team"]) in teams:
+            continue  # one trigger per team
+        teams.add(factstore.norm(a["team"]))
         p, src = a["players"][0], a.get("source_name") or "the report"
         team = a["team"]
         fact = {"id": f"availability.{_slug(p)}.{_slug(st or 'note')}", "kind": "availability", "subject": p,
