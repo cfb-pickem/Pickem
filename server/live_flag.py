@@ -32,7 +32,10 @@ _ids = itertools.count()
 
 
 def is_side() -> bool:
-    """True for test/exam processes: they yield to live texts and never set the flag."""
+    """True for test/exam processes: they yield to live texts and never set the flag.
+    PICKY_ROLE=live (a latency-probe sidecar on its own port) counts as live."""
+    if os.environ.get("PICKY_ROLE") == "live":
+        return False
     if os.environ.get("PICKY_SIDE", "") not in ("", "0"):
         return True
     port = os.environ.get("PICKY_GROUP_PORT")

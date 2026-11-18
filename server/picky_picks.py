@@ -39,6 +39,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).parent))
 import espn  # noqa: E402
+import ollama_gate  # noqa: E402
 from chat import _market_gap, same_team  # noqa: E402
 
 try:  # CFBD cache reader; optional so a missing cache never blocks picks
@@ -204,14 +205,15 @@ def write_blurb(d: dict, client: httpx.Client | None = None) -> str:
     c = client or httpx.Client(timeout=120)
     for attempt in range(3):
         try:
-            r = c.post(f"{OLLAMA}/api/chat", json={
-                # chat.py's num_ctx + keep_alive, so this reuses the loaded chat model instead of reloading it
-                "model": MODEL, "stream": False, "think": False,
-                "keep_alive": os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h"),
-                "options": {"temperature": 0.9, "seed": d["game_id"] + attempt, "num_ctx": 16384},
-                "messages": [{"role": "system", "content": BLURB_SYSTEM},
-                             {"role": "user", "content": facts}],
-            })
+            with ollama_gate.slot_sync():  # batch job: wait for live texts + the shared low slot
+                r = c.post(f"{OLLAMA}/api/chat", json={
+                    # chat.py's num_ctx + keep_alive, so this reuses the loaded chat model instead of reloading it
+                    "model": MODEL, "stream": False, "think": False,
+                    "keep_alive": os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h"),
+                    "options": {"temperature": 0.9, "seed": d["game_id"] + attempt, "num_ctx": 16384},
+                    "messages": [{"role": "system", "content": BLURB_SYSTEM},
+                                 {"role": "user", "content": facts}],
+                })
             r.raise_for_status()
             text = r.json()["message"]["content"].strip().strip('"').strip()
             text = re.sub(r"\s+", " ", text)
