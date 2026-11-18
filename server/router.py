@@ -3082,8 +3082,10 @@ def pick_text(ctx: dict, q: str) -> str | None:
         row, pg = factstore.find_game(q, ctx)
         led = case_ledger.for_game(ctx, row, None) if row and not pg else None
         return case_ledger.pick_answer(led) if led else None
-    if not named or not games:  # 'who should I pick this week?' names no game: EVERY game's call (live 2026-11-16,
+    if not named:  # 'who should I pick this week?' names no game: EVERY game's call (live 2026-11-16,
         return slate_text(ctx, q)  # it answered only the first two)
+    if not games:  # names a pool game nobody can take now: the full brain (slate_text would hand it straight back)
+        return None
     out, used = [], []
     for g in games:
         c = _card_for(ctx, g)
