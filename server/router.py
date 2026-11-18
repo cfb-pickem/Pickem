@@ -680,8 +680,11 @@ H2H_ASK = re.compile(r"\blast (time|year|season)\b[^?.!]{0,40}\b(play|played|met
 # 'Who's starting at QB for Tennessee vs LSU?', 'Is LaNorris Sellers playing vs Georgia?' (genius exam 2026-11-17:
 # the intel said 'has not named a starter' and the 12B said MacIntyre starts)
 QB_STATUS_ASK = re.compile(r"\b(who'?s|who is|who will be|whos)\s+(starting|the starter|gonna start|going to start|under center|"
-                           r"playing qb|the qb)\b|\bstarting (qb|quarterback)\b|\bis [A-Z][\w'.-]+ [A-Z][\w'.-]+ "
-                           r"(playing|starting|going to play|gonna play|out|available|good to go|healthy|hurt)\b", re.I)
+                           r"playing qb|the qb)\b|\bstarting (qb|quarterback)\b|\bis [A-Z][\w'.-]+(?: [A-Z][\w'.-]+)? "
+                           r"(playing|starting|going to play|gonna play|out|available|good to go|healthy|hurt)\b"
+                           r"|\bwho'?s [A-Z][\w&'.]*(?: [A-Z][\w&'.]*)?(?:'s)? (qb|quarterback)\b|\b(qb|quarterback) situation\b"
+                           r"|\bany injur\w* (that )?matter|\blost a (lineman|starter|receiver|corner|safety|linebacker|rb|wr|qb)\b",
+                           re.I)
 
 
 def qb_status_text(ctx: dict, q: str) -> str | None:
@@ -693,7 +696,9 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
         return None
     idx = slate_cards.cfbd.load_index()
     named = slate_cards.cfbd.other_teams_named(q or "", [], idx) if idx else []
-    player = re.search(r"\b(?i:is) ([A-Z][\w'.-]+ [A-Z][\w'.-]+)", q or "")
+    player = re.search(r"\b(?i:is) ([A-Z][\w'.-]+(?: [A-Z][\w'.-]+)?) (?i:playing|starting|out|available|healthy|hurt|going|gonna)",
+                       q or "")
+    injury_ask = bool(re.search(r"\binjur|\blost a\b", q or "", re.I))
     hits = []
     for g in (d.get("games") or {}).values():
         for f in g.get("facts") or []:
@@ -703,6 +708,9 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
                 if any(player.group(1).lower() in (p or "").lower() for p in f.get("players") or []) or \
                         player.group(1).split()[-1].lower() in txt.lower():
                     hits.append(f)
+            elif team and any(slate_cards.cfbd.norm(team) == slate_cards.cfbd.norm(n) for n in named) and injury_ask and \
+                    (f.get("kind") == "injury" or f.get("status")):
+                hits.append(f)
             elif team and any(slate_cards.cfbd.norm(team) == slate_cards.cfbd.norm(n) for n in named) and \
                     re.search(r"\bQB\d?\b|\bquarterback", txt, re.I):
                 hits.append(f)
@@ -716,7 +724,7 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
             seen.add(id(f))
             uniq.append(f)
     hits = sorted(uniq, key=lambda f: f.get("kind") != "injury")
-    lines = [re.sub(r"\s+", " ", f["text"]).strip() for f in hits[:2]]
+    lines = [re.sub(r"\s+", " ", f["text"]).strip() for f in hits[:3 if injury_ask else 2]]
     src = hits[0].get("source_name")
     out = " ".join(lines)
     return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
@@ -948,7 +956,11 @@ def hypo_value_text(ctx: dict, q: str) -> str | None:
     return (f"Value on {side}: you'd have {team} at {lk:+g} when the market says {mk:+g}, a {pts:g}-point edge"
             + (" across the key number 14" if min(abs(lk), abs(mk)) < 14 < max(abs(lk), abs(mk)) else "")
             + (" across 7" if min(abs(lk), abs(mk)) < 7 < max(abs(lk), abs(mk)) else "")
-            + (" across 3" if min(abs(lk), abs(mk)) < 3 < max(abs(lk), abs(mk)) else "") + ".")
+            + (" across 3" if min(abs(lk), abs(mk)) < 3 < max(abs(lk), abs(mk)) else "")
+            + next((f", and {lk:+g} is on the good side of {k}: a {k}-point {('win' if lk < 0 else 'loss')} still "
+                    f"{'covers' if lk < 0 else 'covers for the dog'} at the league number"
+                    for k in (3, 7, 10, 14) if abs(abs(mk) - k) < 0.01 and abs(abs(lk) - k) == 0.5 and diff > 0), "")
+            + ".")
 
 
 MOVE_WHY = re.compile(r"\bwhy('?d| did| is| has| was)?\b|\bwhat happened\b|\bwhat changed\b|\bwho got hurt\b|\bwhat'?s behind\b", re.I)
@@ -997,8 +1009,10 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     'no confirmed news', the key number, and the card's computed lean (conditional on a questionable starter)."""
     idx = slate_cards.cfbd.load_index()
     g, pg = slate_cards.find_game(q, ctx, idx)
-    if not g or pg:
+    if not g:
         return None
+    if pg and not g.get("lines"):
+        return None  # a pool game the CFBD dataset doesn't have: the pool lane answers
     ln = slate_cards._line(g) or {}
     now, opn = ln.get("spread"), ln.get("spreadOpen")
     if now is None:
@@ -1013,6 +1027,15 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
                    f" toward {home if now < opn else away}).")
     else:
         out.append(f"The market's {fav(now)}.")
+    if pg and pg.get("line") is not None:
+        pl = float(pg["line"])
+        out.append(f"Our league line: {fav(pl)}" + (" (locked)." if ctx.get("lines_locked", True) else "."))
+    tot = ln.get("overUnder")
+    if tot and re.search(r"\btotal\b|\bo/u\b|\bover.?under\b", q or "", re.I):
+        hi, lo = (tot + abs(now)) / 2, (tot - abs(now)) / 2
+        fteam = home if now < 0 else away
+        dteam = away if now < 0 else home
+        out.append(f"With a {tot:g} total that's roughly {fteam} {hi:.1f}, {dteam} {lo:.1f} implied: a low total makes a big spread harder to cover.")
     try:
         d = json.loads((Path(__file__).resolve().parent / "cache" / "slate_intel.json").read_text())
     except (OSError, ValueError):
@@ -2613,6 +2636,10 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
             lwt = last_week_text(kind, ctx, q)
             if lwt:
                 return lwt
+        if kind == "line_move" and MOVE_WHY.search(q or ""):
+            sm = slate_move_text(ctx, q)  # pool or not: the move with the news behind it
+            if sm:
+                return sm
         if kind == "line_move" and slate_cards.covers(q, ctx) and not chat.games_named(
                 q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]):
             sm = slate_move_text(ctx, q)  # a non-pool game's move, explained from the cache + sourced news
