@@ -76,6 +76,30 @@ def note(ctx: dict, q: str) -> str:
             f"Recommendation: {posture}")
 
 
+def answer(ctx: dict, q: str) -> str | None:
+    """The strategy as a finished text (router fact lane 'strategy'): the sender's spot, the gap that decides
+    the posture, picks left, and the move, all from note()'s numbers."""
+    n = note(ctx, q)
+    if not n:
+        return None
+    m = re.search(r"computed for (.+?), (\d+-\d+), (\w+)\): (.+?); (.+?); about (\d+) picks left", n)
+    if not m:
+        return None
+    rec, place, where, left = m.group(2), m.group(3), m.group(5), m.group(6)
+    head = f"You're {rec}, {place}, {where}, with about {left} picks left."
+    post = n.rsplit("Recommendation: ", 1)[-1].split(":", 1)[0]
+    body = {
+        "PROTECT": "Protect it: side with the best numbers and the consensus, don't fade the field. Catching 1st only "
+                   "buys seeding, because points reset in the playoffs.",
+        "BUBBLE": "No hail marys yet: take your real edges, and only go against the guys right around 4th where you've "
+                  "got one. Tiebreakers matter on the bubble, and the conference title game picks come first.",
+        "CHASE": "You're alive, but it's a long shot. Max variance: fade the consensus every week, because you only gain "
+                 "ground when you're right and they're wrong.",
+        "OUT": "Even winning out doesn't get you to 4th, so play for pride: swing big and fade everybody.",
+    }.get(post)
+    return f"{head} {body}" if body else None
+
+
 def _ord(n) -> str:
     try:
         n = int(n)

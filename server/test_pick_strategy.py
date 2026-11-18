@@ -34,8 +34,9 @@ check(ps.note(ctx("Ack"), "who's winning?") == "", "no rider without a strategy 
 check(ps.note(ctx("Ack", wk=16), "strategy?") == "", "no rider in the playoffs")
 try:
     import router
-    check(router.classify("I'm one out of the playoff spots. What's my strategy the next 4 weeks?").lane == "full",
-          "router: strategy texts take the full path (not the rules/playoff fact lanes)")
+    r = router.classify("I'm one out of the playoff spots. What's my strategy the next 4 weeks?")
+    check(r.kind == "strategy",  # 2026-11-17: written in code (pick_strategy.answer), not the rules/playoff lanes
+          "router: strategy texts take the strategy lane (not the rules/playoff fact lanes)")
 except Exception as e:  # noqa: BLE001
     check(False, f"router import: {e!r}")
 print(f"\n{len(FAILS)} failed" if FAILS else "\nall ok")

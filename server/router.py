@@ -1045,8 +1045,8 @@ def classify(q: str) -> Route:
         return Route("jailbreak", why="burn_book._JAILBREAK" if p == "jailbreak" else "PRIVACY_PROBE")
     if callbacks.is_recall(t):  # 'remember what you said about Boise?': his own logged call, code-written
         return Route("fact", "recall", why="callbacks.is_recall")
-    if pick_strategy.wants(t):  # 'should I go against the field?': strategy, not the playoff math or a rule (genius exam)
-        return Route("full", why="pick_strategy.ASK")
+    if pick_strategy.wants(t):  # 'should I go against the field?': strategy, written in code from the standings
+        return Route("fact", "strategy", why="pick_strategy.ASK")
     fi = fact_intent(t)
     if fi:
         kind, why = fi
@@ -2345,7 +2345,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text,
-              "interim": interim_text}.get(kind)
+              "interim": interim_text, "strategy": pick_strategy.answer}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
