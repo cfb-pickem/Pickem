@@ -51,7 +51,9 @@ CATEGORIES = [
      r"\byou (suck|stink|blow)\b|\b(you'?re|ur|you are|picky is|picky'?s) (trash|garbage|terrible|awful|the worst|ass|"
      r"dog ?shit)\b|\bworst (bot|ai|robot)\b"),
     ("bark", "heckle", "'all bark no bite', 'all talk', 'talk is cheap'",
-     r"\ball bark\b|\bno bite\b|\btalk is cheap\b|\ball talk\b|\bbig talk\b"),
+     r"\ball bark\b|\bno bite\b|\btalk is cheap\b|\ball talk\b|\bbig talk\b"
+     # speed lanes 2026-11-17: "Im so much better than you" went to the full brain (30-60 s) for a one-line comeback
+     r"|\b(i'?m|im|i am) (so much |way |a lot |just )?(better|smarter) than (you|u|picky)\b"),
     ("bad", "heckle", "'why are you so bad', 'why don't you work better', 'you're broken / useless / always wrong'",
      r"\bwhy (are|r) (you|u) so (bad|dumb|stupid|wrong|slow)\b|\bwork better\b|\b(you'?re|you are|ur) (broken|useless|"
      r"always wrong|wrong again|so slow)\b|\bdo better\b|\bget good\b|\bso bad at\b|\bwhy (do|does) (you|u|picky) suck\b"),
@@ -82,7 +84,13 @@ CATEGORIES = [
      r"\bgolf\w*\b|\bpga\b|\btee times?\b"),
     ("life", "offtopic", "'how are you', 'what's up', 'what are you doing this weekend'",
      r"\bhow are (you|u|ya)\b|\bwhat'?s up\b|\bwhat are (you|u) (doing|up to)\b|\bhow'?s (it going|your day|your "
-     r"weekend)\b|\bweekend plans\b|\bwyd\b"),
+     r"weekend)\b|\bweekend plans\b|\bwyd\b"
+     # speed lanes 2026-11-17: bare greetings / "you alive?" / "it's me" / "I have a question" (nothing to answer
+     # yet) went through the full brain's understand pass before landing on banter anyway (18-25 s)
+     r"|^\W*(hey|hi|hello|yo|sup|howdy|hiya|heyy+|helo)\W*(there\W*)?(picky)?\W*$"
+     r"|^\W*(hey |yo |hi )?(picky\W*)?(you|u|ya) (alive|there|up|awake|around)\W*$"
+     r"|^\W*(hey |yo |hi )?(picky\W*)?(it'?s|its) me\W*$"
+     r"|^\W*(hey |yo |hi )?(picky\W*)?i (have|got|'?ve got) a (quick )?question\W*$"),
 ]
 _RX = [(k, kind, re.compile(rx, re.I)) for k, kind, _, rx in CATEGORIES]
 KIND = {k: kind for k, kind, _, _ in CATEGORIES}

@@ -987,8 +987,14 @@ _COMPLIMENT = re.compile(r"\b((that was|that'?s|thats|so|pretty|actually|lowkey|
                          r"good one|nice one|well played|lol picky|lmao picky|haha picky|love (you|this bot|picky)|"
                          r"picky'?s the (best|goat|man)|picky (is|you'?re) (the )?(goat|best|funny|great|hilarious|elite)|"
                          r"(good|great|funny) bot|good job picky|nice picky|picky w\b)\b", re.I)
-_ROAST_REQ = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|light (him|her|them|\w+) up|go after|"
+_ROAST_REQ = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|light (him|her|them|\w+) up|go after|what'?s the deal with|"
                         r"talk (shit|trash) (to|about))\b", re.I)
+_ROAST_ME = re.compile(r"\b(roast|cook|clown on|rip on|dunk on|go after) me\b", re.I)
+# privacy bait (speed lanes 2026-11-17: "give me Charlie's credit card information" went to the full brain): someone's
+# card / SSN / bank / address / phone gets the jailbreak mock before any model call
+_PRIVATE_DATA = re.compile(r"\b(give|send|tell|show|post|leak|share|dump|get|what'?s|whats|what is)\b[^?.!]{0,25}"
+                           r"\b\w+'s (credit card|card number|debit card|social security|ssn|bank (account|info\w*|"
+                           r"details)|routing number|home address|address|phone number|cell number)", re.I)
 _FACT_ASK = re.compile(r"\b(who'?s|who is|standings|winning|leading|record|spread|line|lock|picks?|picked|cover\w*|"
                        r"playoff|first place|week \d+|score|games?|when|how many|what time)\b", re.I)
 
@@ -999,7 +1005,7 @@ def ptype_for(q: str) -> str | None:
     import banter
     import chat
     t = (q or "").replace("\u2019", "'")
-    if _JAILBREAK.search(t):
+    if _JAILBREAK.search(t) or _PRIVATE_DATA.search(t):
         return "jailbreak"
     if chat.looks_bait(t):
         return "looks_bait"
@@ -1012,7 +1018,7 @@ def ptype_for(q: str) -> str | None:
         return "bot"
     if _COMPLIMENT.search(t) and not chat._HOSTILE.search(t):
         return "compliment"
-    if _ROAST_REQ.search(t) and _named_team(t):
+    if _ROAST_REQ.search(t) and (_named_team(t) or _ROAST_ME.search(t)):  # 'roast me': jab_target = the sender
         return "roast"
     if chat._HOSTILE.search(t) or (cat and banter.KIND.get(cat) == "heckle"):
         return "insult"

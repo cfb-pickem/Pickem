@@ -238,6 +238,85 @@ WORST_ASK = re.compile(r"^\W*(and |so |ok )?(the )?(worst|weakest|shakiest)( one
                        r"|\bwhich (game|one) do (u|you) (hate|not like|like least|trust least)\b|\bstay away from\b", re.I)
 
 
+# ---- speed lanes (2026-11-17): historical full-brain texts with a code answer (30-130 s -> 5-15 s) ----
+# 'how's Ackbar doing (this week)?' -> record_text for that member (only when a league member is named)
+HOWS_MEMBER = re.compile(r"\bhow(?:'?s| is)\s+[\w.'&-]+(?: [\w.'&-]+){0,2}\s+(?:doing|looking|holding up)\b", re.I)
+# 'who's the best player in the league?' = who leads the pool (not a CFB player: 'in the league/pool/group')
+BEST_IN_LEAGUE = re.compile(r"\bwho'?s?(?: is)? the (?:best|top)(?: (?:player|picker|team|guy|one))? in (?:the|this|our) "
+                            r"(?:league|pool|group)\b|\bbest (?:player|picker) in (?:the|this|our) (?:league|pool|group)\b", re.I)
+# 'who had the best week last week?' -> last week's top (or bottom) record, from weekly_records
+BEST_WEEK = re.compile(r"\b(who|which (?:guy|member|team)|anyone)\b[^?.!]{0,15}\b(best|worst|top|bottom) (week|record)\b", re.I)
+# 'what are the pool games this week?' -> the 4 pool games with their lines
+POOL_GAMES = re.compile(r"\b(?:what|which)(?:'?s| are| is)?\b[^?.!]{0,12}\b(?:games?|matchups?)\b[^?.!]{0,12}\b(?:in the pool|"
+                        r"on the board|are we picking|we picking|to pick)\b|\b(?:what|which)(?:'?re| are)? (?:the |this week'?s )?"
+                        r"pool games\b|\bpool games (?:this week|for the week)\b", re.I)
+# 'gimme a read on the northwestern gane' -> the pool game's card (only when a POOL game is named; else full brain)
+READ_ON = re.compile(r"\b(?:read|take|thoughts?|lean|breakdown)\s+on\s+(?:the\s+)?[\w.&' -]{2,30}?\s*(?:game|gane|matchup|one)?\W*$",
+                     re.I)
+# 'what happened in the Wake Forest SMU game?' -> the score lane (else the news rider grabbed it)
+GAME_RECAP = re.compile(r"\bwhat happened (?:in|with) (?:the )?[\w.&' -]{3,40}? (?:game|gane)\b", re.I)
+# made-up school / player: 'What's the Montana Tech Moose Riders' record ...' / 'how many TDs does <made-up> have'
+GHOST_ASK = re.compile(r"\b(record|cover|covers|covering|line|spread|score)\b", re.I)
+STAT_ASK = re.compile(r"\bhow many (?:passing |rushing |receiving )?(?:touchdowns|tds?|yards|yds|sacks|interceptions|ints|"
+                      r"catches|receptions|carries|tackles)\b[^?.!]{0,12}\b(?:does|did|has)\s+([a-z][\w'.-]+(?:\s+[a-z][\w'.-]+){1,2}?)"
+                      r"\s+(?:have|got|had|throw\w*|run|rush\w*|catch\w*|this|on|in)\b", re.I)
+
+
+def ghost_player(q: str) -> str | None:
+    """The player a stat ask names when he isn't in the CFBD cache (and isn't a team), else None."""
+    m = STAT_ASK.search(q or "")
+    if not m:
+        return None
+    name = m.group(1).strip()
+    idx = slate_cards.cfbd.load_index()
+    if not idx or slate_cards.cfbd.find_players(name, idx=idx) or slate_cards.cfbd.resolve_team(name, idx):
+        return None
+    return " ".join(w[:1].upper() + w[1:] for w in name.split())
+
+
+def ghost_player_text(ctx: dict, q: str) -> str | None:
+    name = ghost_player(q)
+    return f"There's no {name} in my data, so no stats for him. Check the name?" if name else None
+
+
+def read_text(ctx: dict, q: str) -> str | None:
+    """A read on one named POOL game = the pick lane; a non-pool team or nothing named -> None (full brain)."""
+    games = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]
+    return pick_text(ctx, q) if chat.games_named(q, games) else None
+
+
+def recap_text(ctx: dict, q: str) -> str | None:
+    """'What happened in the X Y game?': the score lane for this week's games, else last week's pool final
+    (score + who covered the league line), else None (the full brain + news)."""
+    out = score_text(ctx, q)
+    if out:
+        return out
+    lw = ctx.get("last_week") or {}
+    games = lw.get("games") or []
+    named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": i} for i, g in enumerate(games)])
+    if not named:
+        return None
+    g = games[named[0]["id"]]
+    if g.get("away_pts") is None or g.get("home_pts") is None:
+        return None
+    a, h, ap, hp = g["away"], g["home"], int(g["away_pts"]), int(g["home_pts"])
+    won = f"{a} won {ap}-{hp} at {h}" if ap > hp else f"{h} won {hp}-{ap} over {a}" if hp > ap else f"{a} and {h} tied {ap}-{hp}"
+    out = f"Week {lw.get('week')} final: {won}."
+    if g.get("line") is not None and g.get("covered"):
+        out += f" {g['covered']} covered ({_fav(float(g['line']), a, h)})."
+    return out
+
+
+def pool_games_text(ctx: dict, q: str) -> str | None:
+    """'What games are in the pool this week?': every pool game with its league line, plus when picks lock."""
+    out = lines_now_text(ctx, "")
+    if not out:
+        return None
+    out = out.replace("This week's lines: ", "This week's pool games: ", 1)
+    lk = lock_text(ctx, "when do picks lock")
+    return out + (" " + lk if lk else "")
+
+
 def pick_ctx_text(ctx: dict, q: str) -> str | None:
     text, _, last = re.sub(r"['’]s\b", "", q or "").partition(" ||| ")
     games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
@@ -1218,6 +1297,22 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "jackpot_hit", "JACKPOT_HIT"
     if RULES_EXTRA.search(t):
         return "rules2", "RULES_EXTRA"
+    if GAME_RECAP.search(t):
+        return "recap", "GAME_RECAP"  # speed lanes 2026-11-17: 'what happened in the Wake Forest SMU game?'
+    if POOL_GAMES.search(t):
+        return "pool_games", "POOL_GAMES"  # 'what are the pool games this week?' (was the full brain, 115-131 s)
+    if BEST_IN_LEAGUE.search(t):
+        return "standings", "BEST_IN_LEAGUE"  # 'who's the best player in the league?' (was 'no data on players', 76 s)
+    if BEST_WEEK.search(t) and re.search(r"\b(last|this|week \d+)\b", t, re.I):
+        return "results", "BEST_WEEK"  # 'who had the best week last week?'
+    if HOWS_MEMBER.search(t) and burn_book._named_team(t):
+        return "record", "HOWS_MEMBER"  # 'how's Ackbar doing this week?' (a league member named)
+    if READ_ON.search(t) and not re.search(r"\b(this week|the week|games|slate|board)\b", t, re.I):
+        return "read", "READ_ON"  # 'gimme a read on the northwestern gane' (126 s on 11/17); non-pool -> full
+    if GHOST_ASK.search(t) and unknown_school(t):
+        return "score", "GHOST_SCHOOL"  # 'What's the Montana Tech Moose Riders' record ...': no such school
+    if ghost_player(t):
+        return "ghost_player", "GHOST_PLAYER"  # 'how many TDs does <made-up name> have': no such player
     if RECORD_Q.search(t):
         return "record", "RECORD_Q"
     if RESULTS_Q.search(t) and not re.search(r"\b(season|on the year|all year)\b", t, re.I):
@@ -2528,6 +2623,18 @@ def last_week_text(kind: str, ctx: dict, q: str) -> str | None:
             return None
         return f"Week {wk}: " + "; ".join(f"{a}-{b} {', '.join(sorted(ts))}" for (a, b), ts in
                                            sorted(recs.items(), key=lambda kv: -kv[0][0])) + "."
+    if BEST_WEEK.search(q or "") and (says_lw or not chat.week_started(ctx)):  # speed lanes 2026-11-17
+        recs = {}
+        for t, w in (ctx.get("weekly_records") or {}).items():
+            v = w.get(wk) if w.get(wk) is not None else w.get(str(wk))
+            if v and sum(v):
+                recs[t] = (int(v[0]), int(v[1]))
+        if not recs:
+            return None
+        worst = bool(re.search(r"\b(worst|bottom)\b", q or "", re.I))
+        pick = (min if worst else max)(recs.values(), key=lambda r: (r[0], -r[1]))
+        names = sorted(t for t, r in recs.items() if r == pick)
+        return f"{'Worst' if worst else 'Best'} week {wk}: {_and(names)} at {pick[0]}-{pick[1]}."
     m = WENT_REC.search(q or "")
     if m and (says_lw or not chat.week_started(ctx)):
         rec = (int(m.group(1)), int(m.group(2)))
@@ -2665,7 +2772,8 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text,
               "interim": interim_text, "strategy": pick_strategy.answer,
-              "picky_record": picky_record_text, "premise": premise_text}.get(kind)
+              "picky_record": picky_record_text, "premise": premise_text, "read": read_text, "pool_games": pool_games_text,
+              "ghost_player": ghost_player_text, "recap": recap_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
