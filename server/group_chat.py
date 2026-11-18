@@ -99,6 +99,7 @@ import matchup_guard  # noqa: E402
 import member_memory  # noqa: E402  (forget handler, receipt check, Charlie rule)
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
 import picky_brain  # noqa: E402
+import freeze  # noqa: E402
 import pictures  # noqa: E402
 import picky_zh  # noqa: E402
 import rare_bits  # noqa: E402
@@ -1405,10 +1406,29 @@ async def outbox_ack(req: Request):
 
 KEEP_WARM_EVERY = float(os.environ.get("PICKY_KEEP_WARM_EVERY", "60"))
 KEEP_WARM_IDLE = float(os.environ.get("PICKY_KEEP_WARM_IDLE", "20"))
-KEEP_WARM_CTX_EVERY = float(os.environ.get("PICKY_KEEP_WARM_CTX_EVERY", "300"))
+KEEP_WARM_CTX_EVERY = float(os.environ.get("PICKY_KEEP_WARM_CTX_EVERY", "300"))  # fallback rebuild
+KEEP_WARM_MIN_REBUILD = 55.0  # data changed (live_games.json, lore, cards, CFBD): rebuild at most ~once a tick
 KEEP_WARM_MIN_FREE = 10  # % free memory (kern.memorystatus_level); under it, no extra model work
 EXAM_LOCK = os.environ.get("PICKY_EXAM_LOCK", "/tmp/picky-exam.lock")  # "" = don't check
-WARM = {"inflight": 0, "last": 0.0, "hash": None, "at": 0.0, "built": 0.0, "task": None}
+WARM = {"inflight": 0, "last": 0.0, "hash": None, "at": 0.0, "built": 0.0, "task": None, "sig": None}
+
+
+def data_sig() -> tuple:
+    """Mtimes of the files a prefix is built from (review R3: rebuild on data change, not only a timer):
+    the live poller's cache (scores, lines, state), lore, game cards and the CFBD cache."""
+    cache = Path(chat.__file__).with_name("cache")
+    out = []
+    for p in (live_games.CACHE, cache / "lore.json", cache / "cfbd.sqlite"):
+        try:
+            out.append(p.stat().st_mtime)
+        except OSError:
+            out.append(None)
+    try:
+        cards = cache / "game_cards"
+        out.append(max([cards.stat().st_mtime] + [d.stat().st_mtime for d in cards.iterdir()]))
+    except (OSError, ValueError):
+        out.append(None)
+    return tuple(out)
 
 
 def keep_warm_on(env=os.environ) -> bool:
@@ -1452,15 +1472,16 @@ def mem_free_pct() -> int | None:
         return None
 
 
-def warm_skip(now: float, state: dict, lock_held: bool, live_busy: bool, free: int | None) -> str | None:
-    """Why this tick doesn't prime, or None to prime."""
+def warm_skip(now: float, state: dict, lock_held: bool, live_busy: bool, free: int | None,
+              game_day: bool = False) -> str | None:
+    """Why this tick doesn't prime, or None to prime. On Saturdays the exam lock doesn't stop it (R3)."""
     if state["inflight"]:
         return "text in flight"
     if now - state["last"] < KEEP_WARM_IDLE:
         return "a text just ran"
     if live_busy:
         return "a live text is in flight in another process"
-    if lock_held:
+    if lock_held and not game_day:
         return "exam lock held"
     if free is not None and free < KEEP_WARM_MIN_FREE:
         return f"memory {free}% free"
@@ -1483,12 +1504,15 @@ async def warm_prefix() -> str | None:
 async def warm_once(now: float | None = None, build=None, prime=None, latest=None) -> str:
     """One keep-warm tick; returns what it did (logged)."""
     now = time.time() if now is None else now
-    why = warm_skip(now, WARM, exam_lock_held(), live_flag.busy(), await asyncio.to_thread(mem_free_pct))
+    why = warm_skip(now, WARM, exam_lock_held(), live_flag.busy(), await asyncio.to_thread(mem_free_pct),
+                    freeze.saturday())
     if why:
         return f"skip ({why})"
     prefix = (latest or (lambda: picky_brain.LAST_PREFIX["text"]))()
-    if not prefix or now - WARM["built"] >= KEEP_WARM_CTX_EVERY:
-        WARM["built"] = now  # a failed build waits for the next round too: no retry storm on Supabase
+    sig = data_sig()
+    changed_data = sig != WARM["sig"] and now - WARM["built"] >= KEEP_WARM_MIN_REBUILD
+    if not prefix or changed_data or now - WARM["built"] >= KEEP_WARM_CTX_EVERY:
+        WARM["built"], WARM["sig"] = now, sig  # a failed build waits too: no retry storm on Supabase
         prefix = await (build or warm_prefix)() or prefix
     if not prefix:
         return "skip (no context)"

@@ -4,6 +4,7 @@
 # (outside the lock) -> one summary line in cfb-pickem-private/genius/history.jsonl.
 # Never texts anyone. Skips quietly if Anthropic is off (judge needs it) or the
 # repo is unavailable.
+/usr/bin/python3 -I ${0:A:h}/../../freeze.py check-exam >&2 || exit 3  # no exams Sat 10:00-24:00 CT (R9)
 set -u
 REPO=/Users/Agent/cfb-pickem
 WT=/private/tmp/picky-wt-genius-nightly

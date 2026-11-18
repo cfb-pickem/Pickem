@@ -874,6 +874,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--frozen-at-no-replay", action="store_true", help="freeze the clock without masking results")
     ap.add_argument("--results", nargs=2, metavar=("STAMP", "REPLY"), help="record Charlie's reply for a run")
     a = ap.parse_args(argv)
+    if not getattr(a, "results", None):
+        import freeze  # game day: no exams Sat 10:00-24:00 CT (review R9)
+        freeze.exam_guard("scorecard")
     if a.results:
         res = record_results(*a.results)
         print(json.dumps({k: res[k] for k in ("summary", "missing", "warnings", "path")}, indent=1, default=str))

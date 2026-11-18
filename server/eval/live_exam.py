@@ -838,6 +838,9 @@ def main(argv=None) -> int:
     rg.add_argument("--results", required=True)
     sub.add_parser("show")
     a = ap.parse_args(argv)
+    if a.cmd == "ask":
+        import freeze  # game day: no exams Sat 10:00-24:00 CT (review R9)
+        freeze.exam_guard("live_exam ask")
     if a.cmd == "fast":
         r = fast(a.answers or None, a.v)
         print(json.dumps(r, indent=1))

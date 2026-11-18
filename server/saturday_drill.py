@@ -654,6 +654,9 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="")
     ap.add_argument("--n", type=int, default=20)
     a = ap.parse_args(argv)
+    if a.cmd in ("run", "burst"):
+        import freeze  # game day: no exams Sat 10:00-24:00 CT (review R9)
+        freeze.exam_guard("saturday_drill")
     if a.cmd == "run":
         rep = run_drill(a)
         return 1 if any(rep["problems"].values()) else 0

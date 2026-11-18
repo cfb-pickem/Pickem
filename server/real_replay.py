@@ -475,6 +475,9 @@ def main(argv=None) -> int:
     ap.add_argument("--ids", default="")
     ap.add_argument("--original", action="store_true")
     a = ap.parse_args(argv)
+    if a.cmd in ("run", "nightly"):
+        import freeze  # game day: no exams Sat 10:00-24:00 CT (review R9)
+        freeze.exam_guard("real_replay")
     if a.cmd == "build":
         date = a.date or dt.datetime.now(CT).date().isoformat()
         p = fixtures_path(date)

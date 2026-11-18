@@ -746,6 +746,9 @@ def main():
         print(render(runrec, judge).split("## Items")[0])
         print(f"wrote {out}")
         return
+    if not args.dry:
+        import freeze  # game day: no exams Sat 10:00-24:00 CT (review R9)
+        freeze.exam_guard("eval/run.py")
     asyncio.run(run(args))
 
 

@@ -229,6 +229,9 @@ def main() -> None:
     rp = sub.add_parser("report")
     rp.add_argument("tags", nargs="+")
     a = p.parse_args()
+    if a.cmd == "run":
+        import freeze  # game day: no exams Sat 10:00-24:00 CT (review R9)
+        freeze.exam_guard("speed_replay")
     run(a) if a.cmd == "run" else report(a)
 
 

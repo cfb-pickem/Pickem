@@ -302,6 +302,7 @@ def test_warm_skip():
     check("exam lock held: skip", "exam lock" in (gc.warm_skip(now, base, True, False, 30) or ""))
     check("memory pressure: skip", "memory" in (gc.warm_skip(now, base, False, False, 5) or ""))
     check("memory unknown: primes", gc.warm_skip(now, base, False, False, None) is None)
+    check("Saturday: the exam lock doesn't stop keep-warm (R3)", gc.warm_skip(now, base, True, False, 30, True) is None)
 
 
 async def test_warm_once():
@@ -315,13 +316,15 @@ async def test_warm_once():
         return "PREFIX-BUILT"
 
     def reset(**kv):
-        gc.WARM.update({"inflight": 0, "last": 0.0, "hash": None, "at": 0.0, "built": 0.0, **kv})
+        gc.WARM.update({"inflight": 0, "last": 0.0, "hash": None, "at": 0.0, "built": 0.0, "sig": SIG[0], **kv})
         primes.clear()
         builds.clear()
 
     now = 10_000.0
+    SIG = [("same",)]
     with patch.object(gc, "exam_lock_held", lambda *a: False), patch.object(gc, "mem_free_pct", lambda: 40), \
-            patch.object(gc.live_flag, "busy", lambda *a: False), patch.object(gc, "KEEP_WARM_CTX_EVERY", 600.0):
+            patch.object(gc.live_flag, "busy", lambda *a: False), patch.object(gc, "KEEP_WARM_CTX_EVERY", 600.0), \
+            patch.object(gc, "data_sig", lambda: SIG[0]), patch.object(gc.freeze, "saturday", lambda *a: False):
         reset()
         out = await gc.warm_once(now, build=build, prime=prime, latest=lambda: None)
         check("no prefix yet: builds and primes it", builds and primes == ["PREFIX-BUILT"], out)
@@ -334,6 +337,14 @@ async def test_warm_once():
         out = await gc.warm_once(now, build=build, prime=prime, latest=lambda: "PREFIX-LAST")
         check("rebuild due: builds the current context", builds and primes == ["PREFIX-BUILT"], out)
         check("rebuild stamps the time", gc.WARM["built"] == now)
+        reset(built=now - 60)
+        SIG[0] = ("live_games.json changed",)
+        out = await gc.warm_once(now, build=build, prime=prime, latest=lambda: "PREFIX-LAST")
+        check("data changed (R3): rebuilds before the 300 s timer", builds and primes == ["PREFIX-BUILT"], out)
+        reset(built=now - 20, sig=("old",))
+        out = await gc.warm_once(now, build=build, prime=prime, latest=lambda: "PREFIX-LAST")
+        check("data changed again within a tick: no second rebuild yet", not builds, out)
+        SIG[0] = ("same",)
 
         async def failed_build():
             builds.append(1)
@@ -355,10 +366,16 @@ async def test_warm_once():
         out = await gc.warm_once(now, build=build_then_text, prime=prime, latest=lambda: None)
         check("text arrives mid-build: it primes for itself", not primes and "arrived" in out, out)
     with patch.object(gc, "exam_lock_held", lambda *a: True), patch.object(gc, "mem_free_pct", lambda: 40), \
-            patch.object(gc.live_flag, "busy", lambda *a: False):
+            patch.object(gc.live_flag, "busy", lambda *a: False), patch.object(gc.freeze, "saturday", lambda *a: False):
         reset()
         out = await gc.warm_once(now, build=build, prime=prime, latest=lambda: "PREFIX-LAST")
         check("exam lock held: no prime, no build", not primes and not builds, out)
+    with patch.object(gc, "exam_lock_held", lambda *a: True), patch.object(gc, "mem_free_pct", lambda: 40), \
+            patch.object(gc.live_flag, "busy", lambda *a: False), patch.object(gc.freeze, "saturday", lambda *a: True), \
+            patch.object(gc, "data_sig", lambda: SIG[0]):
+        reset(built=now - 60)
+        out = await gc.warm_once(now, build=build, prime=prime, latest=lambda: "PREFIX-LAST")
+        check("Saturday: primes even with the exam lock held", primes == ["PREFIX-LAST"], out)
     reset()
 
 

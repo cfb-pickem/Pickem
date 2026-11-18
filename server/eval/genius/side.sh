@@ -3,6 +3,7 @@
 # so an exam never touches live history/ledgers/bits. Run it INSIDE the exam lock
 # and kill it before the lock is released.
 #   side.sh <worktree> <port> <run dir>
+/usr/bin/python3 -I ${0:A:h}/../../freeze.py check-exam >&2 || exit 3  # no exams Sat 10:00-24:00 CT (R9)
 WT=$1; PORT=${2:-8791}; D=${3:-/private/tmp/picky-genius-run}
 mkdir -p $D; echo '{}' > $D/hist.json
 cd $WT/server || exit 1

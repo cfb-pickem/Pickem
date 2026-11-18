@@ -2,6 +2,7 @@
 # One fact-exam run (eval/fact_items.py) against a side sidecar started from <worktree>; the harness runs
 # from this checkout, so a baseline worktree without fact_items.py can be examined too. Call it INSIDE the
 # exam lock:  lockf -t 14400 /tmp/picky-exam.lock fact_exam.sh <worktree> <tag> [run.py args]
+/usr/bin/python3 -I ${0:A:h}/../freeze.py check-exam >&2 || exit 3  # no exams Sat 10:00-24:00 CT (R9)
 WT=$1; TAG=$2; shift 2
 PORT=${FACT_PORT:-8810}
 D=${FACT_RUN_DIR:-/private/tmp/picky-fact-run}/$TAG; mkdir -p $D
