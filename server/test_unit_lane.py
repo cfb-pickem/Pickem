@@ -164,7 +164,17 @@ NOT_UNIT = [  # real-traffic shapes that must stay where they are (or on the ful
     "who covers Granite Northwood, can Granite run on them?",  # pick + unit: not a pure unit ask
     "can I still change my picks?",
     "Can Granite run on somebody?",                        # one team, no game
+    "If Granite -3 is the line and they win by exactly 3, do I get a push in our league?",  # a rules ask
+    "Northwood is favored by 7, does the spread matter if they win by 7?",
 ]
+
+
+def test_rules_and_spread_asks_are_not_unit_asks():
+    """'is the line and they win by exactly 3' trips units' trenches words; a push/spread ask is the rules lane."""
+    for q in ("If Granite -3 is the line and they win by exactly 3, do I get a push in our league?",
+              "Northwood is favored by 7, does the spread matter if they win by 7?",
+              "what happens if the line is 3 and they win by 3"):
+        assert not unit_lane.wants(q), q
 
 
 def test_not_unit_asks():
