@@ -278,9 +278,74 @@ def _team_sheets(ds: dict, polls_d: dict, now: float) -> dict[str, dict]:
             f.append(_fact("ats", name, "overall", atxt, f"{name} is {atxt} ATS", "CFBD ATS", as_cfbd))
         if t["coach"]:
             f.append(_fact("coach", name, "head", t["coach"], f"{t['coach']} coaches {name}", "CFBD coaches", as_cfbd))
+        t["ats_profile"] = ats_profile(t["results"])
+        f += ats_profile_facts(name, t["ats_profile"], as_cfbd)
         t["facts"] = f
         out[name] = t
     return out
+
+
+def _wlp(rows: list[dict]) -> list[int]:
+    return [sum(1 for r in rows if r["cover"] > 0), sum(1 for r in rows if r["cover"] < 0),
+            sum(1 for r in rows if r["cover"] == 0)]
+
+
+def wlp_text(r: list[int]) -> str:
+    return f"{r[0]}-{r[1]}" + (f"-{r[2]}" if r[2] else "")
+
+
+def ats_profile(results: list[dict]) -> dict:
+    """A team's season vs the number from its results (oldest first): overall, fav/dog, home/road, last 4, streak,
+    average cover margin, biggest miss. Cover margin > 0 = covered; a pick'em counts as neither fav nor dog."""
+    rows = [r for r in results if r.get("cover") is not None and r.get("spread") is not None]
+    p = {"games": len(rows), "overall": _wlp(rows),
+         "fav": _wlp([r for r in rows if r["spread"] < 0]), "dog": _wlp([r for r in rows if r["spread"] > 0]),
+         "home": _wlp([r for r in rows if r["home"]]), "road": _wlp([r for r in rows if not r["home"]]),
+         "last4": _wlp(rows[-4:]) if len(rows) >= 4 else None, "streak": None, "avg_margin": None,
+         "biggest_miss": None}
+    if rows:
+        p["avg_margin"] = round(sum(r["cover"] for r in rows) / len(rows), 1)
+        last = rows[-1]["cover"]
+        if last != 0:
+            n = 0
+            for r in reversed(rows):
+                if (r["cover"] > 0) != (last > 0) or r["cover"] == 0:
+                    break
+                n += 1
+            p["streak"] = {"kind": "cover" if last > 0 else "miss", "n": n}
+        worst = min(rows, key=lambda r: r["cover"])
+        if worst["cover"] < 0:
+            p["biggest_miss"] = {k: worst[k] for k in ("opp", "date", "home", "spread", "cover")}
+    return p
+
+
+def ats_profile_facts(name: str, p: dict, as_of: str) -> list[dict]:
+    if not p["games"]:
+        return []
+    src = "CFBD lines + results (DraftKings line)"
+    f = [_fact("ats", name, "calc_overall", wlp_text(p["overall"]),
+               f"{name} is {wlp_text(p['overall'])} ATS in {p['games']} games with a line", src, as_of)]
+    for k, say in (("fav", "as a favorite"), ("dog", "as an underdog"), ("home", "at home"), ("road", "on the road")):
+        if sum(p[k]):
+            f.append(_fact("ats", name, k, wlp_text(p[k]), f"{name} is {wlp_text(p[k])} ATS {say}", src, as_of))
+    if p["last4"]:
+        f.append(_fact("ats", name, "last4", wlp_text(p["last4"]),
+                       f"{name} covered {p['last4'][0]} of its last 4", src, as_of))
+    s = p["streak"]
+    if s:
+        f.append(_fact("ats", name, "streak", s["n"], f"{name} has {'covered' if s['kind'] == 'cover' else 'missed'} "
+                                                      f"{s['n']} straight", src, as_of))
+    if p["avg_margin"] is not None:
+        f.append(_fact("ats", name, "avg_margin", p["avg_margin"],
+                       f"{name}'s average cover margin is {p['avg_margin']:+g}", src, as_of))
+    m = p["biggest_miss"]
+    if m:
+        role = (f"a {-m['spread']:g}-point favorite" if m["spread"] < 0 else f"a {m['spread']:g}-point underdog"
+                if m["spread"] > 0 else "a pick'em")
+        f.append(_fact("ats", name, "biggest_miss", m["cover"],
+                       f"{name}'s biggest miss: {-m['cover']:g} points short as {role} vs {m['opp']} ({m['date']})",
+                       src, as_of))
+    return f
 
 
 def _market(g: dict, snaps: list[dict] | None, now: float) -> tuple[dict, dict]:
@@ -911,17 +976,27 @@ def resolve(name: str) -> dict | None:
 
 
 def teams_named(q: str) -> list[str]:
-    """FBS teams a text names (longest names first), plus 3-letter schools (BYU, LSU, TCU, SMU, UCF...) that the
-    shared resolver skips as too short."""
+    """FBS teams a text names, in the order it names them. cfbd.other_teams_named skips one-word names under 4
+    letters (stopword guard), so the 3-letter schools (LSU, TCU, BYU, USC, SMU, UCF, UAB) and short aliases (ulm,
+    fiu) are matched here as whole words."""
     idx = teams_idx()
     if not idx["teams"]:
         return []
     out = cfbd.other_teams_named(q or "", [], idx)
-    for w in re.findall(r"\b[A-Za-z]{3}\b", q or ""):
-        t = idx["teams"].get(cfbd.norm(w))
-        if t and t.get("sp") and cfbd.norm(t["name"]) == cfbd.norm(w) and t["name"] not in out:
-            out.append(t["name"])
-    return out
+    nq = cfbd.norm(re.sub(r"(\w)['’]s\b", r"\1", q or ""))
+    short = {k: k for k in idx["teams"] if len(k) < 4}
+    short.update({a: cfbd.norm(t) for a, t in cfbd.ALIASES.items() if len(a) < 4 and cfbd.norm(t) in idx["teams"]})
+    hits = []
+    for a, key in short.items():
+        m = re.search(rf"(?<!\w){re.escape(a)}(?!\w)", nq)
+        name = idx["teams"][key]["name"]
+        if m and name not in out:
+            hits.append((m.start(), name))
+    if not hits:
+        return out
+    pos = {n: (nq.find(cfbd.norm(n)) if cfbd.norm(n) in nq else 10 ** 6) for n in out}
+    pos.update({n: p for p, n in hits})
+    return sorted(out + [n for _, n in hits], key=lambda n: pos[n])
 
 
 def teams_in(q: str) -> list[str]:
@@ -1235,6 +1310,13 @@ def lookahead(row: dict) -> str | None:
     import slate_cards
     idx = index()
     return slate_cards.lookahead_line(row, idx) if idx else None
+
+
+def brief(row: dict, notes: dict | None = None) -> dict | None:
+    """pick_brief's factors for a game against its market line (slate_cards.brief_for): the case ledger's input."""
+    import slate_cards
+    idx = index()
+    return slate_cards.brief_for(row, idx, notes) if idx else None
 
 
 def lean(row: dict, q: str = "") -> list[str]:
