@@ -257,13 +257,14 @@ def exams(fix_det):
 
 
 gitenv = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+RELEASES = []
 common = dict(REPO=main_tree, alltests_fails=lambda wt: set(), run_exam_locked=lambda wt, port, tag: Path(tag),
-              _reload=lambda lb: "ok", _healthy=lambda u: True)
+              _release=lambda: RELEASES.append(1) or {"rc": 0, "tail": "LIVE"})
 
 
-def fix_with(files, fix_det):
+def fix_with(files, fix_det, frozen=False):
     with patch.multiple(fl, **common, exam_summary=exams(fix_det)), patch.dict(os.environ, gitenv), \
-            patch.object(picky_claude, "run", fake_fix(files)):
+            patch.object(picky_claude, "run", fake_fix(files)), patch.object(fl.freeze, "frozen", lambda *a: frozen):
         return fl._fix("2099-02-01", flubs)
 
 
@@ -277,8 +278,25 @@ check(r["status"] == "rejected" and "det. pass 79 < baseline 80" in r["why"] and
       "a fix that regresses the exam doesn't ship")
 r = fix_with({"server/foo.py": "X = 1\n", "server/test_foo.py": "pass\n"}, 81)
 check(r["status"] == "shipped" and git("rev-parse", "main", cwd=bare) != before, f"a clean fix ships to main ({r['why']})")
-check((main_tree / "server" / "foo.py").exists() and r["reload"] == {lb: "ok" for lb in fl.SERVICES}
-      and all(r["health"].values()), "main tree fast-forwarded, services reloaded, health checked")
+check(r["release"]["rc"] == 0 and RELEASES == [1], "a shipped fix goes live only through release.sh")
+shipped = git("rev-parse", "main", cwd=bare)
+r = fix_with({"server/bar.py": "Y = 1\n", "server/test_bar.py": "pass\n"}, 81, frozen=True)
+check(r["status"] == "branched" and git("rev-parse", "main", cwd=bare) == shipped and RELEASES == [1]
+      and git("rev-parse", "--verify", "refs/heads/flub/2099-02-01", cwd=bare),
+      f"game-day freeze: the fix waits on flub/<date>, main and live untouched ({r['why']})")
+with patch.multiple(fl, REPO=main_tree, _release=lambda: RELEASES.append(2) or {"rc": 0, "tail": "LIVE"}), \
+        patch.dict(os.environ, gitenv), patch.object(fl.freeze, "frozen", lambda *a: True):
+    check(fl.promote_pending()["promoted"] == [], "still frozen: nothing promoted")
+with patch.multiple(fl, REPO=main_tree, _release=lambda: RELEASES.append(2) or {"rc": 0, "tail": "LIVE"}), \
+        patch.dict(os.environ, gitenv), patch.object(fl.freeze, "frozen", lambda *a: False):
+    pp = fl.promote_pending()
+check(pp["promoted"] == ["flub/2099-02-01"] and RELEASES == [1, 2] and git("rev-parse", "main", cwd=bare) != shipped
+      and "bar.py" in git("show", "--stat", "main", cwd=bare)
+      and subprocess.run(["git", "rev-parse", "--verify", "refs/heads/flub/2099-02-01"], cwd=bare,
+                         capture_output=True).returncode != 0,
+      f"after the freeze: flub/<date> rebased onto main, shipped through release.sh, branch deleted {pp}")
+with patch.object(fl.freeze, "no_exams", lambda *a: True):
+    check(fl.fix_round(D)["status"] == "off", "Saturday game window: no fix round (no exams)")
 check(not Path("/private/tmp/picky-flub-fix-2099-02-01").exists() and
       "flub-fix-2099-02-01" not in git("branch", "--list", cwd=main_tree), "worktrees and branch cleaned up")
 

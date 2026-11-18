@@ -14,11 +14,13 @@ refresher's last exit code != 0 ("exit" feeds). Escalation per feed:
                    claude -p (picky_claude.MODEL, guard(), --strict-mcp-config +
                    empty MCP config, no API key) in a fresh worktree on branch
                    picky-repair/<feed>-<stamp>, 30 min timeout, one at a time
-                   (lock file). Auto-merged (fast-forward into main, pushed,
-                   refresher kicked) only if every changed file is in that
+                   (lock file). Auto-merged (fast-forward into main, pushed, shipped
+                   through tools/release/release.sh, refresher kicked) only if every changed file is in that
                    feed's allowlist, none is chat.py / picky_brain.py /
                    group_chat.py, and the feed's unit tests pass. Otherwise the
-                   branch is kept for a look and main is untouched.
+                   branch is kept for a look and main is untouched. Inside the game-day
+                   freeze (Fri 18:00 - Sun 04:00 CT) a passing fix is only parked on its
+                   branch (pushed), never merged, pushed to main or released.
                    Then the count starts over (kick, then repair again).
   caps             3 repair runs per day in total (CT), 3 per outage per feed.
   Charlie          texted (existing notify path) at most once a day, and only
@@ -48,6 +50,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))  # run with -I
 
+import freeze  # noqa: E402  (game-day freeze)
 import freshness  # noqa: E402
 from freshness import NEVER_REPAIR, Source  # noqa: E402
 
@@ -343,8 +346,15 @@ def log_repair(rec: dict) -> None:
         f.write(json.dumps(rec) + "\n")
 
 
+def run_release() -> dict:
+    """origin/main to live through release.sh (suite, tag, switch, reload, canary, auto-rollback)."""
+    p = subprocess.run(["/bin/zsh", str(HERE.parent / "tools" / "release" / "release.sh"), "origin/main"],
+                       capture_output=True, text=True, timeout=3 * 3600)
+    return {"rc": p.returncode, "tail": (p.stdout + p.stderr).strip()[-300:]}
+
+
 def repair(name: str, why: str = "", claude=call_claude, tests=run_tests, push: bool = True,
-           kick_after=kick, dry: bool = False) -> dict:
+           kick_after=kick, dry: bool = False, release=run_release) -> dict:
     """One repair run for a feed. Returns (and logs) the result record."""
     s = freshness.source(name)
     t0 = time.time()
@@ -398,6 +408,11 @@ def repair(name: str, why: str = "", claude=call_claude, tests=run_tests, push: 
         if why_not:
             rec.update(result="rejected" if rec["files"] else "no-fix", reason=why_not)
             return rec
+        if freeze.frozen():  # game-day freeze: nothing merges, pushes to main or reloads
+            if push:
+                rec["pushed_branch"] = _git("push", "-q", "origin", f"{branch}:refs/heads/{branch}").returncode == 0
+            rec.update(result="parked", reason="game-day freeze: fix kept on its branch for release.sh after Sun 04:00 CT")
+            return rec
         if _git("symbolic-ref", "--short", "HEAD").stdout.strip() != "main":
             rec.update(result="rejected", reason="main isn't checked out in the repo")
             return rec
@@ -410,6 +425,8 @@ def repair(name: str, why: str = "", claude=call_claude, tests=run_tests, push: 
         if push:
             p = _git("push", "-q", "origin", "main")
             rec["pushed"] = p.returncode == 0
+            if rec["pushed"]:
+                rec["release"] = release()
         if s.agent:
             kick_after(s.agent)
         return rec

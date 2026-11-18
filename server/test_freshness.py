@@ -310,6 +310,8 @@ class Scratch:
         FM.REPO, FM.REPAIR_LOG, FM.LOCK_FILE = self.repo, t / "repairs.log", t / "repair.lock"
         FM.MEMORY, FM.STATE_FILE = t / "memory.md", t / "state.json"
         os.environ["PICKY_REPAIR_WT_DIR"] = str(t)
+        self.frozen = FM.freeze.frozen
+        FM.freeze.frozen = lambda *a: False  # the tests run on any day; the freeze has its own test
         return self
 
     def head(self):
@@ -322,6 +324,7 @@ class Scratch:
         for k, v in self.saved.items():
             setattr(FM, k, v)
         os.environ.pop("PICKY_REPAIR_WT_DIR", None)
+        FM.freeze.frozen = self.frozen
         self.tmp.cleanup()
 
 
@@ -356,6 +359,17 @@ def test_repair_inside_allowlist_merges():
         assert "repair run for the news feed: merged" in FM.MEMORY.read_text()
         assert "picky-repair/" not in _git(sc.repo, "branch")  # merged branch cleaned up
         assert len(_git(sc.repo, "worktree", "list").splitlines()) == 1
+
+
+def test_repair_in_the_freeze_is_parked_not_merged():
+    with Scratch() as sc:
+        before = sc.head()
+        FM.freeze.frozen = lambda *a: True
+        released = []
+        rec = FM.repair("news", why="cache stale", claude=_claude_editing("server/news.py"), tests=lambda s, wt: None,
+                        push=False, kick_after=lambda a: None, release=lambda: released.append(1) or {"rc": 0})
+        assert rec["result"] == "parked" and "freeze" in rec["reason"], rec
+        assert sc.head() == before and not released and "picky-repair/news-" in _git(sc.repo, "branch")
 
 
 def test_repair_touching_brain_or_outside_allowlist_rejected():

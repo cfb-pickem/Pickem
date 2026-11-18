@@ -25,8 +25,11 @@ optional Opus fix that ships only if nothing regresses -> a short private mornin
             claude -p Opus edits a throwaway worktree (branch flub-fix-<date>), then gates: the
             model-free suite (no new failures) and the text exam on side sidecars inside the exam
             lock (fix :8805 vs main :8806): det. pass >= baseline, invented 0, leaks 0, flub items
-            passing >= baseline. Only then rebase, push to main, ff the main tree, reload
-            com.pickem.picky-group + com.pickem.chat, health check. Otherwise the branch is deleted.
+            passing >= baseline. Then, outside the game-day freeze (Fri 18:00 - Sun 04:00 CT): rebase,
+            push to main and ship through tools/release/release.sh (suite, tag, switch the pinned live
+            tree, reload, canary, auto-rollback). Inside the freeze: the fix is pushed as branch
+            flub/<date> and nothing reloads; the next run outside the freeze promotes pending flub/*
+            branches through release.sh. Saturday 10:00-24:00 CT there's no fix round at all (no exams).
   report    flubs/report-<date>.md
   nightly   all of the above
 
@@ -49,6 +52,7 @@ from zoneinfo import ZoneInfo
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import flag_flub  # noqa: E402  (light: queue path, chat hash)
+import freeze  # noqa: E402  (game-day freeze + no-exam window)
 
 CT = ZoneInfo("America/Chicago")
 PRIVATE = Path(os.environ.get("PICKY_PRIVATE_DIR", "/Users/Agent/cfb-pickem-private"))
@@ -61,11 +65,10 @@ KILL_FILE = Path(os.environ.get("PICKY_FLUB_KILL_FILE", PRIVATE / "FLUB_AUTOFIX_
 MEMBERS_FILE = Path(os.environ.get("PICKY_GROUP_MEMBERS", PRIVATE / "picky_group_members.json"))
 REPO = Path(os.environ.get("PICKY_REPO", "/Users/Agent/cfb-pickem"))
 PY = "/Users/Agent/cfb-pickem/server/.venv/bin/python3"
-ALLTESTS = "/Users/Agent/picky-keeper-tools/alltests.sh"
+ALLTESTS = str(HERE.parent / "tools" / "release" / "alltests.sh")
+RELEASE = str(HERE.parent / "tools" / "release" / "release.sh")
 LOCK = "/tmp/picky-exam.lock"
 FIX_PORT, BASE_PORT = 8805, 8806
-SERVICES = ("com.pickem.picky-group", "com.pickem.chat")
-HEALTH = ("http://127.0.0.1:8768/health", "http://127.0.0.1:8766/health")
 
 SLOW_S = 60.0
 PUSHBACK_WINDOW = 600.0
@@ -756,31 +759,42 @@ def _exam(wt: str, port: int, tag: str) -> int:
             side.kill()
 
 
-def _reload(label: str) -> str:
-    uid = os.getuid()
-    plist = str(Path.home() / "Library/LaunchAgents" / f"{label}.plist")
-    _sh(["launchctl", "bootout", f"gui/{uid}/{label}"])
-    for attempt in range(2):
-        p = _sh(["launchctl", "bootstrap", f"gui/{uid}", plist])
-        if p.returncode == 0:
-            return "ok"
-        if "5: Input/output error" not in (p.stderr + p.stdout) or attempt:
-            return f"bootstrap failed: {(p.stderr or p.stdout).strip()[-120:]}"
-        time.sleep(3)
-    return "bootstrap failed"
+def _release() -> dict:
+    """Ship origin/main through release.sh (suite, tag, switch, reload, canary, rollback). Never in the freeze."""
+    p = _sh(["/bin/zsh", RELEASE, "origin/main"], timeout=3 * 3600)
+    return {"rc": p.returncode, "tail": (p.stdout + p.stderr).strip()[-300:]}
 
 
-def _healthy(url: str, wait: float = 90) -> bool:
-    import urllib.request
-    t0 = time.time()
-    while time.time() - t0 < wait:
-        try:
-            if urllib.request.urlopen(url, timeout=5).status == 200:
-                return True
-        except OSError:
-            pass
-        time.sleep(3)
-    return False
+def promote_pending(dry: bool = False) -> dict:
+    """Outside the freeze: fixes parked as flub/<date> during it are rebased onto main, pushed and shipped
+    through release.sh (one release for all of them). A branch that won't rebase stays for a human."""
+    out = {"promoted": [], "kept": [], "release": None}
+    if freeze.frozen() or dry:
+        return out | {"why": "frozen" if not dry else "dry"}
+    try:
+        _sh(["git", "-C", str(REPO), "fetch", "-q", "--prune", "origin"], check=True)
+        heads = _sh(["git", "-C", str(REPO), "for-each-ref", "--format=%(refname:strip=4)", "refs/remotes/origin/flub/"]).stdout.split()
+        for b in sorted(heads):
+            wt = Path(f"/private/tmp/picky-flub-promote-{b.replace('/', '-')}")
+            if wt.exists():
+                _sh(["git", "-C", str(REPO), "worktree", "remove", "--force", str(wt)])
+            _sh(["git", "-C", str(REPO), "worktree", "add", "-q", "--detach", str(wt), f"origin/flub/{b}"], check=True)
+            try:
+                if _sh(["git", "rebase", "origin/main"], cwd=wt).returncode:
+                    _sh(["git", "rebase", "--abort"], cwd=wt)
+                    out["kept"].append(f"flub/{b} (rebase conflict)")
+                    continue
+                _sh(["git", "push", "-q", "origin", "HEAD:main"], cwd=wt, check=True)
+                _sh(["git", "fetch", "-q", "origin"], cwd=wt)
+                _sh(["git", "push", "-q", "origin", "--delete", f"flub/{b}"], cwd=wt)
+                out["promoted"].append(f"flub/{b}")
+            finally:
+                _sh(["git", "-C", str(REPO), "worktree", "remove", "--force", str(wt)])
+        if out["promoted"]:
+            out["release"] = _release()
+    except Exception as e:  # noqa: BLE001  (never sinks the night)
+        out["error"] = repr(e)[:300]
+    return out
 
 
 def fix_round(date: str, dry: bool = False) -> dict:
@@ -795,6 +809,8 @@ def fix_round(date: str, dry: bool = False) -> dict:
     off = autofix_off()
     if off:
         out.update(status="off", why=off)
+    elif freeze.no_exams():
+        out.update(status="off", why="game day: no exams Sat 10:00-24:00 CT")
     elif not flubs:
         out.update(status="skipped", why="no fixable flubs")
     elif dry:
@@ -853,20 +869,20 @@ def _fix(date: str, flubs: list[dict]) -> dict:
         bad = gate(base_x, fix_x)
         if bad:
             return res | {"why": "; ".join(bad)}
-        if _sh(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO).stdout.strip():
-            return res | {"status": "blocked", "why": "main tree is dirty; not shipped"}
         _sh(["git", "fetch", "-q", "origin"], cwd=fix_wt, check=True)
         if _sh(["git", "rebase", "origin/main"], cwd=fix_wt).returncode:
             _sh(["git", "rebase", "--abort"], cwd=fix_wt)
             return res | {"why": "rebase onto origin/main failed"}
-        _sh(["git", "push", "-q", "origin", f"{branch}:main"], cwd=fix_wt, check=True)
         res["sha"] = _sh(["git", "rev-parse", "--short", "HEAD"], cwd=fix_wt).stdout.strip()
-        _sh(["git", "fetch", "-q", "origin"], cwd=REPO, check=True)
-        if _sh(["git", "merge", "--ff-only", "origin/main"], cwd=REPO).returncode:
-            return res | {"status": "pushed", "why": "pushed to main but the main tree didn't fast-forward"}
-        res["reload"] = {lb: _reload(lb) for lb in SERVICES}
-        res["health"] = {u: _healthy(u) for u in HEALTH}
-        return res | {"status": "shipped", "why": "gates passed"}
+        if freeze.frozen():  # game-day freeze: park it on a branch, ship nothing
+            _sh(["git", "push", "-q", "-f", "origin", f"{branch}:refs/heads/flub/{date}"], cwd=fix_wt, check=True)
+            return res | {"status": "branched", "branch": f"flub/{date}",
+                          "why": "gates passed; game-day freeze, so it waits on flub/<date> for release.sh after Sun 04:00 CT"}
+        _sh(["git", "push", "-q", "origin", f"{branch}:main"], cwd=fix_wt, check=True)
+        rel = _release()
+        res["release"] = rel
+        return res | ({"status": "shipped", "why": "gates passed; live via release.sh"} if rel["rc"] == 0 else
+                      {"status": "pushed", "why": f"gates passed, pushed to main; release.sh rc {rel['rc']}: {rel['tail']}"})
     except Exception as e:  # noqa: BLE001
         return res | {"status": "error", "why": repr(e)[:300]}
     finally:
@@ -947,6 +963,8 @@ def replay_after_fix(date: str, dry: bool = False) -> dict:
     Off: PICKY_REPLAY_NIGHTLY=0 or --dry."""
     if dry or os.environ.get("PICKY_REPLAY_NIGHTLY", "1") == "0":
         return {"status": "skipped"}
+    if freeze.no_exams():
+        return {"status": "skipped (game day: no exams)"}
     try:
         p = _sh([PY, "-I", str(HERE / "real_replay.py"), "nightly", "--date", date], timeout=5 * 3600)
         return {"status": "ok" if p.returncode == 0 else f"rc {p.returncode}"}
@@ -955,6 +973,9 @@ def replay_after_fix(date: str, dry: bool = False) -> dict:
 
 
 def nightly(date: str, dry: bool = False) -> str:
+    pend = promote_pending(dry)
+    if pend.get("promoted") or pend.get("kept") or pend.get("error"):
+        write_private(FLUB_DIR / f"promote-{date}.json", json.dumps(pend, indent=1))
     harvest(date, dry)
     classify(date, dry)
     items(date, dry)
