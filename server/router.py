@@ -760,6 +760,58 @@ def lookahead_slate_text(ctx: dict, q: str) -> str | None:
     return "Spots on paper: " + "; ".join(hits[:4]) + "."
 
 
+CAREER_ATS = re.compile(r"\bcareer\b[^?.!]{0,40}\b(ATS|against the spread|cover\w*)\b|\b(ATS|against the spread)\b[^?.!]{0,40}\bcareer\b",
+                        re.I)
+HYPO_VALUE = re.compile(r"\b(lock|locks|locked|league has|we get)\b[^?]{0,40}?[+-]\d{1,2}(\.5)?\b[^?]{0,60}?\b(market|vegas|books?)\b"
+                        r"[^?]{0,30}?[+-]\d{1,2}(\.5)?\b", re.I)
+
+
+def career_ats_text(ctx: dict, q: str) -> str | None:
+    """Honest gap: no coach career splits in the data. Offer the coach's current team's season ATS instead."""
+    coaches, _ = slate_cards._coaches()
+    who = None
+    for c in coaches:
+        last = (c.get("lastName") or "").strip()
+        if last and re.search(rf"\b{re.escape(last)}\b", q or "", re.I):
+            seas = [x for x in c.get("seasons") or [] if x.get("year")]
+            if seas:
+                who = (f"{c.get('firstName')} {last}", max(seas, key=lambda x: x["year"])["school"])
+                break
+    out = "I don't have career ATS splits for coaches, only this season's team numbers."
+    if who:
+        idx = slate_cards.cfbd.load_index()
+        t = slate_cards.cfbd.resolve_team(who[1], idx) if idx else None
+        ats = (t or {}).get("ats")
+        if ats:
+            out += f" {who[1]} under {who[0]} is {ats[0]}-{ats[1]}" + (f"-{ats[2]}" if ats[2] else "") + " ATS this season."
+    return out
+
+
+def hypo_value_text(ctx: dict, q: str) -> str | None:
+    """'Say the league locks Duke -13.5 and the market's Duke -15 by Saturday: value on Duke or Clemson?' The
+    side you hold at the locked number vs where the market went, in points."""
+    m = re.search(r"\b([A-Z][\w&'.]*(?:\s[A-Z][\w&'.]*)?)\s([+-]\d{1,2}(?:\.5)?)\b[^?]*?\b(?:market|vegas|books?)\b[^?]*?"
+                  r"(?:([A-Z][\w&'.]*(?:\s[A-Z][\w&'.]*)?)\s)?([+-]\d{1,2}(?:\.5)?)\b", q or "")
+    if not m:
+        return None
+    team, lk, team2, mk = m.group(1), float(m.group(2)), m.group(3) or m.group(1), float(m.group(4))
+    if team2 != team and not team2.lower().startswith(team.lower()):
+        return None
+    if lk == mk:
+        return f"No value either way: the league and the market both have {team} {lk:+g}."
+    if lk < 0:  # favorite: a smaller number to lay than the market is value on the favorite
+        diff = abs(mk) - abs(lk)
+        side = team if diff > 0 else "the dog"
+    else:  # dog: more points than the market is value on the dog
+        diff = lk - mk
+        side = team if diff > 0 else "the favorite"
+    pts = abs(diff)
+    return (f"Value on {side}: you'd have {team} at {lk:+g} when the market says {mk:+g}, a {pts:g}-point edge"
+            + (" across the key number 14" if min(abs(lk), abs(mk)) < 14 < max(abs(lk), abs(mk)) else "")
+            + (" across 7" if min(abs(lk), abs(mk)) < 7 < max(abs(lk), abs(mk)) else "")
+            + (" across 3" if min(abs(lk), abs(mk)) < 3 < max(abs(lk), abs(mk)) else "") + ".")
+
+
 KEYNUM_ASK = re.compile(r"\bkey numbers?\b|\bwhere does the hook\b|\bon (a|the) (key )?number\b|\bthe hook matter", re.I)
 
 
@@ -830,6 +882,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if LOOKAHEAD_SLATE.search(t) and len(slate_cards.cfbd.other_teams_named(t, [], slate_cards.cfbd.load_index() or {"teams": {}})
                                          if slate_cards.cfbd.load_index() else []) == 0:
         return "lookahead_slate", "LOOKAHEAD_SLATE"  # 'any lookahead spots this week': every notable game's verdict
+    if CAREER_ATS.search(t):
+        return "career_ats", "CAREER_ATS"  # coach career ATS splits aren't in the data: say so + this season's team ATS
+    if HYPO_VALUE.search(t):
+        return "hypo_value", "HYPO_VALUE"  # 'league locks Duke -13.5, market goes to -15: value on Duke or Clemson?'
     if KEYNUM_ASK.search(t):
         return "keynum", "KEYNUM_ASK"  # 'which lines are on a key number': computed from this week's market
     if H2H_ASK.search(t) and not re.search(r"\b(my|our|i|me|picky|you)\b", t, re.I):
@@ -2246,7 +2302,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text, "pick_ctx": pick_ctx_text,
               "worst": worst_text, "fade": fade_text, "why": why_lane.answer, "channel": channel.answer,
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
-              "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text}.get(kind)
+              "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
+              "career_ats": career_ats_text, "hypo_value": hypo_value_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

@@ -31,6 +31,17 @@ def test_conf_and_lookahead_routes():
     assert router.classify("what's the CFP picture").kind != "conf_race"
 
 
+def test_hypo_value_and_career():
+    q = "Say the league locks Duke -13.5 on Tuesday and by Saturday the market's Duke -15. Did I get value on Duke or Clemson?"
+    assert router.classify(q).kind == "hypo_value"
+    out = router.hypo_value_text({}, q)
+    assert out.startswith("Value on Duke") and "1.5-point" in out and "14" in out
+    out = router.hypo_value_text({}, "if we get Illinois +8.5 locked and the market goes to Illinois +6.5, who has value?")
+    assert out.startswith("Value on Illinois") and "2-point" in out
+    assert router.classify("What's Lane Kiffin's career ATS record as a road underdog?").kind == "career_ats"
+    assert router.career_ats_text({}, "Nick Nobody career ATS").startswith("I don't have career ATS splits")
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:
