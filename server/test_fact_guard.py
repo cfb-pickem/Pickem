@@ -214,6 +214,19 @@ def test_all_wl_true():
     assert not fg.all_wl_true(CTX, "No records here.", LORE)
 
 
+def test_history_and_game_pairs():
+    h = fg.history_check("HISTORY: Heisman 2019 Joe Burrow (LSU)")
+    assert h("Joe Burrow won the 2019 Heisman.")
+    assert not h("The Heisman in 1931 was just a literal trophy.")
+    assert h("No idea who won that, honestly.")
+    idx = {"teams": {"utsa": {"name": "UTSA", "games": [{"homeTeam": "UTSA", "awayTeam": "North Texas"}]},
+                     "north texas": {"name": "North Texas", "games": [{"homeTeam": "UTSA", "awayTeam": "North Texas"}]},
+                     "uab": {"name": "UAB", "games": [{"homeTeam": "UAB", "awayTeam": "Memphis"}]}}}
+    g = fg.game_pair_check(idx)
+    assert g("The UTSA and North Texas game was a rout.")
+    assert not g("I don't have data on the UTSA and UAB game from last week.")
+
+
 def test_coach_moves():
     ok = fg.coach_move_check("Coach note: UTEP fired Scotty Walden. Kyle Whittingham is Michigan's coach (no firing).")
     assert ok("UTEP fired Scotty Walden.")

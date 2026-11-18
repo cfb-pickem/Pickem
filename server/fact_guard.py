@@ -962,3 +962,47 @@ def all_wl_true(ctx: dict, sent: str, lore: dict | None = None, picky: dict | No
             continue
         return False
     return True
+
+
+# ---- CFB history and made-up games -------------------------------------------------------------------------------
+
+_HISTORY = re.compile(r"\b(heisman|national (title|champ\w*)|natty|cfp (title|champ\w*)|bowl|trophy|award)\b", re.I)
+
+
+def history_check(corpus_no_q: str = "", log=None):
+    """'The Heisman in 1931 was just a literal trophy' (fact exam r3): a sentence tying a year to the Heisman,
+    a title, a bowl or an award must find that year in the prompt's data (the question itself doesn't count)."""
+    def ok(sent: str) -> bool:
+        if not _HISTORY.search(sent):
+            return True
+        for y in re.findall(r"\b(19\d\d|20[0-2]\d)\b", sent):
+            if y not in (corpus_no_q or ""):
+                if log:
+                    log.info("history check dropped (%s): %r", y, sent[:100])
+                return False
+        return True
+    return ok
+
+
+def game_pair_check(idx: dict | None, log=None):
+    """'the UTSA and UAB game from last week' when they never played (fact exam r3): two FBS schools called a
+    game must actually meet this season per the CFBD cache."""
+    if not idx:
+        return None
+    rx, by_name = _team_regex(idx)
+
+    def opps(name):
+        t = by_name.get(name) or {}
+        return {g.get("homeTeam") for g in t.get("games") or []} | {g.get("awayTeam") for g in t.get("games") or []}
+
+    def ok(sent: str) -> bool:
+        for m in re.finditer(r"\b(?:the\s+)?([A-Z][\w&'.]*(?:\s[A-Z][\w&'.]*){0,2})\s+(?:and|vs\.?|versus|v\.?|at|-)\s+"
+                             r"([A-Z][\w&'.]*(?:\s[A-Z][\w&'.]*){0,2})\s+(?:game|matchup|contest|tilt)\b", sent):
+            a = rx.fullmatch(m.group(1).strip()) and m.group(1).strip()
+            b = rx.fullmatch(m.group(2).strip()) and m.group(2).strip()
+            if a and b and b not in opps(a) and a not in opps(b):
+                if log:
+                    log.info("game pair dropped (%s vs %s never meet): %r", a, b, sent[:100])
+                return False
+        return True
+    return ok
