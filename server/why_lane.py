@@ -286,6 +286,8 @@ def answer(ctx: dict | None, q: str) -> str | None:
     for r in fresh:  # one reason per topic
         if r["topic"] and r["topic"] in seen:
             continue
+        if re.search(r"(\.\.\.|…)\s*$|\b(out for|out of|miss the|for the)\s*$", r["text"].strip()):
+            continue  # a card reason cut off mid-sentence ('...is out for...'): never send a garbled fact
         seen.add(r["topic"])
         nxt.append(r)
     other = home if side == away else away
