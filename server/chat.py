@@ -7078,17 +7078,36 @@ def lean_fact(card: str, question: str) -> tuple | None:
     true card facts, then no conclusion). The computed lean + its top reason are appended when the answer
     never names the lean side; a coin flip says so."""
     m = _CARD_LEAN.search(card or "")
-    if not m or not _LEAN_ASK.search(question or "") or _HOWTO_ASK.search(question or ""):
+    if not _LEAN_ASK.search(question or "") or _HOWTO_ASK.search(question or ""):
         return None
-    label, conf = m.group(1).strip(), m.group(2)
+    if m:
+        label, conf = m.group(1).strip(), m.group(2)
+        top = re.search(r"\n\s+\+ for [^:]+: ([^\n]+)", card[m.end():])
+    else:  # a pool game's card: 'THE PLAY: I'd take X (say).' + 'Why (...): r1 / r2'
+        pm = re.search(r"THE PLAY: I'd take (.+?) \((.+?)\)\.", card or "")
+        if not pm:
+            return None
+        label = pm.group(1).strip()
+        conf = "coin flip" if re.search(r"coin flip|toss-?up", pm.group(2), re.I) else "lean"
+        top = re.search(r"Why \([^)]*\): ([^/\n]+)", card[pm.end():])
     side = re.split(r"\s[+-]\d|\sPK\b", label)[0].strip()
-    top = re.search(r"\n\s+\+ for [^:]+: ([^\n]+)", card[m.end():])
     if conf == "coin flip":
         add = f" My numbers call it a coin flip at {label}, so I'd pass or go small."
     else:
-        add = f" Lean: {label}" + (f", mainly because {top.group(1).rstrip('.')}." if top else ".")
+        add = f" Lean: {label}" + (f", mainly because {top.group(1).strip().rstrip('.')}." if top else ".")
     return (lambda t, sd=side: bool(re.search(rf"(?<!\w){re.escape(sd)}(?!\w)", t, re.I))
             and bool(re.search(r"\b(lean|take|like|cover|pick|play|side|grab|ride|give me|i'?d go)\b", t, re.I)), add)
+
+
+def pool_lean_fact(ctx: dict, question: str) -> tuple | None:
+    """lean_fact for a pool game's card (game_cards.card_note), single-game betting asks only."""
+    if not _LEAN_ASK.search(question or ""):
+        return None
+    try:
+        card = game_cards.card_note(ctx, question)
+    except Exception:  # noqa: BLE001
+        return None
+    return lean_fact(card, question) if card and card.count("THE PLAY:") == 1 else None
 
 
 def rankings_fact(note: str) -> tuple | None:
@@ -7572,7 +7591,8 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
                                      ("casino", fact_guard.casino_check(ctx, load_lore()))])
                 if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or (None if "GAME CARD" in sc else live_games.required_fact(ctx, qtext))
-                                     or (lean_fact(sc, qtext) if sc else required_fact(ctx, qtext)) or rankings_fact(rn))
+                                     or (lean_fact(sc, qtext) if sc else (pool_lean_fact(ctx, qtext) or required_fact(ctx, qtext)))
+                                     or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),
         media_type="text/event-stream",

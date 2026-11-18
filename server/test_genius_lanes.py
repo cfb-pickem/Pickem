@@ -130,6 +130,10 @@ def test_lean_fact():
     coin = CARD.replace("(lean;", "(coin flip;")
     assert "coin flip" in chat.lean_fact(coin, "who covers Memphis Navy?")[1]
     assert chat.lean_fact(CARD, "what channel is Memphis Navy on") is None
+    pool = ("GAME CARD, LSU at Tennessee (built offline ...):\n  League line: LSU -1.5 (locked).\n"
+            "  THE PLAY: I'd take Tennessee +1.5 (slight lean).\n  Why (use two, three at most): SP+ projects Tennessee by 1.9 / home dog\n")
+    check, add = chat.lean_fact(pool, "who do you like in LSU Tennessee?")
+    assert add.strip() == "Lean: Tennessee +1.5, mainly because SP+ projects Tennessee by 1.9." and not check("LSU is rolling.")
 
 
 if __name__ == "__main__":
