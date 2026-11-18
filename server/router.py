@@ -41,6 +41,7 @@ import pick_strategy
 import slate_cards
 import playoff_race
 import why_lane
+import case_ledger  # the ranked reasons per game: pick / why / other_side / change_mind read it
 import unit_lane  # 'can X run on Y': unit matchups in code (plan 2026-11-18 phase 6)
 import channel  # the channel lane (drill 11/17)
 import factstore  # the fact store: every football lane in STORE_LANES reads only this + ctx
@@ -227,7 +228,7 @@ SELF_REC_CLAIM = re.compile(r"\b(i'?m|im|i am)\s+(\d{1,2})-(\d{1,2})\b(?![^?.!]{
 # 'whats ur confidence 1-10' (k1 live: briefed as banter -> 'I do picks, not paperwork'): the card's confidence for the
 # game in the text, else the game in Picky's last reply (picky_brain passes it after ' ||| ')
 CONF_ASK = re.compile(r"\b(confidence|how (sure|confident) (are )?(you|u)|scale of 1|1-10|1 to 10|out of 10|on a scale)\b", re.I)
-CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden", "pick_ctx", "why"}
+CTX_KINDS = {"conf", "defend", "others", "short", "value", "hidden", "pick_ctx", "why", "other_side", "change_mind"}
 # k2: 'lock it in. wait can i still change after' got 'the rules don't cover changing picks after the lock'
 CHANGE_LATER = re.compile(r"\bcan i (still )?(change|switch|flip|swap)( it| that| them| my pick)?( after| later| before (sat|saturday|kickoff))?\W*$", re.I)
 # 'ok so whats ur actual pick in that game' (got the who-hasn't-picked list): my call on the game in the thread
@@ -1059,6 +1060,126 @@ def career_ats_text(ctx: dict, q: str) -> str | None:
     return out
 
 
+ATS_PROFILE_ASK = re.compile(
+    r"\bATS\b|\bagainst the (number|spread|line)\b|\b(vs\.?|versus) the (number|spread)\b"
+    r"|\bcover(ing|ed|s)? (lately|this (year|season)|machine|streak)\b"
+    r"|\bas an? (fav\w*|dog|underdog|road (fav\w*|dog)|home (fav\w*|dog))\b", re.I)
+ATS_NOT = re.compile(r"\b(my|our|i|i'?m|me|am i|you|u|ur|your|picky|career|last (week|wk)|week \d+|did|who covers?|"
+                     r"who (do|would|should) (you|i|u)|take|pick|lean)\b", re.I)
+_ATS_SPLITS = (("dog", r"\b(dog|underdog)s?\b", "as an underdog"), ("fav", r"\bfav\w*\b", "as a favorite"),
+               ("home", r"\bhome\b", "at home"), ("road", r"\broad\b|\baway\b", "on the road"))
+_ATS_SAY = {k: say for k, _, say in _ATS_SPLITS}
+
+
+def _ats_verdict(p: dict, role_rec: list | None, role_say: str, label: str | None, opp_label: str | None) -> str:
+    """The 'so what' from the ATS history alone, in pick-factor lean words (never past 'lean': ATS records carry
+    little forward, ledger B12)."""
+    w, l_ = p["overall"][:2]
+    n = w + l_
+    if n < 4:
+        return "Too few lines on record to read anything into it: coin flip."
+    pct = w / n
+    rw, rl = (role_rec or [0, 0])[:2]
+    rn = rw + rl
+    rp = rw / rn if rn else None
+    l4 = (p.get("last4") or [0, 0])[0]
+    on, against = (f"on {label}" if label else "on them"), (f"on {opp_label}" if opp_label else "against them")
+    if pct >= 0.7 or pct <= 0.3:
+        hot = pct >= 0.7
+        if rp is not None and rn >= 3 and ((hot and rp <= 0.5) or (not hot and rp >= 0.5)):
+            return (f"But {role_say} it's {factstore.wlp_text(role_rec)}, and that's this week's role, so the ATS "
+                    "history is a coin flip here.")
+        strong = rp is not None and rn >= 4 and (rp >= 0.75 and l4 >= 3 if hot else rp <= 0.25 and l4 <= 1)
+        word = "lean" if strong else "slight lean"
+        if hot:
+            return (f"Covering machine, but that's priced by now: books shade the number toward a team like that, so "
+                    f"it's a {word} {on} at most, not a reason on its own.")
+        return (f"The market's been too high on them all year, and that gets priced too: a {word} {against} at most, "
+                "not a reason on its own.")
+    return "That's a coin flip against the number, so the ATS history doesn't move me " + (on if label else "either way") + "."
+
+
+def ats_profile_text(ctx: dict, q: str) -> str | None:
+    """'how's Duke against the number / Indiana ATS / Houston as a favorite': the team sheet's ATS profile (results
+    vs the number), the split that matches THIS week's role first (or the split asked for), recent form, then a
+    computed verdict in lean words. Every number comes from facts_used."""
+    named = factstore.teams_named(q)
+    t = factstore.team(named[0]) if named else None
+    p = (t or {}).get("ats_profile")
+    if not p:
+        return None
+    name = t["name"]
+    fx = {f["id"].rsplit(".", 1)[-1]: f for f in t.get("facts") or [] if f["kind"] == "ats"}
+    if not p["games"]:
+        return f"I don't have any lines on record for {name} this season, so no ATS read."
+    used = [fx["calc_overall"]]
+    rec = factstore.wlp_text(p["overall"])
+    avg = p["avg_margin"]
+    head = f"{name} is {rec} against the number this year"
+    cf = t.get("ats") or {}
+    if cf.get("w") is not None and [cf["w"], cf["l"]] != p["overall"][:2] and "overall" in fx:
+        head += f" ({fx['overall']['value']} by CFBD's consensus lines)"
+        used.append(fx["overall"])
+    if avg:
+        head += f", {'beating' if avg > 0 else 'missing'} it by {abs(avg):g} a game on average"
+        used.append(fx["avg_margin"])
+    out = [head + "."]
+    asked = [k for k, rx, _ in _ATS_SPLITS if re.search(rx, q or "", re.I)]
+
+    def split(k: str) -> str:
+        if not sum(p[k]):
+            return f"no games {_ATS_SAY[k]} yet"
+        used.append(fx[k])
+        return f"{factstore.wlp_text(p[k])} {_ATS_SAY[k]}"
+    g, _ = factstore.find_game(name, ctx)
+    role, venue, label, opp_label = None, None, None, None
+    if g and factstore.norm(name) in (factstore.norm(g["awayTeam"]), factstore.norm(g["homeTeam"])):
+        home = factstore.norm(name) == factstore.norm(g["homeTeam"])
+        sp = factstore.market(g).get("spread")
+        neutral = bool((g.get("sheet") or {}).get("neutral"))
+        if sp is not None:
+            mine = sp if home else -sp
+            opp = g["awayTeam"] if home else g["homeTeam"]
+            role = "fav" if mine < 0 else "dog" if mine > 0 else None
+            venue = None if neutral else ("home" if home else "road")
+            used += factstore.facts(g, ("market",))[:1]
+            where = " at a neutral site" if neutral else " at home" if home else " on the road"
+            num = f"{abs(mine):g}"
+            what = (f"{'an' if num.startswith(('8', '11', '18')) else 'a'} {num}-point "
+                    f"{'favorite' if mine < 0 else 'underdog'}") if mine else "a pick'em"
+            # the side in words, never 'Texas -7.5' (fact exam: no spread label on a non-pool team)
+            label = f"{name} {'laying it' if mine < 0 else 'with the points'}" if mine else name
+            opp_label = f"{opp} {'with the points' if mine < 0 else 'laying it'}" if mine else opp
+            week = f"This week they're {what}{where} vs {opp}"
+    lead = asked or [k for k in (role, venue) if k]
+    if asked:
+        out.append("They're " + ", ".join(split(k) for k in asked) + ".")
+    if role or venue or label:
+        rest = [k for k in (role, venue) if k and k not in asked]
+        out.append(week + (": " + ", ".join(split(k) for k in rest) if rest else "") + ".")
+    form = []
+    s = p.get("streak")
+    if s and s["n"] >= 4:
+        form.append(f"{'covered' if s['kind'] == 'cover' else 'missed'} {s['n']} straight")
+        used.append(fx["streak"])
+    elif p.get("last4"):
+        form.append(f"covered {p['last4'][0]} of the last 4")
+        used.append(fx["last4"])
+        if s and s["n"] >= 2:
+            form[-1] += f" ({s['n']} straight {'covers' if s['kind'] == 'cover' else 'misses'})"
+            used.append(fx["streak"])
+    m = p.get("biggest_miss")
+    if m:
+        form.append(f"worst miss was {-m['cover']:g} short vs {m['opp']}")
+        used.append(fx["biggest_miss"])
+    if form:
+        out.append("They've " + " and their ".join(form) + ".")
+    vk = next((k for k in (role, venue) if k), None) or (lead[0] if lead else None)  # this week's role decides
+    role_rec = p[vk] if vk and sum(p[vk]) else None
+    out.append(_ats_verdict(p, role_rec, _ATS_SAY[vk] if vk else "", label, opp_label))
+    return factstore.answer(" ".join(out), used)
+
+
 def hypo_value_text(ctx: dict, q: str) -> str | None:
     """'Say the league locks Duke -13.5 and the market's Duke -15 by Saturday: value on Duke or Clemson?' The
     side you hold at the locked number vs where the market went, in points."""
@@ -1233,6 +1354,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if why_lane.why_kind(t):  # 'why?' / 'how come' / 'why not Ohio State?' after a call: the next unused reason
         return "why", "WHY_ASK"
+    if case_ledger.OTHER_SIDE.search(t):
+        return "other_side", "OTHER_SIDE"  # 'best case for the other side' / 'devil's advocate': their top 2 ledger reasons
+    if case_ledger.CHANGE_MIND.search(t):
+        return "change_mind", "CHANGE_MIND"  # 'what would change your mind': computed triggers from the ledger's game
     if LW_PICK_ASK.search(t):
         return "lw_pick", "LW_PICK_ASK"  # 'who did Clam take in Wake Forest vs SMU last week?': revealed, code-answered
     if MISS_MARGIN.search(t):
@@ -1258,6 +1383,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "interim", "INTERIM_ASK"  # 'Baylor's playing for an interim, does it matter?': the change + SU/ATS since
     if CAREER_ATS.search(t):
         return "career_ats", "CAREER_ATS"  # coach career ATS splits aren't in the data: say so + this season's team ATS
+    if ATS_PROFILE_ASK.search(t) and not ATS_NOT.search(t) and factstore.teams_named(t):
+        return "ats_profile", "ATS_PROFILE_ASK"  # 'how's Duke against the number': the team sheet's ATS profile
     if HYPO_VALUE.search(t):
         return "hypo_value", "HYPO_VALUE"  # 'league locks Duke -13.5, market goes to -15: value on Duke or Clemson?'
     if MOVE_WHY.search(t) and MOVE_EVIDENCE.search(t):
@@ -2319,20 +2446,31 @@ def pick_text(ctx: dict, q: str) -> str | None:
                                  for g in ctx.get("games_this_week") or []])
     games = [g for g in chat.take_games(ctx, q)][:2]
     if not named and not games and slate_cards.covers(q, ctx):
-        return None  # names a non-pool game ('Ohio State or Nebraska, who you got?'): the full brain + its GAME CARD
+        # names a non-pool game ('Ohio State or Nebraska, who you got?'): the case ledger vs the market line
+        row, pg = factstore.find_game(q, ctx)
+        led = case_ledger.for_game(ctx, row, None) if row and not pg else None
+        return case_ledger.pick_answer(led) if led else None
     if not named or not games:  # 'who should I pick this week?' names no game: EVERY game's call (live 2026-11-16,
         return slate_text(ctx, q)  # it answered only the first two)
-    out = []
+    out, used = [], []
     for g in games:
         c = _card_for(ctx, g)
         if not c:
             return None  # no card (or the line moved since): the full brain's live breakdown takes it
-        locked = game_cards.is_locked(c)
-        rs = [r for r in game_cards._reasons(c, locked) if r]
-        why = "; ".join(say_reason(r, c, locked) for r in rs[:2])  # two reasons (genius exam: one was too thin)
-        out.append(f"I'd take {c['lean']['label']} ({c['confidence'].get('word') or 'lean'})"
-                   + (f": {why}" if why else "") + ".")
-    return " ".join(out)
+        a = case_ledger.pick_answer(case_ledger.from_card(c, game_cards.is_locked(c)))  # lean + top 2 reasons
+        out.append(str(a))
+        used += a.facts_used
+    return factstore.answer(" ".join(out), used)
+
+
+def other_side_text(ctx: dict, q: str) -> str | None:
+    """'best case for the other side' / 'devil's advocate' / 'argue for X': that side's top 2 case-ledger reasons."""
+    return case_ledger.other_side_answer(ctx, q)
+
+
+def change_mind_text(ctx: dict, q: str) -> str | None:
+    """'what would change your mind': the key number against us, a QB status flip, wind over 20 for the total."""
+    return case_ledger.change_mind_answer(ctx, q)
 
 
 def slate_text(ctx: dict, q: str) -> str | None:
@@ -2841,11 +2979,12 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "worst": worst_text, "fade": fade_text, "why": why_lane.answer, "channel": channel.answer,
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
-              "career_ats": career_ats_text, "hypo_value": hypo_value_text,
+              "career_ats": career_ats_text, "hypo_value": hypo_value_text, "ats_profile": ats_profile_text,
               "interim": interim_text, "strategy": pick_strategy.answer,
               "picky_record": picky_record_text, "premise": premise_text, "lw_pick": lw_pick_text, "read": read_text, "pool_games": pool_games_text,
               "ghost_player": ghost_player_text, "recap": recap_text,
-              "ghost_school": ghost_school_text, "unit_matchup": unit_lane.answer}.get(kind)
+              "ghost_school": ghost_school_text, "unit_matchup": unit_lane.answer,
+              "other_side": other_side_text, "change_mind": change_mind_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
@@ -2861,10 +3000,11 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 
 # the football lanes that read only the fact store + the league ctx (test_factstore.py checks it statically)
 STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, interim_text,
-               career_ats_text, hypo_value_text, qb_status_text)
+               career_ats_text, hypo_value_text, qb_status_text, ats_profile_text, other_side_text, change_mind_text)
 
 # code lanes built from the POOL games' cards: a text about another game goes to the full brain + slate card
-POOL_GAME_KINDS = {"value", "qb", "line_move", "spread", "flip", "pick", "defend", "others", "short", "compare", "upset"}
+# ('pick' reads the case ledger for any game: a pool game's card, else the market brief)
+POOL_GAME_KINDS = {"value", "qb", "line_move", "spread", "flip", "defend", "others", "short", "compare", "upset"}
 
 FACT_TAIL = """
 

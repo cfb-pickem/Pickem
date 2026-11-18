@@ -364,5 +364,69 @@
   ],
   "src": "synthetic",
   "why": "speed lanes 2026-11-17 (was the full brain)"
+ },
+ {
+  "q": "how's Duke against the number this year?",
+  "ok": [
+   "fact:ats_profile"
+  ],
+  "src": "synthetic",
+  "why": "phase 3 (ATS profile + case ledger lanes)"
+ },
+ {
+  "q": "Indiana ATS as a favorite?",
+  "ok": [
+   "fact:ats_profile"
+  ],
+  "src": "synthetic",
+  "why": "phase 3 (ATS profile + case ledger lanes)"
+ },
+ {
+  "q": "how does Houston do vs the spread on the road",
+  "ok": [
+   "fact:ats_profile"
+  ],
+  "src": "synthetic",
+  "why": "phase 3 (ATS profile + case ledger lanes)"
+ },
+ {
+  "q": "what's my ATS record",
+  "ok": [
+   "fact:record"
+  ],
+  "src": "synthetic",
+  "why": "phase 3 (ATS profile + case ledger lanes)"
+ },
+ {
+  "q": "ok devil's advocate, best case for the other side?",
+  "ok": [
+   "fact:other_side"
+  ],
+  "src": "synthetic",
+  "why": "phase 3 (ATS profile + case ledger lanes)"
+ },
+ {
+  "q": "argue for Nebraska",
+  "ok": [
+   "fact:other_side"
+  ],
+  "src": "synthetic",
+  "why": "phase 3 (ATS profile + case ledger lanes)"
+ },
+ {
+  "q": "what would change your mind?",
+  "ok": [
+   "fact:change_mind"
+  ],
+  "src": "synthetic",
+  "why": "phase 3 (ATS profile + case ledger lanes)"
+ },
+ {
+  "q": "what flips you on that one",
+  "ok": [
+   "fact:change_mind"
+  ],
+  "src": "synthetic",
+  "why": "phase 3 (ATS profile + case ledger lanes)"
  }
 ]

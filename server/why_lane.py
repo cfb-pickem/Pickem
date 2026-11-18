@@ -2,13 +2,14 @@
 The "why?" lane (genius exam 2026-11-17: "why?" turns repeated turn 1). A bare
 why-style follow-up ("why?", "how come", "why tho", "why not Ohio State?") to
 Picky's previous answer about a game gets the NEXT unused reason from that
-game's card, code-built and deterministic:
+game's case ledger (case_ledger.py), code-built and deterministic:
 
-  pool game:  the pool card's reasons (game_cards._reasons), the film room's
-              reasons when it backs the same side, then the card's other
-              factors for that side, then unit edges (units.py)
-  any other:  pick_brief's factors vs the market for that side (slate_cards.brief_for),
+  pool game:  the pool card's reasons, then the card's other factors for that
+              side (hand weights), the film room's reasons when it backs the
+              same side (never one with a projection number), then unit edges
+  any other:  pick_brief's factors vs the market for that side (factstore.brief),
               then unit edges
+The answer carries facts_used (the rows it cites + the line).
 
 Which reasons turn 1 already used is read from Picky's previous reply (and any
 earlier replies the caller passes): shared distinctive tokens (W-L records,
@@ -25,6 +26,7 @@ from __future__ import annotations
 
 import re
 
+import case_ledger
 import cfbd
 
 _LEAD = r"(?:(?:but|ok|okay|so|and|wait|hmm+|ok so|lol|haha|bro|dude|picky)[,\s]+)*"
@@ -131,61 +133,37 @@ def used(r: dict, reply: str, skip: set[str]) -> bool:
     return bool(r["topic"]) and r["topic"] in topics(reply)
 
 
-def _unit_reasons(side: str, away: str, home: str, skip: set[str]) -> list[dict]:
-    import units
+def _from_ledger(led: dict, side: str, skip: set[str]) -> list[dict]:
+    """The case ledger's rows for `side` (ranked by the hand weights, unit edges last) as why-lane reasons."""
     out = []
-    for t in units.edges_for(side, away, home):
-        topic = next((v for k, v in UNIT_TOPIC.items() if k in t), None)
-        out.append(_reason(t, t, topic, skip))
+    for r in case_ledger.reasons(led, side):
+        topic = next((v for k, v in UNIT_TOPIC.items() if k in r["raw"]), None) if r["tier"] == "unit" else None
+        x = _reason(r["raw"], r["text"], topic, skip)
+        x["facts"] = r["facts_used"]
+        out.append(x)
     return out
 
 
-def pool_reasons(ctx: dict, pg: dict, side: str, skip: set[str]) -> tuple[list[dict], str | None]:
-    """(reasons for `side`, its label) from the pool game's card; ([], None) when there's no card."""
-    import game_cards
+def pool_reasons(ctx: dict, pg: dict, side: str, skip: set[str]) -> tuple[list[dict], str | None, dict | None]:
+    """(reasons for `side`, its label, the ledger) from the pool game's card; ([], None, None) without a card."""
     import router
     c = router._card_for(ctx, pg)
     if not c:
-        return [], None
-    lk = game_cards.is_locked(c)
-    lean = c["lean"]["side"]
-    case = c.get("case") or {}
-    raw: list[str] = []
-    if cfbd.norm(side) == cfbd.norm(lean):
-        raw += [r for r in game_cards._reasons(c, lk) if r]
-    else:
-        raw += list(c.get("against") or [])
-    if case.get("pick") and cfbd.norm(case["pick"]) == cfbd.norm(side):
-        raw += game_cards._case_reasons(case, lk)
-    raw += [f["why"] for f in sorted(c.get("factors") or [], key=lambda f: -(f.get("w") or 0))
-            if f.get("side") and cfbd.norm(f["side"]) == cfbd.norm(side) and (f.get("w") or 0) > 0
-            and not f["why"].startswith("key number:") and f["why"] not in raw]
-    out = [_reason(r, _say(r, c, lk), None, skip) for r in dict.fromkeys(raw)]
-    import pick_brief
-    label = pick_brief.side_label(side, {**c["game"], "line": c["league_line"]["home"]})
-    g = c["game"]
-    return out + _unit_reasons(side, g["away"], g["home"], skip), label
+        return [], None, None
+    led = case_ledger.from_card(c)
+    return _from_ledger(led, side, skip), led["labels"][side], led
 
 
-def market_reasons(g: dict, side: str, skip: set[str]) -> tuple[list[dict], str | None]:
-    """(reasons for `side` vs the market, its label) for any FBS game: pick_brief's factors + unit edges."""
+def market_reasons(g: dict, side: str, skip: set[str]) -> tuple[list[dict], str | None, dict | None]:
+    """(reasons for `side` vs the market, its label, the ledger) for any FBS game: pick_brief's factors + unit edges."""
     import espn
-    import router
-    import slate_cards
-    idx = cfbd.load_index()
+    import factstore
     notes = (espn._cache.get(g["id"]) or (0, None))[1]  # whatever turn 1's card fetched; never a fetch here
-    b = slate_cards.brief_for(g, idx, notes)
+    b = factstore.brief(g, notes)
     if not b:
-        return [], None
-    fs = sorted((f for f in b["factors"] if f.get("side") and cfbd.norm(f["side"]) == cfbd.norm(side)
-                 and (f.get("w") or 0) > 0 and not f["why"].startswith("key number:")), key=lambda f: -f["w"])
-    out = [_reason(f["why"], _say(f["why"]), None, skip) for f in fs]
-    import pick_brief
-    mk = (notes or {}).get("market") or {}
-    home_now = mk.get("home_now") if mk.get("home_now") is not None else (slate_cards._line(g) or {}).get("spread")
-    label = pick_brief.side_label(side, {"away": g["awayTeam"], "home": g["homeTeam"], "line": home_now}) \
-        if home_now is not None else side
-    return out + _unit_reasons(side, g["awayTeam"], g["homeTeam"], skip), label
+        return [], None, None
+    led = case_ledger.from_brief(b)
+    return _from_ledger(led, side, skip), led["labels"][side], led
 
 
 _TAKE = re.compile(r"\b(?:i'?d take|i'?m taking|take|i like|i'?m on|lean(?:ing)?|give me|gimme|i got|going with|"
@@ -214,18 +192,8 @@ def side_taken(reply: str, away: str, home: str) -> str | None:
     return None
 
 
-_KEEP_LABEL = re.compile(r"^(success rate|explosiveness|run game \(rushing PPA\)|pass game \(passing PPA\)|red zone \(points per "
-                         r"scoring chance\)|havoc/sacks|third downs|turnovers|tempo|style clash|backdoor):", re.I)
-
-
 def _say(r: str, c: dict | None = None, locked: bool = False) -> str:
-    """router.say_reason, except stat factors keep their label ('success rate: X offense #38 vs ...')."""
-    import router
-    if _KEEP_LABEL.match(r or ""):
-        lab, _, rest = r.partition(": ")
-        lab = re.sub(r" \((rushing|passing) PPA\)| \(points per scoring chance\)", "", lab)
-        return f"{lab}: {rest}"
-    return router.say_reason(r, c, locked)
+    return case_ledger.say(r, c, locked)
 
 
 def _and(xs: list[str]) -> str:
@@ -268,16 +236,18 @@ def answer(ctx: dict | None, q: str) -> str | None:
     if wk[0] == "why_side" and named != side:
         return None  # 'why Baylor?' when the call was Texas Tech: not a follow-up to it
     skip = {cfbd.norm(away), cfbd.norm(home)} | set(cfbd.norm(away).split()) | set(cfbd.norm(home).split())
-    reasons, label = pool_reasons(ctx, pg, side, skip) if pg else ([], None)
+    reasons, label, led = pool_reasons(ctx, pg, side, skip) if pg else ([], None, None)
     if not label:
-        reasons, label = market_reasons(g, side, skip)
+        reasons, label, led = market_reasons(g, side, skip)
     if not label:
         return None
+    import factstore
     for r in reasons:  # the game's own numbers (spread, total) aren't a reason's fingerprint
         r["tokens"] -= {x for x in r["tokens"] if re.fullmatch(r"\d{1,2}\.5", x)}
     flags = [any(used(r, rep, skip) for rep in replies) for r in reasons]
     if re.match(r"^(For|I'm already on) .{3,40}?: beyond |^Not .{2,40}? because ", last):  # our own previous why answer: everything up to it went out too
-        hi = max((i for i, f in enumerate(flags) if f), default=-1)
+        gave = [i for i, r in enumerate(reasons) if r["text"].rstrip(". ") in last]  # the rows it actually sent
+        hi = max(gave) if gave else max((i for i, f in enumerate(flags) if f), default=-1)
         flags = [f or i < hi for i, f in enumerate(flags)]
     said = [LABELS[r["topic"]] for r, f in zip(reasons, flags) if f and r["topic"] in LABELS]
     said = list(dict.fromkeys(said))[:3]
@@ -292,16 +262,20 @@ def answer(ctx: dict | None, q: str) -> str | None:
         nxt.append(r)
     other = home if side == away else away
     against = wk[0] == "why_not" and cfbd.norm(named) != cfbd.norm(side)
+    line = [led["line_fact"]] if led else []
     if not nxt:
         if against:
-            return (f"Nothing new against {other} beyond what I said: that's my whole case for {label}, "
-                    "no other reason in the numbers.")
-        return f"That's the whole case for {label}: the reasons I gave are all I've got, nothing new in the numbers."
+            return factstore.answer(f"Nothing new against {other} beyond what I said: that's my whole case for {label}, "
+                                    "no other reason in the numbers.", line)
+        return factstore.answer(f"That's the whole case for {label}: the reasons I gave are all I've got, nothing new "
+                                "in the numbers.", line)
     pick = nxt[:1]
     if len(nxt) > 1 and len(pick[0]["text"]) < 70:
         pick.append(nxt[1])
     body = "; also, ".join(r["text"].rstrip(". ") for r in pick)
+    cited = line + [f for r in pick for f in r.get("facts") or []]
     if against:
-        return f"Not {other} because {body}" + (f", on top of {_and(said)}" if said else "") + f". Still {label}."
+        return factstore.answer(f"Not {other} because {body}" + (f", on top of {_and(said)}" if said else "")
+                                + f". Still {label}.", cited)
     head = f"I'm already on {label}" if wk[0] == "why_not" else f"For {label}"
-    return f"{head}: beyond {_and(said)}, {body}." if said else f"{head}: {body}."
+    return factstore.answer(f"{head}: beyond {_and(said)}, {body}." if said else f"{head}: {body}.", cited)
