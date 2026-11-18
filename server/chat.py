@@ -775,10 +775,23 @@ def _in_ids(ids) -> str:
 # picks in his context window.
 
 
+def _replay_now() -> dt.datetime | None:
+    """Replays only (eval/sat_dm.py): PICKY_REPLAY_CLOCK names a file holding the frozen epoch, so a replayed
+    Saturday's pregame games aren't 'past kickoff'. Never set live."""
+    p = os.environ.get("PICKY_REPLAY_CLOCK")
+    if not p:
+        return None
+    try:
+        return dt.datetime.fromtimestamp(float(open(p).read().strip()), dt.timezone.utc)
+    except (OSError, ValueError):
+        return None
+
+
 def _now_ct_naive() -> dt.datetime:
     """Current time in America/Chicago as a naive datetime. Pulled out so
     tests can monkeypatch the clock without touching datetime.datetime."""
-    return dt.datetime.now(CT).replace(tzinfo=None)
+    r = _replay_now()
+    return (r or dt.datetime.now(dt.timezone.utc)).astimezone(CT).replace(tzinfo=None)
 
 
 def _game_is_locked(game: dict, now_ct_naive: dt.datetime) -> bool:
@@ -2396,7 +2409,7 @@ LIVE_STALE = 180  # seconds without a feed update before a live score is called 
 LIVE_LIST_CAP = 8
 _LIVE_CACHE: dict = {}
 def _now_utc() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    return _replay_now() or dt.datetime.now(dt.timezone.utc)
 
 
 _LIVE_COLS = ("GameId,Away,Home,AwayPts,HomePts,Status,Period,Clock,status_name,possession,"
