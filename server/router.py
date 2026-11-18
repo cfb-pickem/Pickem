@@ -1184,8 +1184,22 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     facts = [f for f in (gi or {}).get("facts") or [] if f.get("kind") == "injury" or f.get("status")]
     qb = [f for f in facts if re.search(r"\bQB\d?\b|quarterback", f.get("text") or "", re.I)]
     pick = (qb or facts)[:2]
+    news_line = None
+    if not pick:  # the intel run can miss a game: the news feed's QB/injury items for either team (live-80/genius r4)
+        try:
+            import news as _news
+            for t in (away, home):
+                hits = [x for x in _news.breaking_for(f"{t} QB injury", teams=[t], limit=3) or []
+                        if re.search(r"\b(QB|quarterback|out|injur\w*|miss(es)?|surgery|doubtful|questionable)\b", x, re.I)]
+                if hits:
+                    news_line = re.sub(r"^[^:]{0,120}?:\s*", "", hits[0]).strip()
+                    break
+        except Exception:  # noqa: BLE001
+            news_line = None
     if pick:
         out.append("The news: " + " ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))
+    elif news_line:
+        out.append(f"The news: {news_line}")
     else:
         out.append(f"No confirmed injury or news in my sources explains it (as of {d.get('as_of') or 'this week'}), "
                    "so the market may know something; I wouldn't fight a move that size.")
@@ -1202,7 +1216,7 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     why = next((re.sub(r"^\s*\+ for [^:]+: ", "", x) for x in ll if x.strip().startswith("+ for")), None)
     if why:
         why = re.sub(r"\s*\((?:[^()]|\([^)]*\))*\)?\s*$", "", why).strip()  # drop the trailing '(source text...)'
-    unexplained_big = not pick and opn is not None and abs(now - opn) >= 3
+    unexplained_big = not pick and not news_line and opn is not None and abs(now - opn) >= 3
     q_out = [f for f in qb if (f.get("status") or "").lower() in ("questionable", "doubtful", "game-time decision")]
     if q_out and q_out[0].get("players"):
         p = q_out[0]["players"][0]
