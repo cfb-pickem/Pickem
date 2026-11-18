@@ -272,7 +272,7 @@ def edges(unit: str, away: str, home: str, tab: dict | None = None) -> list[dict
 ASK = {  # order = priority when a text hits several
     "protect": r"pass rush\w*|rush the passer|sacks?|sacked|get home|get to the qb|pressure\w*|o-?line\w*|offensive line\w*|"
                r"protect\w*|pass pro\b|blitz\w*|d-?line\w*|defensive line\w*|edge rush\w*",
-    "redzone": r"red ?zone|finish(ing)? drives?|field goals?|kick(ing)? (field goals|fgs)|settle for|scoring (chances?|"
+    "redzone": r"red ?zone|finish(es|ing)? drives?|field goals?|kick(ing)? (field goals|fgs)|settle for|scoring (chances?|"
                r"opportunit\w*)|points per (opportunity|scoring)|goal ?line|inside the 20|in the 20",
     "turnovers": r"turnovers?|giveaways?|takeaways?|ball security|fumbl\w*|interceptions?|\bints?\b|turn it over|"
                  r"cough it up|havoc|force (turnovers|fumbles)",
@@ -284,7 +284,9 @@ ASK = {  # order = priority when a text hits several
     "pass": r"\bpass(es|ing)?\b(?! rush)|throw(s|ing|n)?\b|through the air|air it out|secondary|coverage|"
             r"receivers?|\bwrs?\b|cornerbacks?|\bcbs?\b|safet(y|ies)|aerial",
     "eff": r"move the ball|score on|score against|put up points|moves? it|move the chains|their offense|"
-           r"(offen[cs]e|o) vs\.? .{0,25}(defen[cs]e|d)\b|(defen[cs]e|d) vs\.? .{0,25}(offen[cs]e|o)\b|"
+           r"(offen[cs]e|o) (vs\.?|versus|faces?|against) .{0,25}(defen[cs]e|d)\b|(defen[cs]e|d) vs\.? .{0,25}(offen[cs]e|o)\b|"
+           r"offen[cs]e (do|does|get|gets|have|has) (anything|much|something)|"
+           r"defen[cs]e (be trusted to |really )?(hold|stop|contain|slow)\b|"
            r"who wins that|match ?up\w*|stop (them|him|it)|slow (them|it) down|hold (them|up)",
 }
 _ASK_RE = {k: re.compile(rf"(?:{v})", re.I) for k, v in ASK.items()}

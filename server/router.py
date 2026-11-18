@@ -41,6 +41,7 @@ import pick_strategy
 import slate_cards
 import playoff_race
 import why_lane
+import unit_lane  # 'can X run on Y': unit matchups in code (plan 2026-11-18 phase 6)
 import channel  # the channel lane (drill 11/17)
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
@@ -1287,6 +1288,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "keynum", "KEYNUM_ASK"  # 'which lines are on a key number': computed from this week's market
     if H2H_ASK.search(t) and not re.search(r"\b(my|our|i|me|picky|you)\b", t, re.I):
         return "h2h", "H2H_ASK"  # 'what happened last time Clemson played Duke': the cache's last meeting
+    if unit_lane.wants(t) and unit_lane.parse(t, {}):
+        return "unit_matchup", "UNIT_ASK"  # 'can Minnesota run on Northwestern': both directions + verdict in code
     if PLAYER_LATEST.search(t) and not chat.games_named(t, []):
         return "qb", "PLAYER_LATEST"  # 'whats the latest on castellanos': the cards' note, else the full brain + news
     if (QB_ASK.search(t) or PLAYER_ASK.search(t)) and not re.search(r"\b(news|latest|lates|report\w*|rumou?r\w*|any news)\b", t, re.I):
@@ -2864,7 +2867,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "interim": interim_text, "strategy": pick_strategy.answer,
               "picky_record": picky_record_text, "premise": premise_text, "lw_pick": lw_pick_text, "read": read_text, "pool_games": pool_games_text,
               "ghost_player": ghost_player_text, "recap": recap_text,
-              "ghost_school": ghost_school_text}.get(kind)
+              "ghost_school": ghost_school_text, "unit_matchup": unit_lane.answer}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
