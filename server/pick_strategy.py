@@ -21,6 +21,7 @@ taking risks to catch 1st, ignoring that playoff points reset.
 
 from __future__ import annotations
 
+import collections
 import re
 
 PLAYOFF_SPOTS = 4
@@ -76,9 +77,10 @@ def note(ctx: dict, q: str) -> str:
             f"Recommendation: {posture}")
 
 
-def answer(ctx: dict, q: str) -> str | None:
+def answer(ctx: dict, q: str, facts=None) -> str | None:
     """The strategy as a finished text (router fact lane 'strategy'): the sender's spot, the gap that decides
-    the posture, picks left, and the move, all from note()'s numbers."""
+    the posture, picks left, and the move, all from note()'s numbers. When the move is to fade the field
+    (chase, out, dead last), it names the consensus side to fade (consensus())."""
     n = note(ctx, q)
     if not n:
         return None
@@ -86,7 +88,12 @@ def answer(ctx: dict, q: str) -> str | None:
     if not m:
         return None
     rec, place, where, left = m.group(2), m.group(3), m.group(5), m.group(6)
-    head = f"You're {rec}, {place}, {where}, with about {left} picks left."
+    st = ctx.get("standings_ytd") or []
+    me = next((r for r in st if r.get("team") == m.group(1)), None)
+    last = bool(me and len(st) > 1 and me["w"] == min(r["w"] for r in st)
+                and sum(1 for r in st if r["w"] == me["w"]) < len(st))
+    head = (f"You're dead last at {rec} ({place}), {where}, with about {left} picks left." if last
+            else f"You're {rec}, {place}, {where}, with about {left} picks left.")
     post = n.rsplit("Recommendation: ", 1)[-1].split(":", 1)[0]
     body = {
         "PROTECT": "Protect it: side with the best numbers and the consensus, don't fade the field. Catching 1st only "
@@ -97,7 +104,52 @@ def answer(ctx: dict, q: str) -> str | None:
                  "ground when you're right and they're wrong.",
         "OUT": "Even winning out doesn't get you to 4th, so play for pride: swing big and fade everybody.",
     }.get(post)
-    return f"{head} {body}" if body else None
+    if not body:
+        return None
+    if last and post in ("CHASE", "OUT"):
+        body = ("Dead last means max variance: matching the field can't move you up, so fade the consensus every "
+                "week and live with the misses." + ("" if post == "CHASE" else " Even winning out doesn't get you to "
+                                                   "4th, so it's for pride."))
+    if post in ("CHASE", "OUT"):
+        body += " " + consensus(ctx, facts)
+    return f"{head} {body}"
+
+
+def consensus(ctx: dict, facts=None) -> str:
+    """Where the field is on this week's pool games, as one sentence. Revealed games (locked: the site shows every
+    pick) use the real picks in ctx['revealed_picks_this_week']; unrevealed games use only the league's lean from
+    past graded picks (game card 'crowd'), never anyone's pick for this week, the sender's included."""
+    import pick_brief
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker") and not g.get("winner")
+             and g.get("line") is not None]
+    revealed = set(ctx.get("revealed_game_ids") or [])
+    picks = ctx.get("revealed_picks_this_week") or {}
+    locked, habits = [], []
+    for g in games:
+        if g["id"] in revealed:
+            sides = [p["pick"] for plist in picks.values() for p in plist if p.get("game_id") == g["id"] and p.get("pick")]
+            if sides:
+                side, k = collections.Counter(sides).most_common(1)[0]
+                if k * 2 > len(sides):
+                    locked.append((k / len(sides), f"{side}, {k} of {len(sides)} picks, in {g['away']} at {g['home']}"))
+            continue
+        if facts is None:
+            import sitfacts
+            facts = sitfacts.live()
+        c = facts.crowd(ctx.get("current_week"), g["id"])
+        if c and c.get("side") in (g["away"], g["home"]) and c.get("of"):
+            fade = g["home"] if c["side"] == g["away"] else g["away"]
+            habits.append((c["n"] / c["of"], f"{c['side']} in {g['away']} at {g['home']} ({c['n']} of {c['of']} "
+                                             f"members with a habit), so the fade is {pick_brief.side_label(fade, g)}"))
+    if locked and not habits:
+        locked.sort(key=lambda x: -x[0])
+        return ("Picks are locked this week, so there's nothing to fade until next week. The field went "
+                + "; ".join(t for _, t in locked[:2]) + ".")
+    if habits:
+        habits.sort(key=lambda x: -x[0])
+        return ("The field's habits (past graded picks, not this week's) point to "
+                + "; and ".join(t for _, t in habits[:2]) + ".")
+    return "I don't have a read on where the field leans this week, so go against the chalk only where you have a reason."
 
 
 def _ord(n) -> str:

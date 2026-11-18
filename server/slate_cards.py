@@ -180,7 +180,7 @@ def team_rows(team: str, idx: dict, before: str) -> list[dict]:
         my_sp = (sp if home else -sp) if sp is not None else None
         cm = (mine - theirs + my_sp) if my_sp is not None else None
         out.append({"opp": g["awayTeam"] if home else g["homeTeam"], "home": home, "pts": (mine, theirs),
-                    "spread": my_sp, "cover": cm, "date": g.get("startDate", "")[:10]})
+                    "spread": my_sp, "cover": cm, "date": g.get("startDate", "")[:10], "start": g.get("startDate", "")})
     return out
 
 
