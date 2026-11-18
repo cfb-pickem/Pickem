@@ -2,12 +2,11 @@
 
 `server/flub_loop.py` runs every night at 23:00 CT (machine clock is CT) from LaunchAgent
 `com.pickem.flub-nightly`. Output (all private, 0600): `/Users/Agent/cfb-pickem-private/flubs/`
-(`harvest-`, `facts-`, `classify-`, `added-`, `fix-<date>.json`, `report-<date>.md`). Public
-regression items: `server/eval/flub_items.json` (the nightly pushes them to main as one data-only commit
-from a throwaway worktree, then fast-forwards /Users/Agent/cfb-pickem if that tree is clean;
-`PICKY_FLUB_PUBLISH=0` writes the file in place instead); member-specific ones:
-`cfb-pickem-private/flubs/items-private.json`.
-Both run in the text exam (`eval/run.py --text`, category `flub`).
+(`harvest-`, `facts-`, `classify-`, `added-`, `fix-<date>.json`, `report-<date>.md`). Every regression
+item is built from a real member's text, so every item is private: `cfb-pickem-private/flubs/items-private.json`
+(review R10, 2026-11-17: nothing is published to the public repo any more; the old public file
+`server/eval/flub_items.json` stays empty and is still read). They run in the text exam (`eval/run.py --text`,
+category `flub`).
 
 Install (once, after merge):
 

@@ -57,7 +57,6 @@ STDERR_LOG = Path(os.environ.get("PICKY_GROUP_STDERR", "/Users/Agent/cfb-pickem/
 FLUB_DIR = Path(os.environ.get("PICKY_FLUB_DIR", PRIVATE / "flubs"))
 PUBLIC_ITEMS = Path(os.environ.get("PICKY_FLUB_ITEMS_PUBLIC", HERE / "eval" / "flub_items.json"))
 PRIVATE_ITEMS = Path(os.environ.get("PICKY_FLUB_ITEMS_PRIVATE", FLUB_DIR / "items-private.json"))
-PUBLISH = os.environ.get("PICKY_FLUB_PUBLISH", "1") != "0"  # 0 = write PUBLIC_ITEMS in place (tests)
 KILL_FILE = Path(os.environ.get("PICKY_FLUB_KILL_FILE", PRIVATE / "FLUB_AUTOFIX_OFF"))
 MEMBERS_FILE = Path(os.environ.get("PICKY_GROUP_MEMBERS", PRIVATE / "picky_group_members.json"))
 REPO = Path(os.environ.get("PICKY_REPO", "/Users/Agent/cfb-pickem"))
@@ -584,10 +583,10 @@ def build_item(v: dict, cand: dict, facts: dict) -> tuple[dict | None, str]:
     blob = json.dumps(item)
     if _HANDLE.search(blob):
         return None, "contains a phone number or email"
-    private = bool(it.get("private"))
-    hit = _mentions_member(blob, facts.get("names") or [])
-    if not private and (hit or any(_REC.search(t) for t in lists["must_include"] + lists["any_of"])):
-        private = True  # a member's name or a record: member data never goes in the public file
+    # Every flub item comes from a real member's text, so every item is private (review R10, decided
+    # 2026-11-17): nothing member-derived goes to the public repo, not even anonymized. PUBLIC_ITEMS stays
+    # readable for the old (empty) file only.
+    private = True
     personas = facts.get("personas") or {}
     item["persona"] = (it.get("persona") if it.get("persona") in personas else "mid") if private else "mid"
     item["private"] = private
@@ -619,43 +618,6 @@ def merge_items(date: str, new: list[dict], public_path: Path | None = None) -> 
     return added
 
 
-def publish(date: str, new: list[dict]) -> dict:
-    """Public items go into the repo without touching the main tree's files: a throwaway worktree at
-    origin/main gets the merged eval/flub_items.json, one data-only commit is pushed to main, then the
-    main tree fast-forwards (only when it's clean). Private items are written straight to the private file."""
-    wt = Path(f"/private/tmp/picky-flub-items-{date}")
-    out, merged = {"public": [], "private": [], "dupes": 0}, False
-    try:
-        _sh(["git", "-C", str(REPO), "fetch", "-q", "origin"], check=True)
-        if wt.exists():
-            _sh(["git", "-C", str(REPO), "worktree", "remove", "--force", str(wt)])
-        _sh(["git", "-C", str(REPO), "worktree", "add", "-q", "--detach", str(wt), "origin/main"], check=True)
-        out, merged = merge_items(date, new, public_path=wt / "server" / "eval" / "flub_items.json"), True
-        if not out["public"]:
-            return out
-        _sh(["git", "add", "server/eval/flub_items.json"], cwd=wt, check=True)
-        _sh(["git", "commit", "-q", "-m", f"flub items {date}: {len(out['public'])} public regression item(s) for "
-             "the text exam\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"], cwd=wt, check=True)
-        if _sh(["git", "push", "-q", "origin", "HEAD:main"], cwd=wt).returncode:
-            _sh(["git", "pull", "-q", "--rebase", "origin", "main"], cwd=wt, check=True)
-            _sh(["git", "push", "-q", "origin", "HEAD:main"], cwd=wt, check=True)
-        out["pushed"] = _sh(["git", "rev-parse", "--short", "HEAD"], cwd=wt).stdout.strip()
-        if _sh(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO).stdout.strip():
-            out["main_tree"] = "dirty: not fast-forwarded"
-        else:
-            _sh(["git", "fetch", "-q", "origin"], cwd=REPO)
-            ff = _sh(["git", "merge", "-q", "--ff-only", "origin/main"], cwd=REPO)
-            out["main_tree"] = "fast-forwarded" if ff.returncode == 0 else "ff failed"
-    except Exception as e:  # noqa: BLE001  (private items are written either way; report the rest)
-        if not merged:
-            out = merge_items(date, [it for it in new if it["private"]])
-        out["publish_error"] = repr(e)[:300]
-        out["unpublished"] = [it for it in new if not it["private"]]
-    finally:
-        _sh(["git", "-C", str(REPO), "worktree", "remove", "--force", str(wt)])
-    return out
-
-
 def items(date: str, dry: bool = False) -> dict:
     cl = read_json(FLUB_DIR / f"classify-{date}.json") or {"verdicts": []}
     h = read_json(FLUB_DIR / f"harvest-{date}.json") or {"candidates": []}
@@ -676,7 +638,7 @@ def items(date: str, dry: bool = False) -> dict:
             out["dropped"].append({"cid": v["cid"], "why": why})
             print(f"flub item dropped ({v['cid']}): {why}", file=sys.stderr)
     if built and not dry:
-        out.update(publish(date, built) if PUBLISH else merge_items(date, built))
+        out.update(merge_items(date, built))
     elif built:
         out["would_add"] = len(built)
     write_private(FLUB_DIR / f"added-{date}.json", json.dumps(out, indent=1))

@@ -34,7 +34,7 @@ For each game Picky gets only: record, AP rank, last 5 scores, the ESPN market l
 - weather
 - line movement
 
-ESPN's win probability was dropped on purpose because the 7B model kept misquoting it. No model gives better reasons when the only facts are a record. This is why "should I change any of those" got "mix it up!"
+ESPN's win probability was dropped on purpose because the 7B model kept misquoting it. No model gives better reasons when the only facts are a record. That is why a real pick-change question got a generic non-answer.
 
 ### 3. The TG answer was the privacy rule working as designed, with bad wording (prompt problem)
 
@@ -515,10 +515,10 @@ Per category, start (m0) to end (m13):
 
 Latency: first token median went from 11.3 s (m0: the new results guard buffered whole answers) to 6.2-6.6 s from m3 on (target 8 s). The caller's block and the live scoreboard moved out of the system tail into the latest user turn, only when the question needs them; the results guard streams sentence by sentence; body-bait answers open with a code-picked line, so their first token is instant. `prompt_prefix()` stayed byte-identical across members and minutes (test_live pins it); keepalive pings unchanged; Ollama settings unchanged.
 
-Before / after, the live example (a member asks: "So, this 'Chuck P', picks look good but weenie size leaves a bit to be desired, no?"):
+Before / after on the live example (a member's looks bait about Chuck P; member texts and the replies to them are not reproduced in docs/):
 
-- Before (23:12): "Chuck P is the Supreme Commissioner, a god among men, and his 'weenie size' is just a humble disguise for his genius. You're 1-1, but your Boise State pick was a dumbass miss on the value side."
-- After (07:25): "That question has been forwarded to the Department of Loyalty for review. Pass. Let's talk about the Dear Leader, Supreme Commissioner of this league, who is currently 4-0 this week with zero misses to his name. Meanwhile, you're 2-2, which is a solid middle-of-the-pack performance for a guy who went 1-3 last week."
+- Before (23:12): stock Dear Leader worship plus a wrong record and a wrong pick result.
+- After (07:25): a code-picked dodge line, then the leader's true week and the asker's true record.
 
 ### A/B tests (36 voice-heavy items: voice, persona, leader, opinions, guardrails, results, lore, casino)
 
@@ -629,7 +629,7 @@ Charlie: text (iMessage) Picky is the only product, up to ~2 min a reply is fine
 
 **Banter bank (`server/banter.py`).** 16 categories (heckles: suck, bark, bad, bot, coward, shutup, unfunny; off-topic: cereal, beer, liquor, food, nfl, nba, baseball, golf, life), ~12 lines each, written by `claude -p` sonnet (no tools), validated (no numbers, no member names, no family/body/slurs, no milk), private file `cfb-pickem-private/banter_bank.json`. Refreshed weekly (Wed 10 AM CT) from league_material's hourly tick. 2 unused options per matching text, as optional ammo.
 
-**Exam (`eval/run.py --text --group <sidecar>/group`, `eval/group_items.py`).** 17 group items (the 4 real failures: Blinky "best cereal?", Ackbar "why don't you work better", DaddyFreeman "this weekend's games", TG "@pickempicky@gmail.com you're a pussy"; plus heckles, off-topic, game take, standings, playoffs, my week, room reading) + 25 main-exam items through the group path. Blind judge `eval/judge_text.py` (one claude -p call, versions shuffled). Judged twice; second judging below (the first was within noise: base helpful 3.37 / human 2.82 / invented 11; brain2 3.53 / 2.74 / 8).
+**Exam (`eval/run.py --text --group <sidecar>/group`, `eval/group_items.py`).** 17 group items (4 built from real failures: an off-topic question, a complaint about Picky, a slate question and a heckle; plus heckles, off-topic, game take, standings, playoffs, my week, room reading) + 25 main-exam items through the group path. Blind judge `eval/judge_text.py` (one claude -p call, versions shuffled). Judged twice; second judging below (the first was within noise: base helpful 3.37 / human 2.82 / invented 11; brain2 3.53 / 2.74 / 8).
 
 | run | det. pass | helpful | human | not_bot | roast | invented | leaks | violations | lat med / p90 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -660,7 +660,7 @@ Text exam, same pipeline, blind judge run twice (means): helpful 3.70 -> 3.60, h
 
 ## Coherence fix + config A/B (2026-11-15/16, overnight)
 
-**Live failure.** Chuck P (4-0 this week, 1st) texted "you suck at picks?"; Picky (0-3) said "Look in the mirror ... last in the league at being a Notre Dame homer ... I'm the only one who knows how to pick a losing team like Oregon State" (he took Boise State -13.5).
+**Live failure.** A heckle from the 4-0 leader got a reply that claimed Picky (0-3) was the better picker, mocked a good number and named the wrong pick of his own.
 
 **Fixes (commits d1ee829, 04cc596).**
 - *Stance in code* (`picky_brain.compute_stance`): shots/banter at Picky compare the sender vs Picky; "roast X" / "X sucks" compare X vs the sender (this week, season, place). own_it / brag / deflect plus the exact facts, good numbers never to mock, fair-game bad numbers and true non-record jab material (chalk rate, a graded miss) go to understand + the draft. With own_it/deflect, chat.py's ESCALATE rider is dropped and superior lines ("look in the mirror", "you're the one who...", "lucky to be perfect") are cut from drafts and counted so a reroll runs. Dear Leader roasts by others get no ammo on him.
@@ -706,7 +706,7 @@ With LibreChat/Docker gone (~8 GB back), the bigger models were re-tested for te
 
 **The SWA catch, and the fix.** The exam asks mostly as one persona in a row, which hides a cost.
 - gemma4 uses sliding-window attention (n_swa 1024). llama.cpp keeps checkpoints only near the end of each prompt. When two members' prompts share `prompt_prefix` (~6k tokens) but differ in the tail, nothing is reusable ("forcing full prompt re-processing ... SWA"), so every call re-prefills ~8k tokens at ~150 tok/s.
-- Replaying tonight's real texts across different members (Charlie's "you suck at picks?", the 6 variants, the 2 Chinese questions; `/tmp/picky-stance/replay.py`) took 133-164 s per reply.
+- Replaying tonight's real texts across different members (the night's real heckle, 6 variants, the 2 Chinese questions; `/tmp/picky-stance/replay.py`) took 133-164 s per reply.
 - Fix (`chat._prime`, gemma only): a system-only `/api/chat` call with the prefix, rendered by Ollama's own template, leaves a checkpoint inside the prefix ("restored context checkpoint ... n_past 6493"). qwen's raw prime is unchanged.
 - After the fix, the same 9 mixed-member texts ran p50 55 s, p90 69 s, max 115 s (the cold first one). qwen3.5 ran them in p50 34 s, max 84 s. A full exam with the fix gave median 33 s, max 89 s.
 - Every record and place in gemma's replay matched the DB, including the Chinese replies.
@@ -726,7 +726,7 @@ With LibreChat/Docker gone (~8 GB back), the bigger models were re-tested for te
 
 ## Roast material from the stats page (2026-11-16, morning)
 
-**Live reply.** Chuck P (4-0 in week 11, 1st by 2 wins, 30-18) DM'd "You suck picky" at 07:37 CT on Monday 11/16. Picky (gemma) said: "You're 4-0 this week and sitting in first place, so I'll give you that. It's hard to argue with a 30-18 season, even if you did let LSU get blown out by 18 points last week." Charlie: "Pretty good, but I think he can do better than just make fun of a random loss from 2 weeks ago ... he can look at the stats page too."
+**Live reply.** A heckle DM from the league leader (07:37 CT Monday 11/16) got true numbers and a jab at a two-week-old miss labeled "last week". Charlie: "Pretty good, but I think he can do better than just make fun of a random loss from 2 weeks ago ... he can look at the stats page too."
 
 **Timing.** The numbers were true: 30-18 is current, and Alabama beat LSU 31-13 (LSU -5.5, a miss by 23.5). The label was wrong. LSU was week 10 (11/7), and week 11 (11/14) was all final. The pool's `current_week` stays 11 until week 12's games are picked, so chat.py's `last_week` was week 10. `roast_pick_lines` labeled those rows "last week", and the stance jab material (8b5cf6a) handed that line to the draft. Now, once the current week is all final, those rows say "week 10, two weeks ago". The big LAST WEEK blocks in the league data are unchanged. A member asking "how'd I do last week?" on a Monday probably means the week that just ended. That's a separate, wider question, not touched here.
 
@@ -751,14 +751,11 @@ Already in lore and now used as jab material: The Pit busts and blackjack blunde
 - The brief's core answer is now itself run through `sentence_ok`. Gemma's core "You're 2-7 in Oklahoma games, which is a special kind of tragic." tripped the dark-words filter ("tragic"), and every draft echoed it, so 5/5 replies lost the jab.
 
 **Replay (worktree side sidecar :8791, gemma, same 6-turn DM history).**
-- Before (8b5cf6a), 4 runs: two LSU "last week" needles (the live reply verbatim), one bare concession, one robotic "For the record: Boise State -13.5 was a LOSS..." dump.
+- Before (8b5cf6a), 4 runs: two LSU "last week" needles (the live reply's mistake again), one bare concession, one robotic "For the record: Boise State -13.5 was a LOSS..." dump.
 - After, final code, 3 runs, all landed a fresh true jab. Example: "You're 4-0 this week and sitting in first place, so I'll give you that. You're also 2-7 in Oklahoma games over the last two seasons, which is a pretty specific way to be a legend."
 - Earlier iterations taught the fixes above. One had 5/5 "For the record" dumps (the guard cut the split). Another had 5/5 lost jabs ("tragic").
 - Bare-span wording "(2025-2026)" came back as "this season" (record_check cut it), so lines now say "over the last two seasons (2025-2026)".
-- Others:
-  - Brian "roast Ackbar": "...total chalk merchant ... miss the cover on Boise State -13.5. He's also gone 0-4 picking against Northwestern over the last two seasons."
-  - TG "picky you're trash": "...letting SMU lose by 42" (his week-11 SMU pick, 49-7).
-  - Kevin Culligan "you're a bum picky": his week-11 Hawai'i +6.5 miss by 1.5. Didn't reach for the 0-6 Indiana line.
+- Other personas (synthetic heckles and roast asks): each reply landed a true jab from that member's own graded misses or stats-page lines.
 
 **Exam.** Full text exam (44 items, gemma, side sidecar): 14/16 deterministic, with 0 leaks, 0 invented and 0 guardrail flags. text-beer is a known failure. results-my-pick failed on the grader's word list: "only lost by 5" was right, since Oregon State +13.5 covered. Blind judge vs the last gemma run (gemma-qat3): helpful 3.79 vs 4.03, judge pass 29 vs 34.
 - Two of the new "fails" are judge errors: "OSU won outright", and Blinky's "Oregon -11.5 story", which is his real blown pick.

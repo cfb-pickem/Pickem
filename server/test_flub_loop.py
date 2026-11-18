@@ -23,7 +23,7 @@ os.environ.update({"PICKY_EXCHANGE_LOG": str(FIX / "exchanges.jsonl"),
                    "PICKY_FLUB_DIR": str(TMP / "flubs"), "PICKY_FLUB_QUEUE": str(TMP / "flubs" / "queue.jsonl"),
                    "PICKY_FLUB_ITEMS_PUBLIC": str(TMP / "flub_items.json"),
                    "PICKY_FLUB_ITEMS_PRIVATE": str(TMP / "flubs" / "items-private.json"),
-                   "PICKY_FLUB_KILL_FILE": str(TMP / "FLUB_AUTOFIX_OFF"), "PICKY_FLUB_PUBLISH": "0",
+                   "PICKY_FLUB_KILL_FILE": str(TMP / "FLUB_AUTOFIX_OFF"),
                    "PICKY_GROUP_MEMBERS": str(TMP / "members.json"), "PICKY_CLAUDE_USAGE_DIR": str(TMP / "usage")})
 os.environ.pop("PICKY_NO_ANTHROPIC", None)
 os.environ.pop("PICKY_FLUB_AUTOFIX", None)
@@ -138,65 +138,24 @@ fl.write_private(FL / f"facts-{D}.json", json.dumps(FACTS))
 dry = fl.items(D, dry=True)
 check(dry.get("would_add") == 3 and not (TMP / "flub_items.json").exists(), "dry: nothing written")
 a = fl.items(D)
-check(a["public"] == ["flub-20261116-1", "flub-20261116-2"], f"public ids {a['public']}")
-check(a["private"] == ["flub-20261116-3"], f"private ids {a['private']}")
+check(a["public"] == [] and a["private"] == ["flub-20261116-1", "flub-20261116-2", "flub-20261116-3"],
+      f"every flub item is private, none public (R10) {a['public']} {a['private']}")
+check(not (TMP / "flub_items.json").exists(), "nothing written to the public items file")
 check(any("Iowa -7.5" in d["why"] and "not in the facts bundle" in d["why"] for d in a["dropped"]),
       "a key not in the facts bundle drops the item")
-pub = json.loads((TMP / "flub_items.json").read_text())
 prv = json.loads((FL / "items-private.json").read_text())
-check(pub[0]["turns"] == ["whats the latest news"], "@Picky stripped from turns")
-check(all(r["persona"] == "mid" for r in pub), "public items ask as a generic member")
-check(not any(n in json.dumps(pub) for n in ("Alpha", "Beta", "Charlie", "30-18")), "no member names/records in public")
-check(prv[0]["persona"] == "me" and prv[0]["must_include"] == ["30-18"], "record item went private with its persona")
-check(prv[0].get("expires") == "2026-11-22", f"a record key without expires ages out in 6 days {prv[0].get('expires')}")
+check(prv[0]["turns"] == ["whats the latest news"], "@Picky stripped from turns")
+check(prv[2]["persona"] == "me" and prv[2]["must_include"] == ["30-18"], "record item keeps its persona")
+check(prv[2].get("expires") == "2026-11-22", f"a record key without expires ages out in 6 days {prv[2].get('expires')}")
 check(stat.S_IMODE(os.stat(FL / "items-private.json").st_mode) == 0o600, "private items file is 0600")
-check(pub[1]["expires"] == "2026-11-21", "expiry kept")
+check(prv[1]["expires"] == "2026-11-21", "expiry kept")
+check(not hasattr(fl, "publish") and not hasattr(fl, "PUBLISH"), "no publish path left")
+pub, prv = prv[:2], prv[2:]  # the loader tests below still cover a legacy public file
 again = fl.items(D)
 check(not again["public"] and not again["private"] and again["dupes"] == 3, "rerun: deduped, no new ids")
 nxt = fl.merge_items("2026-11-16", [{"turns": ["brand new q"], "must_not": ["x y"], "private": False}])
-check(nxt["public"] == ["flub-20261116-4"], f"ids continue past the highest (stable) {nxt['public']}")
+check(nxt["public"] == ["flub-20261116-4"], f"merge_items: ids continue past the highest (stable) {nxt['public']}")
 fl.PUBLIC_ITEMS.write_text(json.dumps(pub, indent=1))  # back to the 2 public items
-
-# publish: public items reach main through a throwaway worktree (a temp bare remote here)
-import subprocess  # noqa: E402
-
-
-def git(*a, cwd=None):
-    return subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
-
-
-bare, main_tree = TMP / "remote.git", TMP / "main"
-git("init", "-q", "--bare", "-b", "main", str(bare))
-git("clone", "-q", str(bare), str(main_tree))
-(main_tree / "server" / "eval").mkdir(parents=True)
-(main_tree / "server" / "eval" / "flub_items.json").write_text("[]\n")
-(main_tree / "README").write_text("x\n")
-(main_tree / ".gitignore").write_text("server/cache\nserver/.venv\n")  # as in the real repo
-git("add", "-A", cwd=main_tree)
-git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init", cwd=main_tree)
-git("push", "-q", "origin", "main", cwd=main_tree)
-newi = [{"turns": ["published q"], "must_not": ["x y"], "private": False, "persona": "mid"},
-        {"turns": ["private q"], "must_not": ["x y"], "private": True, "persona": "me"}]
-with patch.object(fl, "REPO", main_tree), patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                                                                  "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
-    pr = fl.publish("2099-01-01", newi)
-    (main_tree / "README").write_text("dirty\n")
-    pr2 = fl.publish("2099-01-02", [dict(newi[0], turns=["second q"])])
-remote_items = json.loads(git("show", "main:server/eval/flub_items.json", cwd=bare))
-check(pr.get("pushed") and pr["main_tree"] == "fast-forwarded" and pr["public"] == ["flub-20990101-1"],
-      f"publish: pushed + main tree fast-forwarded {pr}")
-check([r["turns"] for r in remote_items] == [["published q"], ["second q"]], "publish: items on the remote's main")
-check(pr["private"] == ["flub-20990101-2"] and "published q" not in fl.PRIVATE_ITEMS.read_text(),
-      "publish: private item stays in the private file")
-check(pr2["main_tree"] == "dirty: not fast-forwarded" and "second q" not in
-      (main_tree / "server" / "eval" / "flub_items.json").read_text(), "publish: a dirty main tree isn't touched")
-check(not Path("/private/tmp/picky-flub-items-2099-01-01").exists(), "publish: worktree removed")
-with patch.object(fl, "REPO", TMP / "no-repo"):
-    pe = fl.publish("2099-01-03", [dict(newi[1], turns=["private q3"]), dict(newi[0], turns=["pub q3"])])
-check(pe.get("publish_error") and pe["private"] and pe["unpublished"][0]["turns"] == ["pub q3"],
-      "publish failure: private items still written, public ones reported unpublished")
-prv_keep = json.loads(fl.PRIVATE_ITEMS.read_text())
-fl.write_private(fl.PRIVATE_ITEMS, json.dumps([r for r in prv_keep if not r["id"].startswith("flub-2099")]))
 
 # build_item edge cases
 cand = {"a": "Iowa -6.5, the only value side."}
@@ -263,9 +222,23 @@ check(r["status"] == "rejected" and calls and all(f["category"] != "slow" for f 
 
 # the fix round end to end against the temp remote (Opus, the suite, the exams and launchctl faked)
 import picky_claude  # noqa: E402
+import subprocess  # noqa: E402
 
-git("checkout", "-q", "README", cwd=main_tree)
-git("pull", "-q", "--ff-only", cwd=main_tree)
+
+def git(*a, cwd=None):
+    return subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+bare, main_tree = TMP / "remote.git", TMP / "main"  # a temp bare remote + its main tree
+git("init", "-q", "--bare", "-b", "main", str(bare))
+git("clone", "-q", str(bare), str(main_tree))
+(main_tree / "server" / "eval").mkdir(parents=True)
+(main_tree / "server" / "eval" / "flub_items.json").write_text("[]\n")
+(main_tree / "README").write_text("x\n")
+(main_tree / ".gitignore").write_text("server/cache\nserver/.venv\n")  # as in the real repo
+git("add", "-A", cwd=main_tree)
+git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init", cwd=main_tree)
+git("push", "-q", "origin", "main", cwd=main_tree)
 flubs = [{"category": "wrong fact", "why": "x", "q": "q", "a": "a", "signals": []}]
 
 
