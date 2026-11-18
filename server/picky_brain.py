@@ -71,7 +71,17 @@ JUDGE_BUDGET = 170.0   # seconds: no judge pass after this (the watcher waits 24
 # replies paid a wasted minute and went out without a brief. With BUSY_SKIP_BRIEF or more OTHER full-lane
 # texts in flight the brief is skipped up front (the same no-brief path a timeout takes). 0 = never skip.
 BUSY_SKIP_BRIEF = int(os.environ.get("PICKY_BUSY_SKIP_BRIEF", "2"))
+# Load policy (Charlie's decision 4, 2026-11-17): with BUSY_FAST or more OTHER full-lane texts in flight, the
+# next one takes the fast lane (no brief, see above, and no reroll: one draft). Code lanes (fact, banter) never
+# queue for the model behind a full-lane text: their gemma voice line is skipped and the code answer / book
+# line goes out alone (the same fallback a cold prime takes). 0 = off.
+BUSY_FAST = int(os.environ.get("PICKY_BUSY_FAST", "3"))
 _FULL_INFLIGHT = [0]  # full-lane run() calls in flight in this process
+
+
+def fast_lane() -> bool:
+    """A full-lane text that should skip the reroll: BUSY_FAST+ other full-lane texts are in flight."""
+    return bool(BUSY_FAST) and _FULL_INFLIGHT[0] - 1 >= BUSY_FAST
 
 # draft i: sampling and angle. Draft 0 is the old single answer (temp 0.2); 1-2 run hot with min_p
 # (Qwen3.5's card suggests ~0.7+ for chat; the filters and the judge guard the facts).
@@ -281,6 +291,9 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
         payload["think"] = chat.OLLAMA_THINK == "true"
     if CODE_ONLY.get():
         raise PrimeSlow("code only (test traffic)")
+    if prime_wait is not None and BUSY_FAST and _FULL_INFLIGHT[0] > 0:  # a code lane: never queue behind a full text
+        log.info("code lane skips the model queue: %d full-lane text(s) in flight", _FULL_INFLIGHT[0])
+        raise PrimeSlow("busy: full-lane text in flight")
     if prime_wait is not None:
         t = chat.start_prime(prefix)  # gated inside (a test/exam prime yields to member texts)
         done, _ = await asyncio.wait({t}, timeout=prime_wait)
@@ -1424,6 +1437,9 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
             if i == N_DRAFTS and (not drafts or any(d.drops == 0 and d.text.strip() for d in drafts)):
                 break  # the extra draft only when every draft so far was cut by the filters
             if i and time.time() - t0 > DRAFT_BUDGET:
+                break
+            if i == N_DRAFTS and full and fast_lane():
+                log.info("reroll skipped: fast lane (%d other full-lane texts in flight)", _FULL_INFLIGHT[0] - 1)
                 break
             if i == N_DRAFTS:  # a dodge undodge() turns into the card call isn't unusable: the code answer exists
                 go, why = reroll_ok(time.time() - t0, dsecs, [undodge(st, d.text, last_reply, prior_q) for d in drafts],
