@@ -1,0 +1,39 @@
+name: Picky router lane table (synthetic rows)
+
+# Router lane regression table (review R7), model-free: every synthetic ask must take one of its expected
+# lanes. Real member asks live in the private table and run in the local model-free suite only; no member
+# text is ever in this repo or in CI logs.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - server/router.py
+      - server/eval/lane_table.py
+      - server/eval/lane_table_synthetic.json
+      - .github/workflows/lane-table.yml
+  pull_request:
+    paths:
+      - server/router.py
+      - server/eval/lane_table.py
+      - server/eval/lane_table_synthetic.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lane-table:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r server/requirements.txt
+      - name: lane table, synthetic rows
+        env:
+          PICKY_TEST_TOKEN: ci
+          PICKY_NO_ANTHROPIC: '1'
+          PICKY_PRIVATE_DIR: /tmp/no-private
+        run: python -I server/eval/lane_table.py check --synthetic-only
