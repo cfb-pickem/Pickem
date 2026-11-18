@@ -60,7 +60,10 @@ def test_true_member_claims_pass():
               "You're not 33-15, you're 30-18.",
               "You're 30-18, 1st, in a playoff spot, 2 ahead of 5th place (23), with about 16 picks left.",
               "Echo is 23-25, 5th, 1 behind the cut line (4th place has 27).",
-              "Closest to you (30-18): Bravo 2 back."]:
+              "Closest to you (30-18): Bravo 2 back.",
+              "You're asking like you have a chance of catching up to his 28-20 record.",
+              "Bravo is 28-20 on the season and he went 3-1 last week.",
+              "He keeps up his 8-19 trend against Alpha."]:
         assert ok(s), s
 
 
@@ -68,7 +71,8 @@ def test_wrong_member_claims_drop():
     ok = check()
     for s in ["Your 33-15 record is nice.", "You're 5-3 lately.", "Bravo is in 3rd place.", "You're third.",
               "Zulu is 3 points behind first.", "I'm 9-2 on the season.", "Echo went 4-0 last week.",
-              "Echo is in last place.", "You're 30-18 overall and 4 wins ahead of 4th."]:
+              "Echo is in last place.", "You're 30-18 overall and 4 wins ahead of 4th.",
+              "You're chasing his 31-17 record."]:
         assert not ok(s), s
 
 
@@ -198,6 +202,14 @@ def test_unplayed_results():
     assert ok("Iowa needs to win by 9 to cover.")
     assert ok("If Tennessee covers you're golden.")
     assert ok("UTSA covered by 21.5.")  # last week's game
+
+
+def test_all_wl_true():
+    assert fg.all_wl_true(CTX, "You took UTSA and they crushed North Texas 35-16.", LORE)
+    assert fg.all_wl_true(CTX, "Don't end up with a 1-3 week like Echo.", LORE)
+    assert not fg.all_wl_true(CTX, "Don't end up with a 0-4 week like Echo.", LORE)
+    assert not fg.all_wl_true(CTX, "UTSA crushed North Texas 45-16.", LORE)
+    assert not fg.all_wl_true(CTX, "No records here.", LORE)
 
 
 def test_coach_moves():

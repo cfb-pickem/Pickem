@@ -152,7 +152,8 @@ def subject(s: str, f: Facts) -> str | None:
     return None
 
 
-_SEG = re.compile(r",\s*(?=(?:while|but|and|meanwhile|whereas)\b)|;\s*|\s+(?=while\b)")
+_SEG = re.compile(r",\s*(?=(?:while|but|and|meanwhile|whereas)\b)|;\s*|\s+(?=while\b)"
+                  r"|\s+(?=(?:and|but)\s+(?:he|she|they|you|i)\b)", re.I)
 
 
 def _owners(s: str, f: Facts) -> dict[str, str]:
@@ -199,6 +200,8 @@ def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
     if not who:
         return out
     school = _SCHOOL_Q.search(s)
+    if school and any(_mentions(school.group(0), m) for m in f.members):
+        school = None  # 'his 8-19 trend against Chuck P': head to head, not a school split
     if recs and school and who in f.st:
         verb, name = (school.group(1) or school.group(3) or ""), (school.group(2) or school.group(4) or "")
         sch = name.lower()
@@ -213,7 +216,15 @@ def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
     if recs and not _NOT_PICK_REC.search(s):
         lab = f.labeled(who, s)
         owners = _owners(s, f)
+        for m in _REC.finditer(s):  # 'catching up to his 30-18': a third person's record, any member's true one
+            if re.search(r"\b(his|her|their|he'?s|she'?s|they'?re)\b[^.,;]{0,25}$", s[:m.start()], re.I):
+                r = f"{int(m.group(1))}-{int(m.group(2))}"
+                owners[r] = "__other__"
+                if not any(r in f.any_true(x) for x in f.st):
+                    out.append(f"someone {r} (no member has it)")
         for r in recs:
+            if owners.get(r, who) == "__other__":
+                continue
             if owners.get(r, who) != who:
                 o = owners[r]  # 'Closest to you (21-23): TG 2 back': the 21-23 is the sender's
                 if o in f.st and r not in f.any_true(o) and r not in card_recs:
@@ -921,3 +932,32 @@ def unplayed_result_check(ctx: dict, log=None):
             return False
         return True
     return ok
+
+
+def all_wl_true(ctx: dict, sent: str, lore: dict | None = None, picky: dict | None = None) -> bool:
+    """True when EVERY W-L in the sentence is provably true: a last-week pool final (either order) whose team
+    the sentence names, or a record that's true for the member (or 'you') it's pinned to. Lets a true sentence
+    past chat.record_check's older heuristics ('you took Wake Forest and they crushed SMU 49-7', 'a 0-4 week like
+    Andrew Bub' were cut, fact exam 2026-11-17)."""
+    recs = [(m.start(), f"{int(m.group(1))}-{int(m.group(2))}") for m in _REC.finditer(sent)]
+    if not recs:
+        return False
+    f = Facts(ctx, lore, picky)
+    finals = {}
+    for g in (ctx.get("last_week") or {}).get("games") or []:
+        if g.get("away_pts") is not None:
+            a, h = int(g["away_pts"]), int(g["home_pts"])
+            for t in (g["away"], g["home"]):
+                finals.setdefault(t, set()).update({f"{a}-{h}", f"{h}-{a}"})
+    owners = _owners(sent, f)
+    for pos, r in recs:
+        if any(r in v and re.search(rf"(?<!\w){re.escape(t)}(?!\w)", sent, re.I) for t, v in finals.items()):
+            continue
+        o = owners.get(r)
+        if not o:  # 'a 1-3 week like Echo': the one member the sentence names
+            named = [m for m in f.members if _mentions(sent, m)]
+            o = named[0] if len(named) == 1 else None
+        if o and o in f.st and r in f.any_true(o):
+            continue
+        return False
+    return True

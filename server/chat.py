@@ -6329,6 +6329,14 @@ _TICS = re.compile(r"\b(don'?t get cocky|sitting pretty|the rest of us|here to w
                    r"so maybe you should|go(es|ing)? to (your|his|her|their) head|let that sink in)\b", re.I)  # board-voice tic, 11/16
 
 
+def _record_or_true(rc, ctx: dict):
+    """record_check, except a sentence whose every W-L fact_guard proves true goes through."""
+    if rc is None:
+        return None
+    lore, pp = load_lore(), ctx.get("picky_player")
+    return lambda x: rc(x) or fact_guard.all_wl_true(ctx, x, lore, pp)
+
+
 def week_cards(ctx: dict) -> dict:
     """This week's pool game cards by game id (market now/open for the line-number check)."""
     out = {}
@@ -7547,7 +7555,8 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
                          and not yb and "(the user" not in convo[-1]["content"]),
                 offtopic=guard_note(ctx, qtext).startswith("OFF-TOPIC") and not hostile_convo(messages),
                 sides=pick_sides(ctx) if not ctx.get("error") else None,
-                extra=_named_checks([("record", record_check(ctx, qtext, sc)), ("trait", trait_word_check(ctx, qtext)),
+                extra=_named_checks([("record", _record_or_true(record_check(ctx, qtext, sc), ctx)),
+                                     ("trait", trait_word_check(ctx, qtext)),
                                      ("grounded", grounded_check(ctx, corpus, qtext)), ("news", news_claim_check(corpus)),
                                      ("pick_claim", pick_claim_check(ctx, qtext)),
                                      ("live", live_games.claim_check(None if "GAME CARD" in sc  # pre-game card: not live
