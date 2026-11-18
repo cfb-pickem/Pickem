@@ -130,7 +130,7 @@ def ask(sender: gc.Sender, text: str, model_out: str, web: bool = False, dm: boo
               "kind": "insult", "src": "opus"}]
     with contextlib.ExitStack() as es:
         for obj, name, val in ((gc.VIEWER, "session", _nothing), (gc.VIEWER, "member_session", _jwt),
-                               (gc, "save_turn", _nothing), (gc, "THREAD_RULES", False), (gc, "BRAIN", True),
+                               (gc, "save_turn", _nothing), (gc, "THREAD_RULES", False),
                                (gc.picky_brain, "run", brain), (pb, "_json_call", fake_json),
                                (pb, "understand", fake_understand), (pb, "_orig_ollama_stream", fake_orig),
                                (pb.burn_book, "candidates", lambda *a, **k: list(cands)),

@@ -184,7 +184,7 @@ def test_group_chat_send_point_code_lane():
         with patch.object(gc.VIEWER, "session", nothing), patch.object(gc.VIEWER, "member_session", jwt), \
                 patch.object(gc.VIEWER, "sender", return_value=gc.Sender(handle="+1", team=team, user_id="u")), \
                 patch.object(gc, "save_turn", nothing), patch.object(gc, "load_history", return_value=[]), \
-                patch.object(gc, "THREAD_RULES", False), patch.object(gc, "BRAIN", True), \
+                patch.object(gc, "THREAD_RULES", False), \
                 patch.object(gc.router, "classify", return_value=router.Route("fact", "pick")), \
                 patch.object(gc.picky_brain, "run", brain), \
                 patch.object(nemesis, "facts", lambda *a, **k: nemesis.__dict__["_real_facts"](LORE, BOOK)), \

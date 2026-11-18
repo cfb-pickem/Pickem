@@ -127,11 +127,9 @@ EXCHANGE_DAYS = 14
 DM_MAX_CHARS = 1500
 MAX_SENTENCES = 3
 MAX_CHARS = 480
-MAX_TRIES = 3          # rerolls when chat.py's sentence filter cut part of an answer (PICKY_BRAIN=0 only)
-REROLL_BUDGET = 120.0  # seconds; the watcher gives up at 240
-# Text Picky's slow, smart path (picky_brain.py): understand -> 3 drafts -> judge, every draft
-# through chat.py's filters. Charlie OK'd ~2 min a reply (2026-11-15). PICKY_BRAIN=0 = old single pass.
-BRAIN = os.environ.get("PICKY_BRAIN", "1") != "0"
+# Text Picky's path is always picky_brain.py (understand -> draft -> reroll, every draft through chat.py's
+# filters). The PICKY_BRAIN=0 single-pass loop was deleted 2026-11-17 (review section 4: its send-point chain
+# had already diverged).
 
 GROUP_RIDER = (
     "\n\nGROUP TEXT: you're answering in the league's iMessage group chat. Every member reads "
@@ -1110,65 +1108,33 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             finally:
                 DROPS.reset(dtok)
 
-        if BRAIN:
-            past = [m["content"] for m in messages[:-1] if m["role"] == "assistant"]
-            mine = [str(m.get("text") or "") for m in recent or [] if isinstance(m, dict) and m.get("from_me")]
-            reply, image = await picky_brain.run(
-                draft, q=q, sender=f"{s.name or s.team} (team \"{s.team}\")" if s.team else (s.name or ""),
-                team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:],
-                route=route, chat_id=key or chat_id,
-                prior_q=" ".join(str(m["content"]) for m in messages[:-1] if m["role"] == "user")[-400:],
-                dm=mode != "group", charlie=charlie)
-            if not image:
-                reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
-                                     group=mode == "group", recall=callbacks.is_recall(q))
-                reply = router.nick_names(reply, chat.member_nicknames())  # team names, never real names
-                reply = no_repeat_screen(reply, q, s.team, key or chat_id, route, charlie=charlie)
-                reply = router.drop_repeat_jabs(reply, past[-3:], route, q)  # same jab hook as an earlier turn
-                reply = fact_final(reply, q)  # wrong member W-L / place / gap / echoed false premise: dropped
-                reply = live_games.final_guard(reply) if route.lane != "fact" else reply
-                reply = matchup_guard.fix(reply)  # a flipped "Home at Away" of a known game, swapped back
-                # Ackbar (sender or named) always gets a real-fact jab; code lanes never carry one (Charlie 11/17)
-                reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group",
-                                     force=route.lane == "fact")
-                reply = memory_check(reply, s.team, q, mode != "group")  # a quoted receipt matches its grade
-                reply = charlie_guard(reply, s.team, key or chat_id) if charlie else reply
-            rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
-            log.info("lane: %s", route.label())
-            await save_turn(key, q_hist, reply, who, lane=route.label())
-            return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode,
-                    "lane": route.label()}
-
-        # keep the first answer the filter left whole; else the one it cut least
-        t0, best = time.time(), None
-        for i in range(MAX_TRIES):
-            drops = []
-            dtok = DROPS.set(drops)
-            try:
-                req = StarletteRequest({"type": "http", "method": "POST", "path": "/chat", "headers": [],
-                                        "query_string": b""}, receive)
-                raw, image = await _collect(await chat.chat(req))
-                reply = shape(raw)
-            except HTTPException:
-                if best is None:
-                    raise
-                break  # a reroll hit the rate limit: send the best so far
-            finally:
-                DROPS.reset(dtok)
-            if best is None or len(drops) < best[0]:
-                best = (len(drops), reply, image)
-            if image or not drops or time.time() - t0 > REROLL_BUDGET:
-                break
-            log.info("%s reroll %d: filter dropped %d sentence(s)", mode, i + 1, len(drops))
-        _, reply, image = best
+        past = [m["content"] for m in messages[:-1] if m["role"] == "assistant"]
+        mine = [str(m.get("text") or "") for m in recent or [] if isinstance(m, dict) and m.get("from_me")]
+        reply, image = await picky_brain.run(
+            draft, q=q, sender=f"{s.name or s.team} (team \"{s.team}\")" if s.team else (s.name or ""),
+            team=s.team, recent=RECENT.get(), last_reply=past[-1] if past else "", recent_picky=past[-3:] + mine[-3:],
+            route=route, chat_id=key or chat_id,
+            prior_q=" ".join(str(m["content"]) for m in messages[:-1] if m["role"] == "user")[-400:],
+            dm=mode != "group", charlie=charlie)
         if not image:
-            reply = matchup_guard.fix(no_repeat_screen(fact_final(reply, q), q, s.team, key or chat_id, charlie=charlie))
-            reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
-            reply = memory_check(reply, s.team, q, mode != "group")
+            reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
+                                 group=mode == "group", recall=callbacks.is_recall(q))
+            reply = router.nick_names(reply, chat.member_nicknames())  # team names, never real names
+            reply = no_repeat_screen(reply, q, s.team, key or chat_id, route, charlie=charlie)
+            reply = router.drop_repeat_jabs(reply, past[-3:], route, q)  # same jab hook as an earlier turn
+            reply = fact_final(reply, q)  # wrong member W-L / place / gap / echoed false premise: dropped
+            reply = live_games.final_guard(reply) if route.lane != "fact" else reply
+            reply = matchup_guard.fix(reply)  # a flipped "Home at Away" of a known game, swapped back
+            # Ackbar (sender or named) always gets a real-fact jab; code lanes never carry one (Charlie 11/17)
+            reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group",
+                                 force=route.lane == "fact")
+            reply = memory_check(reply, s.team, q, mode != "group")  # a quoted receipt matches its grade
             reply = charlie_guard(reply, s.team, key or chat_id) if charlie else reply
-        rare_bits.note_sent(reply)
-        await save_turn(key, q_hist, reply, who)
-        return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode}
+        rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
+        log.info("lane: %s", route.label())
+        await save_turn(key, q_hist, reply, who, lane=route.label())
+        return {"reply": reply, "image": image.split(",", 1)[1] if image else None, "mode": mode,
+                "lane": route.label()}
     finally:
         CTX_BOX.reset(ctok)
         chat.SKIP_RATE.reset(stok)
