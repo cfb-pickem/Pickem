@@ -2082,6 +2082,7 @@ def score_text(ctx: dict, q: str) -> str | None:
     age = chat.feed_age(ctx["live_games"], now_utc)
     by_id = {g["GameId"]: g for g in ctx["live_games"]}
     games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    lag = []  # a live score past STALE_NOTE: the answer starts 'As of <time>'
 
     def state(pg) -> str | None:
         g = by_id.get(pg["id"])
@@ -2091,6 +2092,8 @@ def score_text(ctx: dict, q: str) -> str | None:
         if g.get("Status") == "in_progress" and age is not None and age > chat.LIVE_STALE:
             return None  # the feed's lagging: the full brain says so instead of a stale score
         s = re.sub(r" \([^)]*left in the game\)", "", chat.game_state(g, now_utc, now_ct, age)) + "."
+        if g.get("Status") == "in_progress" and age is not None and age > chat.live_games.STALE_NOTE:
+            lag.append(f"As of {chat.live_games.as_of(now_utc.timestamp() - age)} (live feed lagging): ")
         if g.get("Status") == "in_progress" and g.get("line") is not None:
             s += f" Covering right now: {chat._cover_text(g)}."
         return s
@@ -2110,7 +2113,7 @@ def score_text(ctx: dict, q: str) -> str | None:
             if st is None:
                 return None
             parts.append(f"{r['label']}: {r['why'] or 'in progress'}. {st}")
-        return " ".join(parts)
+        return "".join(lag[:1]) + " ".join(parts)
     named = chat.games_named(q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games])
     if not named:
         return None
@@ -2127,7 +2130,7 @@ def score_text(ctx: dict, q: str) -> str | None:
         g = by_id.get(named[0]["id"]) or {}
         if g.get("AwayPts") is not None and g.get("HomePts") is not None:
             out.append(f"That's {int(chat._num(g['AwayPts'])) + int(chat._num(g['HomePts']))} total points.")
-    return " ".join(out + ([sc] if sc else []))
+    return "".join(lag[:1]) + " ".join(out + ([sc] if sc else []))
 
 
 # 'did SMU ever score?' (live-80 2026-11-17: the answer gave the score but not SMU's one TD, Smith from Jennings)

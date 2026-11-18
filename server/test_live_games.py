@@ -7,10 +7,12 @@ replayed at fixed moments; no network, no model.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -188,6 +190,19 @@ class Rider(unittest.TestCase):
         self.assertIsNone(ctx["games_this_week"][0]["winner"])
         self.assertTrue(ctx["live_rider"])
 
+    def test_newer_supabase_row_beats_older_poller_copy(self):
+        # the poller's copy is 40 s old (fetch failed); the score feed's row changed 5 s ago: keep the row
+        t = at(UTSA, r"M\.Reese caught at UTSA02", after=40)
+        g = state(UTSA, t)
+        self.write({UTSA: g}, age_s=40)
+        newer = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=5)).isoformat()
+        ctx = {"games_this_week": [{"id": int(UTSA), "away": "North Texas", "home": "UTSA", "line": 2.5}],
+               "live_games": [{"GameId": int(UTSA), "Away": "North Texas", "Home": "UTSA", "AwayPts": 99,
+                               "HomePts": 98, "Status": "in_progress", "SourceUpdatedAt": newer}]}
+        L.apply_to_ctx(ctx, "is UTSA covering?", refresh=False)
+        row = ctx["live_games"][0]
+        self.assertEqual((row["AwayPts"], row["HomePts"], row["SourceUpdatedAt"]), (99, 98, newer))
+
     def test_prefix_stays_out(self):
         # the rider is per-request text; nothing here touches chat.prompt_prefix
         import inspect
@@ -250,7 +265,114 @@ class FakeClient:
         return FakeResp(200, R.snapshot(GAMES[gid], self.t_fn()))
 
 
+class OnDemand(unittest.TestCase):
+    """Saturday 11/21 (Charlie 11/18: 'as close to live as possible'): a game a text asks about is refetched
+    when its data is over REFRESH_AGE old, with a short deadline, one fetch per game however many ask."""
+
+    def setUp(self):
+        L._overlay.clear()
+        L._mem.update(mtime=None, data=None)
+        self.t = at(UNC, r"B\.Edwards Jr\. injured on the play")
+        self.calls = []
+        self.orig = L.fetch_game
+
+    def tearDown(self):
+        for ev in list(L._inflight.values()):  # a slow fake still running must not leak into the next test
+            ev.wait(6)
+        L.fetch_game = self.orig
+        L._overlay.clear()
+
+    def cache(self, sb_age, detail_age=None, mode="live"):
+        g = state(UNC, self.t)
+        now = time.time()
+        g["ts"] = g["sb_ts"] = now - sb_age
+        g["detail_ts"] = now - (sb_age if detail_age is None else detail_age)
+        L._write({"updated_ts": now - sb_age, "mode": mode, "games": {UNC: g}, "pool_ids": []})
+
+    def fake(self, delay=0.0, ok=True):
+        def f(gid, client=None, timeout=4.0):
+            self.calls.append(gid)
+            time.sleep(delay)
+            return {**state(UNC, self.t), "ts": time.time(), "detail_ts": time.time()} if ok else None
+        L.fetch_game = f
+
+    def test_stale_cache_refetches(self):
+        self.cache(sb_age=12)
+        self.fake()
+        self.assertEqual(L.ensure_fresh([UNC]), [UNC])
+        self.assertEqual(self.calls, [UNC])
+        self.assertLess(L.age(L.load()["games"][UNC]), 2)
+
+    def test_fresh_cache_does_not(self):
+        self.cache(sb_age=3)
+        self.fake()
+        self.assertEqual(L.ensure_fresh([UNC]), [])
+        self.assertEqual(self.calls, [])
+
+    def test_old_play_by_play_refetches(self):
+        # the scoreboard pass is 3 s old but the box score / scoring plays are 50 s old
+        self.cache(sb_age=3, detail_age=50)
+        self.fake()
+        self.assertEqual(L.ensure_fresh([UNC]), [UNC])
+
+    def test_timeout_falls_back_to_cache(self):
+        self.cache(sb_age=30)
+        self.fake(delay=5)
+        t0 = time.monotonic()
+        self.assertEqual(L.ensure_fresh([UNC]), [])
+        self.assertLess(time.monotonic() - t0, 2.5)
+        self.assertGreater(L.age(L.load()["games"][UNC]), 25)  # still the cached copy
+
+    def test_concurrent_asks_dedupe(self):
+        self.cache(sb_age=20)
+        self.fake(delay=0.4)
+        out = []
+        ths = [threading.Thread(target=lambda: out.append(L.ensure_fresh([UNC]))) for _ in range(6)]
+        for th in ths:
+            th.start()
+        for th in ths:
+            th.join(5)
+        self.assertEqual(self.calls, [UNC])
+        self.assertEqual(out, [[UNC]] * 6)
+
+    def test_stale_board_refetched_when_games_are_on(self):
+        self.cache(sb_age=20)
+        n = []
+        orig = L._get
+        L._get = lambda c, url, validators=None, timeout=8.0: (n.append(url), (R.scoreboard(GAMES, SB, self.t), None))[1]
+        try:
+            self.assertTrue(L.refresh_board_if_stale())
+            self.assertEqual(len(n), 1)
+            L._overlay.clear()
+            self.cache(sb_age=60, mode="idle")  # nothing on: the 5-min idle cadence is fine
+            self.assertFalse(L.refresh_board_if_stale())
+            self.assertEqual(len(n), 1)
+        finally:
+            L._get = orig
+
+    def test_stale_rider_game_says_as_of(self):
+        # the refetch failed and the data is 70 s old (under the 90 s 'don't state it' line): the score still
+        # goes out, but the required fact carries 'as of <time>'
+        self.cache(sb_age=70)
+        self.fake(ok=False)
+        ctx = {"games_this_week": []}
+        L.apply_to_ctx(ctx, "UNC score?")
+        need = L.required_fact(ctx, "UNC score?")
+        self.assertIsNotNone(need)
+        self.assertIn("as of", need[1].lower())
+        g = L.load()["games"][UNC]
+        self.assertFalse(need[0](f"Louisville {g['away_score']}, UNC {g['home_score']}."))
+        reply = f"It's {g['away_score']}-{g['home_score']}."
+        self.assertTrue(need[0](reply + need[1]))
+        self.assertIn(f"as of {L.as_of(g['ts'])}", L.game_block(g))  # the model sees it too
+        self.assertNotIn("as of", L.game_block({**g, "ts": time.time()}))
+
+
 class Poller(unittest.TestCase):
+    def test_scoreboard_every_15s_or_less_while_live(self):
+        self.assertLessEqual(L.SB_EVERY, 15)
+        self.assertLessEqual(L.REFRESH_AGE, 15)
+
     def test_idle_live_and_tiers(self):
         clock = {"t": min(R.kickoff(s) for s in GAMES.values()) - 6 * 3600}
         c = FakeClient(lambda: clock["t"])
