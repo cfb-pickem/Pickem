@@ -166,6 +166,16 @@ def member_theory(cg: dict, table: list[dict], tend: dict) -> dict:
     return out
 
 
+def league_crowd(cg: dict, table: list[dict], tend: dict) -> dict | None:
+    """The league's lean on one game from past graded picks only (pick_brief.predict per member, never this
+    week's picks): {side, n, of} when a strict majority of members with a clear habit land on one side."""
+    preds = [p for p in (pick_brief.predict(tend.get(r["team"]), cg) for r in table) if p]
+    if not preds:
+        return None
+    side, n = collections.Counter(preds).most_common(1)[0]
+    return {"side": side, "n": n, "of": len(preds), "src": "past graded picks"} if n * 2 > len(preds) else None
+
+
 # -----------------------------------------------------------------------------
 # the card (code only)
 # -----------------------------------------------------------------------------
@@ -242,6 +252,7 @@ def build_card(g: dict, season: int, week: int, *, notes: dict | None, idx: dict
         "history": [f["why"] for f in by_n[51] + by_n[23]],
         "confidence": confidence(value_pts, b["strength"], margin, bt),
         "theory": member_theory(cg, table, tend),
+        "crowd": league_crowd(cg, table, tend),
         "factors": [{k: f[k] for k in ("n", "name", "side", "w", "why")} for f in fs if f["n"] not in (58, 59, 60)],
         "no_source": [pick_brief.NAMES[n] for n, (st, _) in pick_brief.STATUS.items() if st == "none"],
         "dossier_at": (dossier or {}).get("generated_at"),
