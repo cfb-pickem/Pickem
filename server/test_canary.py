@@ -30,6 +30,15 @@ def test_test_requests_save_nothing():
     assert not (TMP / "hist.json").exists() and not (TMP / "ex.jsonl").exists()
     asyncio.run(gc.save_turn("dm:canary", "q", "a", "canary", "fact"))
     assert (TMP / "hist.json").exists()
+    (TMP / "hist.json").unlink()
+    old, gc.EXAM_CHATS = gc.EXAM_CHATS, True  # exam side sidecars send the test header too: threads still save
+    tok = gc.TEST_REQ.set(True)
+    try:
+        asyncio.run(gc.save_turn("dm:exam", "q", "a", "exam", "fact"))
+    finally:
+        gc.TEST_REQ.reset(tok)
+        gc.EXAM_CHATS = old
+    assert (TMP / "hist.json").exists()
 
 
 def test_code_only_never_calls_the_model():

@@ -710,7 +710,7 @@ def load_history(key: str | None, now: float | None = None, sender: str | None =
 
 async def save_turn(key: str | None, question: str, reply: str, sender: str | None = None,
                     lane: str | None = None) -> None:
-    if not key or not reply or TEST_REQ.get():
+    if not key or not reply or (TEST_REQ.get() and not EXAM_CHATS):
         return
     async with _HIST_LOCK:
         now = time.time()
