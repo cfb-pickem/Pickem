@@ -305,16 +305,20 @@ def value_text(ctx: dict, q: str) -> str | None:
     gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
     named = chat.games_named(text, gl) or chat.games_named(last, gl)
     if not named:
-        gaps = []
+        gaps, why = [], []
         for g in games:
             c = _card_for(ctx, g)
             if c and c.get("value"):
                 gaps.append(c["value"]["label"])
+                vt = game_cards.value_text(c, game_cards.is_locked(c))
+                if vt:
+                    why.append(vt[0].upper() + vt[1:].split(". Not banked")[0].rstrip(".") + ".")
         if not gaps:
             return "No gaps this week: every league line matches the books."
         locked = game_cards.is_locked(_card_for(ctx, games[0]) or {"league_line": {"locked": False, "lock_at": "2099-01-01T11:00:00"}})
-        return (f"Only gap on the board: {_and(gaps)}" + (" vs the books." if locked else
-                " vs the books, and it only counts if it holds through Tuesday's 11 AM lock."))
+        head = (f"Top spot: {gaps[0]}" if len(gaps) == 1 else f"The gaps: {_and(gaps)}")
+        tail = "" if locked else " It only counts if it holds through Tuesday's 11 AM lock."
+        return f"{head}. {why[0] if why else ''}{tail}".replace(" .", ".").strip()
     g = next(x for x in games if x["id"] == named[0]["id"])
     c = game_cards.load_card(ctx.get("current_week"), g["id"])
     if not c or float(c["league_line"]["home"]) != float(g.get("line") or 0):
