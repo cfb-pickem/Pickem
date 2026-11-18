@@ -105,6 +105,18 @@ def test_move_why_routes():
     assert router.classify("why are you so bad at this").kind != "line_move"
 
 
+def test_premise_lane():
+    ctx = dict(CTX, you={"team_name": "Wedge"}, last_week={"week": 11, "games": [
+        {"away": "Oregon State", "home": "Boise State", "away_pts": 41, "home_pts": 46, "line": -13.5,
+         "covered": "Oregon State", "picks": {"Wedge": "Oregon State"}}]})
+    assert router.classify("Boise State covered last week right?").kind == "premise"
+    assert router.fact_answer("premise", ctx, "Boise State covered last week right?") == \
+        "Nope: Oregon State covered (Oregon State 41, Boise State 46)."
+    assert router.fact_answer("premise", ctx, "Oregon State covered last week right?").startswith("Yep, Oregon State covered")
+    assert router.fact_answer("premise", ctx, "why did I take Boise State last week?") == \
+        "You didn't take Boise State, you had Oregon State and it covered."
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:

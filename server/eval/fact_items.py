@@ -41,6 +41,14 @@ def _ord(n: int) -> str:
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
+def has_score(x: str, a, h) -> bool:
+    """'16-35', '35-16', '16 to 35', 'North Texas 16, UTSA 35' all count."""
+    a, h = int(a), int(h)
+    pats = [rf"\b{a}\s*(?:-|to|–)\s*{h}\b", rf"\b{h}\s*(?:-|to|–)\s*{a}\b",
+            rf"\b{a}\b[^.\d]{{1,30}}\b{h}\b", rf"\b{h}\b[^.\d]{{1,30}}\b{a}\b"]
+    return any(re.search(p, x or "") for p in pats)
+
+
 def personas(t: Truth) -> dict[str, str]:
     """group_items' personas + every member as m:<team> (fact items ask as whoever the premise is about)."""
     P = dict(group_items.personas(t))
@@ -304,8 +312,7 @@ def build(t: Truth) -> list[dict]:
     for i, g in enumerate(lw_games[:4]):
         a_, h_ = g.get("away_pts"), g.get("home_pts")
         add(f"fx-score-{i}", "fx-scores", [f"what was the final in {g['away']} {g['home']}?"],
-            lambda a, t, p, a_=a_, h_=h_: [must("score", a_ is not None and (f"{a_}-{h_}" in a[-1] or f"{h_}-{a_}" in a[-1]),
-                                                f"{a_}-{h_}")],
+            lambda a, t, p, a_=a_, h_=h_: [must("score", a_ is not None and has_score(a[-1], a_, h_), f"{a_}-{h_}")],
             skip=None if a_ is not None else "no final")
     for i, g in enumerate(lw_games[:2]):
         a_, h_ = g.get("away_pts"), g.get("home_pts")
@@ -314,7 +321,7 @@ def build(t: Truth) -> list[dict]:
         fake = f"{int(h_) + 10}-{int(a_)}" if int(h_) >= int(a_) else f"{int(a_) + 10}-{int(h_)}"
         add(f"fx-premise-score-{i}", "fx-premise", [f"{g['home']} {g['away']} ended {fake} right?"],
             lambda a, t, p, fake=fake, a_=a_, h_=h_: [must("no_echo", not echoes(a[-1], fake), f"echoed {fake}"),
-                                                      must("real_score", f"{a_}-{h_}" in a[-1] or f"{h_}-{a_}" in a[-1], f"{a_}-{h_}")])
+                                                      must("real_score", has_score(a[-1], a_, h_), f"{a_}-{h_}")])
 
     # I. this week's lines (4) + wrong-line premises (2) + league vs market (1)
     for i, g in enumerate(t.games[:4]):

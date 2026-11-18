@@ -720,6 +720,40 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
 
 
+PREMISE_ASK = re.compile(r"\bwhy did i (take|pick|go with|ride|back)\b|\b(covered|cover|won|lost|ended|finished|beat)\b[^?]{0,40}"
+                         r"\b(right|correct|yeah|yea|yes|no)\s*\?|\bended \d{1,2}\s*-\s*\d{1,2}\b", re.I)
+
+
+def premise_text(ctx: dict, q: str) -> str | None:
+    """A question built on a claim (fact exam 2026-11-17): code checks it; false -> the correction with the
+    real result, true / nothing checkable -> None (the normal path answers)."""
+    import fact_guard
+    text = (q or "").split(" ||| ")[0]
+    facts = fact_guard.premise_facts(ctx, text, chat.same_team)
+    if not facts:
+        for g in (ctx.get("last_week") or {}).get("games") or []:  # a TRUE cover claim: confirm it with the final
+            for t in (g["away"], g["home"]):
+                if g.get("covered") and chat.same_team(t, g["covered"]) and re.search(
+                        rf"(?<!\w){re.escape(t)}(?!\w)[^?]{{0,20}}\bcovered\b", text, re.I) and not re.search(r"\bdidn'?t\b", text, re.I):
+                    return f"Yep, {t} covered: {g['away']} {g.get('away_pts')}, {g['home']} {g.get('home_pts')}."
+        return None
+    out = []
+    me = (ctx.get("you") or {}).get("team_name")
+    for f in facts[:2]:
+        m = re.match(r"they say they took (.+?) last week, which is FALSE: they took (.+?) \((.+?) at (.+?)\)", f)
+        if m:
+            said, took, away, home = m.groups()
+            g = next((x for x in (ctx.get("last_week") or {}).get("games") or [] if {x["away"], x["home"]} == {away, home}), None)
+            res = ""
+            if g and g.get("covered") is not None:
+                res = " and it covered" if chat.same_team(took, g["covered"]) else " and it missed"
+            out.append(f"You didn't take {said}, you had {took}{res}.")
+            continue
+        fix = re.sub(r"^they say .*?FALSE: ", "", f).replace("their real", "your real").replace("they're", "you're")
+        out.append(f"Nope: {fix}.")
+    return " ".join(out)
+
+
 WEEK_N_REC = re.compile(r"\b(what did|how did|how'?d|what was|whats|what'?s)\b[^?.!]{0,40}\b(go|do|record|finish)\b[^?.!]{0,12}\b(in|for) week \d{1,2}\b",
                         re.I)
 # a made-up school ('Hogwarts Tech') must not fuzzy-match a real one (fact exam 2026-11-17: got Texas Tech's line)
@@ -1039,6 +1073,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if why_lane.why_kind(t):  # 'why?' / 'how come' / 'why not Ohio State?' after a call: the next unused reason
         return "why", "WHY_ASK"
+    if PREMISE_ASK.search(t):
+        return "premise", "PREMISE_ASK"  # 'Hawai'i covered last week right?' / 'why did I take SMU?': code checks it
     if WEEK_N_REC.search(t) and not re.search(r"\b(your|ur|picky)\b", t, re.I):
         return "record", "WEEK_N_REC"  # 'what did Ackbar go in week 9?' (fact exam: got week 11's games)
     if PICKY_REC_ASK.search(t) and not re.search(r"\b(this week|who (do|would|should)|lean|like|take)\b", t, re.I):
@@ -2492,7 +2528,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     """The complete answer in code for a fact intent, or None (no data / not this lane's question). A false
     premise in the text ('now that I'm in first ...') gets corrected in front of it (fact_guard)."""
     out = _fact_answer(kind, ctx, q)
-    if out and ctx and not ctx.get("error"):
+    if out and ctx and not ctx.get("error") and kind != "premise":
         try:
             import fact_guard
             prem = fact_guard.premise_facts(ctx, (q or "").split(" ||| ")[0], chat.same_team)  # the sender's words only
@@ -2557,7 +2593,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text,
               "interim": interim_text, "strategy": pick_strategy.answer,
-              "picky_record": picky_record_text}.get(kind)
+              "picky_record": picky_record_text, "premise": premise_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
