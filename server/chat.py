@@ -637,8 +637,10 @@ GATE = Gate()
 
 
 async def _member_stream(hold: int, stream):
-    # a member ask is live priority wherever live_flag marks it in flight (a side copy of chat.py stays low)
-    ollama_gate.PRIORITY.set("low" if live_flag.is_side() else "live")
+    # a member ask is live priority wherever live_flag marks it in flight (a side copy of chat.py stays low);
+    # the group sidecar's drafts arrive with the caller's priority already set (a test ask stays low)
+    if ollama_gate.PRIORITY.get() is None:
+        ollama_gate.PRIORITY.set("low" if live_flag.is_side() else "live")
     try:
         await GATE.member_ready()
         async for chunk in stream:
@@ -7365,7 +7367,9 @@ async def chat(req: Request):
     # a member request preempts test traffic the moment it arrives, before
     # auth and the Supabase reads, so Ollama is free by the time it's ready
     test = is_test_request(req)
-    hold = None if test else GATE.member_in()
+    # the group sidecar drafts through this handler with a header-less request: inside a low-priority context (a
+    # test ask, an exam sidecar) it must not raise the live flag, or the ask's own low calls would wait on it
+    hold = None if test or ollama_gate.PRIORITY.get() == "low" else GATE.member_in()
     try:
         return await _chat(req, test, hold)
     except BaseException:

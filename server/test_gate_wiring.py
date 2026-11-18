@@ -59,6 +59,41 @@ def test_chat_streams_carry_priority():
     assert seen == ["low", "live"], seen
 
 
+def test_sidecar_draft_keeps_the_callers_priority():
+    """group_chat drafts through chat.chat with a header-less request: a test ask (low) must stay low and must not
+    raise the live flag (its own low calls would wait on it); a member's draft stays live and holds the flag."""
+    seen = []
+    orig = chat._chat
+
+    async def fake_chat(req, test, hold, brain=True):
+        seen.append((ollama_gate.PRIORITY.get(), hold is not None))
+        if hold is not None:
+            chat.GATE.member_out(hold)
+        return None
+    chat._chat = fake_chat
+    try:
+        async def go(level):
+            with ollama_gate.priority(level):
+                await chat.chat(Req())
+        run(go("low"))
+        run(go("live"))
+    finally:
+        chat._chat = orig
+    assert seen == [("low", False), ("live", True)], seen
+
+    got = []
+
+    async def make():
+        got.append(ollama_gate.PRIORITY.get())
+        yield "x"
+
+    async def inherited():
+        with ollama_gate.priority("low"):
+            return [x async for x in chat._member_stream(None, make())]
+    run(inherited())
+    assert got == ["low"], got
+
+
 def test_brain_json_call_goes_through_gate():
     calls = []
     orig = ollama_gate.call
