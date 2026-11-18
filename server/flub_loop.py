@@ -721,8 +721,8 @@ def gate(base: dict, fix: dict) -> list[str]:
 
 def run_exam_locked(wt: Path, port: int, tag: str) -> Path:
     """The text exam from <wt> on a side sidecar, inside the shared exam lock (this file's _exam)."""
-    p = _sh(["/usr/bin/lockf", "-t", "14400", LOCK, PY, "-I", str(HERE / "flub_loop.py"), "_exam",
-             "--wt", str(wt), "--port", str(port), "--tag", tag], timeout=6 * 3600)
+    p = _sh(["/usr/bin/lockf", "-t", "43200", LOCK, PY, "-I", str(HERE / "flub_loop.py"), "_exam",
+             "--wt", str(wt), "--port", str(port), "--tag", tag], timeout=18 * 3600)
     out = wt / "server" / "eval" / "results" / f"{tag}.json"
     if p.returncode or not out.exists():
         raise RuntimeError(f"exam {tag} failed (rc {p.returncode}): {(p.stderr or p.stdout)[-300:]}")
