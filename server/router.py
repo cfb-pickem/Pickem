@@ -781,11 +781,303 @@ QB_STATUS_ASK = re.compile(r"\b(who'?s|who is|who will be|whos)\s+(starting|the 
                            r"playing qb|the qb)\b|\bstarting (qb|quarterback)\b|\bis [A-Z][\w'.-]+(?: [A-Z][\w'.-]+)? "
                            r"(playing|starting|going to play|gonna play|out|available|good to go|healthy|hurt)\b"
                            r"|\bwho'?s [A-Z][\w&'.]*(?: [A-Z][\w&'.]*)?(?:'s)? (qb|quarterback)\b|\b(qb|quarterback) situation\b"
-                           r"|\bany injur\w* (that )?matter|\blost a (lineman|starter|receiver|corner|safety|linebacker|rb|wr|qb)\b",
+                           r"|\blost (a|their|its|his) (starting )?(qb|quarterback)\b",
                            re.I)
+
+# personnel lanes (plan phase 4): 'any injuries that matter for X vs Y', 'Indiana lost a lineman? does it matter',
+# 'who's out for Tennessee'; and backup-QB asks ('who's Ohio State's backup QB', 'how has the backup done')
+_POS_ASK_WORDS = (r"line ?m[ae]n|o-?line(?:man|men)?|offensive line(?:man|men)?|tackle|guard|center|receivers?|wr1?|"
+                  r"wideouts?|corners?|cornerbacks?|cb1?|safet(?:y|ies)|linebackers?|running backs?|rb1?|tailbacks?|"
+                  r"tight ends?|edge|pass rushers?|defensive (?:end|tackle|line(?:man|men)?)|d-?line(?:man|men)?|kicker|"
+                  r"starters?|playmakers?|key players?")
+INJURY_IMPACT_ASK = re.compile(
+    r"\bany injur\w*\b[^?.!]{0,40}\b(matter|know|care|worry|for|in|ahead|this week)\b|\binjur\w* (that )?matter"
+    r"|\binjury report\b|\bwho'?s (out|hurt|injured) (for|at|on|in)\b|\bwho is (out|hurt|injured) (for|at|on|in)\b"
+    rf"|\b(lost|losing|loses|lose|without) (a|an|their|its|his|the|two|both|starting|top|star)? ?(starting |top |star )?"
+    rf"(left |right |offensive |defensive |no\. ?1 )?({_POS_ASK_WORDS})\b", re.I)
+BACKUP_QB_ASK = re.compile(r"\bbackup (qb|quarterback)s?\b|\b(qb|quarterback) ?2\b|\bqb2\b|\bsecond[- ]string (qb|quarterback)\b"
+                           r"|\bwho'?s (the|their|[A-Z][\w&'.]*(?: [A-Z][\w&'.]*)?'s) backup\b"
+                           r"|\bthe backup\b[^?.!]{0,30}\b(done|record|started|starts|played|any good|like|look)\b"
+                           r"|\b(how|what) (has|is|was|have)\b[^?.!]{0,30}\bbackup\b", re.I)
+FRESH_D = 10
+_PLAYER_STATUS_Q = re.compile(r"\b(?i:is|will)\s+[A-Z][\w'.-]+(?: [A-Z][\w'.-]+)?\s+(?i:playing|starting|out|available|"
+                              r"healthy|hurt|good to go|going to play|gonna play)\b")
+_EVER_PLAYED = re.compile(r"\b(ever (played|started)|has he (played|started)|any experience|played much|started before|"
+                          r"has he done|what'?s he done)\b", re.I)
+_BACKUP_WANTED = re.compile(r"\b(backup|back-up|if not|if he can'?t|if he doesn'?t|if he'?s out|who replaces|next man|"
+                            r"qb2|who'?s starting|who is starting|starting (qb|quarterback)|start(s|ing)? at (qb|quarterback)|"
+                            r"under center)\b", re.I)
+
+
+def _q(s: str, cap: int = 240) -> str:
+    """A source's words, verbatim; past `cap` chars cut at the last clause break with '...'."""
+    s = re.sub(r"\s+", " ", s or "").strip()
+    if len(s) > cap:
+        cut = max(s.rfind(x, 0, cap - 3) for x in ("; ", ", ", ". "))
+        return s[:cut if cut > 60 else cap - 3].rstrip(" ,;.") + "..."
+    return s if s.endswith((".", "!", "?", "'", '"')) else s + "."
+
+
+def _qb_line(x: dict) -> str:
+    ln = x.get("line") or {}
+    if not ln.get("att"):
+        return "hasn't thrown a pass this season"
+    return f"{ln['cmp']}-of-{ln['att']} for {ln['yds']} yards, {ln['td']} TD, {ln['int']} INT"
+
+
+def _qb_bio(x: dict, name: bool = True) -> str:
+    """'Luke Fahey (freshman): 3 starts (1-2 SU, 0-3 ATS as the starter), 80-of-133 for ...'."""
+    who = f"{x['name']}{' (' + x['cls'].lower() + ')' if x.get('cls') else ''}: " if name else ""
+    if x.get("starts"):
+        n = x["starts"]
+        return f"{who}{n} start{'s' if n != 1 else ''} ({x['su']} SU, {x['ats']} ATS as the starter), {_qb_line(x)}"
+    rel = _qb_line(x)
+    return f"{who}no starts this season, " + (rel + " in relief" if (x.get("line") or {}).get("att") else rel)
+
+
+def _per(r: dict) -> str:
+    """'<quote> (per Yahoo Sports, Monday).'"""
+    q = _q(r["quote"])
+    q = q[:-1] if q.endswith(".") and not q.endswith("...") else q
+    return f"{q} (per {r['source_name']}, {r['when']})."
+
+
+def _qb_used(team: str, *names: str) -> list:
+    return [f for n in names if n for f in factstore.team_facts(team, ("qb_start", "qb_line", "roster"), n)]
+
+
+def _move_against(g: dict | None, team: str) -> tuple[float | None, str | None, list]:
+    """(points the line moved AWAY from team (negative = toward), the team it moved toward, market facts)."""
+    if not g:
+        return None, None, []
+    mk = factstore.market(g)
+    mv = mk.get("move")
+    if mv is None or mk.get("spreadOpen") is None:
+        return None, None, []
+    if not mv:
+        return 0.0, None, factstore.facts(g, ("market",))
+    toward = g["homeTeam"] if mv < 0 else g["awayTeam"]
+    return (abs(mv) if factstore.norm(toward) != factstore.norm(team) else -abs(mv)), toward, factstore.facts(g, ("market",))
+
+
+def _value_line(team: str, pts: float, g: dict | None, used: list, what: str) -> str:
+    """'That's worth about 4 points on my position table, and the line has moved 7.5 toward Tulane, so ...'"""
+    used.append(factstore.value_fact(f"{team} {what}", pts, "position value table"))
+    against, toward, mf = _move_against(g, team)
+    used += mf
+    s = f"That's worth about {pts:g} points on my position table"
+    if against is None:
+        return s + "."
+    if against > 0:
+        tail = ", so the market's priced it." if against >= 0.75 * pts else ", so it may not be fully priced yet."
+        return s + f", and the line has moved {against:g} toward {toward}" + tail
+    if against < 0:
+        return s + f", but the line has moved {-against:g} toward {team}, so the market isn't scared of it."
+    return s + ", and the line hasn't moved, so either it's not in the number yet or the market doesn't buy it."
 
 
 def qb_status_text(ctx: dict, q: str) -> str | None:
+    """A QB's (or player's) latest status from the normalized availability list, verbatim with its source and
+    day (TBD stays TBD; > 7 days old says 'last report <day>'). Out or doubtful: who's next (class, starts,
+    SU/ATS as the starter, season line; never a QB who's out too), what that's worth and what the line has done.
+    Healthy starter: his starts. Stores built before the personnel data exist fall back to the intel notes."""
+    if not factstore.has_personnel():
+        return _qb_status_intel(ctx, q)
+    named = factstore.teams_in(q)
+    hit = factstore.find_player(q, named)
+    if hit:
+        player, team = hit
+    elif named:
+        team = named[0]
+    else:
+        return None
+    room = factstore.qb_room(team)
+    starter = next((x for x in room if x["name"] == factstore.qb_starter(team)), None)
+    in_room = {factstore.norm(x["name"]) for x in room}
+    qrows = [r for r in factstore.player_status(team=team) if (r.get("pos") == "QB" or factstore.norm(r["player"])
+                                                              in in_room) and r["status"] in factstore.CAUSE_STATUSES]
+    outs = {factstore.norm(r["player"]): r for r in qrows if r["status"] in factstore.OUT_STATUSES and r["age_days"] <= 45}
+    if not hit:
+        fresh = sorted([r for r in qrows if r["age_days"] <= FRESH_D],
+                       key=lambda r: (not starter or factstore.norm(r["player"]) != factstore.norm(starter["name"]),
+                                      r["age_days"]))
+        player = fresh[0]["player"] if fresh else (starter or {}).get("name")
+        if not player:
+            return None
+    me = next((x for x in room if factstore.norm(x["name"]) == factstore.norm(player)), None)
+    rows = factstore.player_status(team=team, player=player)
+    if not me and not rows:
+        return None
+    row = rows[0] if rows else None
+    used, out = [], []
+    st = row["status"] if row else None
+    if row:
+        used.append(factstore.status_fact(row))
+        out.append(f"{player} ({team}) is {factstore.STATUS_PHRASE.get(st, st)}, per {row['source_name']} "
+                   f"({row['when']}): \"{_q(row['quote'])}\"")
+    else:
+        out.append(f"{player} ({team}): nothing in my sources (news, ESPN's injury listings) has him hurt or out.")
+    also = [r for k, r in outs.items() if k != factstore.norm(player) and not hit and r["age_days"] <= FRESH_D]
+    for r in also[:2]:
+        used.append(factstore.status_fact(r))
+        out.append(f"Also {factstore.STATUS_PHRASE.get(r['status'], r['status'])}: {r['player']}. {_per(r)}")
+    used += _qb_used(team, player)
+    g, _ = factstore.find_game(team, ctx)
+    replaced = bool(starter and me and starter is not me and starter.get("streak") and (me.get("starts") or 0) > 0
+                    and factstore.norm(starter["name"]) not in outs)
+    nxt = factstore.backup_for(room, player, set(outs))
+    if st in factstore.OUT_STATUSES:
+        if replaced:
+            out.append(f"{starter['name']} has started the last {starter['streak']} since: {_qb_bio(starter, False)}. "
+                       f"He's already missed those games, so the line already has it.")
+            used += _qb_used(team, starter["name"])
+        elif nxt:
+            out.append(f"Next up: {_qb_bio(nxt)}." + (" It'd be his first start this season." if not nxt.get("starts")
+                                                       else ""))
+            used += _qb_used(team, nxt["name"])
+            if me and me is starter:
+                out.append(_value_line(team, factstore.qb_drop(team, player, nxt["name"]), g, used, f"losing {player}"))
+    elif me and (st in ("questionable", "TBD") or _BACKUP_WANTED.search(q or "") or _EVER_PLAYED.search(q or "")):
+        if me.get("starts") and (me is starter or not starter) and me.get("streak"):
+            out.append(f"He's started the last {me['streak']} ({_qb_bio(me, False)}).")
+        else:
+            out.append(f"{_qb_bio(me)}.")
+        if (st in ("questionable", "TBD") or _BACKUP_WANTED.search(q or "")) and nxt:
+            lead = "If he can't go" if st in ("questionable", "TBD") else "Behind him"
+            out.append(f"{lead}: {_qb_bio(nxt)}." + (" That'd be his first start this season." if not nxt.get("starts")
+                                                      else ""))
+            used += _qb_used(team, nxt["name"])
+    elif me and me.get("starts") and me is starter and me.get("streak"):
+        out.append(f"He's started the last {me['streak']} ({_qb_bio(me, False)}).")
+    return factstore.answer(" ".join(out), used)
+
+
+def backup_qb_text(ctx: dict, q: str) -> str | None:
+    """A team's backup QB: class, starts, SU/ATS as the starter, season line, first-start flag, and what the drop
+    from the starter is worth. If the starter (or the season's main QB) is out, say so and who's up."""
+    named = factstore.teams_in(q)
+    hit = factstore.find_player(q, named)
+    team = named[0] if named else (hit[1] if hit else None)
+    room = factstore.qb_room(team) if team else []
+    if not room:
+        return None
+    used, out = [], []
+    cur = next((x for x in room if x["name"] == factstore.qb_starter(team)), None) or room[0]
+    main = max(room, key=lambda x: x.get("starts") or 0)
+    outs = {factstore.norm(r["player"]): r for r in factstore.player_status(team=team)
+            if r["status"] in factstore.OUT_STATUSES and r["age_days"] <= 45}
+    used += _qb_used(team, cur["name"])
+
+    def gone(x):
+        r = outs[factstore.norm(x["name"])]
+        used.append(factstore.status_fact(r))
+        used.extend(_qb_used(team, x["name"]))
+        return f"{x['name']} is {factstore.STATUS_PHRASE.get(r['status'], r['status'])} (per {r['source_name']}, {r['when']})"
+    lead = f"{team}'s backup is "
+    if factstore.norm(cur["name"]) in outs:
+        out.append(gone(cur) + ".")
+        if main is not cur and factstore.norm(main["name"]) in outs:
+            out.append(gone(main) + " too.")
+        lead = "Next up is "
+    elif main is not cur and factstore.norm(main["name"]) in outs:
+        out.append(f"{gone(main)}, so the backup already took over: {_qb_bio(cur)}.")
+        lead = "Behind him: "
+    b = factstore.backup_for(room, cur["name"], set(outs))
+    if not b:
+        return factstore.answer(" ".join(out), used) if out else None
+    used += _qb_used(team, b["name"])
+    out.append(f"{lead}{_qb_bio(b)}.")
+    if not b.get("starts"):
+        out.append("If he plays it'd be his first start this season.")
+    pts = factstore.qb_drop(team, cur["name"], b["name"])
+    used.append(factstore.value_fact(f"{team} starter to backup", pts, "position value table"))
+    out.append(f"Starter to backup is worth about {pts:g} points on my position table.")
+    return factstore.answer(" ".join(out), used)
+
+
+_POS_GROUPS = [("OL", r"line ?m[ae]n|o-?line|offensive line|tackle|guard|center"), ("WR", r"receivers?|wr1?|wideouts?"),
+               ("CB", r"corners?|cornerbacks?|cb1?"), ("S", r"safet(?:y|ies)"), ("LB", r"linebackers?"),
+               ("RB", r"running backs?|rb1?|tailbacks?"), ("TE", r"tight ends?"),
+               ("EDGE", r"edge|pass rushers?|defensive ends?"), ("DL", r"d-?line|defensive line|defensive tackles?"),
+               ("K", r"kicker")]
+_GROUP_WORD = {"OL": "lineman", "WR": "receiver", "CB": "corner", "S": "safety", "LB": "linebacker", "RB": "running back",
+               "TE": "tight end", "EDGE": "pass rusher", "DL": "defensive lineman", "K": "kicker"}
+_OFFENSE = {"QB", "RB", "WR", "TE", "OL"}
+
+
+def _group(pos: str) -> str:
+    pv = factstore.position_values()
+    p = (pos or "").upper()
+    c = p if p in pv["positions"] or p == "QB" else pv["aliases"].get(p, "")
+    return {"LT": "OL", "WR1": "WR", "RB1": "RB", "CB1": "CB"}.get(c, c)
+
+
+def injury_impact_text(ctx: dict, q: str) -> str | None:
+    """Who's out for a game (or the team a text names), what that's worth on the position table, the matching
+    SP+ unit, and a verdict: 'matters at the margin, not a line-mover' or 'this is why it moved'."""
+    g, _ = factstore.find_game(q, ctx)
+    named = factstore.teams_in(q)
+    if not g and not named:
+        return None
+    teams_ = [g["awayTeam"], g["homeTeam"]] if g else named[:1]
+    focus = teams_
+    if named and re.search(r"\b(lost|losing|loses|lose|without)\b", q or "", re.I):
+        f1 = [t for t in teams_ if factstore.norm(t) == factstore.norm(named[0])]
+        focus = f1 or teams_
+    grp = next((gname for gname, rx in _POS_GROUPS if re.search(rf"\b(?:{rx})\b", q or "", re.I)), None)
+    rows = factstore.player_status(game=g) if g else factstore.player_status(team=teams_[0])
+    rows = [r for r in rows if r["status"] in factstore.CAUSE_STATUSES and (not grp or _group(r.get("pos")) == grp)]
+    pv = factstore.position_values()
+    sw = pv["status_weight"]
+    used, parts, best = [], [], (0.0, None, [])
+    for t in focus:
+        tr = [r for r in rows if factstore.norm(r["team"]) == factstore.norm(t)]
+        new = sorted([r for r in tr if r["age_days"] <= FRESH_D and not r.get("already_out")],
+                     key=lambda r: -(r.get("value") or 0))
+        old = [r for r in tr if r not in new]
+        pts = round(2 * sum((r.get("value") or factstore.position_value(r.get("pos"), r.get("role")))
+                            * sw.get(r["status"], 0) for r in new)) / 2
+        if pts > best[0] or best[1] is None:
+            best = (pts, t, new)
+        if not tr:
+            what = f"a {_GROUP_WORD[grp]}" if grp else "anyone"
+            parts.append(f"{t}: nothing in my sources (news, ESPN, team notes) has {what} out.")
+            continue
+        s = (f"{t} {_GROUP_WORD[grp]} news: " if grp else f"{t}: ") + (", ".join(f"{r['player']} ({r.get('pos') or 'position n/a'}, "
+                                  f"{factstore.STATUS_PHRASE.get(r['status'], r['status'])}, {r['when']})"
+                                  for r in new[:4]) if new else "nothing new")
+        if old:
+            s += ("; " if new else ", and ") + ", ".join(r["player"] for r in old[:3]) + \
+                 (" has" if len(old[:3]) == 1 else " have") + " been out for weeks, so that's in the stats and the number already"
+        parts.append(s + ".")
+        used += [factstore.status_fact(r) for r in new[:4] + old[:3]]
+    pts, t, new = best
+    if t and new:
+        off = sum((r.get("value") or 0) for r in new if _group(r.get("pos")) in _OFFENSE)
+        side = "offense" if off * 2 >= sum((r.get("value") or 0) for r in new) else "defense"
+        rk, f = factstore.sp_unit(t, side)
+        if rk:
+            used.append(f)
+            parts.append(f"Most of that hits {t}'s {side}, No. {rk} in SP+.")
+    mover = pv["line_mover"]
+    if not t or not new:
+        parts.append("Nothing new there, so nothing to adjust the number for.")
+    else:
+        used.append(factstore.value_fact(f"{t} missing players", pts, "position value table, weighted by status"))
+        against, toward, mf = _move_against(g, t)
+        used += mf
+        if pts >= mover and against and against >= 1:
+            parts.append(f"That's about {pts:g} points of missing players and the line has moved {against:g} toward "
+                         f"{toward}: this is why it moved.")
+        elif pts >= mover:
+            parts.append(f"That's about {pts:g} points on paper, line-mover size, but the number hasn't moved against "
+                         f"{t}, so the market either had it or doesn't buy it.")
+        else:
+            parts.append(f"Matters at the margin, not a line-mover (about {pts:g} points on my table).")
+    return factstore.answer(" ".join(parts), used)
+
+
+def _qb_status_intel(ctx: dict, q: str) -> str | None:
     """The sourced availability notes (cache/slate_intel.json, validated offline) for the QB / player a text
     asks about, in their own words: no starter named stays no starter named."""
     named = factstore.teams_named(q)
@@ -1197,12 +1489,18 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         fteam = home if now < 0 else away
         dteam = away if now < 0 else home
         out.append(f"With a {tot:g} total that's roughly {fteam} {hi:.1f}, {dteam} {lo:.1f} implied: a low total makes a big spread harder to cover.")
+    # the normalized availability list first (news + ESPN + team notes, latest report per player), newest
+    # absences only: someone out for weeks is in the number already
+    prs = sorted([r for r in factstore.player_status(game=g) if r["status"] in factstore.CAUSE_STATUSES
+                  and r["age_days"] <= FRESH_D and not r.get("already_out")],
+                 key=lambda r: (r.get("pos") != "QB", -(r.get("value") or 0), r["age_days"]))[:2]
+    extra = [factstore.status_fact(r) for r in prs]
     notes, intel_as_of = factstore.availability(away, home)
     facts = [f for f in notes if f.get("kind") == "injury" or f.get("status")]
     qb = [f for f in facts if re.search(r"\bQB\d?\b|quarterback", f.get("text") or "", re.I)]
-    pick = (qb or facts)[:2]
+    pick = [] if prs else (qb or facts)[:2]
     news_line = None
-    if not pick:  # the intel run can miss a game: the news feed's QB/injury items for either team (live-80/genius r4)
+    if not pick and not prs:  # the intel run can miss a game: the news feed's QB/injury items for either team
         try:
             for t in (away, home):
                 hits = [x for x in factstore.news_lines(t, f"{t} QB injury")
@@ -1212,7 +1510,9 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
                     break
         except Exception:  # noqa: BLE001
             news_line = None
-    if pick:
+    if prs:
+        out.append("The news: " + " ".join(_per(r) for r in prs))
+    elif pick:
         out.append("The news: " + " ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))
     elif news_line:
         out.append(f"The news: {news_line}")
@@ -1232,10 +1532,11 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     why = next((re.sub(r"^\s*\+ for [^:]+: ", "", x) for x in ll if x.strip().startswith("+ for")), None)
     if why:
         why = re.sub(r"\s*\((?:[^()]|\([^)]*\))*\)?\s*$", "", why).strip()  # drop the trailing '(source text...)'
-    unexplained_big = not pick and not news_line and opn is not None and abs(now - opn) >= 3
+    unexplained_big = not pick and not prs and not news_line and opn is not None and abs(now - opn) >= 3
     q_out = [f for f in qb if (f.get("status") or "").lower() in ("questionable", "doubtful", "game-time decision")]
-    if q_out and q_out[0].get("players"):
-        p = q_out[0]["players"][0]
+    q_rows = [r for r in prs if r.get("pos") == "QB" and r["status"] in ("questionable", "doubtful", "TBD")]
+    if q_rows or (not prs and q_out and q_out[0].get("players")):
+        p = q_rows[0]["player"] if q_rows else q_out[0]["players"][0]
         out.append(f"If {p} plays, the move looks overdone; if he's out, it's earned. I'd wait on his status before locking.")
     elif unexplained_big:
         pass  # 'don't fight it' already said: no lean against a move nobody can explain
@@ -1243,7 +1544,7 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         out.append(f"Lean: {m.group(1)}" + (f", mainly because {why.rstrip('.')}." if why else "."))
     elif m:
         out.append(f"At {m.group(1)} my numbers call it a coin flip, so the move looks priced in.")
-    return factstore.answer(" ".join(out), factstore.facts(g))
+    return factstore.answer(" ".join(out), factstore.facts(g) + extra)
 
 
 def h2h_text(ctx: dict, q: str) -> str | None:
@@ -1286,7 +1587,11 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "playoff", "playoff_race.is_need_question"
     if CFP_NOW_ASK.search(t) and CFP_NOW_WHAT.search(t) and not NOT_CFP_NOW.search(t):
         return "cfp_now", "CFP_NOW_ASK"  # the real CFP field if it ended today: ESPN CFP + race leaders + cfp_rules
-    if QB_STATUS_ASK.search(t) and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and qb_status_text({}, t):
+    if INJURY_IMPACT_ASK.search(t) and not re.search(r"\b(qb|quarterback)s?\b", t, re.I):
+        return "injury_impact", "INJURY_IMPACT_ASK"  # 'any injuries that matter for X vs Y', 'Indiana lost a lineman?'
+    if BACKUP_QB_ASK.search(t) and not _PLAYER_STATUS_Q.search(t):
+        return "backup_qb", "BACKUP_QB_ASK"  # 'who's Ohio State's backup QB': starts, record, line, first start
+    if QB_STATUS_ASK.search(t) and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and _qb_status_intel({}, t):
         return "qb_status", "QB_STATUS_ASK"  # 'who's starting at QB for Tennessee': the sourced intel note, verbatim
     if CONF_RACE_ASK.search(t) and not re.search(r"\b(cfp|playoff|my|our|league)\b", t, re.I):
         return "conf_race", "CONF_RACE_ASK"  # 'what's the Big 12 title game picture': CFBD conference records
@@ -2838,7 +3143,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if not ctx or ctx.get("error"):
         return None
-    if kind in ("lines_now", "spread", "value", "line_move", "qb", "score", "cover", "pick", "h2h", "keynum", "qb_status"):
+    if kind in ("lines_now", "spread", "value", "line_move", "qb", "score", "cover", "pick", "h2h", "keynum", "qb_status",
+                "backup_qb", "injury_impact"):
         ghost = unknown_school((q or "").split(" ||| ")[0])
         if ghost:
             return f"I've got nothing on {ghost}: no line, no score, no record. Check the name?"  # maybe NAIA: never 'no such' 
@@ -2867,6 +3173,17 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
             sm = slate_move_text(ctx, q)  # a non-pool game's move, explained from the cache + sourced news
             if sm:
                 return sm
+        if kind == "qb":  # the pool card's QB note; a non-pool team's QB from the fact store's personnel data
+            out = qb_text(ctx, q)
+            if out is None and factstore.has_personnel():
+                pool_t = {factstore.norm(x) for g in ctx.get("games_this_week") or [] for x in (g.get("away"), g.get("home"))
+                          if x}
+                named = factstore.teams_in(q)
+                hit = factstore.find_player(q, named)
+                ts = named or ([hit[1]] if hit else [])
+                if ts and not any(factstore.norm(t) in pool_t for t in ts):
+                    out = qb_status_text(ctx, q)
+            return out
         if kind in POOL_GAME_KINDS and slate_cards.covers(q, ctx) and not chat.games_named(
                 q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]):
             return None  # names a non-pool game: the full brain answers from its GAME CARD (genius exam 2026-11-17)
@@ -2884,6 +3201,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text, "pick_ctx": pick_ctx_text,
               "worst": worst_text, "fade": fade_text, "why": why_lane.answer, "channel": channel.answer,
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
+              "backup_qb": backup_qb_text, "injury_impact": injury_impact_text,
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text,
               "interim": situational.interim_text, "weather_alt_travel": situational.weather_alt_travel_text,
@@ -2907,7 +3225,8 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 
 # the football lanes that read only the fact store + the league ctx (test_factstore.py checks it statically)
 STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, situational.interim_text,
-               career_ats_text, hypo_value_text, qb_status_text, big_picture.coach_text, big_picture.cfp_now_text)
+               career_ats_text, hypo_value_text, qb_status_text, big_picture.coach_text, big_picture.cfp_now_text,
+               backup_qb_text, injury_impact_text)
 
 # code lanes built from the POOL games' cards: a text about another game goes to the full brain + slate card
 POOL_GAME_KINDS = {"value", "qb", "line_move", "spread", "flip", "pick", "defend", "others", "short", "compare", "upset"}

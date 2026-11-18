@@ -74,11 +74,15 @@ class Inputs:
     live_path: Path | None = None
     news_path: Path | None = None
     wire_path: Path | None = None
+    personnel_db: Path | None = None      # cache/personnel.sqlite (rosters + CFBD player_game)
+    personnel_path: Path | None = None    # the fixture's frozen slice (personnel.json.gz)
+    dossier_dir: Path | None = None
     _ds: dict = field(default_factory=dict, repr=False)
 
     @classmethod
     def live(cls) -> "Inputs":
         import market_snapshot
+        import personnel
         import polls
         return cls(cfbd_db=cfbd.DB_PATH, slate_intel_path=HERE / "cache" / "slate_intel.json",
                    weather_path=HERE / "cache" / "weather.json", polls_path=polls.PATH,
@@ -86,14 +90,51 @@ class Inputs:
                    live_path=Path(os.environ.get("PICKY_LIVE_CACHE", HERE / "cache" / "live_games.json")),
                    news_path=Path(os.environ.get("PICKY_NEWS_CACHE", HERE / "cache" / "news.json")),
                    wire_path=Path(os.environ.get("PICKY_INSIDER_WIRE",
-                                                 "/Users/Agent/cfb-pickem-private/insider_wire.json")))
+                                                 "/Users/Agent/cfb-pickem-private/insider_wire.json")),
+                   personnel_db=personnel.DB_PATH, dossier_dir=HERE / "cache" / "dossiers")
 
     @classmethod
     def from_fixture(cls, d: Path, **kw) -> "Inputs":
         d = Path(d)
         kw.setdefault("news_path", d / "news.json" if (d / "news.json").exists() else None)
         kw.setdefault("wire_path", d / "insider_wire.json" if (d / "insider_wire.json").exists() else None)
+        kw.setdefault("personnel_path", d / "personnel.json.gz" if (d / "personnel.json.gz").exists() else None)
+        kw.setdefault("dossier_dir", d / "dossiers")
         return cls(fixture_dir=d, slate_intel_path=d / "slate_intel.json", weather_path=d / "weather.json", **kw)
+
+    def personnel(self) -> dict:
+        """{'rosters': {team: {...}}, 'player_games': [rows], 'fetched': ts}; {} when there's none yet."""
+        if self.personnel_path:
+            try:
+                return json.loads(gzip.decompress(Path(self.personnel_path).read_bytes()))
+            except (OSError, ValueError):
+                return {}
+        if self.personnel_db and Path(self.personnel_db).exists():
+            import personnel
+            db = sqlite3.connect(self.personnel_db)
+            try:
+                db.execute("select 1 from rosters limit 1")
+                f = db.execute("select max(fetched_at) from player_games").fetchone()[0]
+                return {"rosters": personnel.rosters(db), "player_games": personnel.player_games(db), "fetched": f}
+            except sqlite3.Error:
+                return {}
+            finally:
+                db.close()
+        return {}
+
+    def dossiers(self) -> list[dict]:
+        """The two newest weeks' dossiers (sourced facts only matter here)."""
+        d = Path(self.dossier_dir) if self.dossier_dir else None
+        if not d or not d.is_dir():
+            return []
+        weeks = sorted((p for p in d.iterdir() if p.is_dir() and p.name.isdigit()), key=lambda p: int(p.name))[-2:]
+        out = []
+        for w in weeks:
+            for f in sorted(w.glob("[0-9]*.json")):
+                x = _json(f)
+                if x.get("facts") or x.get("opus"):
+                    out.append(x)
+        return out
 
     def datasets(self) -> dict:
         if self._ds:
@@ -502,6 +543,149 @@ def _conf_races(conf_games: dict, now: float, as_of: str) -> dict[str, dict]:
     return {c: title_race.race(c, gs, t0, as_of=as_of, source="CFBD games") for c, gs in conf_games.items()}
 
 
+# --- personnel (plan phase 4): QB rooms, the qb_start ledger, normalized availability ----------------------------
+
+FRESH_D = 10  # a report this new can explain a line move; older ones are in the number already
+
+
+def _qb_text(q: dict, team: str) -> tuple[str, str]:
+    """(starts fact text, season line fact text) for one QB."""
+    if q["starts"]:
+        st = (f"{q['name']} has {q['starts']} starts at QB for {team} this season ({q['su']} SU, {q['ats']} ATS as the "
+              f"starter)" + (f"; he's started the last {q['streak']} straight" if q.get("streak") else ""))
+    else:
+        st = f"{q['name']} has no starts at QB for {team} this season"
+    ln = q["line"]
+    line = (f"{q['name']} this season: {ln['cmp']}-of-{ln['att']}, {ln['yds']} yards, {ln['td']} TD, {ln['int']} INT"
+            + (f"; {ln['car']} rushes for {ln['rush_yds']} yards" if ln.get("car") else "")
+            + f" in {ln['games']} games") if ln.get("att") else f"{q['name']} hasn't thrown a pass this season"
+    return st, line
+
+
+def _key(name: str) -> str:
+    """A cheap player-name key for the 16k box-score rows (cfbd.norm is ~40 us a call)."""
+    return name.lower().replace(".", "").replace("'", "").replace("’", "").replace(" jr", "").replace(" iii", "").strip()
+
+
+def _personnel(inp: Inputs, teams: dict, games: dict, intel: dict, now: float) -> dict:
+    """Adds qbs / qb_starter / player_status (+ facts) to team sheets and player_status to game sheets."""
+    import personnel as PS
+    pers = inp.personnel() if hasattr(inp, "personnel") else {}
+    rosters = pers.get("rosters") or {}
+    season = max((t.get("season") or 0 for t in teams.values()), default=0)
+    pg = [r for r in pers.get("player_games") or [] if not season or r.get("season") == season]
+    as_pg = _iso(pers.get("fetched")) or next((t["as_of"] for t in teams.values()), _iso(now))
+    by_key = {(t, PS._norm(p["name"])): p for t, r in rosters.items() for p in r.get("players") or []}
+    positions = {k: p.get("pos") for k, p in by_key.items()}
+    counts: dict[str, set] = {}
+    for (t, n) in by_key:
+        counts.setdefault(n, set()).add(t)
+    name_team = {n: next(iter(ts)) for n, ts in counts.items() if len(ts) == 1}
+    passers = {r["id"] for r in pg if r.get("att")}
+    ledger = PS.qb_ledger([r for r in pg if r["id"] in passers], {t: s.get("results") or [] for t, s in teams.items()},
+                          positions)
+    # who played in each team's latest game (stat rows), and the team's yardage leaders (WR1 / RB1)
+    last_gid, played, lead_rec, lead_rush = {}, set(), {}, {}
+    for t, s in teams.items():
+        rs = [r for r in s.get("results") or [] if r.get("date")]
+        if rs:
+            last_gid[t] = max(rs, key=lambda r: r["date"])["game_id"]
+    season_rows: dict[tuple, dict] = {}
+    for r in pg:
+        k = (r["team"], _key(r["name"]))
+        a = season_rows.setdefault(k, {"rec_yds": 0, "rush_yds": 0, "att": 0, "games": set()})
+        a["rec_yds"] += r.get("rec_yds") or 0
+        a["rush_yds"] += r.get("rush_yds") or 0
+        a["att"] += r.get("att") or 0
+        a["games"].add(r["game_id"])
+        if last_gid.get(r["team"]) == r["game_id"]:
+            played.add(k)
+    for (t, n), a in season_rows.items():
+        if a["att"] < 20 and a["rec_yds"] > lead_rec.get(t, ("", 0))[1]:
+            lead_rec[t] = (n, a["rec_yds"])
+        if a["att"] < 20 and a["rush_yds"] > lead_rush.get(t, ("", 0))[1]:
+            lead_rush[t] = (n, a["rush_yds"])
+    rows = PS.normalize(intel=intel, dossiers=inp.dossiers() if hasattr(inp, "dossiers") else [],
+                        news_items=list((_json(inp.news_path).get("items") or {}).values()),
+                        roster_rows=[x for r in rosters.values() for x in r.get("status_rows") or []],
+                        live=_json(inp.live_path), now=now, name_team=name_team)
+    game_of = {}
+    for gid, g in sorted(games.items(), key=lambda kv: kv[1].get("start") or ""):
+        for t in (g["away"], g["home"]):
+            game_of.setdefault(t, gid)
+    by_team: dict[str, list] = {}
+    for r in rows:
+        if r["team"] not in teams:
+            continue
+        age = (now - PS._ts(r["reported_at"])) / 86400 if r["reported_at"] else 99
+        if age > 45 and r["status"] != "season":
+            continue
+        p = by_key.get((r["team"], PS._norm(r["player"]))) or {}
+        k = (r["team"], _key(r["player"]))
+        r["pos"] = r.get("pos") or p.get("pos") or ""
+        r["cls"] = p.get("cls") or ""
+        if not r.get("role"):
+            r["role"] = ("WR1" if lead_rec.get(r["team"], ("",))[0] == k[1] and r["pos"] in ("WR", "TE") else
+                         "RB1" if lead_rush.get(r["team"], ("",))[0] == k[1] and r["pos"] in ("RB", "FB") else None)
+        r["already_out"] = bool(k in season_rows and season_rows[k]["games"] and k not in played
+                                and r["team"] in last_gid)
+        r["value"] = PS.row_value(r, ledger.get(r["team"]) or [])
+        if not r.get("game_id") or str(r["game_id"]) not in games:
+            r["game_id"] = game_of.get(r["team"])
+        r["reported_at"] = r["reported_at"] or _iso(now)
+        by_team.setdefault(r["team"], []).append(r)
+
+    def afact(r):
+        return _fact("availability", r["player"], _slug(r["status"]), r["status"],
+                     f"{r['player']} ({r['team']}) {r['status']}: {r['quote']}", r["source_name"] or "news",
+                     r["reported_at"])
+    for t, s in teams.items():
+        led = ledger.get(t) or []
+        room, seen = [], set()
+        res = sorted(s.get("results") or [], key=lambda x: x.get("date") or "", reverse=True)
+        for q in led:
+            p = by_key.get((t, PS._norm(q["name"]))) or {}
+            ids = {g["game_id"] for g in q["start_games"]}
+            streak = 0
+            for x in res:
+                if str(x["game_id"]) not in ids:
+                    break
+                streak += 1
+            room.append({"name": q["name"], "id": q["id"], "cls": p.get("cls") or "", "jersey": p.get("jersey") or "",
+                         "starts": q["starts"], "su": q["su"], "ats": q["ats"], "first_start": q["first_start"],
+                         "last_start": q["last_start"], "streak": streak, "line": q["line"], "rating": q["rating"],
+                         "start_games": [{k: g[k] for k in ("date", "opp", "won", "cover")} for g in q["start_games"]]})
+            seen.add(PS._norm(q["name"]))
+        for p in (rosters.get(t) or {}).get("players") or []:
+            if p.get("pos") == "QB" and PS._norm(p["name"]) not in seen:
+                room.append({"name": p["name"], "id": p["id"], "cls": p.get("cls") or "", "jersey": p.get("jersey") or "",
+                             "starts": 0, "su": "0-0", "ats": "0-0", "first_start": None, "last_start": None,
+                             "streak": 0, "line": {"cmp": 0, "att": 0, "yds": 0, "td": 0, "int": 0, "car": 0,
+                                                   "rush_yds": 0, "rush_td": 0, "games": 0},
+                             "rating": None, "start_games": []})
+        if room:
+            s["qbs"] = room
+            st = PS.starter(led)
+            s["qb_starter"] = st["name"] if st else None
+            for q in room:
+                a, b = _qb_text(q, t)
+                s["facts"].append(_fact("qb_start", q["name"], "starts", q["starts"], a, "CFBD box scores + lines", as_pg))
+                s["facts"].append(_fact("qb_line", q["name"], "season", q["line"].get("att"), b, "CFBD box scores", as_pg))
+                if q["cls"]:
+                    s["facts"].append(_fact("roster", q["name"], "class", q["cls"],
+                                            f"{q['name']} ({t} QB) is listed as a {q['cls'].lower()}", "ESPN roster",
+                                            as_pg))
+        if t in by_team:
+            s["player_status"] = by_team[t]
+            s["facts"] += [afact(r) for r in by_team[t]]
+    for g in games.values():
+        ps = by_team.get(g["away"], []) + by_team.get(g["home"], [])
+        g["player_status"] = ps
+        g["facts"] += [afact(r) for r in ps]
+    return {"rosters": len(rosters), "player_games": len(pg), "availability": sum(len(v) for v in by_team.values()),
+            "fetched": pers.get("fetched")}
+
+
 def _hash(x) -> str:
     return hashlib.sha1(json.dumps(x, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -520,6 +704,7 @@ def build(inp: Inputs | None = None, now: float | None = None, out: Path | None 
     snaps = M.latest_all(inp.market_db) if inp.market_db else {}
     games = _game_sheets(ds, teams, _json(inp.slate_intel_path), _json(inp.weather_path), snaps, now)
     intel = _json(inp.slate_intel_path)
+    pers_src = _personnel(inp, teams, games, intel, now)
     coaches = [{"first": c.get("firstName"), "last": c.get("lastName"),
                 "seasons": [{"school": s.get("school"), "year": s.get("year"), "wins": s.get("wins"),
                              "losses": s.get("losses")} for s in c.get("seasons") or []]}
@@ -541,7 +726,8 @@ def build(inp: Inputs | None = None, now: float | None = None, out: Path | None 
     store = {"v": VERSION, "built_ts": now, "built_at": _iso(now),
              "sources": {"cfbd": (ds.get("_fetched") or {}).get("lines"), "slate_intel": intel.get("as_of"),
                          "polls": polls_d.get("_fetched_ts"), "weather": _json(inp.weather_path).get("fetched_at"),
-                         "market": max((r[-1]["ts"] for r in snaps.values() if r), default=None)},
+                         "market": max((r[-1]["ts"] for r in snaps.values() if r), default=None),
+                         "personnel": pers_src},
              "rankings": {k: polls_d[k] for k in ("CFP", "AP", "Coaches") if (polls_d.get(k) or {}).get("ok")},
              "coaching": intel.get("coaching") or [], "coaching_fetched": intel.get("fetched_at"), "coaches": coaches,
              "coach_careers": careers,
@@ -738,6 +924,24 @@ def teams_named(q: str) -> list[str]:
     return out
 
 
+def teams_in(q: str) -> list[str]:
+    """teams_named plus short school names it skips (LSU, BYU, TCU, SMU, UCF ...), as written in caps, exact only,
+    in the order the text names them."""
+    named = teams_named(q)
+    idx = teams_idx()["teams"]
+    text = re.sub(r"(\w)['’]s\b", r"\1", q or "")
+    pos = {}
+    for t in named:
+        m = re.search(rf"\b{re.escape(t)}\b", text, re.I)
+        pos[t] = m.start() if m else len(text)
+    for m in re.finditer(r"\b[A-Z][A-Za-z&]{1,3}\b", text):
+        k = cfbd.ALIASES.get(cfbd.norm(m.group()), cfbd.norm(m.group()))
+        t = idx.get(k)
+        if t and t["name"] not in pos:
+            pos[t["name"]] = m.start()
+    return sorted(pos, key=lambda t: pos[t])
+
+
 def _row(sheet: dict, now: float | None = None) -> dict:
     """A game sheet in the CFBD lines-row shape slate_cards' helpers read, with the store's market as 'lines'."""
     m = market_for(sheet, now)
@@ -829,6 +1033,155 @@ def all_availability() -> list[tuple[dict, dict]]:
     """(game sheet, raw note) for every note this week."""
     st = load() or {}
     return [(g, f) for g in (st.get("games") or {}).values() for f in g.get("intel_facts") or []]
+
+
+# --- personnel gateway (plan phase 4) -------------------------------------------------------------------------
+
+CAUSE_STATUSES = ("out", "season", "doubtful", "questionable", "TBD", "suspended", "benched", "portal", "opt-out")
+OUT_STATUSES = ("out", "season", "doubtful", "suspended", "portal", "opt-out", "benched")
+STATUS_PHRASE = {"out": "out", "season": "out for the season", "doubtful": "doubtful", "questionable": "questionable",
+                 "probable": "probable", "TBD": "TBD (no call made yet)", "available": "good to go",
+                 "benched": "benched", "suspended": "suspended", "portal": "in the transfer portal",
+                 "opt-out": "opting out"}
+_fallback: dict = {}
+
+
+def has_personnel() -> bool:
+    return any(t.get("qbs") for t in ((load() or {}).get("teams") or {}).values())
+
+
+def _status_rows() -> list[dict]:
+    import personnel as PS
+    st = load() or {}
+    rows = [r for t in (st.get("teams") or {}).values() for r in t.get("player_status") or []]
+    if rows or any(t.get("qbs") for t in (st.get("teams") or {}).values()):
+        return rows
+    key = (id(st), st.get("built_ts"))  # an old store (no personnel yet): normalize its sourced intel notes
+    if key not in _fallback:
+        intel = {"games": {gid: {"away": g["away"], "home": g["home"], "facts": g.get("intel_facts") or []}
+                           for gid, g in (st.get("games") or {}).items()}}
+        _fallback.clear()
+        _fallback[key] = PS.normalize(intel=intel, now=_now())
+    return _fallback[key]
+
+
+def player_status(team: str | None = None, player: str | None = None, game: dict | None = None) -> list[dict]:
+    """Normalized availability rows (latest report per player), newest first, each with read-time wording:
+    when ('Monday' / 'last report Mon 11/2'), stale (> 7 days) and age_days."""
+    import personnel as PS
+    teams_ = None
+    if game:
+        teams_ = {cfbd.norm(game.get("awayTeam") or game.get("away") or ""),
+                  cfbd.norm(game.get("homeTeam") or game.get("home") or "")}
+    now = _now()
+    out = []
+    for r in _status_rows():
+        if team and cfbd.norm(r["team"]) != cfbd.norm(team):
+            continue
+        if teams_ and cfbd.norm(r["team"]) not in teams_:
+            continue
+        if player and cfbd.norm(r["player"]) != cfbd.norm(player):
+            continue
+        c = dict(r)
+        c["when"], c["stale"] = PS.report_when(r.get("reported_at"), now)
+        c["age_days"] = (now - PS._ts(r.get("reported_at"))) / 86400 if r.get("reported_at") else 99.0
+        out.append(c)
+    return sorted(out, key=lambda r: r["age_days"])
+
+
+def status_fact(r: dict) -> dict:
+    """The availability fact for one player_status row, with its read-time day wording."""
+    return {"id": f"availability.{_slug(r['player'])}.{_slug(r['status'])}", "kind": "availability",
+            "subject": r["player"], "value": r["status"],
+            "text": f"{r['player']} ({r['team']}) {r['status']}, per {r.get('source_name')} ({r.get('when', '')}): "
+                    f"{r.get('quote')}", "source": r.get("source_name") or "news", "as_of": r.get("reported_at") or ""}
+
+
+def qb_room(name: str) -> list[dict]:
+    """A team's QBs: starts, SU/ATS as starter, season line, class (most starts first)."""
+    return (team(name) or {}).get("qbs") or []
+
+
+def qb_starter(name: str) -> str | None:
+    return (team(name) or {}).get("qb_starter")
+
+
+def backup_for(room: list[dict], player: str, exclude=frozenset()) -> dict | None:
+    import personnel as PS
+    return PS.backup_for(room, player, {cfbd.norm(x) for x in exclude})
+
+
+def qb_drop(name: str, starter: str, backup: str | None = None) -> float:
+    """Points from a team's QB to his backup on the position table (rating gap; unknown backup = the default)."""
+    import personnel as PS
+    room = qb_room(name)
+    me = next((x for x in room if cfbd.norm(x["name"]) == cfbd.norm(starter)), None) or {}
+    b = next((x for x in room if backup and cfbd.norm(x["name"]) == cfbd.norm(backup)), None) or \
+        PS.backup_for(room, starter) or {}
+    return PS.qb_value(me.get("rating"), b.get("rating"), (b.get("line") or {}).get("att") or 0)
+
+
+def team_facts(name: str, kinds: tuple[str, ...], subject: str | None = None) -> list[dict]:
+    t = team(name) or {}
+    return [f for f in t.get("facts") or [] if f["kind"] in kinds and (not subject or f["subject"] == subject)]
+
+
+_LOWER_OK = re.compile(r"\b(?:is|on|about|hows|how'?s|for|has|does|did|was)\s+$")
+
+
+def find_player(q: str, teams: list[str] | None = None) -> tuple[str, str] | None:
+    """(player, team) a text names: a QB room or availability name, full name anywhere, a last name only when
+    it's capitalized or reads as one ('is chiles playing'). Ambiguous last names prefer the named teams."""
+    import personnel as PS
+    st = load() or {}
+    cands = set()
+    for t, s in (st.get("teams") or {}).items():
+        cands |= {(q_["name"], t) for q_ in s.get("qbs") or []}
+    cands |= {(r["player"], r["team"]) for r in _status_rows()}
+    text = (q or "").replace("’", "'")
+    low = text.lower()
+    tn = {cfbd.norm(t) for t in teams or []}
+    full = [c for c in cands if PS._word_at(low, c[0].lower())]
+    if full:
+        return sorted(full, key=lambda c: (cfbd.norm(c[1]) not in tn, -len(c[0])))[0]
+    hits = []
+    for n, t in cands:
+        last = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", n).split()[-1]
+        if len(last) < 4:
+            continue
+        if PS._word_at(text, last) or (PS._word_at(low, last.lower())
+                                       and _LOWER_OK.search(low[:low.find(last.lower())])):
+            hits.append((n, t))
+    if tn:
+        mine = [h for h in hits if cfbd.norm(h[1]) in tn]
+        hits = mine or hits
+    return hits[0] if len(set(hits)) == 1 else None
+
+
+def position_value(pos: str, role: str | None = None) -> float:
+    import personnel as PS
+    return PS.player_value(pos, role)
+
+
+def position_values() -> dict:
+    import personnel as PS
+    return PS.position_values()
+
+
+def value_fact(subject: str, pts: float, why: str) -> dict:
+    return {"id": f"value.{_slug(subject)}", "kind": "value", "subject": subject, "value": pts,
+            "text": f"{subject}: about {pts:g} points of spread ({why})", "source": "position_value.json",
+            "as_of": "static"}
+
+
+def sp_unit(name: str, side: str) -> tuple[int | None, dict | None]:
+    """(SP+ offense or defense rank, its fact) for a team."""
+    t = team(name) or {}
+    rk = (t.get("sp") or {}).get("off_rank" if side == "offense" else "def_rank")
+    if not rk:
+        return None, None
+    return rk, _fact("sp", name, f"{side[:3]}_rank", rk, f"{name}'s {side} is No. {rk} in SP+", "CFBD SP+",
+                     t.get("as_of") or "")
 
 
 def coaching() -> list[dict]:
@@ -1011,12 +1364,18 @@ def unsupported(text: str, facts_used: list | None, extra=()) -> list[str]:
 # =============================================================================================================
 
 def refresh() -> dict:
-    """The tick: polls (1 h TTL, mirrored to picky.ranking) then the store build."""
+    """The tick: polls (1 h TTL, mirrored to picky.ranking), a couple of due ESPN rosters (weekly TTL, free), then
+    the store build."""
+    import personnel
     import polls
     try:
         polls.refresh(pusher="default")
     except Exception as e:  # noqa: BLE001
         log.warning("factstore: polls refresh failed: %r", e)
+    try:
+        personnel.tick()
+    except Exception as e:  # noqa: BLE001 - rosters never block the store
+        log.warning("factstore: roster tick failed: %r", e)
     return build()
 
 

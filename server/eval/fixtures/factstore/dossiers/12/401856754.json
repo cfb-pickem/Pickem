@@ -1,0 +1,172 @@
+{
+ "game_id": 401856754,
+ "week": 12,
+ "away": "LSU",
+ "home": "Tennessee",
+ "facts": [
+  {
+   "status": "out",
+   "text": "Josh Heupel confirmed Tennessee WR Mike Matthews will miss the rest of the season with a knee injury suffered in the Nov. 14 win at Texas A&M.",
+   "kind": "injury",
+   "team": "home",
+   "players": [
+    "Mike Matthews"
+   ],
+   "source_url": "https://www.rockytopinsider.com/2026/11/16/what-tennessee-football-hc-josh-heupel-said-to-recap-texas-am-preview-lsu/",
+   "source_name": "www.rockytopinsider.com",
+   "date": "2026-11-16",
+   "confidence": "high",
+   "url_check": "ok"
+  },
+  {
+   "status": "unknown",
+   "text": "Tennessee QB George MacIntyre hurt his right knee vs Texas A&M; Heupel said Nov. 16 he 'looked good this morning and will continue to progress through the course of the week.'",
+   "kind": "injury",
+   "team": "home",
+   "players": [
+    "George MacIntyre"
+   ],
+   "source_url": "https://sports.yahoo.com/articles/josh-heupel-updates-qb-george-173105253.html",
+   "source_name": "sports.yahoo.com",
+   "date": "2026-11-16",
+   "confidence": "high",
+   "url_check": "ok"
+  },
+  {
+   "text": "Freshman Faizon Brandon finished the Texas A&M game at QB; Heupel noted both he and George MacIntyre have played recent weeks, and Knox News expects both in the LSU game plan.",
+   "kind": "fact",
+   "team": "home",
+   "players": [
+    "Faizon Brandon",
+    "George MacIntyre"
+   ],
+   "source_url": "https://sports.yahoo.com/articles/josh-heupel-updates-qb-george-173105253.html",
+   "source_name": "sports.yahoo.com",
+   "date": "2026-11-16",
+   "confidence": "medium",
+   "url_check": "ok"
+  },
+  {
+   "status": "out",
+   "text": "Tennessee LG Nic Moore missed the Texas A&M game with an illness; Heupel did not say if he will play LSU. Sham Umarov started in his place.",
+   "kind": "injury",
+   "team": "home",
+   "players": [
+    "Nic Moore",
+    "Sham Umarov"
+   ],
+   "source_url": "https://sports.yahoo.com/articles/josh-heupel-said-tennessee-ol-185023303.html",
+   "source_name": "sports.yahoo.com",
+   "date": "2026-11-16",
+   "confidence": "medium",
+   "url_check": "ok"
+  },
+  {
+   "status": "out",
+   "text": "Tennessee starters lost for the season include OL Wendell Moe, RB Daune Morris, DL Tyree Weathersby, S Edrees Farooq and TE Ethan Davis.",
+   "kind": "injury",
+   "team": "home",
+   "players": [
+    "Wendell Moe",
+    "Daune Morris",
+    "Tyree Weathersby",
+    "Edrees Farooq",
+    "Ethan Davis"
+   ],
+   "source_url": "https://sports.yahoo.com/articles/josh-heupel-said-tennessee-ol-185023303.html",
+   "source_name": "sports.yahoo.com",
+   "date": "2026-11-16",
+   "confidence": "high",
+   "url_check": "ok"
+  },
+  {
+   "status": "out",
+   "text": "Knox News lists Tennessee's Dylan Lewis (S), Joakim Dodson (WR/KR), Jaedon Harmon (LB) and Jadais Richard (CB) among 10 players with season-ending injuries.",
+   "kind": "injury",
+   "team": "home",
+   "players": [
+    "Dylan Lewis",
+    "Joakim Dodson",
+    "Jaedon Harmon",
+    "Jadais Richard"
+   ],
+   "source_url": "https://sports.yahoo.com/articles/josh-heupel-said-tennessee-ol-185023303.html",
+   "source_name": "sports.yahoo.com",
+   "date": "2026-11-16",
+   "confidence": "medium",
+   "url_check": "ok"
+  },
+  {
+   "status": "doubtful",
+   "text": "LSU freshman DT Richard Anderson has missed three straight games; Kiffin on a return vs Tennessee: 'I don't think it will be this week... But we're still hopeful.'",
+   "kind": "injury",
+   "team": "away",
+   "players": [
+    "Richard Anderson"
+   ],
+   "source_url": "https://www.theadvocate.com/baton_rouge/sports/lsu/lsu-football-lane-kiffin-sam-leavitt-tennessee-quarterback-change/article_4eefc9f1-9a01-51e5-8fb8-9893439ee1c8.html",
+   "source_name": "www.theadvocate.com",
+   "date": "2026-11-16",
+   "confidence": "medium",
+   "url_check": "ok"
+  },
+  {
+   "status": "unknown",
+   "text": "LSU RT Weston Davis played 73 snaps vs Texas through what Kiffin called a 'really bad' ankle injury.",
+   "kind": "injury",
+   "team": "away",
+   "players": [
+    "Weston Davis"
+   ],
+   "source_url": "https://www.theadvocate.com/baton_rouge/sports/lsu/lsu-football-lane-kiffin-sam-leavitt-tennessee-quarterback-change/article_4eefc9f1-9a01-51e5-8fb8-9893439ee1c8.html",
+   "source_name": "www.theadvocate.com",
+   "date": "2026-11-16",
+   "confidence": "medium",
+   "url_check": "ok"
+  },
+  {
+   "text": "Kiffin brushed off using the last two games to look at backup QBs Landen Clark and Husan Longstreet: 'My job is to win.' Sam Leavitt appears set to stay the starter.",
+   "kind": "fact",
+   "team": "away",
+   "players": [
+    "Landen Clark",
+    "Husan Longstreet",
+    "Sam Leavitt"
+   ],
+   "source_url": "https://www.theadvocate.com/baton_rouge/sports/lsu/lsu-football-lane-kiffin-sam-leavitt-tennessee-quarterback-change/article_4eefc9f1-9a01-51e5-8fb8-9893439ee1c8.html",
+   "source_name": "www.theadvocate.com",
+   "date": "2026-11-16",
+   "confidence": "medium",
+   "url_check": "ok"
+  },
+  {
+   "text": "Sam Leavitt threw three interceptions in LSU's loss to Texas, two in the red zone; Kiffin said he 'made some really poor decisions.'",
+   "kind": "fact",
+   "team": "away",
+   "players": [
+    "Sam Leavitt"
+   ],
+   "source_url": "https://www.cbssports.com/college-football/news/lane-kiffin-lsu-relives-nightmare-texas/",
+   "source_name": "www.cbssports.com",
+   "date": "2026-11-16",
+   "confidence": "high",
+   "url_check": "ok"
+  },
+  {
+   "status": "out",
+   "text": "LSU safety Dashawn Spears (ACL surgery), LB Charles Ross II (torn ACL) and WR Philip Wright III (leg) are out for the 2026 season.",
+   "kind": "injury",
+   "team": "away",
+   "players": [
+    "Dashawn Spears",
+    "Charles Ross II",
+    "Philip Wright III"
+   ],
+   "source_url": "https://www.si.com/college/lsu/football/weeks-brothers-highlight-injury-report-for-lsu",
+   "source_name": "www.si.com",
+   "date": "2026-11-05",
+   "confidence": "high",
+   "url_check": "ok"
+  }
+ ]
+}
