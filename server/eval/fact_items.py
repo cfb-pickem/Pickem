@@ -26,7 +26,7 @@ ORD = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth",
        9: "ninth", 10: "tenth", 11: "eleventh", 12: "twelfth", 13: "thirteenth", 14: "fourteenth",
        15: "fifteenth", 16: "sixteenth"}
 _ORD_RE = re.compile(r"\b(?:(\d{1,2})(?:st|nd|rd|th)|(" + "|".join(ORD.values()) + r"))(?:[- ]place)?\b", re.I)
-_REC = re.compile(r"(?<![\d.$-])(\d{1,2})\s*-\s*(\d{1,2})(?![\d.])")
+_REC = re.compile(r"(?<![\d.$-])(\d{1,2})\s*-\s*(\d{1,2})(?!\d|\.\d)")
 _NEG = re.compile(r"\b(not|isn'?t|aren'?t|wasn'?t|nope|no|nah|wish|dream|pretend|try again|actually|"
                   r"really|wrong|fantasy|imaginary|delusion\w*|math|hallucinat\w*|cute|lol|huh)\b|\?", re.I)
 _SEASON = re.compile(r"\b(season|overall|on the year|this year|ytd|total|for the year)\b", re.I)

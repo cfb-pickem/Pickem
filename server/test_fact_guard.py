@@ -110,6 +110,45 @@ def test_premise_echo():
     assert fg.premise_echo_check(CTX, "who's in first?", same) is None
 
 
+IDX = {"teams": {
+    "texas": {"name": "Texas", "record": "8-2", "conf_record": "5-2", "ats": (5, 5, 0, 1.5),
+              "scores": [(34, 20), (24, 27)], "games": [1]},
+    "lsu": {"name": "LSU", "record": "7-3", "conf_record": "4-3", "ats": (4, 6, 0, -2.0),
+            "scores": [(13, 31)], "games": [1]},
+    "alabama": {"name": "Alabama", "record": "8-2", "conf_record": "6-1", "ats": (6, 4, 0, 1.0),
+                "scores": [(31, 13)], "games": [1]},
+}}
+
+
+def test_team_facts():
+    ok = fg.team_fact_check(IDX, corpus="GAME CARD: LSU 2-5 ATS as a road team; CFP: No. 9 Alabama", members=["Alpha"])
+    assert ok("Texas is 8-2 and 5-2 in the SEC.")
+    assert not ok("Texas is 9-1.")
+    assert ok("Alabama beat LSU 31-13.")
+    assert not ok("Alabama beat LSU 35-13.")
+    assert ok("LSU is 2-5 ATS on the road.")  # printed in the card
+    assert ok("No. 9 Alabama is rolling.")
+    assert not ok("No. 3 Alabama is rolling.")
+    assert ok("Alpha is 30-18 and Texas is a mess.")  # member W-Ls are member_claim_check's
+    assert ok("Texas isn't 9-1, it's 8-2.")
+
+
+def test_pick_sides():
+    ok = fg.pick_side_check(CTX, same)
+    assert ok("Bravo took North Texas and got burned.")
+    assert not ok("Bravo took UTSA.")
+    assert ok("Alpha had UTSA.")
+    assert not ok("Zulu's on UTSA again.")
+
+
+def test_coach_moves():
+    ok = fg.coach_move_check("Coach note: UTEP fired Scotty Walden. Kyle Whittingham is Michigan's coach (no firing).")
+    assert ok("UTEP fired Scotty Walden.")
+    assert not ok("Michigan fired Kyle Whittingham.")
+    assert not ok("Brian Kelly got fired.")
+    assert ok("Michigan still has Kyle Whittingham.")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, f in list(globals().items()):

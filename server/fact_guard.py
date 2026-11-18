@@ -25,7 +25,7 @@ import re
 ORD = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
        "ninth": 9, "tenth": 10, "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14,
        "fifteenth": 15, "sixteenth": 16}
-_REC = re.compile(r"(?<![\d.$:/-])(\d{1,2})\s*-\s*(\d{1,2})(?![\d.:/])")
+_REC = re.compile(r"(?<![\d.$:/-])(\d{1,2})\s*-\s*(\d{1,2})(?!\d|\.\d|:|/)")
 _PLACE = re.compile(r"\b(?:(\d{1,2})(?:st|nd|rd|th)|(" + "|".join(ORD) + r"))[- ](?:place|spot)\b"
                     r"|\b(?:in|sitting|sits|sit|tied for|alone in|holding|hold|at|is|are|'re|'s)\s+(?:sole\s+)?"
                     r"(?:(\d{1,2})(?:st|nd|rd|th)|(" + "|".join(ORD) + r"))\b(?![- ](?:quarter|half|down|week|game|pick|kick|time))",
@@ -145,10 +145,28 @@ def subject(s: str, f: Facts) -> str | None:
     return None
 
 
+_SEG = re.compile(r",\s*(?=(?:while|but|and|meanwhile|whereas)\b)|;\s*|\s+(?=while\b)")
+
+
 def problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
-    out = []
+    """Each clause on its own ('You're 30-18, while I'm 0-3': the 0-3 is Picky's)."""
     if _NEG.search(s):
-        return out  # corrections ("you're not 33-15") and questions back are fine
+        return []  # corrections ("you're not 33-15") and questions back are fine
+    segs = [x for x in _SEG.split(s) if x and x.strip()]
+    if len(segs) <= 1:
+        return _problems(s, f, card_recs)
+    out, last_who = [], None
+    for seg in segs:
+        who = subject(seg, f)
+        if who is None and last_who and not _ME.search(seg) and _REC.search(seg):
+            seg = f"{last_who} {seg}"  # 'Bravo is 2nd, and 28-20': the clause keeps its subject
+        out += _problems(seg, f, card_recs)
+        last_who = who or last_who
+    return out
+
+
+def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
+    out = []
     who = subject(s, f)
     recs = [f"{int(a)}-{int(b)}" for a, b in _REC.findall(s)]
     # Picky's own record ('I'm 0-3', 'my 25-10 season')
@@ -367,5 +385,158 @@ def line_num_check(ctx: dict, cards: dict | None = None, corpus: str = "", log=N
                     if log:
                         log.info("line check dropped (%s %s, true %s): %r", team, m.group(1), sorted(true), sent[:100])
                     return False
+        return True
+    return ok
+
+
+# ---- team records, scores, ranks (CFBD cache + the prompt) ----------------------------------------------------
+
+_TEAM_RE_CACHE: dict = {}
+
+
+def _team_regex(idx: dict):
+    key = id(idx)
+    if key not in _TEAM_RE_CACHE:
+        names = sorted({v["name"] for v in (idx.get("teams") or {}).values() if v.get("name") and v.get("games")},
+                       key=len, reverse=True)
+        _TEAM_RE_CACHE.clear()
+        _TEAM_RE_CACHE[key] = (re.compile(r"(?<![\w&])(" + "|".join(re.escape(n) for n in names) + r")(?![\w&])"),
+                               {v["name"]: v for v in (idx.get("teams") or {}).values() if v.get("name")})
+    return _TEAM_RE_CACHE[key]
+
+
+def _near(corpus: str, team: str, val: str, span: int = 90) -> bool:
+    for m in re.finditer(rf"(?<![\w&]){re.escape(team)}(?![\w&])", corpus or ""):
+        if val in corpus[max(0, m.start() - span): m.end() + span]:
+            return True
+    return False
+
+
+def team_true(t: dict) -> tuple[set[str], set[str]]:
+    """(true W-Ls, true scores 'a-b' both orders) for one CFBD team."""
+    recs = {t.get("record"), t.get("conf_record")}
+    ats = t.get("ats")
+    if ats and len(ats) >= 2:
+        recs.add(f"{ats[0]}-{ats[1]}")
+    scores = set()
+    for a, b in t.get("scores") or []:
+        if a is not None and b is not None:
+            scores |= {f"{a}-{b}", f"{b}-{a}"}
+    return {r for r in recs if r}, scores
+
+
+def team_fact_check(idx: dict | None, corpus: str = "", members: list[str] | None = None, log=None):
+    """A W-L, score or 'No. N' rank tied to an FBS team must be true per the CFBD cache (record, conference
+    record, ATS, a game score) or printed next to that team in the prompt. 'Texas is 9-1' with Texas 8-2,
+    an invented 'No. 5 Texas', a wrong final: dropped."""
+    if not idx:
+        return None
+    rx, by_name = _team_regex(idx)
+    mem = [m.lower() for m in members or []]
+
+    def ok(sent: str) -> bool:
+        if _NEG.search(sent) or any(m in sent.lower() for m in mem):
+            return True  # member W-Ls belong to member_claim_check
+        if re.search(r"\b(blackjack|chips?|slots?|in \w+ games|head to head|h2h|over the last|since 20\d\d|all-?time|"
+                     r"series|bowl|history|in 20\d\d|20\d\d season)\b", sent, re.I):
+            return True  # history / splits / series: not this season's cache
+        teams = [(m.group(1), m.start(), m.end()) for m in rx.finditer(sent)]
+        if not teams:
+            return True
+        for m in _REC.finditer(sent):
+            val = f"{int(m.group(1))}-{int(m.group(2))}"
+            near = min(teams, key=lambda t: min(abs(m.start() - t[2]), abs(t[1] - m.end())))
+            if min(abs(m.start() - near[2]), abs(near[1] - m.end())) > 40:
+                continue
+            ok_vals = set()
+            for name, *_ in teams:
+                recs, scores = team_true(by_name.get(name) or {})
+                ok_vals |= recs | scores
+            if val in ok_vals or any(_near(corpus, n, val) for n, *_ in teams):
+                continue
+            if log:
+                log.info("team fact dropped (%s %s): %r", near[0], val, sent[:100])
+            return False
+        for m in re.finditer(r"(?:\bNo\.\s?|#)(\d{1,2})\s+(?:ranked\s+)?([A-Z][\w&'.]*(?:\s+[A-Z][\w&'.]*){0,2})", sent):
+            name = next((n for n, *_ in teams if m.group(2).startswith(n)), None)
+            if name and not _near(corpus, name, f"No. {m.group(1)}") and not _near(corpus, name, f"#{m.group(1)}") \
+                    and not _near(corpus, name, f"{m.group(1)}. {name}", 5):
+                if log:
+                    log.info("team rank dropped (%s No. %s): %r", name, m.group(1), sent[:100])
+                return False
+        return True
+    return ok
+
+
+# ---- other members' pick claims -------------------------------------------------------------------------------
+
+_PICK_VERB = r"(?:took|takes|had|has|picked|is on|was on|on|rode|backed|went with|is riding|faded|is fading)"
+
+
+def pick_side_check(ctx: dict, same_team=None, log=None):
+    """'Bravo took North Texas' / 'Bravo's on Iowa': a member tied to a side of a game whose picks are
+    revealed (last week, this week after kickoff) must be on that side."""
+    same = same_team or (lambda a, b: (a or "").lower() == (b or "").lower())
+    members = sorted((r["team"] for r in ctx.get("standings_ytd") or []), key=len, reverse=True)
+    games = []
+    for g in (ctx.get("last_week") or {}).get("games") or []:
+        games.append((g["away"], g["home"], g.get("picks") or {}))
+    rev = ctx.get("revealed_picks_this_week") or {}
+    by_id = {g["id"]: g for g in ctx.get("games_this_week") or []}
+    tw: dict = {}
+    for m, plist in rev.items():
+        for p in plist:
+            g = by_id.get(p.get("game_id"))
+            if g:
+                tw.setdefault((g["away"], g["home"]), {})[m] = p.get("pick")
+    games += [(a, h, picks) for (a, h), picks in tw.items()]
+    if not games or not members:
+        return None
+
+    def ok(sent: str) -> bool:
+        if _NEG.search(sent):
+            return True
+        for m in members:
+            mm = re.search(rf"(?<!\w){re.escape(m)}(?:'s)?\s+{_PICK_VERB}\s+(?:the\s+)?([A-Z][\w&'.]*(?:\s+[A-Z][\w&'.]*){{0,2}})", sent)
+            if not mm:
+                continue
+            said = mm.group(1)
+            for a, h, picks in games:
+                hit = next((x for x in (a, h) if said.lower().startswith(x.lower())), None)
+                if hit and picks.get(m) and not same(picks[m], hit) and not re.search(r"\bfad", mm.group(0)):
+                    if log:
+                        log.info("pick side dropped (%s took %s, said %s): %r", m, picks[m], hit, sent[:100])
+                    return False
+        return True
+    return ok
+
+
+# ---- coaching moves -------------------------------------------------------------------------------------------
+
+_COACH_MOVE = re.compile(r"\b(fired|firing|got canned|let go|parted ways|dismissed|axed|hot seat|on the hot seat|"
+                         r"hired|resign\w*|stepp(ed|ing) down|out as (head )?coach|interim)\b", re.I)
+_NAME = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z']+)+)\b")
+
+
+def coach_move_check(corpus: str = "", log=None):
+    """A firing / hiring / hot-seat claim about a named person must name someone the prompt carries (news,
+    coach note, insider notes). 'Whittingham fired' with no such line: dropped."""
+    low = (corpus or "").lower()
+
+    def ok(sent: str) -> bool:
+        if not _COACH_MOVE.search(sent):
+            return True
+        names = [n for n in _NAME.findall(sent) if n.split()[0] not in ("The", "College", "Notre", "Big", "Ohio", "Penn",
+                                                                       "Texas", "Oregon", "Boise", "North", "South")]
+        segs = re.split(r"[.;\n]|\s-\s", low)
+        for n in names:
+            last = n.split()[-1].lower()
+            wins = [w for w in segs if last in w]
+            backed = any(_COACH_MOVE.search(w) and not re.search(r"still the coach|no firing|not fired|isn'?t on", w)
+                         for w in wins)
+            if len(last) >= 4 and not backed:
+                if log:
+                    log.info("coach move dropped (%s not in the prompt): %r", n, sent[:100])
+                return False
         return True
     return ok

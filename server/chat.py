@@ -7519,7 +7519,11 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
                                          ctx, qtext, load_lore(), ctx.get("picky_player"),
                                          monday_window=prev_week_stale(ctx), card=sc)),
                                      ("line_num", fact_guard.line_num_check(ctx, week_cards(ctx), corpus)),
-                                     ("premise_echo", fact_guard.premise_echo_check(ctx, qtext, same_team))])
+                                     ("premise_echo", fact_guard.premise_echo_check(ctx, qtext, same_team)),
+                                     ("team_fact", fact_guard.team_fact_check(
+                                         _cfbd_index(), corpus, [r["team"] for r in ctx.get("standings_ytd") or []])),
+                                     ("pick_side", fact_guard.pick_side_check(ctx, same_team)),
+                                     ("coach_move", fact_guard.coach_move_check(corpus))])
                 if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or (None if "GAME CARD" in sc else live_games.required_fact(ctx, qtext))
                                      or (None if sc else required_fact(ctx, qtext)) or rankings_fact(rn))
