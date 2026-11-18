@@ -444,7 +444,7 @@ def run(a) -> int:
     freeze.exam_guard("eval/sat_dm.py")
     if os.environ.get("PICKY_SATDM_LOCKED") != "1":
         env = dict(os.environ, PICKY_SATDM_LOCKED="1")
-        return subprocess.call(["/usr/bin/lockf", "-t", "14400", LOCK, PY, "-I", str(Path(__file__).resolve())] + sys.argv[1:],
+        return subprocess.call(["/usr/bin/lockf", "-t", "43200", LOCK, PY, "-I", str(Path(__file__).resolve())] + sys.argv[1:],
                                env=env)
     import httpx
     wt = Path(a.wt).resolve()
