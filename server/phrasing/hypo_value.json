@@ -36,28 +36,28 @@
    "At {lk} it's the good side of {k}: {outcome}."
   ],
   "verdict_real": [
-   "That's real value on {side}; anyone on {other} has the worse number.",
-   "That's a real edge for {side}. {other} backers are getting the worse number.",
-   "Real value on {side}, and {other} has the worse number.",
+   "That's real value: {side} is the better side, and anyone on {other} has the worse number.",
+   "That's a real edge, so I'd take {side}. {other} backers are getting the worse number.",
+   "Real value on {side}, so that's the side; {other} has the worse number.",
    "I like it: that's enough of an edge to matter on {side}, and {other} is stuck with the worse number.",
-   "Enough to matter, so {side} is the better ticket and {other} has the worse number.",
-   "That's the kind of gap that actually matters. {side} is the better ticket; {other} has the worse number."
+   "Enough to matter, so {side} is the side to be on and {other} has the worse number.",
+   "That's the kind of gap that actually matters. I'd take {side}; {other} has the worse number."
   ],
   "verdict_small": [
-   "Small edge on {side}, more tiebreaker than reason; {other} just has the slightly worse number.",
-   "It's a small edge on {side}: a tiebreaker, not a reason by itself. {other} has the slightly worse number.",
+   "Small edge on {side}, more tiebreaker than reason, but it's the better side; {other} just has the slightly worse number.",
+   "It's a small edge, so {side} is the side only as a tiebreaker. {other} has the slightly worse number.",
    "Slight lean {side} on the number alone, but it's small. {other} has the slightly worse number.",
-   "Not a lot, so treat it as a tiebreaker toward {side}. {other} has the slightly worse number.",
-   "Small, but it's still {side} with the better ticket and {other} with the slightly worse number.",
-   "That's a nudge to {side}, nothing more; {other} has the slightly worse number."
+   "Not a lot, so it's a tiebreaker: I'd take {side} if it's close. {other} has the slightly worse number.",
+   "Small, but {side} is still the better side and {other} has the slightly worse number.",
+   "That's a nudge, nothing more: slight lean {side}. {other} has the slightly worse number."
   ],
   "verdict_hook": [
-   "Small in points, but it's the hook on {k}, about the most valuable half point there is. {side} is the better ticket; {other} has the worse number.",
-   "Half a point doesn't sound like much, but on {k} it's the most valuable half point there is. {side} is the better ticket and {other} has the worse number.",
-   "Only half a point, but it's the hook on {k}, and that's the one that matters most. Better ticket: {side}. Worse number: {other}.",
-   "It's just the hook, but the hook on {k} is the good one. {side} is the better ticket; {other} has the worse number.",
-   "Tiny on paper, but {k} is a key number, so that half point is gold. {side} is the better ticket, {other} has the worse number.",
-   "The half point lands on {k}, which is where it counts. {side} is the better ticket; {other} has the worse number."
+   "Small in points, but it's the hook on {k}, about the most valuable half point there is. {side} is the better side; {other} has the worse number.",
+   "Half a point doesn't sound like much, but on {k} it's the most valuable half point there is. I'd take {side}; {other} has the worse number.",
+   "Only half a point, but it's the hook on {k}, and that's the one that matters most. Better side: {side}. Worse number: {other}.",
+   "It's just the hook, but the hook on {k} is the good one. {side} is the side; {other} has the worse number.",
+   "Tiny on paper, but {k} is a key number, so that half point is gold. I like {side}, and {other} has the worse number.",
+   "The half point lands on {k}, which is where it counts. {side} is the better side; {other} has the worse number."
   ]
  },
  "fixtures": [

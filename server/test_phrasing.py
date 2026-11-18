@@ -156,6 +156,23 @@ def test_hypo_value_verdict_names_both_sides():
     assert len(out) <= 600
 
 
+def test_hypo_value_verdict_counts_as_the_lean():
+    """chat.lean_fact tacks 'Lean: X, mainly because <pasted source>' onto an answer that never names the lean side
+    with a lean word (judge 11-18: 'the QB note is pasted citation text'). The verdict must count as that lean."""
+    import chat
+    card = ("GAME CARD Clemson at Duke\n  COMPUTED ATS LEAN (vs the current market line): Duke -15 (lean; factor score "
+            "Duke 2.0)\n    + for Duke: QB status: Clemson QB Tait Reynolds is out\n")
+    q = "Say the league locks Duke -13.5 on Tuesday and by Saturday the market's Duke -15. Did I get value on Duke or Clemson?"
+    check, _ = chat.lean_fact(card, q)
+    for i in range(40):
+        os.environ["PICKY_PHRASING_SEED"] = f"lf{i}"
+        try:
+            out = router.hypo_value_text({}, q)
+        finally:
+            os.environ.pop("PICKY_PHRASING_SEED", None)
+        assert check(out), out
+
+
 def test_hypo_value_half_point_on_three():
     out = router.hypo_value_text({}, "League has Northwestern -2.5 at Minnesota and the books are at -3. Which side has the value?")
     assert "Northwestern" in out and "-2.5" in out and "-3" in out and "3" in out, out
