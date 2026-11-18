@@ -664,9 +664,13 @@ async def regrade(runrec: dict) -> dict:
     t = await Truth().load()
     P = runrec["personas"]
     items = {i["id"]: i for i in questions.build(t)} | {i["id"]: i for i in group_items.build(t)}
+    if any(r["id"].startswith("fx-") for r in runrec["results"]):
+        items |= {i["id"]: i for i in fact_items.build(t)}
     for r in runrec["results"]:
         it = items.get(r["id"])
         asked = [re.sub(r"^@picky\s+", "", tn["q"], flags=re.I) for tn in r.get("turns") or []]
+        if it and r["id"].startswith("fx-") and len(asked) == len(it["turns"]):
+            asked = it["turns"]  # fact items rebuild their wording from today's truth
         if it and not r.get("skip") and r.get("turns") and (it["turns"] == asked or it.get("raw")):
             r["checks"] = grade(it, [tn["a"] for tn in r["turns"]], t, P)
     runrec["tag"] += "-regraded"

@@ -101,9 +101,18 @@ def fact_audit(ans: str, t: Truth, caller: str) -> tuple[str, bool, str]:
                 if r not in picky_known and not _NEG.search(s) and not re.search(r"\b(ATS|units?)\b", s):
                     bad.append(f"Picky {r}")
             continue
-        if who and recs and not re.search(r"\b(blackjack|chips?|the pit|slots?|hands?|in \w+ games|against|"
+        if (who or (caller and _YOU.search(s))) and recs and not re.search(r"\b(blackjack|chips?|the pit|slots?|hands?|in \w+ games|against|"
                                          r"picking|vs\.?|as (a )?(dog|fav)|road|home)\b", s, re.I):
+            # each W-L belongs to the member (or 'you' = the caller) named closest before it
+            marks = [(mm.start(), n) for n in t.members for mm in re.finditer(rf"(?<!\w){re.escape(n)}(?!\w)", s, re.I)]
+            marks += [(mm.start(), caller) for mm in re.finditer(r"\byou(r|'re)?\b", s, re.I)] if caller else []
             for raw, r in recs:
+                pos = s.find(raw)
+                prior = [x for x in marks if x[0] < pos]
+                if prior:
+                    who = max(prior)[1]
+                if not who:
+                    continue
                 if _SEASON.search(s):
                     ok = r == f"{t.rec(who)[0]}-{t.rec(who)[1]}"
                 elif _LASTWK.search(s):
