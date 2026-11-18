@@ -80,6 +80,22 @@ def test_fact_exam_router_fixes():
     assert out.startswith("Not quite: you're 3rd at 25-23") and "Bravo" in out, out
 
 
+def test_fact_exam_round1_lanes():
+    assert router.classify("how'd your picks do last week?").kind == "picky_record"
+    assert router.classify("what did Ackbar go in week 9?").kind == "record"
+    pp = {"season": [0, 3], "last_week": [0, 3], "revealed": [
+        {"week": 11, "pick": "Boise State", "away": "Oregon State", "home": "Boise State", "line": -13.5,
+         "winner": "Oregon State", "status": "final", "tiebreaker": False}]}
+    ctx = dict(CTX, picky_player=pp, last_week={"week": 11, "games": []})
+    assert router.picky_record_text(ctx, "how'd your picks do last week?") == \
+        "I went 0-1 in week 11: Boise State -13.5 missed. I'm 0-3 on the season."
+    assert router.unknown_school("line on Hogwarts Tech") == "Hogwarts Tech"
+    assert router.unknown_school("line on Texas Tech") is None
+    last = dict(CTX, you={"team_name": "Wedge"})
+    assert router.chase_text(last, "whos chasing me").startswith("Nobody's behind you: you're last at 25-23")
+    assert not router.voice_line_ok("Oregon State ruined your weekend.", "x", {})
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:

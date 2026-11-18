@@ -44,6 +44,10 @@ _NEG = re.compile(r"\b(not|isn'?t|aren'?t|wasn'?t|weren'?t|nope|nah|wish|dream(i
 _NOT_PICK_REC = re.compile(r"\b(blackjack|chips?|the pit|slots?|hands?|in \w+(?: \w+)? games|against|picking (for|against)|"
                            r"vs\.?|versus|head to head|h2h|as (a |an )?(dog|underdog|fav\w*)|on the road|road|at home|home|"
                            r"taking|fading|ATS|outright|won \d|lost \d|final|score|beat|by \d)\b", re.I)
+# 'you're 1-3 on Iowa picks' / 'picking against Northwestern' / 'in Texas games': a W-L about one school
+_SCHOOL_Q = re.compile(r"\b(on|in|with|taking|backing|picking|picking against|against|fading|vs\.?)\s+(?:the\s+)?"
+                       r"([A-Z][\w&'.]+(?:\s[A-Z][\w&'.]+)?)(?:'s)?\s+(?:games?|picks?)\b"
+                       r"|\b(picking against|against|fading|taking|backing)\s+(?:the\s+)?([A-Z][\w&'.]+(?:\s[A-Z][\w&'.]+)?)\b")
 _YOU = re.compile(r"\b(you'?re|you are|you went|you sit|you were|you finished|you'?ve gone|you|your)\b", re.I)
 _ME = re.compile(r"\b(I'?m|I am|I went|I'?ve gone|my record|I sit|I was|I finished|me at|my season|my week)\b")
 
@@ -73,6 +77,8 @@ class Facts:
         self.monday = monday_window
         self.picky = picky or {}
         self.lore_recs: dict[str, set[str]] = {}
+        self.lore_lines: dict[str, list[str]] = {m: [ln for ln in lines if ln.startswith(m)]
+                                                 for m, lines in ((lore or {}).get("members") or {}).items()}
         for m, lines in ((lore or {}).get("members") or {}).items():
             self.lore_recs[m] = {f"{int(a)}-{int(b)}" for ln in lines if ln.startswith(m)
                                  for a, b in re.findall(r"\b(\d{1,2})-(\d{1,2})\b", ln)}
@@ -148,6 +154,19 @@ def subject(s: str, f: Facts) -> str | None:
 _SEG = re.compile(r",\s*(?=(?:while|but|and|meanwhile|whereas)\b)|;\s*|\s+(?=while\b)")
 
 
+def _owners(s: str, f: Facts) -> dict[str, str]:
+    """W-L -> the member (or the sender for you/your) named closest before it in the sentence."""
+    marks = [(m.start(), name) for name in f.members for m in re.finditer(rf"(?<!\w){re.escape(name)}(?!\w)", s, re.I)]
+    if f.me:
+        marks += [(m.start(), f.me) for m in _YOU.finditer(s)]
+    out = {}
+    for m in _REC.finditer(s):
+        before = [x for x in marks if x[0] < m.start()]
+        if before:
+            out[f"{int(m.group(1))}-{int(m.group(2))}"] = max(before)[1]
+    return out
+
+
 def problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
     """Each clause on its own ('You're 30-18, while I'm 0-3': the 0-3 is Picky's)."""
     if _NEG.search(s):
@@ -178,9 +197,28 @@ def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
         return out
     if not who:
         return out
+    school = _SCHOOL_Q.search(s)
+    if recs and school and who in f.st:
+        verb, name = (school.group(1) or school.group(3) or ""), (school.group(2) or school.group(4) or "")
+        sch = name.lower()
+        against = bool(re.search(r"\b(against|fad\w*|vs\.?)\b", verb, re.I))
+        for r in recs:
+            lines = [ln for ln in f.lore_lines.get(who, []) if sch in ln.lower() and r in ln]
+            good = any(bool(re.search(r"against|fading|picked against", ln, re.I)) == against or
+                       re.search(r"whichever side", ln, re.I) for ln in lines)
+            if not good:
+                out.append(f"{who} {r} on {name} (no such lore line)")
+        return out
     if recs and not _NOT_PICK_REC.search(s):
         lab = f.labeled(who, s)
+        owners = _owners(s, f)
         for r in recs:
+            if owners.get(r, who) != who:
+                o = owners[r]  # 'Closest to you (21-23): TG 2 back': the 21-23 is the sender's
+                if o in f.st and r not in f.any_true(o) and r not in card_recs:
+                    out.append(f"{o} {r}")
+                continue
+
             if r in card_recs and not lab:
                 continue
             ok = (r in lab) if lab else (r in f.any_true(who))
@@ -189,6 +227,12 @@ def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
     rank = f.st[who]["rank"] if who in f.st else None
     if rank is not None and not _WEEKN.search(s) and not _LASTWK.search(s) and not _THISWK.search(s):
         for m in _PLACE.finditer(s):
+            # 'ahead of 5th place', 'back of first', '(4th place has 27)': another spot, not the subject's place
+            if re.search(r"(\b(of|on|from|than|to|behind|over|past|for the|ahead of|clear of)|\()\s*$", s[:m.start()], re.I) and \
+                    not re.search(r"\btied for\s*$", s[:m.start()], re.I):
+                continue
+            if re.match(r"\s*(has|had|is at|sits at|is on)\b", s[m.end():], re.I):
+                continue
             g = [x for x in m.groups() if x]
             n = int(g[0]) if g[0].isdigit() else ORD[g[0].lower()]
             if n != rank and n <= len(f.st):
@@ -272,6 +316,14 @@ def premise_facts(ctx: dict, question: str, same_team=None) -> list[str]:
             if claim != row["rank"]:
                 out.append(f"they say they're in {'last' if m.group(3) else _ordinal(claim)}, which is FALSE: they're "
                            f"{_ordinal(row['rank'])} at {true_season}")
+    pp = ctx.get("picky_player") or {}
+    if pp.get("season") and not re.search(r"\b(i'?m|i am|im)\b", q, re.I):  # 'you're 5-3 this year' said to Picky
+        ps = f"{pp['season'][0]}-{pp['season'][1]}"
+        ok_p = {ps} | ({f"{pp['last_week'][0]}-{pp['last_week'][1]}"} if pp.get("last_week") else set())
+        for m in re.finditer(r"\byou(?:'re| are| were| went|re)?\s+(?:at\s+)?(\d{1,2})\s*-\s*(\d{1,2})\b", q, re.I):
+            r = f"{int(m.group(1))}-{int(m.group(2))}"
+            if r not in ok_p:
+                out.append(f"they say Picky is {r}, which is FALSE: Picky (you, the bot) is {ps} on the season")
     lw = ctx.get("last_week") or {}
     lw_games = lw.get("games") or []
     teams = [x for g in lw_games for x in (g["away"], g["home"])]
@@ -597,6 +649,8 @@ def stat_rank_check(idx: dict | None, corpus: str = "", log=None):
                                        f"ranked {n}", f"({n})"]))
         for m in _STATY.finditer(sent):
             v = next(x for x in m.groups() if x)
+            if m.group(7) and re.search(r"\bby\s*$", sent[:m.start()], re.I):
+                continue  # 'missed (by 21.5)': a cover margin, result_check's job
             if m.group(8):  # 'N days of rest'
                 toks.append((m.group(0), [f"{v} days", f"{v}-day", f"{v} day"]))
             else:
@@ -681,3 +735,105 @@ def attribution_check(corpus: str = "", log=None):
             log.info("attribution dropped (%s): %r", names[-1], sent[:100])
         return False
     return ok
+
+
+# ---- pool results: cover margins and winners (last week's graded games) ------------------------------------------
+
+
+def _lw_games(ctx: dict) -> list[dict]:
+    out = []
+    for g in (ctx.get("last_week") or {}).get("games") or []:
+        if g.get("away_pts") is None or g.get("line") is None:
+            continue
+        a, h, ln = int(g["away_pts"]), int(g["home_pts"]), float(g["line"])
+        cm_home = h + ln - a  # home's cover margin (push goes to away, set_winner_on_final)
+        out.append({"away": g["away"], "home": g["home"], "a": a, "h": h, "line": ln,
+                    "winner": g["home"] if h > a else g["away"] if a > h else None,
+                    "cover": {g["home"]: cm_home, g["away"]: -cm_home}})
+    return out
+
+
+def result_check(ctx: dict, log=None):
+    """For last week's pool games: 'X covered by N' / 'missed (the cover) by N' must be X's real cover margin
+    (not the game margin), 'X won/beat Y' must name the winner, 'X won 41-46' can't hand the win to the loser."""
+    games = _lw_games(ctx)
+    if not games:
+        return None
+
+    def ok(sent: str) -> bool:
+        if _NEG.search(sent):
+            return True
+        sent = re.sub(r"(?<=\d)\.(?=\d)", "_", sent)  # '+13.5' must not end a [^.;] span
+        for g in games:
+            named = [t for t in (g["away"], g["home"]) if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", sent, re.I)]
+            if not named:
+                continue
+            for t in named:
+                for m in re.finditer(rf"(?<!\w){re.escape(t)}(?!\w)[^.;]{{0,50}}?\bcover(?:ed|s)?\b[^.;]{{0,30}}?\bby\s+(\d+(?:_5)?)\b",
+                                     sent, re.I):
+                    n = float(m.group(1).replace("_", "."))
+                    if g["cover"][t] > 0 and abs(n - g["cover"][t]) > 0.01:
+                        return _drop(log, f"{t} covered by {n:g} (true {g['cover'][t]:g})", sent)
+                for m in re.finditer(rf"(?<!\w){re.escape(t)}(?!\w)[^.;]{{0,50}}?\bmiss(?:ed|es)?\b[^.;]{{0,25}}?\bby\s+(\d+(?:_5)?)\b",
+                                     sent, re.I):
+                    n = float(m.group(1).replace("_", "."))
+                    if g["cover"][t] < 0 and abs(n + g["cover"][t]) > 0.01:
+                        return _drop(log, f"{t} missed by {n:g} (true {-g['cover'][t]:g})", sent)
+                w = re.search(rf"(?<!\w){re.escape(t)}(?!\w)\s+(?:won|beat|took down|knocked off|edged|outlasted)\b", sent, re.I)
+                if w and g["winner"] and t != g["winner"] and not re.search(r"\bcover", sent[w.end():w.end() + 25], re.I):
+                    return _drop(log, f"{t} won (winner {g['winner']})", sent)
+                lost = re.search(rf"(?<!\w){re.escape(t)}(?!\w)\s+(?:lost|fell)\b", sent, re.I)
+                if lost and g["winner"] == t:
+                    return _drop(log, f"{t} lost (they won)", sent)
+        return True
+    return ok
+
+
+def _drop(log, why: str, sent: str) -> bool:
+    if log:
+        log.info("result check dropped (%s): %r", why, sent[:100])
+    return False
+
+
+# ---- casino claims ----------------------------------------------------------------------------------------------
+
+_CASINO = re.compile(r"\b(blackjack|the pit|chips?|slots?|hard \d{1,2}|soft \d{1,2}|doubled|double down|split|"
+                     r"hit on|stood on|stand on|busted|bust(ed)? out|hands?)\b", re.I)
+
+
+def casino_check(ctx: dict, lore: dict | None, log=None):
+    """'You doubled on a hard 12 and busted' to someone who never did (fact exam 2026-11-17: Blinkstradamus's
+    blunder handed to Wedge): a casino claim about a member must come from that member's casino lore lines."""
+    cas = ((lore or {}).get("casino") or {}).get("members") or {}
+    st = ctx.get("standings_ytd") or []
+    if not st:
+        return None
+    members = sorted((r["team"] for r in st), key=len, reverse=True)
+    me = (ctx.get("you") or {}).get("team_name")
+
+    def ok(sent: str) -> bool:
+        if not _CASINO.search(sent) or _NEG.search(sent):
+            return True
+        names = [m for m in members if _mentions(sent, m)]
+        who = names[0] if len(names) == 1 else (me if not names and _YOU.search(sent) else None)
+        if not who:
+            return True
+        lines = " ".join(cas.get(who) or []).lower()
+        for m in re.finditer(r"\b(hard|soft)\s+(\d{1,2})\b", sent, re.I):
+            if f"{m.group(1).lower()} {m.group(2)}" not in lines:
+                return _cdrop(log, f"{who} {m.group(0)}", sent)
+        for verb, key in (("doubled", "doubled"), ("split", "split"), (r"hit on", "hit on"), (r"stood on|stand on", "stood on"),
+                          (r"busted|bust", "bust")):
+            if re.search(rf"\b({verb})\b", sent, re.I) and key not in lines:
+                return _cdrop(log, f"{who} {verb}", sent)
+        for m in re.finditer(r"\b(\d{1,3}(?:,\d{3})*)\s+chips\b", sent, re.I):
+            if m.group(1) not in lines:
+                return _cdrop(log, f"{who} {m.group(0)}", sent)
+        return True
+    return ok
+
+
+def _cdrop(log, why: str, sent: str) -> bool:
+    if log:
+        log.info("casino check dropped (%s): %r", why, sent[:100])
+    return False

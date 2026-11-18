@@ -121,10 +121,10 @@ def fact_audit(ans: str, t: Truth, caller: str) -> tuple[str, bool, str]:
             for m in _ORD_RE.finditer(s):
                 n = int(m.group(1)) if m.group(1) else next(k for k, v in ORD.items() if v == m.group(2).lower())
                 # 'back of first', 'up on second', 'ahead of 5th': another spot, not the subject's place
-                if re.search(r"\b(of|on|from|than|to|behind|over|for the|past)\s*$", s[:m.start()], re.I) and \
+                if re.search(r"(\b(of|on|from|than|to|behind|over|for the|past)|\()\s*$", s[:m.start()], re.I) and \
                         not re.search(r"\btied for\s*$", s[:m.start()], re.I):
                     continue
-                if re.search(r"\b(week|quarter|down|game|pick|half|time|string|seed)\b", s[m.end():m.end() + 12], re.I):
+                if re.search(r"\b(week|quarter|down|game|pick|half|time|string|seed)\b|^\s*(place\s+)?(has|had)\b", s[m.end():m.end() + 12], re.I):
                     continue
                 if re.search(r"\b(week|the)\s*$", s[:m.start()], re.I) and not re.search(r"place|spot", s[m.end():m.end() + 8]):
                     continue

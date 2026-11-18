@@ -2003,7 +2003,7 @@ def you_block(ctx: dict) -> str:
                      f"({'HIT' if same_team(mine[g['id']], g['winner']) else 'MISS'}, final; value talk is moot)")
             continue
         L.append(f"  Game {i} ({away} at {home}): {me}'s pick: "
-                 + (mine[g["id"]] if g["id"] in mine else "not made yet"))
+                 + (mine.get(g["id"]) or "not made yet"))  # a cleared pick row has pick=None (fact exam 2026-11-17: 500)
         if g["id"] in mine:
             notes = (espn_all or {}).get(g["id"]) if espn_all is not None else None
             pv = (pick_verdict(notes, away, home, g.get("line"), mine[g["id"]], locked)
@@ -7567,7 +7567,9 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
                                      ("coach_move", fact_guard.coach_move_check(corpus)),
                                      ("stat_rank", fact_guard.stat_rank_check(_cfbd_index(), corpus)),
                                      ("ats_split", fact_guard.ats_split_check(corpus)),
-                                     ("attribution", fact_guard.attribution_check(corpus))])
+                                     ("attribution", fact_guard.attribution_check(corpus)),
+                                     ("result", fact_guard.result_check(ctx)),
+                                     ("casino", fact_guard.casino_check(ctx, load_lore()))])
                 if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or (None if "GAME CARD" in sc else live_games.required_fact(ctx, qtext))
                                      or (lean_fact(sc, qtext) if sc else required_fact(ctx, qtext)) or rankings_fact(rn))

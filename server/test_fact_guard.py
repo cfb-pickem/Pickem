@@ -37,7 +37,9 @@ CTX = {
     ],
     "picky_player": {"season": [0, 3], "last_week": [0, 3]},
 }
-LORE = {"members": {"Alpha": ["Alpha, stats-page oddity: Alpha is 3-7 in Texas games over the last two seasons."]}}
+LORE = {"members": {"Alpha": ["Alpha, stats-page oddity: Alpha is 3-7 in Texas games over the last two seasons.",
+                               "Alpha, stats-page oddity: Alpha has picked against Iowa 4 times over the last two "
+                               "seasons and gone 1-3."]}}
 
 
 def same(a, b):
@@ -55,7 +57,10 @@ def test_true_member_claims_pass():
               "You're 3-7 in Texas games over the last two seasons, though.", "I'm 0-3 this year.",
               "Charlie Team and Delta are tied for 3rd.", "Echo sits 5th, 7 back of first.",
               "You're sitting at 30-18 for the season, while I'm out here 0-3.",
-              "You're not 33-15, you're 30-18."]:
+              "You're not 33-15, you're 30-18.",
+              "You're 30-18, 1st, in a playoff spot, 2 ahead of 5th place (23), with about 16 picks left.",
+              "Echo is 23-25, 5th, 1 behind the cut line (4th place has 27).",
+              "Closest to you (30-18): Bravo 2 back."]:
         assert ok(s), s
 
 
@@ -65,6 +70,15 @@ def test_wrong_member_claims_drop():
               "Zulu is 3 points behind first.", "I'm 9-2 on the season.", "Echo went 4-0 last week.",
               "Echo is in last place.", "You're 30-18 overall and 4 wins ahead of 4th."]:
         assert not ok(s), s
+
+
+def test_school_qualified_records():
+    ok = check()
+    assert ok("You're 3-7 in Texas games over the last two seasons.")
+    assert ok("You're 1-3 picking against Iowa.")
+    assert not ok("You're 1-3 on Iowa picks.")  # the lore line is AGAINST Iowa (fact exam 2026-11-17)
+    assert not ok("You're 3-1 in Texas games.")  # a weekly W-L doesn't count for a school split
+    assert not ok("Bravo is 3-1 in Ohio State games.")
 
 
 def test_monday_window_last_week_means_either():
@@ -143,6 +157,16 @@ def test_pick_sides():
     assert not ok("Zulu's on UTSA again.")
 
 
+def test_casino_claims():
+    lore = {"casino": {"members": {"Bravo": ["Bravo's blackjack blunders: doubled on a hard 12 in week 5 (J 2 J), and busted."],
+                                   "Alpha": ["Alpha, The Pit 2026: 0 chips after 6 hands. BUSTED OUT."]}}}
+    ok = fg.casino_check(CTX, lore)
+    assert ok("Bravo doubled on a hard 12 and busted.")
+    assert not ok("You doubled on a hard 12 and busted.")  # the sender (Alpha) never did
+    assert ok("You're at 0 chips, busted out of the Pit.")
+    assert not ok("Zulu split tens at the blackjack table.")
+
+
 def test_coach_moves():
     ok = fg.coach_move_check("Coach note: UTEP fired Scotty Walden. Kyle Whittingham is Michigan's coach (no firing).")
     assert ok("UTEP fired Scotty Walden.")
@@ -162,6 +186,7 @@ def test_stat_rank_proximity():
     assert not ok("SP+ projects Duke by 7.")
     assert not ok("Duke gets 6 days of rest.")
     assert not ok("Their kicker is hitting 44% of FGs.")
+    assert ok("Duke missed (by 21.5) last week.")  # cover margins are result_check's
     assert not ok("They're paying a $50 million buyout.")
 
 

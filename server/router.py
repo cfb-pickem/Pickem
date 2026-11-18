@@ -474,6 +474,13 @@ def chase_text(ctx: dict, q: str) -> str | None:
     if not row:
         return None
     near = [r for r in st if r["team"] != me and 0 <= row["w"] - r["w"] <= 4]
+    if not any(r["w"] < row["w"] for r in st if r["team"] != me):  # last (fact exam: 'Nobody's within 4 ... room' to TG)
+        above = sorted((r for r in st if r["team"] != me and r["w"] > row["w"]), key=lambda r: r["w"])
+        tied = [r["team"] for r in st if r["team"] != me and r["w"] == row["w"]]
+        nxt = [r["team"] for r in above if r["w"] == above[0]["w"]] if above else []
+        return (f"Nobody's behind you: you're last at {row['w']}-{row['l']}"
+                + (f", tied with {_and(tied)}" if tied else "")
+                + (f". Next up is {_and(nxt)}, {_pts(above[0]['w'] - row['w'])} ahead." if nxt else "."))
     if not near:
         return f"Nobody's within 4 of you at {row['w']}-{row['l']}. You've got room."
     by = {}
@@ -713,6 +720,53 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
 
 
+WEEK_N_REC = re.compile(r"\b(what did|how did|how'?d|what was|whats|what'?s)\b[^?.!]{0,40}\b(go|do|record|finish)\b[^?.!]{0,12}\b(in|for) week \d{1,2}\b",
+                        re.I)
+# a made-up school ('Hogwarts Tech') must not fuzzy-match a real one (fact exam 2026-11-17: got Texas Tech's line)
+_SCHOOLISH = re.compile(r"\b((?:[A-Z][a-z]+\s){0,2}(?:Tech|State|A&M|University|College|Institute))\b")
+
+
+def unknown_school(q: str) -> str | None:
+    idx = slate_cards.cfbd.load_index()
+    if not idx:
+        return None
+    for m in _SCHOOLISH.finditer(q or ""):
+        name = m.group(1).strip()
+        if len(name.split()) < 2:
+            continue
+        if not slate_cards.cfbd.resolve_team(name, idx):
+            return name
+    return None
+
+
+PICKY_REC_ASK = re.compile(r"\bhow('?d| did| have| has)\s+(you|ur|your picks?|ur picks?)\s+(do|done|been doing|been)\b"
+                           r"|\b(what'?s|whats) (your|ur) record\b|\b(your|ur) record\b|\byou'?re\s+\d{1,2}-\d{1,2}\b"
+                           r"|\byou (are|were|went)\s+\d{1,2}-\d{1,2}\b|\b(your|ur) (season|last week)\b", re.I)
+
+
+def picky_record_text(ctx: dict, q: str) -> str | None:
+    """Picky's own exhibition entry (picky_player): season W-L, and last week's picks graded, from code."""
+    pp = ctx.get("picky_player") or {}
+    season = pp.get("season")
+    if not season:
+        return None
+    lw = (ctx.get("last_week") or {}).get("week")
+    rev = [r for r in pp.get("revealed") or [] if r.get("status") == "final" and not r.get("tiebreaker")]
+    out = f"I'm {season[0]}-{season[1]} on the season."
+    if re.search(r"\blast week\b|\bweek\b", q or "", re.I) or not re.search(r"\bseason|record|year\b", q or "", re.I):
+        wk = [r for r in rev if r.get("week") == lw] or ([r for r in rev if r.get("week") == max(x.get("week") or 0 for x in rev)] if rev else [])
+        if wk:
+            parts = []
+            for r in wk:
+                ln = float(r["line"])
+                sp = ln if chat.same_team(r["pick"], r["home"]) else -ln
+                won = chat.same_team(r.get("winner"), r["pick"])
+                parts.append(f"{r['pick']} {sp:+g} {'covered' if won else 'missed'}")
+            w = sum(1 for p in parts if p.endswith("covered"))
+            out = f"I went {w}-{len(parts) - w} in week {wk[0]['week']}: " + ", ".join(parts) + f". {out}"
+    return out
+
+
 GAP_FIRST_ASK = re.compile(r"\bhow (many|far)\b[^?.!]{0,30}\b(behind|back( of)?|out of|from|off)\s+(first|1st|the lead|the leader|the top)\b",
                            re.I)
 CONF_RACE_ASK = re.compile(r"\b(big 12|big xii|big ten|big 10|sec|acc|mountain west|sun belt|aac|american athletic|mac|"
@@ -920,6 +974,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if why_lane.why_kind(t):  # 'why?' / 'how come' / 'why not Ohio State?' after a call: the next unused reason
         return "why", "WHY_ASK"
+    if WEEK_N_REC.search(t) and not re.search(r"\b(your|ur|picky)\b", t, re.I):
+        return "record", "WEEK_N_REC"  # 'what did Ackbar go in week 9?' (fact exam: got week 11's games)
+    if PICKY_REC_ASK.search(t) and not re.search(r"\b(this week|who (do|would|should)|lean|like|take)\b", t, re.I):
+        return "picky_record", "PICKY_REC_ASK"  # 'how'd your picks do last week?' (fact exam: got this week's picks)
     if playoff_race.is_need_question(t) and not CFP_WORDS.search(t):
         return "playoff", "playoff_race.is_need_question"
     if QB_STATUS_ASK.search(t) and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and qb_status_text({}, t):
@@ -2390,6 +2448,10 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if not ctx or ctx.get("error"):
         return None
+    if kind in ("lines_now", "spread", "value", "line_move", "qb", "score", "cover", "pick", "h2h", "keynum", "qb_status"):
+        ghost = unknown_school((q or "").split(" ||| ")[0])
+        if ghost:
+            return f"There's no {ghost} in my data, so no line or score for them. Check the name?"
     try:
         if kind in ("results", "score") and re.search(r"\b(my|our) (picks?|week)\b|\bam i\b|\bare we\b", q or "", re.I):
             lg = chat.live_games
@@ -2422,7 +2484,8 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text,
-              "interim": interim_text, "strategy": pick_strategy.answer}.get(kind)
+              "interim": interim_text, "strategy": pick_strategy.answer,
+              "picky_record": picky_record_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
@@ -2457,7 +2520,8 @@ def fact_user(q: str, answer: str, sender: str = "", jab: bool = False, leader: 
 
 
 _FACTY = re.compile(r"\d|\b(cover\w*|miss\w*|won|lost|record|points?|place|ahead|behind|back of|up on|in first|"
-                    r"in last|spread|line|last week|this week|week|choke\w*|blew|blow it|again)\b", re.I)
+                    r"in last|spread|line|last week|this week|week|choke\w*|blew|blow it|again|winning|losing|leading|"
+                    r"trailing|undefeated|unbeaten|perfect|winless|ruin\w*|burn\w*|cost (you|me)|hit|cash\w*)\b", re.I)
 
 
 # the line talks to the texter: a he/they line is about someone in the answer (live exam 2026-11-16: "He is
@@ -2481,6 +2545,14 @@ def voice_line_ok(line: str, answer: str, ctx: dict | None, leader: bool = False
         return False
     names = [r["team"] for r in (ctx or {}).get("standings_ytd") or []]
     names += [x for g in (ctx or {}).get("games_this_week") or [] for x in (g.get("away"), g.get("home")) if x]
+    names += [x for g in ((ctx or {}).get("last_week") or {}).get("games") or [] for x in (g.get("away"), g.get("home")) if x]
     if any(n and re.search(rf"(?<!\w){re.escape(n)}(?!\w)", line, re.I) for n in names):
         return False
+    try:  # any FBS school ('Oregon State ruined your weekend' after a cover answer, fact exam 2026-11-17)
+        import fact_guard
+        idx = slate_cards.cfbd.load_index()
+        if idx and fact_guard._team_regex(idx)[0].search(line):
+            return False
+    except Exception:  # noqa: BLE001
+        pass
     return chat.sentence_ok(line, set())

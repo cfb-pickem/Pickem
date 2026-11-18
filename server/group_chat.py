@@ -958,6 +958,9 @@ def fact_final(reply: str, q: str) -> str:
         ok = fact_guard.member_claim_check(ctx, q, chat.load_lore(), ctx.get("picky_player"),
                                            monday_window=chat.prev_week_stale(ctx))
         echo = fact_guard.premise_echo_check(ctx, q, chat.same_team)
+        for extra in (fact_guard.result_check(ctx), fact_guard.casino_check(ctx, chat.load_lore())):
+            if extra is not None:
+                ok = extra if ok is None else (lambda x, a=ok, b=extra: a(x) and b(x))
     except Exception as e:  # noqa: BLE001 - a broken guard never blocks a reply
         log.warning("fact_final skipped: %s", e)
         return reply
