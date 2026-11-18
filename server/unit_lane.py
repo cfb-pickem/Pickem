@@ -58,10 +58,11 @@ OVERVIEW = re.compile(r"\bwhere does .{2,40}? have (the|an|its|their|any) edges?
                       r"|\b(biggest|best) (unit )?edges?\b|\bwho has the edge (in|between)\b|\bmatch ?ups? (in|between)\b",
                       re.I)
 _QSHAPE = re.compile(r"\?|^\W*(can|could|will|would|does|do|did|who|whose|where|how|is|are|what|which)\b", re.I)
-# a pick / line / league ask, a player stat ('how many picks has X thrown'), not a unit read
+# a pick / line / rules / league ask, a player stat ('how many picks has X thrown'), not a unit read
 _NOT = re.compile(r"\b(picks?|picking|covers?|covering|lock(ed|s)?|leans?|bets?|parlay|fade|"
                   r"who (you|ya|u|do you|would you) (got|like|taking|take)|who (should|do) i)\b"
-                  r"|\bhow many\b(?![^?.!]{0,25}\bplays\b)", re.I)
+                  r"|\bhow many\b(?![^?.!]{0,25}\bplays\b)"
+                  r"|\bpush\w*|\bwin(s)? by\b|\bspread\b|\bthe line is\b|\bis the line\b|\b(our|the) league\b", re.I)
 MAX_WORDS = 35  # longer texts carry more than one ask: the full brain (arch review R7)
 
 
