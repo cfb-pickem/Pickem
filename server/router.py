@@ -2864,7 +2864,7 @@ POOL_GAME_KINDS = {"value", "qb", "line_move", "spread", "flip", "pick", "defend
 
 FACT_TAIL = """
 
-TASK RIGHT NOW: the answer to the NEWEST TEXT is already written below (THE ANSWER) and goes out exactly as is. Don't restate it. Write ONE short line of personality to send right after it, like a buddy in the group text: 12 words max, no numbers, no records, no team names, no new facts. Return JSON only."""
+TASK RIGHT NOW: the answer to the NEWEST TEXT is already written below (THE ANSWER) and goes out exactly as is. Don't restate it. Write ONE short line of personality to send right after it, like a buddy in the group text: 12 words max, no numbers, no records, no team names, no new facts. Make it a sharp quip about what THE ANSWER says (like "Books don't move a line like that for fun."), never a generic "trust me". Return JSON only."""
 FACT_SCHEMA = {"type": "object", "properties": {"line": {"type": "string"}}, "required": ["line"]}
 FACT_TOKENS = 32
 
