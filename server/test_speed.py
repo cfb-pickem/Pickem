@@ -18,6 +18,7 @@ import copy
 import datetime as dt
 import json
 import os
+os.environ["PICKY_LANES_OFF"] = ""  # these tests exercise the held-back lanes (router.LANES_OFF_DEFAULT)
 import sys
 import tempfile
 from pathlib import Path

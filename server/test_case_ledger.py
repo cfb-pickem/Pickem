@@ -17,6 +17,8 @@ Run:  ./.venv/bin/python3 -I test_case_ledger.py
 """
 
 from __future__ import annotations
+import os
+os.environ["PICKY_LANES_OFF"] = ""  # these tests exercise the held-back lanes (router.LANES_OFF_DEFAULT)
 
 import re
 import sys

@@ -29,6 +29,7 @@ holds the per-chat thread state (pile-ons, spirals).
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -2014,7 +2015,7 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "keynum", "KEYNUM_ASK"  # 'which lines are on a key number': computed from this week's market
     if H2H_ASK.search(t) and not re.search(r"\b(my|our|i|me|picky|you)\b", t, re.I):
         return "h2h", "H2H_ASK"  # 'what happened last time Clemson played Duke': the cache's last meeting
-    if unit_lane.wants(t) and unit_lane.parse(t, {}):
+    if "unit_matchup" not in lanes_off() and unit_lane.wants(t) and unit_lane.parse(t, {}):
         return "unit_matchup", "UNIT_ASK"  # 'can Minnesota run on Northwestern': both directions + verdict in code
     if PLAYER_LATEST.search(t) and not chat.games_named(t, []):
         return "qb", "PLAYER_LATEST"  # 'whats the latest on castellanos': the cards' note, else the full brain + news
@@ -3072,6 +3073,8 @@ def pick_text(ctx: dict, q: str) -> str | None:
     if not named:  # a named non-pool game is that game's call, never the whole pool slate (genius 11-18 pb-osu-neb)
         row, pg = factstore.find_game(q, ctx)
         if row and not pg and factstore.teams_named(q):
+            if "pick_nonpool" in lanes_off():
+                return None  # the full brain makes the call from its GAME CARD
             led = case_ledger.for_game(ctx, row, None)
             return case_ledger.pick_answer(led) if led else None
     if not named and not games and slate_cards.covers(q, ctx):
@@ -3536,6 +3539,16 @@ def last_week_text(kind: str, ctx: dict, q: str) -> str | None:
         return (f"{head}: hit {_and(hit)}, missed " + _and([f"{r['label']} (by {chat._num(abs(r['margin']))})"
                                                             if r.get('margin') is not None else r["label"] for r in miss]) + ".")
     return None
+
+
+# Code lanes held back after the integration genius rounds (2026-11-18): their answers were right but read as stat
+# dumps (voice 2, 0 of 4 and 0 of 2 in three judged rounds) where the full brain's text passed on main. The code
+# stays and is tested; PICKY_LANES_OFF="" turns them back on.
+LANES_OFF_DEFAULT = "unit_matchup,pick_nonpool"
+
+
+def lanes_off() -> set[str]:
+    return {x.strip() for x in os.environ.get("PICKY_LANES_OFF", LANES_OFF_DEFAULT).split(",") if x.strip()}
 
 
 def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
