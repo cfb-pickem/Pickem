@@ -61,6 +61,13 @@ with patch.object(chat, "feed_age", lambda *_a: 5.0):
     check(bool(live) and "Covering right now" in live, f"live 'who's covering X': the score lane answers ({live!r})")
     check(router.score_text(ctx("scheduled"), "how much time left in the Iowa game") is not None,
           "a non-covering ask still gets the game state pre-kickoff")
+# the score feed hasn't written in 100 s (under the 180 s 'stale' line): the score goes out with its time
+with patch.object(chat, "feed_age", lambda *_a: 100.0):
+    live = router.score_text(ctx("in_progress"), "who's covering Iowa Illinois") or ""
+    check(live.startswith("As of "), f"a 100 s old live score says 'As of <time>' ({live!r})")
+with patch.object(chat, "feed_age", lambda *_a: 5.0):
+    live = router.score_text(ctx("in_progress"), "who's covering Iowa Illinois") or ""
+    check("As of" not in live, f"a fresh live score has no 'As of' ({live!r})")
 
 print(f"\n{'all green' if not fails else 'FAILED: ' + str(len(fails))}")
 sys.exit(1 if fails else 0)

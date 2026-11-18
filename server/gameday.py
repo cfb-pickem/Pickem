@@ -868,9 +868,15 @@ def answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if not fn:
         return None
     ids = [g["id"] for g in _games_for(q, gs) if g.get("state") == "in"][:3]
-    if ids and L.ensure_fresh(ids):  # a live game older than 60 s gets refetched first (same rule as the live rider)
+    # a live game older than L.REFRESH_AGE gets refetched first (same rule as the live rider); a whole-board ask,
+    # the scoreboard when the poller's file is behind. Then a newer all_games row wins over both.
+    board = kind in ("gd_upsets", "gd_recap")
+    if (L.ensure_fresh(ids) if ids and not board else L.refresh_board_if_stale()):
         gs = games()
+    gs = L.fresher_rows(gs, (ctx or {}).get("live_games"))
     out = fn(q, gs)
+    if out:  # data past L.STALE_NOTE (the feed and the refetch failed) is never passed off as live
+        out = L.stale_note(gs.values() if board else _games_for(q, gs)) + out
     if out and kind == "gd_score" and ctx:  # one of this week's pool games: where it stands vs the LOCKED league line
         pool = {str(g.get("id")): g for g in ctx.get("games_this_week") or [] if g.get("line") is not None}
         for g in _games_for(q, gs)[:2]:

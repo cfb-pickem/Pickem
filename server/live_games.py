@@ -18,10 +18,13 @@ means: send If-None-Match / If-Modified-Since only if a validator ever shows up,
 gzip always, honor Retry-After, exponential backoff on errors (cap 5 min).
 
 The poller writes server/cache/live_games.json atomically. chat.py only reads
-it (mtime-memoized) and, when a game the question touches is live and its data
-is older than REFRESH_AGE, fetches that game's summary itself before answering
-(in-process overlay; it never writes the shared file). Data older than MAX_AGE
-during a live game is never given as current.
+it (mtime-memoized) and, when a game the question touches is live and its
+score or play-by-play is older than REFRESH_AGE, fetches that game's summary
+itself before answering (FETCH_WAIT deadline, one fetch per game however many
+texts ask at once, in-process overlay; it never writes the shared file, which
+the poller rewrites whole every pass). A stale board while games are on gets
+one on-demand scoreboard read the same way. A live score older than STALE_NOTE
+goes out with 'as of <time>'; older than MAX_AGE it's never given as current.
 
 CLI: live_games.py run | once | show [team] | status
 """
@@ -58,15 +61,18 @@ HEADERS = {
     "Accept-Encoding": "gzip, deflate",
 }
 
-SB_EVERY = 20         # s, scoreboard while live (ESPN caches it ~6 s)
-POOL_EVERY = 30       # s, summary for a live pool game
+SB_EVERY = 10         # s, scoreboard while live (one ~90 KB gzip call; ESPN caches it ~6 s)
+POOL_EVERY = 15       # s, summary for a live pool game
 OTHER_EVERY = 60      # s, summary for another ranked live game
 REST_EVERY = 120      # s, summary for any other live FBS game
 IDLE_EVERY = 300      # s, scoreboard when nothing is live or close
 SOON_S = 20 * 60      # a kickoff this close counts as live for polling
 MAX_DETAIL = 40       # live games tracked play by play at once (pool, ranked, then the rest)
 POOL_IDS_EVERY = 600  # s, re-read this week's pool game ids
-REFRESH_AGE = 60      # s, chat refetches a live game it's about to talk about past this
+REFRESH_AGE = 10      # s, chat refetches a live game it's about to talk about past this
+BOARD_REFRESH_AGE = 15  # s, chat rereads the scoreboard itself when the poller's file is older (games on)
+FETCH_WAIT = 2.0      # s, the most an on-demand refetch holds up a reply (then the cached copy)
+STALE_NOTE = 60       # s, a live score older than this goes out as 'as of <time>'
 MAX_AGE = 90          # s, a live game's data past this is never stated as current
 BACKOFF_CAP = 300
 KEEP_SCORING = 6
@@ -636,6 +642,55 @@ def is_live(g: dict) -> bool:
     return g.get("state") == "in"
 
 
+def data_age(g: dict, now: float | None = None) -> float:
+    """The older of a game's score (scoreboard/summary ts) and its play-by-play (detail_ts; none yet = infinitely old)."""
+    now = now or time.time()
+    return max(now - (g.get("ts") or 0), now - (g.get("detail_ts") or 0), 0.0)
+
+
+def as_of(ts: float) -> str:
+    return dt.datetime.fromtimestamp(ts, CT).strftime("%-I:%M %p CT")
+
+
+_inflight: dict[str, threading.Event] = {}
+_shared: dict = {}
+
+
+def _client() -> httpx.Client:
+    """One keep-alive client for on-demand reads (no TLS handshake per text)."""
+    with _lock:
+        if "c" not in _shared:
+            _shared["c"] = httpx.Client(timeout=httpx.Timeout(FETCH_WAIT - 0.5, connect=1.0))
+        return _shared["c"]
+
+
+def _once(key: str, fn) -> threading.Event:
+    """Run fn in a background thread unless the same key is already running; the Event is set when it's done."""
+    with _lock:
+        ev = _inflight.get(key)
+        if ev is not None:
+            return ev
+        ev = _inflight[key] = threading.Event()
+
+    def go():
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001 - an on-demand read must never break a reply
+            log.warning("live: on-demand %s failed: %s", key, e)
+        finally:
+            with _lock:
+                _inflight.pop(key, None)
+            ev.set()
+    threading.Thread(target=go, daemon=True).start()
+    return ev
+
+
+def _wait(evs, wait: float) -> None:
+    end = time.monotonic() + wait
+    for ev in evs:
+        ev.wait(max(0.0, end - time.monotonic()))
+
+
 def _get(client: httpx.Client, url: str, validators: dict | None = None, timeout: float = 8.0):
     h = dict(HEADERS)
     v = (validators or {}).get(url) or {}
@@ -669,51 +724,54 @@ def fetch_game(event_id: str, client: httpx.Client | None = None, timeout: float
             client.close()
 
 
-def ensure_fresh(game_ids, refresh_age: float = REFRESH_AGE, cap: int = 3) -> list[str]:
+def ensure_fresh(game_ids, refresh_age: float = REFRESH_AGE, cap: int = 3, wait: float = FETCH_WAIT) -> list[str]:
     """Chat side, before answering: refetch the summary of each live game here
-    whose data is older than refresh_age (at most `cap`, in parallel, 4 s
-    timeout). Results go in this process's overlay. Returns ids refreshed."""
-    data = load()
-    games = data.get("games") or {}
+    whose score or play-by-play is older than refresh_age (at most `cap`, in
+    parallel; a game another text is already refetching is waited on, not
+    fetched twice). Waits at most `wait` s, then answers from the cache; a late
+    result still lands in the overlay for the next text. Returns ids refreshed."""
+    games = load().get("games") or {}
     now = time.time()
-    due = [gid for gid in game_ids if gid in games and is_live(games[gid])
-           and (age(games[gid], now) or 1e9) > refresh_age][:cap]
-    got = []
+    due = [gid for gid in dict.fromkeys(map(str, game_ids)) if gid in games and is_live(games[gid])
+           and data_age(games[gid], now) > refresh_age][:cap]
 
     def one(gid):
-        g = fetch_game(gid)
+        g = fetch_game(gid, client=_client(), timeout=wait - 0.5)
         if g:
             with _lock:
                 _overlay[gid] = g
-            got.append(gid)
-
-    ths = [threading.Thread(target=one, args=(gid,), daemon=True) for gid in due]
-    for t in ths:
-        t.start()
-    for t in ths:
-        t.join(6)
-    return got
-
-
-def refresh_board_if_stale(max_age: float | None = None) -> bool:
-    """Chat side: if the poller's file is older than max_age (poller down) and
-    games may be on, read the scoreboard once into the overlay."""
-    max_age = board_max_age() if max_age is None else max_age
-    data = load()
-    if data.get("updated_ts") and time.time() - data["updated_ts"] <= max_age:
-        return False
-    try:
-        with httpx.Client() as c:
-            d, _ = _get(c, SCOREBOARD_URL, timeout=4.0)
-    except (httpx.HTTPError, ValueError) as e:
-        log.warning("live: on-demand scoreboard failed: %s", e)
-        return False
-    now = time.time()
+    _wait([_once(gid, lambda gid=gid: one(gid)) for gid in due], wait)
     with _lock:
-        for gid, g in parse_scoreboard(d or {}).items():
-            prev = _overlay.get(gid) or {}
-            _overlay[gid] = {**prev, **g, "ts": now, "sb_ts": now}
-    return True
+        return [gid for gid in due if ((_overlay.get(gid) or {}).get("ts") or 0) >= now]
+
+
+def refresh_board_if_stale(max_age: float | None = None, wait: float = FETCH_WAIT) -> bool:
+    """Chat side: if the poller's file is older than max_age (BOARD_REFRESH_AGE
+    while games are on or about to be, the board max age when idle), read the
+    scoreboard once into the overlay (deduped, `wait` s deadline)."""
+    data = load()
+    if max_age is None:
+        max_age = BOARD_REFRESH_AGE if data.get("mode") in ("live", "pregame") else board_max_age()
+    t0 = time.time()
+    if data.get("updated_ts") and t0 - data["updated_ts"] <= max_age:
+        return False
+    if (_shared.get("sb_ts") or 0) > t0 - max_age:  # another text just read it
+        return True
+
+    def read():
+        try:
+            d, _ = _get(_client(), SCOREBOARD_URL, timeout=wait - 0.5)
+        except (httpx.HTTPError, ValueError) as e:
+            log.warning("live: on-demand scoreboard failed: %s", e)
+            return
+        now = time.time()
+        with _lock:
+            for gid, g in parse_scoreboard(d or {}).items():
+                prev = _overlay.get(gid) or {}
+                _overlay[gid] = {**prev, **g, "ts": now, "sb_ts": now}
+            _shared["sb_ts"] = now
+    _wait([_once("_scoreboard", read)], wait)
+    return (_shared.get("sb_ts") or 0) >= t0
 
 
 # ----------------------------------------------------------------------------
@@ -1053,6 +1111,8 @@ def game_block(g: dict, pool: dict | None = None, now: float | None = None) -> s
                      + (" (red zone)" if g.get("red_zone") else "")
             elif g.get("receiving") and "Half" not in clock_text(g):
                 s += f"; kickoff after that score, {g['receiving']} gets the ball next"
+        if st == "in" and a is not None and a > STALE_NOTE:
+            s += f" (feed {int(a)} s behind: say this is as of {as_of(g['ts'])}, not live)"
         lines.append(s + ".")
     sc = list(reversed(g.get("scoring") or []))
     if sc:
@@ -1155,8 +1215,7 @@ def rider(question: str, pool: dict | None = None, refresh: bool = True, now: fl
     pool = {str(k): v for k, v in (pool or {}).items()}
     data = load()
     games = data.get("games") or {}
-    if refresh and _LIVE_ASK.search(question or "") and (not games or not data.get("updated_ts")
-                                                         or time.time() - data["updated_ts"] > board_max_age()):
+    if refresh and _LIVE_ASK.search(question or ""):
         if refresh_board_if_stale():
             data = load()
             games = data.get("games") or {}
@@ -1286,7 +1345,7 @@ def apply_to_ctx(ctx: dict, question: str, refresh: bool = True, prev: str = "")
         if not g or (age(g, now) or 1e9) > game_max_age():
             continue
         r = rows.get(str(pg["id"]))
-        if r is None:
+        if r is None or row_ts(r) > (g.get("ts") or 0):  # the score feed's row changed after our read: keep it
             continue
         if g.get("state") == "pre":  # not kicked off: no score, nothing graded
             r.update({"AwayPts": None, "HomePts": None, "Status": "scheduled", "winner": None})
@@ -1395,10 +1454,49 @@ def _same(a: str, b: str) -> bool:
 LIVE_NEED: "contextvars.ContextVar[dict | None]" = contextvars.ContextVar("live_need", default=None)
 
 
+def row_ts(r: dict) -> float:
+    """When an all_games score row last changed (SourceUpdatedAt, UTC), 0 if unknown."""
+    try:
+        t = dt.datetime.fromisoformat(str(r.get("SourceUpdatedAt")))
+    except ValueError:
+        return 0.0
+    return (t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)).timestamp()
+
+
+def fresher_rows(games: dict, rows) -> dict:
+    """The gameday lanes' board with any live game whose all_games row changed after the poller's copy was read
+    (poller and refetch both behind) taking the row's score, clock and ball."""
+    out = games
+    for r in rows or []:
+        gid, t = str(r.get("GameId")), row_ts(r)
+        g = games.get(gid)
+        if not g or r.get("Status") != "in_progress" or t <= (g.get("ts") or 0):
+            continue
+        out = dict(out) if out is games else out
+        side = str(r.get("possession") or "").lower()
+        out[gid] = {**g, "state": "in", "away_score": _int(r.get("AwayPts")), "home_score": _int(r.get("HomePts")),
+                    "period": _int(r.get("Period")) or g.get("period"), "clock": r.get("Clock") or g.get("clock"),
+                    "status_name": r.get("status_name") or g.get("status_name"),
+                    "possession": side if side in ("away", "home") else None, "red_zone": bool(r.get("is_red_zone")),
+                    "down_distance": None, "last_play": None, "ts": t}
+    return out
+
+
+def stale_note(gs) -> str:
+    """'As of 3:41 PM CT (live feed lagging): ' when the oldest live game here is past STALE_NOTE, else ''."""
+    ts = [g.get("ts") or 0 for g in gs if is_live(g)]
+    return f"As of {as_of(min(ts))} (live feed lagging): " if ts and time.time() - min(ts) > STALE_NOTE else ""
+
+
 def required_fact(ctx: dict, question: str) -> tuple | None:
     """(check(reply) -> bool, sentence) for a live factual question, else None. Also kept in LIVE_NEED so the
-    group sidecar can re-check it after its last edits (debot / no-repeat screen run after chat._ensure)."""
+    group sidecar can re-check it after its last edits (debot / no-repeat screen run after chat._ensure).
+    A live game past STALE_NOTE (the refetch failed): the reply must also say 'as of <time>'."""
     need = _required_fact(ctx, question)
+    hit = [g for g in ctx.get("live_rider_games") or [] if g.get("id") != "_missing"]
+    note = stale_note(_target({**ctx, "live_rider_games": hit}, question)) if need and hit else ""
+    if note:
+        need = (lambda t, chk=need[0]: chk(t) and "as of" in t.lower(), f" {note.rstrip(': ')}:{need[1]}")
     box = LIVE_NEED.get()
     if box is not None:  # a dict the sidecar put in the context: shared with draft tasks (a plain set() isn't)
         box["need"] = need
