@@ -46,11 +46,6 @@ CHUCK_PICKS = {"401858301": "away", "401860914": "away", "401862827": "home", "4
 MAX_CHARS, DETAIL_CHARS = 300, 700
 
 
-def saturday_window(now: dt.datetime | None = None) -> bool:
-    n = now or dt.datetime.now(CT)
-    return n.weekday() == 5 and 10 <= n.hour < 24
-
-
 def _keychain(service: str) -> str:
     return subprocess.run(["security", "find-generic-password", "-a", "drake", "-s", service, "-w"],
                           capture_output=True, text=True).stdout.strip()
@@ -440,9 +435,9 @@ def restamp(live: Path, stop: threading.Event) -> None:
 
 
 def run(a) -> int:
-    if saturday_window():
-        print("refusing: no drills/side sidecars Sat 10:00-24:00 CT")
-        return 2
+    sys.path.insert(0, str(HERE.parent))
+    import freeze  # game day: no exams/side sidecars Sat 10:00-24:00 CT (review R9); runs Friday as a final gate
+    freeze.exam_guard("eval/sat_dm.py")
     if os.environ.get("PICKY_SATDM_LOCKED") != "1":
         env = dict(os.environ, PICKY_SATDM_LOCKED="1")
         return subprocess.call(["/usr/bin/lockf", "-t", "14400", LOCK, PY, "-I", str(Path(__file__).resolve())] + sys.argv[1:],
