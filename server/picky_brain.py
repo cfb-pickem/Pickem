@@ -633,7 +633,10 @@ MEAN_TO_CHARLIE = re.compile(
     r"|\b(you|your|you'?re|ur)\b[^.!?]{0,50}\b(suck\w*|bad|pathetic|embarrass\w*|weak|joke|garbage|trash|lucky|fluke|sad|"
     r"mid|terrible|awful|participation|clown\w*|fraud|loser|bum|choke\w*|frauds?)\b"
     r"|\blook who'?s talking\b|\byou'?ll regret\b|\b(big|tough) talk\b|\ba lot of (energy|talk|noise)\b|\bkeep crying\b"
-    r"|\bsit (down|this one out)\b|\bwho asked\b|\bstay in your lane\b|\bpot (calling|meet\w*) the kettle\b", re.I)
+    r"|\bsit (down|this one out)\b|\bwho asked\b|\bstay in your lane\b|\bpot (calling|meet\w*) the kettle\b"
+    # vocative digs (Saturday drill 11/18: a fact-lane voice line ended '..., you absolute space cadet.')
+    r"|\byou (absolute|complete|total|utter|big|giant|fucking|sorry|poor|silly)\s+\w+"
+    r"|\byou (space cadet|dipshit|dumbass|nerd|goober|donkey|muppet|degenerate|dork|clown|idiot|moron|sicko|psycho)\b", re.I)
 
 
 def charlie_line(team: str | None, chat_id: str | None, avoid: str = "") -> str:
@@ -647,6 +650,9 @@ def charlie_line(team: str | None, chat_id: str | None, avoid: str = "") -> str:
     except Exception:  # noqa: BLE001
         pass
     return next(x for x in CHARLIE_LINES if x != avoid)
+
+
+_SCOLD = re.compile(r"^\W*(stop|quit|focus|go|try|maybe|get)\b|\byour own\b|\binstead of\b", re.I)
 
 
 def charlie_caller(st: dict | None) -> bool:
@@ -1054,7 +1060,7 @@ async def fact_reply(st: dict, prefix: str, answer: str) -> str:
     try:
         raw = await _json_call(prefix, router.FACT_TAIL, router.fact_user(st["q"], answer, st.get("sender", ""),
                                                                           jab=rt.mixed and not charlie_caller(st),
-                                                                          leader=leader),
+                                                                          leader=leader, warm=charlie_caller(st)),
                                router.FACT_SCHEMA, 0.6, router.FACT_TOKENS, 30.0, prime_wait=PRIME_WAIT)
         line = (json.loads(raw[raw.find("{"): raw.rfind("}") + 1]) or {}).get("line") if "{" in (raw or "") else ""
     except (httpx.HTTPError, ValueError, AttributeError) as e:
@@ -1062,6 +1068,8 @@ async def fact_reply(st: dict, prefix: str, answer: str) -> str:
         line = ""
     line = router.shape_banter(str(line or ""), st["q"], chat.member_nicknames(), max_words=14, max_sents=1)
     ok = router.voice_line_ok(line, answer, ctx, leader=leader)
+    if ok and charlie_caller(st) and (MEAN_TO_CHARLIE.search(line) or _SCOLD.search(line)):
+        ok = False  # his line is warm or it's dropped (the code answer goes out alone)
     if not ok and leader:  # Dear Leader scope: another member asked about his place, so he's hailed, always
         jab = rt.mixed and router.voice_line_ok(line, answer, ctx)  # a mixed text keeps its jab after the hail
         line, ok = (f"{router.LEADER_HAIL} {line}" if jab else router.LEADER_HAIL), True

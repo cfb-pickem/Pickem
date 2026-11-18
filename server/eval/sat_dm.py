@@ -196,7 +196,7 @@ def has_team(a: str, t: dict) -> bool:
 
 
 def nums(a: str) -> list[int]:
-    return [int(x) for x in re.findall(r"(?<![\d.])\d{1,3}(?![\d.]|\.\d)", a)]
+    return [int(x) for x in re.findall(r"(?<![\d.])\d{1,3}(?!\d|\.\d)", a)]
 
 
 def has_score(a: str, g: dict) -> bool:
@@ -233,10 +233,10 @@ def num_in(a: str, v) -> bool:
     v = str(v)
     if re.fullmatch(r"\d+-\d+", v):
         x, y = v.split("-")
-        return bool(re.search(rf"\b{x}\s*(?:-|of|/|for|out of)\s*{y}\b", a))
+        return bool(re.search(rf"\b{x}\s*(?:-of-|-|of|/|for|out of)\s*{y}\b", a))
     if re.fullmatch(r"\d+/\d+", v):
         x, y = v.split("/")
-        return bool(re.search(rf"\b{x}\s*(?:-|of|/|for|out of)\s*{y}\b", a))
+        return bool(re.search(rf"\b{x}\s*(?:-of-|-|of|/|for|out of)\s*{y}\b", a))
     return v.lstrip("-") in [str(n) for n in nums(a)] or (v.startswith("-") and v in a)
 
 

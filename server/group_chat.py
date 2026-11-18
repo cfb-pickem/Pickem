@@ -1071,7 +1071,9 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 q = f"{prev_q}. {q}"  # 'break it down for me': the same lane as the last ask, at full length
                 route = router.classify(q)
             gk = gameday.league_intent(q) or gameday.intent(q, prev_q)
-            if gk and (gk in ("gd_ended", "gd_week") or not (route.lane == "fact" and route.kind in (
+            gs_now = gameday.games() if gk else {}  # 'whos winning in Columbus' / 'how'd Jeremiah Smith end up': a game
+            named_game = bool(gk) and bool(gameday._named(q, gs_now) or gameday._player_games(q, gs_now))
+            if gk and (gk in ("gd_ended", "gd_week") or named_game or not (route.lane == "fact" and route.kind in (
                     "my_picks", "standings", "record", "results", "playoff_today", "chase", "cover"))):
                 route = router.Route("fact", gk, why=f"gameday.{gk}", mixed=route.mixed, ptype=route.ptype)
         if charlie and (route.lane == "ignore" or (route.lane == "banter" and route.kind == "spiral")):

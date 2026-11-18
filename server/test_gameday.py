@@ -78,6 +78,9 @@ def test_scores_any_game_and_city():
     assert "Final" in a and "Florida 21" in a, a
     k, a = ask("did kentucky win")
     assert a.startswith("Nope, Florida beat Kentucky 21-14"), a
+    assert ask("did kentucky lose")[1].startswith("Yep, Florida beat Kentucky")
+    assert ask("did florida lose")[1].startswith("Nope, Florida beat Kentucky")
+    assert ask("did uk win")[1].startswith("Nope, Florida beat Kentucky")
     k, a = ask("iowa score")
     assert "hasn't kicked off" in a and "NBC" in a, a
 

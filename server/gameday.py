@@ -365,13 +365,18 @@ def ans_score(q: str, gs: dict) -> str | None:
         return None
     if re.search(r"\b(did|does) \w+ (win|lose|beat)\b", t, re.I) and hits[0].get("state") == "post":
         g = hits[0]
-        named = L.named_games(t, {g["id"]: g})
+        named = L.named_games(expand(t), {g["id"]: g})
         a, h = g["away"], g["home"]
         ap, hp = g.get("away_score") or 0, g.get("home_score") or 0
         win, lose = (a, h) if ap > hp else (h, a)
-        asked_win = any(re.search(rf"\b{re.escape(k)}\b", t, re.I if not cs else 0) for k, cs in L._name_keys(win))
-        return (f"{'Yep' if asked_win else 'Nope'}, {_nm(win)} beat {_nm(lose)} {max(ap, hp)}-{min(ap, hp)}." if named
-                else score_line(g))
+        te = expand(t)
+        asked = lambda side: any(re.search(rf"(?<![\w']){re.escape(k)}(?![\w])", te, 0 if cs else re.I)  # noqa: E731
+                                 for k, cs in L._name_keys(side))
+        lose_q = bool(re.search(r"\b(lose|lost)\b", t, re.I))
+        subj_won = asked(win) and not asked(lose) if not lose_q else asked(lose) and not asked(win)
+        yes = subj_won if (asked(win) != asked(lose)) else None
+        lead = "" if yes is None else ("Yep, " if yes else "Nope, ")
+        return (f"{lead}{_nm(win)} beat {_nm(lose)} {max(ap, hp)}-{min(ap, hp)}." if named else score_line(g))
     return " ".join(score_line(g) for g in hits[:2])
 
 
@@ -858,5 +863,19 @@ def combine(parts: list[tuple[str, str]], cap: int = SHORT_CAP) -> str:
         return shorten(parts[0][1], parts[0][0])
     total = min(500, cap + 100 * (len(parts) - 1))
     each = max(90, total // len(parts) - 2)
-    out = " ".join(first_sentences(r, each) for _, r in parts)
+    out = " ".join(facts_only(r, each) for _, r in parts)
     return shorten(out, cap=total)
+
+
+def facts_only(text: str, cap: int) -> str:
+    """The answer sentences of one reply (they carry a number) up to cap; the voice line after them is dropped so a
+    combined text stays all answers."""
+    sents = [x for x in _SENT.split(re.sub(r"\s+", " ", text or "").strip()) if x]
+    keep = []
+    for i, x in enumerate(sents):
+        if i and not re.search(r"\d", x):
+            break
+        if keep and len(" ".join(keep + [x])) > cap:
+            break
+        keep.append(x)
+    return shorten(" ".join(keep), cap=cap) if keep else first_sentences(text, cap)
