@@ -16,8 +16,16 @@ map, re-read live) and TEST_DM_HANDLES (allowlisted: public mode when not
 mapped); anyone else gets no reply. Tapbacks and attachment-only messages
 are skipped.
 
-Deduped by message ROWID (state persisted). At most one reply per 10 s and
-60 per hour. Logs carry a short preview only, never full bodies.
+Deduped by message ROWID (state persisted). Sends are at least 3 s apart; replies
+and proactive posts have separate hourly budgets (a busy Saturday of posts can't
+eat member replies). Logs carry a short preview only, never full bodies.
+
+Never silent (review R5, 2026-11-17): last_rowid only moves past a row once its
+reply went out, or after the sidecar failed it 3 more times with backoff (it may
+be mid-restart); then a short canned "one sec" line goes out instead, but only to
+a chat Picky has already answered (never a stranger). Each reply logs its
+arrival -> send latency, plus one daily p50/p90 line. Several unanswered DMs from
+one handle in a poll go to the sidecar as one ask ("texts", oldest first).
 
 Proactive group posts (recaps, previews, pick reminders, score pings) are
 written on the Agent side and queued (server/group_outbox.py). Every
@@ -59,8 +67,14 @@ OUTBOX_URL = BOT_URL.rsplit("/", 1)[0] + "/outbox"
 OUTBOX_POLL = 20.0      # seconds between outbox checks
 GROUPS_EVERY = 300.0    # seconds between group-list reports
 POLL_SECONDS = 3.0
-MIN_GAP = 10.0          # seconds between replies
-MAX_PER_HOUR = 60
+MIN_GAP = 3.0           # seconds between sends (was 10: a 20-ask burst had a 190 s floor)
+MAX_PER_HOUR = 90       # replies per hour (their own budget)
+POST_PER_HOUR = 60      # proactive posts + DMs per hour, separate from replies
+RETRY_BACKOFF = (10.0, 30.0, 90.0)  # sidecar down / 5xx / send failed: retry after these, then the canned line
+CANNED = "One sec, my brain's rebooting. Text me again in a minute."
+BOT_TIMEOUT = 420       # a full-brain reply under load; pictures are async now (sidecar answers at once)
+LATENCY_FILE = STATE_DIR / "latency.jsonl"
+LATENCY_DAYS = 8
 MAX_AGE = 600           # ignore messages older than this (watcher was down)
 DELIVERY_EVERY = 60.0   # seconds between failed-send checks
 EMPTY_WAIT = 10.0       # re-read a row with no text yet for this long before skipping it
@@ -291,16 +305,19 @@ def should_act(row: dict, now: float) -> tuple[bool, str]:
 
 
 def ask_bot(handle: str, text: str, secret: str, chat: str = "", dm: bool = False,
-            recent: list | None = None) -> dict:
-    """{"reply": str|None, "image": base64 png|None}"""
+            recent: list | None = None, texts: list | None = None) -> dict:
+    """{"reply": str|None, "image": base64 png|None}. `texts`: several DMs from one handle, oldest first
+    (`text` is the latest); the sidecar answers them with one reply."""
     if not dm and not TRIGGER.search(text):  # mention-only messages: hand the sidecar a literal trigger
         text = "@Picky " + text
     payload = {"handle": handle, "text": text, "chat": chat, "dm": dm,
                "allowlisted": dm and handle in TEST_DM_HANDLES, "recent": [] if dm else (recent or [])}
+    if texts and len(texts) > 1:
+        payload["texts"] = texts
     req = urllib.request.Request(
         BOT_URL, data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "X-Picky-Group-Secret": secret}, method="POST")
-    with urllib.request.urlopen(req, timeout=420) as r:  # pictures take a few minutes
+    with urllib.request.urlopen(req, timeout=BOT_TIMEOUT) as r:
         return json.loads(r.read().decode()) or {}
 
 
@@ -448,6 +465,118 @@ def save_state(state: dict) -> None:
     os.replace(tmp, STATE_FILE)
 
 
+def row_text(row: dict) -> str:
+    return row["text"] or decode_attributed_body(row["attributedBody"]) or ""
+
+
+def dm_batch(rows: list[dict], i: int, ready) -> list[dict]:
+    """Pure: rows[i] is a DM to answer; the unanswered DMs after it from the same handle in the same chat
+    (`ready(row)` = would be acted on now) ride along as one ask. Group rows never batch."""
+    first = rows[i]
+    if first["style"] == GROUP_STYLE:
+        return [first]
+    out = [first]
+    for r in rows[i + 1:]:
+        if r["style"] != GROUP_STYLE and r["chat_guid"] == first["chat_guid"] and r["handle"] == first["handle"] \
+                and ready(r):
+            out.append(r)
+    return out
+
+
+def note_latency(kind: str, arrival: float, sent: float, bot: float, tries: int, lane: str | None,
+                 path: Path = None) -> float:
+    """One jsonl row per reply (arrival -> send, the sidecar's share, tries); old rows pruned."""
+    path = path or LATENCY_FILE
+    e2e = max(0.0, sent - arrival)
+    row = {"ts": round(sent), "kind": kind, "e2e": round(e2e, 1), "bot": round(bot, 1), "tries": tries}
+    if lane:
+        row["lane"] = lane
+    try:
+        path.parent.mkdir(mode=0o700, exist_ok=True)
+        with path.open("a") as f:
+            f.write(json.dumps(row) + "\n")
+    except OSError as e:
+        log.warning("latency file: %s", e)
+    return e2e
+
+
+def pct(vals: list[float], p: float) -> float:
+    v = sorted(vals)
+    return v[min(len(v) - 1, int(round(p * (len(v) - 1))))] if v else 0.0
+
+
+def daily_summary(day: str, path: Path = None) -> str | None:
+    """'daily latency 2026-11-21 n=40 all p50=.. p90=.. max=.. | group n= p50= p90= | dm ...' for one local day;
+    prunes rows older than LATENCY_DAYS."""
+    path = path or LATENCY_FILE
+    try:
+        rows = [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
+    except (OSError, ValueError):
+        return None
+    cut = time.time() - LATENCY_DAYS * 86400
+    keep = [r for r in rows if r.get("ts", 0) >= cut]
+    if len(keep) != len(rows):
+        try:
+            path.write_text("".join(json.dumps(r) + "\n" for r in keep))
+        except OSError:
+            pass
+    mine = [r for r in keep if time.strftime("%Y-%m-%d", time.localtime(r["ts"])) == day]
+    if not mine:
+        return None
+    parts = []
+    for label, rs in (("all", mine), ("group", [r for r in mine if r["kind"] == "group"]),
+                      ("dm", [r for r in mine if r["kind"] == "dm"])):
+        if rs:
+            e = [r["e2e"] for r in rs]
+            parts.append(f"{label} n={len(rs)} p50={pct(e, .5):.1f}s p90={pct(e, .9):.1f}s max={max(e):.1f}s")
+    return f"daily latency {day} " + " | ".join(parts)
+
+
+def remember_chat(state: dict, chat: str) -> None:
+    """Chats Picky has really answered: the only ones that may get the canned 'one sec' line."""
+    seen = [c for c in state.get("answered_chats", []) if c != chat] + [chat]
+    state["answered_chats"] = seen[-300:]
+
+
+def process_rows(rows: list[dict], state: dict, secret: str, rate: RateLimit, db, pending: dict,
+                 retries: dict, done_ids: set, busy_since: float | None, clock=time.time) -> None:
+    """One poll's new rows, in order. last_rowid moves past a row only when it's settled: replied, not ours
+    to answer, or given up on after RETRY_BACKOFF (then the canned line). A row in backoff holds the line."""
+    for i, row in enumerate(rows):
+        if row["ROWID"] in done_ids:
+            done_ids.discard(row["ROWID"])
+        elif wait_for_text(row, pending, clock()):
+            break  # not written yet: re-read from this row next poll
+        else:
+            ok, why = should_act(row, stale_ref(busy_since, clock()))
+            if ok:
+                rt = retries.setdefault(row["ROWID"], {"tries": 0, "next": 0.0})
+                if clock() < rt["next"]:
+                    break  # backing off: hold the line here, the outbox keeps draining
+                if "batch" not in rt:
+                    def ready(r):
+                        return (r["ROWID"] not in done_ids and not wait_for_text(r, pending, clock())
+                                and should_act(r, stale_ref(busy_since, clock()))[0])
+                    rt["batch"] = dm_batch(rows, i, ready)
+                res = handle_one(row, secret, rate, db, rt, state)
+                if res == "timeout":
+                    send_canned(row, rate, state)
+                elif res == "fail":
+                    rt["tries"] += 1
+                    if rt["tries"] <= len(RETRY_BACKOFF):
+                        rt["next"] = clock() + RETRY_BACKOFF[rt["tries"] - 1]
+                        log.warning("retry %d/%d for rowid=%s in %.0fs", rt["tries"], len(RETRY_BACKOFF),
+                                    row["ROWID"], RETRY_BACKOFF[rt["tries"] - 1])
+                        break
+                    send_canned(row, rate, state)
+                for b in rt.get("batch") or []:
+                    if b["ROWID"] != row["ROWID"]:
+                        done_ids.add(b["ROWID"])
+                retries.pop(row["ROWID"], None)
+        state["last_rowid"] = row["ROWID"]
+        save_state(state)
+
+
 def main() -> int:
     if os.environ.get("USER", "") == "Agent" or HOME.name == "Agent":
         print("refusing to run as Agent: Picky only sends from the picky user", file=sys.stderr)
@@ -465,9 +594,11 @@ def main() -> int:
                        capture_output=True, text=True, timeout=60)
     log.info("messages automation check rc=%s %s", r.returncode, r.stderr.strip()[:120])
     state = load_state()
-    rate = RateLimit()
+    rate, post_rate = RateLimit(), RateLimit(per_hour=POST_PER_HOUR)
     db = None
     pending: dict[int, float] = {}  # rowid -> first time seen with no text
+    retries: dict[int, dict] = {}   # rowid -> {"tries", "next", "out"?}: sidecar failures being retried
+    done_ids: set[int] = set()      # rows already answered inside a DM batch (ahead of last_rowid)
     last_outbox, last_groups, last_delivery = 0.0, 0.0, 0.0
     busy_since = None  # start of the current stretch of new rows (stale_ref)
     log.info("watcher up, last_rowid=%s", state.get("last_rowid"))
@@ -478,28 +609,29 @@ def main() -> int:
                 if "last_rowid" not in state:  # first run: never answer the backlog
                     state["last_rowid"] = max_rowid(db)
                     save_state(state)
-            rows = db.execute(NEW_MESSAGES, (state["last_rowid"],)).fetchall()
-            if not rows:
+            today = time.strftime("%Y-%m-%d")
+            if state.get("lat_day") != today:
+                if state.get("lat_day"):
+                    line = daily_summary(state["lat_day"])
+                    if line:
+                        log.info(line)
+                state["lat_day"] = today
+                save_state(state)
+            raw_rows = db.execute(NEW_MESSAGES, (state["last_rowid"],)).fetchall()
+            if not raw_rows:
                 busy_since = None
             elif busy_since is None:
                 busy_since = time.time()
             cols = ["ROWID", "text", "attributedBody", "date", "handle", "chat_guid", "style",
                     "associated_message_type", "cache_has_attachments"]
-            for raw in rows:
-                row = dict(zip(cols, raw))
-                if wait_for_text(row, pending, time.time()):
-                    break  # not written yet: re-read from this row next poll
-                ok, why = should_act(row, stale_ref(busy_since, time.time()))
-                if ok:
-                    handle_one(row, secret, rate, db)
-                state["last_rowid"] = row["ROWID"]
-                save_state(state)
+            rows = [dict(zip(cols, raw)) for raw in raw_rows]
+            process_rows(rows, state, secret, rate, db, pending, retries, done_ids, busy_since)
             if time.time() - last_outbox >= OUTBOX_POLL:
                 last_outbox = time.time()
                 groups = None
                 if time.time() - last_groups >= GROUPS_EVERY:
                     last_groups, groups = time.time(), group_chats(db)
-                drain_outbox(db, secret, rate, groups)
+                drain_outbox(db, secret, post_rate, groups)
             if time.time() - last_delivery >= DELIVERY_EVERY:
                 last_delivery = time.time()
                 check_deliveries(db, state, last_delivery)
@@ -513,38 +645,80 @@ def main() -> int:
         time.sleep(POLL_SECONDS)
 
 
-def handle_one(row: dict, secret: str, rate: RateLimit, db: sqlite3.Connection | None = None) -> None:
-    text = row["text"] or decode_attributed_body(row["attributedBody"]) or ""
-    handle = row["handle"] or ""
-    dm = row["style"] != GROUP_STYLE
-    # DM bodies from people Picky won't answer stay out of the log
-    log.info("%s rowid=%s from=...%s preview=%r", "dm" if dm else "trigger", row["ROWID"], handle[-4:],
-             f"<{len(text)} chars>" if dm else preview(text))
-    wait = rate.wait_needed()
-    if wait is None:
-        log.warning("hourly cap hit, skipping rowid=%s", row["ROWID"])
-        return
-    try:
-        recent = [] if dm else recent_messages(db, row["chat_guid"], row["ROWID"])
-        out = ask_bot(handle, text, secret, chat=row["chat_guid"], dm=dm, recent=recent)
-    except (urllib.error.URLError, TimeoutError, ValueError) as e:
-        log.error("bot unreachable for rowid=%s: %s", row["ROWID"], e)
-        return
-    reply, image = out.get("reply"), out.get("image")
-    if not reply and not image:
-        log.info("no reply for rowid=%s", row["ROWID"])
+def send_canned(row: dict, rate: RateLimit, state: dict) -> None:
+    """3 retries failed: a short holding line instead of silence, only where Picky already talks."""
+    if row["chat_guid"] not in state.get("answered_chats", []):
+        log.warning("gave up on rowid=%s (no canned line: chat never answered before)", row["ROWID"])
         return
     wait = rate.wait_needed()
     if wait is None:
-        log.warning("hourly cap hit, skipping rowid=%s", row["ROWID"])
+        log.warning("gave up on rowid=%s (hourly cap, no canned line)", row["ROWID"])
         return
     if wait:
         time.sleep(wait)
-    if reply and send(row["chat_guid"], reply):
+    if send(row["chat_guid"], CANNED):
         rate.mark()
-        log.info("replied rowid=%s preview=%r", row["ROWID"], preview(reply))
+    log.warning("gave up on rowid=%s after %d retries: canned line sent", row["ROWID"], len(RETRY_BACKOFF))
+
+
+def handle_one(row: dict, secret: str, rate: RateLimit, db: sqlite3.Connection | None = None,
+               rt: dict | None = None, state: dict | None = None) -> str:
+    """'sent' | 'none' (no reply due, or skipped on purpose) | 'fail' (sidecar unreachable / 5xx / send
+    failed: the caller retries with backoff) | 'timeout' (no retry: the canned line). `rt` carries the retry state; a reply the sidecar already
+    wrote is kept there so a failed send is retried without asking the brain again."""
+    rt = rt if rt is not None else {}
+    state = state if state is not None else {}
+    batch = rt.get("batch") or [row]
+    text = row_text(batch[-1])
+    handle = row["handle"] or ""
+    dm = row["style"] != GROUP_STYLE
+    if not rt.get("tries"):  # DM bodies from people Picky won't answer stay out of the log
+        log.info("%s rowid=%s from=...%s preview=%r%s", "dm" if dm else "trigger", row["ROWID"], handle[-4:],
+                 f"<{len(text)} chars>" if dm else preview(text), f" batch={len(batch)}" if len(batch) > 1 else "")
+    if rate.wait_needed() is None:
+        log.warning("hourly cap hit, skipping rowid=%s", row["ROWID"])
+        return "none"
+    out = rt.get("out")
+    if out is None:
+        t0 = time.time()
+        try:
+            recent = [] if dm else recent_messages(db, row["chat_guid"], row["ROWID"])
+            out = ask_bot(handle, text, secret, chat=row["chat_guid"], dm=dm, recent=recent,
+                          texts=[row_text(b) for b in batch] if len(batch) > 1 else None)
+        except urllib.error.HTTPError as e:
+            log.error("bot http %s for rowid=%s", e.code, row["ROWID"])
+            return "fail" if e.code >= 500 else "none"
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError) as e:
+            if isinstance(e, TimeoutError) or isinstance(getattr(e, "reason", None), TimeoutError):
+                log.error("bot timed out for rowid=%s after %ss", row["ROWID"], BOT_TIMEOUT)
+                return "timeout"  # it already waited 7 min: no retries, the canned line now
+            log.error("bot unreachable for rowid=%s: %s", row["ROWID"], e)
+            return "fail"
+        rt["out"], rt["bot"] = out, time.time() - t0
+    reply, image = out.get("reply"), out.get("image")
+    if not reply and not image:
+        log.info("no reply for rowid=%s", row["ROWID"])
+        return "none"
+    wait = rate.wait_needed()
+    if wait is None:
+        log.warning("hourly cap hit, skipping rowid=%s", row["ROWID"])
+        return "none"
+    if wait:
+        time.sleep(wait)
+    if reply:
+        if not send(row["chat_guid"], reply):
+            return "fail"
+        rate.mark()
+        sent = time.time()
+        remember_chat(state, row["chat_guid"])
+        e2e = note_latency("dm" if dm else "group", msg_unix_time(row["date"]), sent, rt.get("bot", 0.0),
+                           rt.get("tries", 0) + 1, out.get("lane"))
+        log.info("replied rowid=%s preview=%r latency arrival_to_send=%.1fs bot=%.1fs tries=%d lane=%s",
+                 row["ROWID"], preview(reply), e2e, rt.get("bot", 0.0), rt.get("tries", 0) + 1, out.get("lane") or "-")
+        rt["out"] = {**out, "reply": None}  # sent: a retry for the image never re-sends the text
     if image:
         send_image(row, image)
+    return "sent"
 
 
 def send_image(row: dict, b64: str) -> None:

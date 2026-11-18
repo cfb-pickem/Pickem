@@ -44,9 +44,10 @@ def test_real_backlog_is_still_stale():
 
 def test_main_loop_uses_stale_ref():
     src = (Path(__file__).resolve().parent / "watcher.py").read_text()
+    rows = src[src.index("def process_rows("):src.index("def main()")]
     loop = src[src.index("def main()"):src.index("def handle_one(")]
-    assert "should_act(row, stale_ref(busy_since, time.time()))" in loop
-    assert "busy_since = None" in loop
+    assert "should_act(row, stale_ref(busy_since, clock()))" in rows
+    assert "busy_since = None" in loop and "process_rows(" in loop
 
 
 if __name__ == "__main__":
