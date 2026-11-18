@@ -52,7 +52,7 @@ DEFAULT_WIDTH = 1024
 DEFAULT_HEIGHT = 1024
 QUANTIZE_BITS = 4           # 4-bit quant to leave headroom for Qwen 7B
 MAX_GEN_SECONDS = 420.0     # includes lock wait + a cold model load
-RATE_LIMIT_PER_HOUR = 20
+RATE_LIMIT_PER_HOUR = 5    # pictures.PER_HOUR (decided 2026-11-17)
 
 log = logging.getLogger("picky.image")
 logging.basicConfig(

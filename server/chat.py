@@ -7168,7 +7168,7 @@ async def _with_opener(opener: str | None, stream):
 
 
 # -----------------------------------------------------------------------------
-# image generation: handed to image.py on :8767 (own GPU lock + 20/hr limit)
+# image generation: handed to image.py on :8767 (own GPU lock + 5/hr limit; policy in pictures.py)
 # -----------------------------------------------------------------------------
 
 # "draw me a bulldog", "make a picture of ...", "generate an image of ..."
@@ -7184,16 +7184,17 @@ def wants_image(text: str) -> bool:
     return bool(_IMAGE_ASK.search(text or ""))
 
 
-async def _image_stream(prompt: str, user_id: str):
-    """SSE: a one-liner, keep-alive pings while the GPU works, then the image
-    as a data: URL. The prompt is only the user's own words; no league
-    context goes to the image service."""
-    yield _sse({"content": "Fine, dumbass. Firing up the art department. Give me a minute or two..."})
-    timeout = httpx.Timeout(connect=5.0, read=300.0, write=10.0, pool=5.0)
+# image.py's own cap (MAX_GEN_SECONDS, includes its lock wait + a cold load); the read timeout here must be
+# longer or a 300-420 s picture finishes on the GPU and the member still hears "closed" (review R2).
+IMAGE_MAX_GEN_SECONDS = 420.0
+IMAGE_READ_TIMEOUT = IMAGE_MAX_GEN_SECONDS + 30
+
+
+async def generate_image(prompt: str, user_id: str, on_wait=None) -> tuple[int, str | None]:
+    """(HTTP status, base64 png | None). Unloads gemma first (16 GB box: both models swap). `on_wait`
+    (async, optional) is awaited every 10 s while the GPU works. 0 = image service unreachable."""
+    timeout = httpx.Timeout(connect=5.0, read=IMAGE_READ_TIMEOUT, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as c:
-        # 16 GB box: the chat model (~6.7 GB) and the image model (~6 GB)
-        # together swap, and a picture took 4+ min and timed out. Unload the
-        # chat model first; the next chat message reloads it.
         try:
             await c.post(f"{OLLAMA}/api/generate", json={"model": MODEL, "keep_alive": 0}, timeout=30.0)
         except httpx.HTTPError as e:
@@ -7204,22 +7205,57 @@ async def _image_stream(prompt: str, user_id: str):
         try:
             while not task.done():
                 await asyncio.wait({task}, timeout=10)
-                if not task.done():
-                    yield ": ping\n\n"  # keep the tunnel from idling out
+                if not task.done() and on_wait:
+                    await on_wait()
             r = task.result()
         except httpx.HTTPError as e:
             log.warning("image service unreachable: %s", e)
-            yield _sse({"content": " Art department's closed, Picasso. Try me later."})
-            return
+            return 0, None
         finally:
             task.cancel()
-    if r.status_code == 429:
-        yield _sse({"content": " Twenty pictures an hour is the limit and you blew right through it. Go the fuck outside."})
-    elif r.status_code != 200:
+    if r.status_code != 200:
         log.error("image %s: %s", r.status_code, r.text[:200])
-        yield _sse({"content": " Shit, the brush slipped. My fault, for once. Try again in a minute."})
+        return r.status_code, None
+    return 200, r.json()["image_base64"]
+
+
+async def _image_stream(prompt: str, user_id: str):
+    """SSE (site widget): a one-liner, keep-alive pings while the GPU works, then the image
+    as a data: URL. Same policy as the text path (pictures.refusal: no game-window pictures, none while a
+    member text is pending, 5/hour). The prompt is only the user's own words."""
+    import pictures
+    no = pictures.refusal(user_id)
+    if no:
+        yield _sse({"content": no})
+        yield "data: [DONE]\n\n"
+        return
+    yield _sse({"content": "Firing up the art department. Give me a few minutes..."})
+    pings: asyncio.Queue = asyncio.Queue()
+
+    async def on_wait():
+        await pings.put(": ping\n\n")
+
+    task = asyncio.create_task(generate_image(prompt, user_id, on_wait))
+    pictures._busy["since"] = time.time()
+    try:
+        while not task.done():
+            try:
+                yield await asyncio.wait_for(pings.get(), timeout=12)  # keep the tunnel from idling out
+            except asyncio.TimeoutError:
+                yield ": ping\n\n"
+        status, b64 = task.result()
+    finally:
+        pictures._busy["since"] = 0.0
+        if not task.done():
+            task.cancel()
+    if status == 0:
+        yield _sse({"content": " Art department's closed right now. Try me later."})
+    elif status == 429:
+        yield _sse({"content": " " + pictures.REFUSE_LIMIT[0]})
+    elif status != 200:
+        yield _sse({"content": " " + pictures.FAILED[0]})
     else:
-        yield _sse({"image": "data:image/png;base64," + r.json()["image_base64"]})
+        yield _sse({"image": "data:image/png;base64," + b64})
     yield "data: [DONE]\n\n"
 
 

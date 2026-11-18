@@ -352,11 +352,32 @@ def post_dm(team: str, handle: str, texts: list[str], key: str, expires_s: int =
     return "queued"
 
 
-def next_item(now: float | None = None, dm_ok: bool = False) -> dict | None:
+def post_picture(chat_guid: str, text: str, image_b64: str | None, expires_s: int = 1800,
+                 now: dt.datetime | None = None) -> str:
+    """A finished picture (or a short 'the brush slipped' line) back to the chat that asked: the group or a
+    DM (review R2: pictures are async). Not a proactive post: no once-only key, no daily cap, no quiet hours;
+    the kill switch still holds it. Only a watcher that says img_ok gets it. Returns queued | paused | empty."""
+    now = now or dt.datetime.now(CT)
+    texts = [text.strip()] if text and text.strip() else []
+    if not chat_guid or not (texts or image_b64):
+        return "empty"
+    if paused():
+        log_event("picture-paused", chat="..." + chat_guid[-6:])
+        return "paused"
+    item = {"id": uuid.uuid4().hex[:12], "kind": "picture", "key": f"picture:{uuid.uuid4().hex[:8]}",
+            "texts": texts, "chat": chat_guid, "image": image_b64, "reply": True,
+            "created": now.timestamp(), "expires": now.timestamp() + expires_s}
+    _write_private(OUTBOX / f"{int(now.timestamp())}-{item['id']}.json", json.dumps(item))
+    log_event("picture-queued", id=item["id"], chat="..." + chat_guid[-6:], image=bool(image_b64))
+    return "queued"
+
+
+def next_item(now: float | None = None, dm_ok: bool = False, img_ok: bool = False) -> dict | None:
     """For the sidecar: the oldest live item, or None when paused, dry run or
     no group. Expired items are dropped (a reminder after lock is worse than
     none). DM items ({"to": handle}) only go to a watcher that says it can send
-    them (dm_ok); an older watcher would only ever send to a group."""
+    them (dm_ok); an older watcher would only ever send to a group. Picture
+    replies ({"reply": true, "chat", "image"}) only go to a watcher that says img_ok."""
     cfg = config()
     if paused() or cfg["dry_run"] or not cfg.get("group_guid") or not OUTBOX.exists():
         return None
@@ -372,12 +393,17 @@ def next_item(now: float | None = None, dm_ok: bool = False) -> dict | None:
             continue
         if item.get("to") and not dm_ok:
             continue
+        if item.get("reply") and not img_ok:
+            continue
         if item.get("claimed_at") and now - item["claimed_at"] < 600:
             continue  # the watcher has it; give it 10 min to ack
         item["claimed_at"] = now
         _write_private(p, json.dumps(item))
         if item.get("to"):
             return {"id": item["id"], "texts": item["texts"], "to": item["to"], "kind": item["kind"]}
+        if item.get("reply"):
+            return {"id": item["id"], "texts": item["texts"], "chat": item["chat"], "image": item.get("image"),
+                    "reply": True, "kind": item["kind"]}
         return {"id": item["id"], "texts": item["texts"], "chat": cfg["group_guid"], "kind": item["kind"]}
     return None
 

@@ -64,6 +64,7 @@ import json
 import logging
 import os
 import plistlib
+import random
 import re
 import subprocess
 import sys
@@ -98,6 +99,7 @@ import matchup_guard  # noqa: E402
 import member_memory  # noqa: E402  (forget handler, receipt check, Charlie rule)
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
 import picky_brain  # noqa: E402
+import pictures  # noqa: E402
 import picky_zh  # noqa: E402
 import rare_bits  # noqa: E402
 import router  # noqa: E402
@@ -949,6 +951,25 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     return out
 
 
+def picture_reply(s: Sender, q: str, chat_id: str, handle: str) -> str:
+    """'Drawing it' now, the picture later through the outbox; or a polite no (game window, a member text
+    pending, one already drawing, 5 an hour). Test traffic never draws."""
+    who = s.user_id or s.team or handle
+    no = pictures.refusal(who, own_flag=0 if TEST_REQ.get() else 1)
+    if no or TEST_REQ.get():
+        log.info("picture refused sender=%s: %s", (handle or "?")[-4:], no or "test traffic")
+        return no or random.choice(pictures.DRAWING)
+    target = chat_id or ""
+
+    def deliver(text: str, b64: str | None) -> None:
+        log.info("picture %s for chat=...%s: %s", "done" if b64 else "failed", target[-6:],
+                 group_outbox.post_picture(target, text, b64))
+
+    pictures.start(q, who, deliver)
+    log.info("picture started sender=%s", (handle or "?")[-4:])
+    return random.choice(pictures.DRAWING)
+
+
 def fact_final(reply: str, q: str) -> str:
     """Last fact pass on the outgoing text, every lane that drafted on a league ctx (brain drafts, banter
     lines, burn-book picks): a sentence tying a member / the sender / Picky to a wrong W-L, place or gap,
@@ -1026,6 +1047,10 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             if out.get("reply"):
                 await save_turn(key, q_hist, out["reply"], who, lane="forget")
                 return {"reply": out["reply"], "image": None, "mode": mode, "lane": "forget"}
+        if not web and chat.wants_image(q):  # pictures: async, policy in pictures.py (review R2)
+            reply = picture_reply(s, q, chat_id, handle)
+            await save_turn(key, q_hist, reply, who, lane="picture")
+            return {"reply": reply, "image": None, "mode": mode, "lane": "picture"}
         route = router.classify(q)
         if THREAD_RULES:
             route = THREADS.route(route, key, s.team or s.handle, dm, recent, text=q)
@@ -1347,7 +1372,9 @@ async def outbox(req: Request):
         body = {}
     if isinstance(body, dict) and isinstance(body.get("groups"), list):
         group_outbox.update_group(body["groups"])
-    return {"item": group_outbox.next_item(dm_ok=isinstance(body, dict) and body.get("dm_ok") is True)}
+    ok = isinstance(body, dict)
+    return {"item": group_outbox.next_item(dm_ok=ok and body.get("dm_ok") is True,
+                                           img_ok=ok and body.get("img_ok") is True)}
 
 
 @app.post("/outbox/ack")

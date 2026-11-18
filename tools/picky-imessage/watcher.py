@@ -378,6 +378,10 @@ def is_group(db: sqlite3.Connection, guid: str) -> bool:
     return bool(row) and row[0] == GROUP_STYLE
 
 
+def is_chat(db: sqlite3.Connection, guid: str) -> bool:
+    return db.execute("SELECT 1 FROM chat WHERE guid = ?", (guid,)).fetchone() is not None
+
+
 def _post(url: str, payload: dict, secret: str, timeout: float = 10) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(),
@@ -415,6 +419,7 @@ def drain_outbox(db: sqlite3.Connection, secret: str, rate: RateLimit, groups: l
     or a DM when the item has "to": the sidecar only hands those to a watcher that says dm_ok)."""
     payload = {"groups": groups} if groups is not None else {}
     payload["dm_ok"] = True
+    payload["img_ok"] = True  # async picture replies (review R2)
     try:
         item = _post(OUTBOX_URL, payload, secret).get("item")
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
@@ -425,7 +430,10 @@ def drain_outbox(db: sqlite3.Connection, secret: str, rate: RateLimit, groups: l
     chat, texts = item.get("chat") or "", [t for t in item.get("texts") or [] if t]
     to = item.get("to") or ""
     sent, ok, err = 0, True, ""
-    if not to and not is_group(db, chat):  # group posts only ever go to a group chat
+    if item.get("reply"):  # a picture back to the chat that asked (group or DM): it must exist in chat.db
+        if not is_chat(db, chat):
+            ok, err = False, "not a chat in Picky's Messages"
+    elif not to and not is_group(db, chat):  # group posts only ever go to a group chat
         ok, err = False, "not a group chat in Picky's Messages"
     for t in texts if ok else []:
         wait = rate.wait_needed()
@@ -439,6 +447,9 @@ def drain_outbox(db: sqlite3.Connection, secret: str, rate: RateLimit, groups: l
             break
         rate.mark()
         sent += 1
+    if ok and item.get("reply") and item.get("image"):
+        ok = send_image({"ROWID": item.get("id"), "chat_guid": chat}, item["image"])
+        err = "" if ok else "image send failed"
     log.info("outbox %s kind=%s sent=%d/%d %s", item.get("id"), item.get("kind"), sent, len(texts), err)
     try:
         _post(OUTBOX_URL + "/ack", {"id": item.get("id"), "sent": sent, "ok": ok, "error": err}, secret)
@@ -721,7 +732,7 @@ def handle_one(row: dict, secret: str, rate: RateLimit, db: sqlite3.Connection |
     return "sent"
 
 
-def send_image(row: dict, b64: str) -> None:
+def send_image(row: dict, b64: str) -> bool:
     import base64
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / f"picky-{row['ROWID']}.png"
@@ -729,11 +740,13 @@ def send_image(row: dict, b64: str) -> None:
         path.write_bytes(base64.b64decode(b64))
     except (ValueError, OSError) as e:
         log.error("image write failed rowid=%s: %s", row["ROWID"], e)
-        return
-    if send(row["chat_guid"], str(path), SEND_FILE_SCRIPT):
+        return False
+    ok = send(row["chat_guid"], str(path), SEND_FILE_SCRIPT)
+    if ok:
         log.info("sent image rowid=%s", row["ROWID"])
-    for old in sorted(OUT_DIR.glob("picky-*.png"))[:-20]:  # keep the last 20
+    for old in sorted(OUT_DIR.glob("picky-*.png"), key=lambda p: p.stat().st_mtime)[:-20]:  # keep the last 20
         old.unlink(missing_ok=True)
+    return ok
 
 
 if __name__ == "__main__":
