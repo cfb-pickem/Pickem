@@ -540,3 +540,136 @@ def coach_move_check(corpus: str = "", log=None):
                 return False
         return True
     return ok
+
+
+# ---- stats, ranks, projections tied to a team (prompt proximity) ------------------------------------------------
+
+_RANKY = re.compile(r"(?:#|No\.\s?)(\d{1,3})\b|\b(?:ranked|ranks|ranking)\s+(?:No\.\s?|#)?(\d{1,3})\b"
+                    r"|\b(\d{1,3})(?:st|nd|rd|th)\s+(?:in|nationally|overall|best|worst|in the country|in fbs)\b")
+_STATY = re.compile(r"(?<![\w.+-])(\d{1,3}(?:\.\d+)?)\s*(%|percent\b)|(?<![\w+-])\$\s?(\d[\d,.]*)\s*(million|billion|m\b)?"
+                    r"|\b(\d+(?:\.\d+)?)\s+(million|billion)\b|(?<![\w.+-])(\d{1,2}\.\d)\b(?!\s*-)"
+                    r"|\b(\d{1,2})\s+days?\s+(?:of\s+)?(?:rest|off)\b", re.I)
+_PROJ = re.compile(r"\b(?:projects?|projected|projection|model|SP\+|FPI|SRS|EPA)\b[^.]{0,40}?\bby\s+(?:about\s+)?(\d{1,2}(?:\.\d)?)\b",
+                   re.I)
+
+
+def _has_tok(text: str, token: str) -> bool:
+    return bool(re.search(rf"(?<![\d.]){re.escape(token.strip())}(?![\d]|\.\d)", text or "", re.I))
+
+
+def _in_corpus_near(corpus: str, names: list[str], token: str, span: int = 160) -> bool:
+    if not names:
+        return _has_tok(corpus, token)
+    for n in names:
+        for m in re.finditer(rf"(?<![\w&]){re.escape(n)}(?![\w&])", corpus or ""):
+            if _has_tok(corpus[max(0, m.start() - span): m.end() + span], token):
+                return True
+    return False
+
+
+def stat_rank_check(idx: dict | None, corpus: str = "", log=None):
+    """A rank (#N, No. N, 'Nth in'), a percent, a decimal stat, a dollar amount, 'projects X by N' or 'N days
+    of rest' in a sentence about a team must be printed near that team in the prompt (card, intel, news).
+    Picky's own arithmetic and memory don't count: 'Wake Forest SP+ #7', 'hitting 44% of FGs', 'a $50
+    million buyout' with no such line get dropped."""
+    if not corpus:
+        return None
+    rx, _ = _team_regex(idx) if idx else (None, {})
+
+    def ok(sent: str) -> bool:
+        if _NEG.search(sent) and not re.search(r"\b(not|isn'?t)\b.{0,30}\b(top|best|worst)\b", sent, re.I):
+            return True
+        names = sorted({m.group(1) for m in rx.finditer(sent)}, key=len, reverse=True) if rx else []
+        toks = []
+        for m in _RANKY.finditer(sent):
+            n = next(x for x in m.groups() if x)
+            if m.group(1) and re.search(r"\b(seed|pick|overall pick|draft)\b", sent[m.end():m.end() + 12], re.I):
+                continue
+            toks.append((m.group(0), [f"#{n}", f"No. {n}", f"{n}th", f"{n}st", f"{n}nd", f"{n}rd", f"rank {n}",
+                                       f"ranked {n}", f"({n})"]))
+        for m in _STATY.finditer(sent):
+            v = next(x for x in m.groups() if x)
+            if m.group(8):  # 'N days of rest'
+                toks.append((m.group(0), [f"{v} days", f"{v}-day", f"{v} day"]))
+            else:
+                toks.append((m.group(0), [v, v.replace(",", "")]))
+        for m in _PROJ.finditer(sent):
+            toks.append((m.group(0), [f"by {m.group(1)}", f"by about {m.group(1)}"]))
+        for raw, forms in toks:
+            if not any(_in_corpus_near(corpus, names, f) for f in forms):
+                if log:
+                    log.info("stat/rank dropped (%r, teams %s): %r", raw, names, sent[:100])
+                return False
+        return True
+    return ok
+
+
+# ---- ATS split labels (game cards) ------------------------------------------------------------------------------
+
+_CARD_ATS = re.compile(r"([A-Z][\w&'.]*(?: [A-Z][\w&'.]*){0,3})(?: \(\d+-\d+\))?: ATS (\d+-\d+(?:-\d+)?) \(fav (\d+-\d+(?:-\d+)?), "
+                       r"dog (\d+-\d+(?:-\d+)?), home (\d+-\d+(?:-\d+)?), road (\d+-\d+(?:-\d+)?)\)")
+_SPLIT_WORDS = (("fav", r"as (?:a |the )?fav\w*|when favored|laying points|as chalk"),
+                ("dog", r"as (?:a |an |the )?(?:under)?dog|getting points|when getting"),
+                ("home", r"at home|home (?:games?|split)"), ("road", r"on the road|road (?:games?|split)|away from home"))
+
+
+def ats_split_check(corpus: str = "", log=None):
+    """'Georgia is 8-2 ATS as a favorite' when its card says fav 7-2 (8-2 is overall): a W-L labeled with a
+    split must be that split from the team's card line."""
+    splits = {}
+    for m in _CARD_ATS.finditer(corpus or ""):
+        team = m.group(1).split(": ")[-1].strip()
+        splits[team] = {"all": m.group(2), "fav": m.group(3), "dog": m.group(4), "home": m.group(5), "road": m.group(6)}
+    if not splits:
+        return None
+
+    def ok(sent: str) -> bool:
+        if _NEG.search(sent):
+            return True
+        for team, sp in splits.items():
+            tm = re.search(rf"(?<![\w&]){re.escape(team)}(?![\w&])", sent)
+            if not tm:
+                continue
+            for rm in re.finditer(r"(?<![\d.-])(\d{1,2}-\d{1,2}(?:-\d)?)(?!\d)", sent):
+                tail = sent[rm.end(): rm.end() + 40]
+                head = sent[max(0, rm.start() - 30): rm.start()]
+                if not re.search(r"\bATS\b|against the spread|cover", tail + head, re.I):
+                    continue
+                label = next((k for k, pat in _SPLIT_WORDS if re.search(pat, tail, re.I)), None)
+                want = sp[label] if label else None
+                if label and rm.group(1) != want:
+                    if log:
+                        log.info("ATS split dropped (%s %s %s, card %s): %r", team, rm.group(1), label, want, sent[:100])
+                    return False
+        return True
+    return ok
+
+
+# ---- attributed statements --------------------------------------------------------------------------------------
+
+_SAYS = re.compile(r"\b(said|says|admitted|admits|told|claims?|claimed|insisted|confirmed|announced|tweeted|posted)\b", re.I)
+
+
+def attribution_check(corpus: str = "", log=None):
+    """'Kiffin admitted he forgot his Tennessee history' / 'Ferentz said Nov. 10 ...': a statement put in a
+    named person's mouth needs a prompt line where that person says something (news, intel, insider notes)."""
+    segs = [x for x in re.split(r"[.;\n]", (corpus or "").lower()) if x.strip()]
+
+    def ok(sent: str) -> bool:
+        m = _SAYS.search(sent)
+        if not m or _NEG.search(sent):
+            return True
+        before = sent[:m.start()]
+        names = re.findall(r"\b([A-Z][a-z'A-Z]+(?:\s+[A-Z][a-z'A-Z]+)*)\b", before)
+        names = [n for n in names if n.split()[-1].lower() not in {"i", "the", "he", "she", "they", "espn", "cbs", "per"}]
+        if not names:
+            return True
+        last = names[-1].split()[-1].lower()
+        if len(last) < 4:
+            return True
+        if any(last in x and _SAYS.search(x) for x in segs):
+            return True
+        if log:
+            log.info("attribution dropped (%s): %r", names[-1], sent[:100])
+        return False
+    return ok

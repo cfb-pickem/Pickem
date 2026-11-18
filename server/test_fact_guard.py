@@ -149,6 +149,32 @@ def test_coach_moves():
     assert ok("Michigan still has Kyle Whittingham.")
 
 
+
+def test_stat_rank_proximity():
+    corpus = ("GAME CARD Wake Forest at Duke: SP+ Wake Forest #31, Duke #45; Duke run D 62nd; rest: Duke 7 days, "
+              "Wake Forest 14 days; SP+ projects Duke by 3.4.")
+    ok = fg.stat_rank_check({"teams": {"duke": {"name": "Duke", "games": [1]},
+                                       "wake forest": {"name": "Wake Forest", "games": [1]}}}, corpus)
+    assert ok("Wake Forest is SP+ #31.") and ok("SP+ projects Duke by 3.4.") and ok("Duke has 7 days of rest.")
+    assert not ok("Wake Forest SP+ #7 offense.")
+    assert not ok("SP+ projects Duke by 7.")
+    assert not ok("Duke gets 6 days of rest.")
+    assert not ok("Their kicker is hitting 44% of FGs.")
+    assert not ok("They're paying a $50 million buyout.")
+
+
+def test_ats_split_labels():
+    ok = fg.ats_split_check("Georgia (9-1): ATS 8-2 (fav 7-2, dog 1-0, home 4-1, road 4-1)")
+    assert not ok("Georgia is 8-2 ATS as a favorite.")
+    assert ok("Georgia is 7-2 ATS as a favorite.") and ok("Georgia is 8-2 ATS.")
+
+
+def test_attribution():
+    ok = fg.attribution_check("NEWS: Iowa's Kirk Ferentz said Tuesday the QB is day to day.")
+    assert ok("Ferentz said the QB is day to day.")
+    assert not ok("Kiffin admitted he forgot his Tennessee history.")
+
+
 if __name__ == "__main__":
     fails = 0
     for name, f in list(globals().items()):
