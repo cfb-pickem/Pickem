@@ -38,6 +38,7 @@ import callbacks
 import chat
 import news
 import pick_strategy
+import situational
 import slate_cards
 import playoff_race
 import why_lane
@@ -1010,32 +1011,6 @@ INTERIM_ASK = re.compile(r"\binterim\b|\b(fired|firing) (their |the )?(head )?co
                          r"|\bnew coach\b[^?]{0,30}\b(matter|bump|affect)\b", re.I)
 
 
-def interim_text(ctx: dict, q: str) -> str | None:
-    """A midseason coaching change for the team a text names (cache/slate_intel.json, sourced), plus the team's
-    straight-up and ATS record since the change (CFBD results + lines). Small sample, said plainly."""
-    import datetime as _dt
-    named = factstore.teams_named(q)
-    for c in factstore.coaching():
-        if not any(factstore.norm(c.get("school", "")) == factstore.norm(n) for n in named):
-            continue
-        out = c["text"].rstrip(".") + "."
-        m = re.search(r"\b(Oct|Nov|Sep)\w*\.? (\d{1,2})", c["text"])
-        if m:
-            mon = {"Sep": 9, "Oct": 10, "Nov": 11}[m.group(1)[:3]]
-            since = _dt.date(2026, mon, int(m.group(2))).isoformat()
-            rows = [r for r in factstore.team_rows(c["school"]) if r["date"] > since]
-            if rows:
-                su_w = sum(1 for r in rows if r["pts"][0] > r["pts"][1])
-                g = [r for r in rows if r["cover"] is not None]
-                ats = factstore.rec(g) if g else None
-                games = "; ".join(f"{'beat' if r['pts'][0] > r['pts'][1] else 'lost to'} {r['opp']} {r['pts'][0]}-{r['pts'][1]}"
-                                  for r in rows)
-                out += (f" Since then: {su_w}-{len(rows) - su_w} straight up" + (f", {ats} ATS" if ats else "")
-                        + f" ({games}). Small sample, so it's a nudge, not a reason on its own.")
-        return out
-    return None
-
-
 CAREER_ATS = re.compile(r"\bcareer\b[^?.!]{0,40}\b(ATS|against the spread|cover\w*)\b|\b(ATS|against the spread)\b[^?.!]{0,40}\bcareer\b",
                         re.I)
 HYPO_VALUE = re.compile(r"\b(lock|locks|locked|league has|we get)\b[^?]{0,40}?[+-]\d{1,2}(\.5)?\b[^?]{0,60}?\b(market|vegas|books?)\b"
@@ -1383,8 +1358,10 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if LOOKAHEAD_SLATE.search(t) and len(slate_cards.cfbd.other_teams_named(t, [], slate_cards.cfbd.load_index() or {"teams": {}})
                                          if slate_cards.cfbd.load_index() else []) == 0:
         return "lookahead_slate", "LOOKAHEAD_SLATE"  # 'any lookahead spots this week': every notable game's verdict
-    if INTERIM_ASK.search(t) and interim_text({}, t):
+    if INTERIM_ASK.search(t) and situational.interim_text({}, t):
         return "interim", "INTERIM_ASK"  # 'Baylor's playing for an interim, does it matter?': the change + SU/ATS since
+    if situational.ASK.search(t) and situational.weather_alt_travel_text({}, t):
+        return "weather_alt_travel", "situational.ASK"  # forecast as a forecast, both elevations, trip + body clock
     if CAREER_ATS.search(t):
         return "career_ats", "CAREER_ATS"  # coach career ATS splits aren't in the data: say so + this season's team ATS
     if ATS_PROFILE_ASK.search(t) and not ATS_NOT.search(t) and factstore.teams_named(t):
@@ -2984,7 +2961,8 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text, "ats_profile": ats_profile_text,
-              "interim": interim_text, "strategy": pick_strategy.answer,
+              "interim": situational.interim_text, "weather_alt_travel": situational.weather_alt_travel_text,
+              "strategy": pick_strategy.answer,
               "picky_record": picky_record_text, "premise": premise_text, "lw_pick": lw_pick_text, "read": read_text, "pool_games": pool_games_text,
               "ghost_player": ghost_player_text, "recap": recap_text,
               "ghost_school": ghost_school_text, "unit_matchup": unit_lane.answer,
@@ -3003,7 +2981,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 
 
 # the football lanes that read only the fact store + the league ctx (test_factstore.py checks it statically)
-STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, interim_text,
+STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, situational.interim_text,
                career_ats_text, hypo_value_text, qb_status_text, ats_profile_text, other_side_text, change_mind_text)
 
 # code lanes built from the POOL games' cards: a text about another game goes to the full brain + slate card
