@@ -608,6 +608,8 @@ MEAN_TO_CHARLIE = re.compile(
     r"|\b(guy|man|dude|someone) who'?s\b|\bsays the (guy|man|dude)\b|\brich,? coming from\b|\bcoming from (a|the) (guy|man|dude)\b"
     r"|\byour (picks?|record|season|week|takes?)\b[^.!?]{0,40}\b(disappoint\w*|bad|awful|terrible|trash|garbage|ugly|"
     r"brutal|sad|embarrass\w*|joke|crime|suck\w*|stink\w*|dumpster|tire fire|pathetic)\b"
+    r"|\b(you|your|you'?re|ur)\b[^.!?]{0,50}\b(suck\w*|bad|pathetic|embarrass\w*|weak|joke|garbage|trash|lucky|fluke|sad|"
+    r"mid|terrible|awful|participation|clown\w*|fraud|loser|bum|choke\w*|frauds?)\b"
     r"|\blook who'?s talking\b|\byou'?ll regret\b|\b(big|tough) talk\b|\ba lot of (energy|talk|noise)\b|\bkeep crying\b"
     r"|\bsit (down|this one out)\b|\bwho asked\b|\bstay in your lane\b|\bpot (calling|meet\w*) the kettle\b", re.I)
 
@@ -842,7 +844,10 @@ def banter_ptype(st: dict) -> str:
     rt, ctx, team = st["route"], st.get("ctx"), st.get("team")
     p = rt.kind or "banter"
     if charlie_caller(st) and (p in router.HECKLES + ("spiral", "spiral2", "pileon")
-                               or (p in ("roast", "looks_bait") and burn_book._named_team(st["q"]) in (None, team))):
+                               or (p in ("roast", "looks_bait") and burn_book._named_team(st["q"]) in (None, team))
+                               or (p == "banter" and (chat._MOCK.search(st["q"]) or chat._HOSTILE.search(st["q"]))
+                                   and burn_book._named_team(st["q"]) in (None, team))):
+        # (live 11/17: 'roast me' went full -> brief -> plain banter and came back 'participation trophy energy')
         return "charlie"  # a shot (or a roast of himself) from Charlie: warm, never a comeback at him
     if p in router.HECKLES and rt.level == 2:
         return "spiral2"

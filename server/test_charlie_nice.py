@@ -195,6 +195,13 @@ def test_comebacks_gemma_wrote_on_the_exam_never_reach_charlie():
     assert pb.banter_tone({"team": "Chuck P", "charlie": True}, "beer") == pb.CHARLIE_TONE
     _, user, st, _ = ask(CHARLIES["handle"], "best beer?", "Coors Light, ice cold.", route=router.Route("banter", "beer"))
     assert "THEIR TONE WITH YOU LATELY: " + pb.CHARLIE_TONE in user, user
+    # live 11/17 (X-Picky-Test): 'roast me' rerouted full -> plain banter -> a roast of him
+    assert gc.charlie_guard("You're 30-18 but your vibe is just 'participation trophy' energy.", "Chuck P", "k") \
+        in pb.CHARLIE_LINES
+    _, user, st, _ = ask(CHARLIES["handle"], "roast me", "Ha, pass.", route=router.Route("banter", "banter"))
+    assert st["ptype"] == "charlie" and "participation trophy" not in user, (st["ptype"], user)
+    _, user, st, _ = ask(CHARLIES["handle"], "what's up picky", "Not much.", route=router.Route("banter", "banter"))
+    assert st["ptype"] == "banter", st["ptype"]  # plain banter stays plain (warm tone line only)
     keep = "Iowa is -8.5 in the pool. Tough game to call."
     assert gc.charlie_guard(keep, "Chuck P", "k") == keep  # facts and normal answers pass untouched
     cut = "Iowa is -8.5 in the pool. You're a clown for asking."
