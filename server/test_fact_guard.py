@@ -265,6 +265,15 @@ def test_sender_result():
     assert ok2("You whiffed on that one.")
 
 
+def test_sender_pick_and_picky_points():
+    ok = fg.pick_side_check(CTX, same)  # Alpha (the sender) took UTSA and Oregon State
+    assert not ok("You rode North Texas and missed the cover.")
+    assert ok("You rode UTSA all the way.")
+    c = fg.member_claim_check(CTX, "", LORE, CTX["picky_player"])
+    assert not c("Keep that energy when I'm sitting on 30 points.")
+    assert c("I'm sitting on 0 points, sure.")
+
+
 def test_coach_moves():
     ok = fg.coach_move_check("Coach note: UTEP fired Scotty Walden. Kyle Whittingham is Michigan's coach (no firing).")
     assert ok("UTEP fired Scotty Walden.")

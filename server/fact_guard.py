@@ -188,6 +188,11 @@ def problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
 
 def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
     out = []
+    pp_pts = re.search(r"\b(?:I'?m|I am)\s+(?:sitting\s+)?(?:on|at|with)\s+(\d{1,2})\s+points?\b|\bmy\s+(\d{1,2})\s+points?\b", s, re.I)
+    if pp_pts and f.picky.get("season"):
+        n = int(pp_pts.group(1) or pp_pts.group(2))
+        if n != int(f.picky["season"][0]):
+            out.append(f"Picky {n} points (has {f.picky['season'][0]})")  # 'when I'm sitting on 30 points' (text r4)
     mine = re.findall(r"\b(?i:my)\s+(\d{1,2})\s*-\s*(\d{1,2})\b", s)  # 'my 0-3 record': Picky's own
     if mine:
         pt = f.picky_true()
@@ -669,9 +674,22 @@ def pick_side_check(ctx: dict, same_team=None, log=None):
     if not games or not members:
         return None
 
+    me = (ctx.get("you") or {}).get("team_name")
+
     def ok(sent: str) -> bool:
         if _NEG.search(sent):
             return True
+        if me:  # 'You rode SMU and missed by 40.5' to someone who had Wake Forest (text exam r4)
+            ym = re.search(r"\b(?i:you)(?:'re|\s+were)?\s+(?i:took|had|picked|rode|backed|went with|on|were on|faded)\s+(?:the\s+)?"
+                           r"([A-Z][\w&'.]*(?:\s+[A-Z][\w&'.]*){0,2})", sent)
+            if ym:
+                said = ym.group(1)
+                for a, h, picks in games:
+                    hit = next((x for x in (a, h) if said.lower().startswith(x.lower())), None)
+                    if hit and picks.get(me) and not same(picks[me], hit) and "fad" not in ym.group(0).lower():
+                        if log:
+                            log.info("pick side dropped (you took %s, said %s): %r", picks[me], hit, sent[:100])
+                        return False
         for m in members:
             mm = re.search(rf"(?<!\w){re.escape(m)}(?:'s)?\s+{_PICK_VERB}\s+(?:the\s+)?([A-Z][\w&'.]*(?:\s+[A-Z][\w&'.]*){{0,2}})", sent)
             if not mm:
