@@ -262,6 +262,11 @@ class PrimeSlow(ValueError):
     """The prefix prime didn't finish within the caller's prime_wait (a cold prefill)."""
 
 
+# Test traffic only (group_chat: /health?deep=1, the 15-min canary): every model call fails fast as PrimeSlow,
+# so lanes with a code fallback answer in code and nothing touches Ollama.
+CODE_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_brain_code_only", default=False)
+
+
 async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperature: float,
                      num_predict: int, timeout: float, prime_wait: float | None = None) -> str:
     """One non-streamed Ollama call that shares the prefix checkpoint. num_ctx
@@ -274,6 +279,8 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
                "keep_alive": chat.OLLAMA_KEEP_ALIVE}
     if chat.OLLAMA_THINK is not None:
         payload["think"] = chat.OLLAMA_THINK == "true"
+    if CODE_ONLY.get():
+        raise PrimeSlow("code only (test traffic)")
     await live_flag.wait_clear()  # side sidecars yield to a live text
     if prime_wait is not None:
         t = chat.start_prime(prefix)

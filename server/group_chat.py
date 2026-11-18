@@ -82,6 +82,7 @@ if _PLIST.exists():
 
 import httpx  # noqa: E402
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 from starlette.requests import Request as StarletteRequest  # noqa: E402
 
 import burn_book  # noqa: E402  (no-repeat screen at the send point)
@@ -303,6 +304,9 @@ WEB: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_group_web", de
 
 # when the current /group request started (the exchange log's "secs")
 REQ_T0: contextvars.ContextVar[float] = contextvars.ContextVar("picky_group_t0", default=0.0)
+# X-Picky-Test on /group (release canary, 15-min canary): answered normally, but nothing is saved (history,
+# exchange log), the live flag isn't raised and no flub/callback hooks run.
+TEST_REQ: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_group_test", default=False)
 
 
 # The last few group messages before the @ (any sender, @ or not), from the
@@ -703,7 +707,7 @@ def load_history(key: str | None, now: float | None = None, sender: str | None =
 
 async def save_turn(key: str | None, question: str, reply: str, sender: str | None = None,
                     lane: str | None = None) -> None:
-    if not key or not reply:
+    if not key or not reply or TEST_REQ.get():
         return
     async with _HIST_LOCK:
         now = time.time()
@@ -1163,9 +1167,42 @@ async def _load_mascots():
 SECRET = os.environ.get("PICKY_GROUP_SECRET") or _keychain(SECRET_SERVICE)
 
 
+CANARY_Q = "what's the buy-in?"  # router fact lane (payout), code-computed: no model call
+
+
+def canary_ok(reply: str | None) -> bool:
+    return bool(reply) and "75" in reply
+
+
 @app.get("/health")
-async def health():
-    return {"ok": True, "members_mapped": len(load_members())}
+async def health(deep: int = 0):
+    """Cheap by default. ?deep=1 runs the pipeline on a code-lane question (Supabase session, context,
+    router, fact lane, send-point checks) the way /group would for a test request, and checks Ollama answers.
+    The watchdog and release.sh use deep."""
+    out = {"ok": True, "members_mapped": len(load_members())}
+    if not deep:
+        return out
+    t0, tok, ctok = time.time(), TEST_REQ.set(True), picky_brain.CODE_ONLY.set(True)
+    try:
+        res = await asyncio.wait_for(answer("canary", "@Picky " + CANARY_Q, chat_id="", dm=True, allowlisted=True), 60)
+        reply = (res or {}).get("reply")
+        out["pipeline"] = canary_ok(reply)
+        out["lane"] = (res or {}).get("lane")
+    except Exception as e:  # noqa: BLE001 - report, never raise from /health
+        out["pipeline"], out["error"] = False, f"{type(e).__name__}: {e}"[:200]
+    finally:
+        TEST_REQ.reset(tok)
+        picky_brain.CODE_ONLY.reset(ctok)
+    out["secs"] = round(time.time() - t0, 1)
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as c:
+            out["ollama"] = (await c.get(f"{chat.OLLAMA}/api/version")).status_code == 200
+    except httpx.HTTPError:
+        out["ollama"] = False
+    out["ok"] = bool(out["pipeline"])  # Ollama down = maintenance replies, not a sidecar restart
+    if not out["ok"]:
+        log.warning("deep health failed: %s", out)
+    return JSONResponse(out, status_code=200 if out["ok"] else 503)
 
 
 @app.post("/group")
@@ -1182,7 +1219,12 @@ async def group(req: Request):
             EXAM_CHATS and chat_id.startswith("exam-")):
         log.info("group skipped: not the league group")  # Charlie 2026-11-16: league group only
         return {"reply": None}
-    flagged = flag_reply(handle, text, chat_id, dm)  # "bad picky": queued for the flub loop, no reply spam
+    test = chat.is_test_request(req)
+    if test:
+        TEST_REQ.set(True)
+        if body.get("code_only"):  # the 15-min canary: no model call at all
+            picky_brain.CODE_ONLY.set(True)
+    flagged = None if test else flag_reply(handle, text, chat_id, dm)  # "bad picky": queued for the flub loop
     if flagged is not None:
         return flagged
     if maintenance.active():  # brain in the shop (flag file or Ollama down): canned line, no model
@@ -1196,13 +1238,13 @@ async def group(req: Request):
     REQ_T0.set(t0)
     recent = body.get("recent") if isinstance(body.get("recent"), list) else None
     callbacks.CHAT.set((chat_id, VIEWER.sender(handle).team, dm))  # for the exam rider (PICKY_CALLBACK_RIDER=1)
-    with live_flag.held():  # side sidecars/exams pause their model calls while a member waits
+    with contextlib.nullcontext() if test else live_flag.held():  # side sidecars/exams yield to a member
         out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
                            recent=recent)
     if out is None:
         log.info("dm skipped sender=%s: not a mapped member or allowlisted", handle[-4:] or "?")
         return {"reply": None}
-    if out.get("reply"):
+    if out.get("reply") and not test:
         callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text), out.get("reply_en") or out["reply"],
                        is_dm=dm)
     log.info("%s reply sender=%s mapped=%s %.1fs chars=%d image=%s lane=%s", out["mode"], handle[-4:] or "?",

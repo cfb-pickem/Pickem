@@ -29,7 +29,11 @@ Checks, in order:
 Alerts go to the coordinator side, not Charlie: ~/Library/Logs/picky-watchdog.log
 plus one line appended to the cfb-pickem project memory per problem. Only when
 Picky has been down 24h+ and can't be fixed from here does it send ONE text to
-Charlie, through the same notify path the LoRA cycle uses.
+Charlie, through the coordinator's own background-job sender (the delegate
+watchdog's Messages path, which only ever texts Charlie; never the league).
+
+The sidecar is judged by /health?deep=1 (a code-lane answer through the real
+pipeline, no model call), retried once 20 s later before it counts as down.
 
   /usr/bin/python3 -I watchdog.py            # one pass
   /usr/bin/python3 -I watchdog.py --dry-run  # observe + print the plan, change nothing
@@ -55,9 +59,9 @@ MEMORY = Path("/Users/Agent/.claude/projects/-Users-Agent/memory/project_cfb_pic
 WATCHER_LOG = Path("/Users/picky/Library/Logs/picky-imessage.log")
 WATCHER_LABEL = "com.pickem.picky-imessage"
 WATCHER_PLIST = "/Users/picky/Library/LaunchAgents/com.pickem.picky-imessage.plist"
-NOTIFY = ["/Users/Agent/cfb-pickem/server/.venv/bin/python3", "-I",
-          "/Users/Agent/picky-marathon/wit_eval.py", "notify"]
-AGENT_SERVICES = [("com.pickem.picky-group", "http://127.0.0.1:8768/health"),
+# the coordinator's notification route (texts Charlie only); the old wit-loop script is retired
+NOTIFY_MODULE = Path(os.environ.get("PICKY_NOTIFY_MODULE", "/Users/Agent/.imessage-claude/delegate/watchdog.py"))
+AGENT_SERVICES = [("com.pickem.picky-group", "http://127.0.0.1:8768/health?deep=1"),
                   ("com.pickem.chat", "http://127.0.0.1:8766/health")]
 FAILURES = PRIVATE / "picky_delivery_failures.jsonl"
 MEMBERS = PRIVATE / "picky_group_members.json"
@@ -93,11 +97,31 @@ def sh(*cmd: str, timeout: int = 30, env: dict | None = None) -> subprocess.Comp
     return subprocess.run(list(cmd), capture_output=True, text=True, timeout=timeout, env=env)
 
 
-def http_ok(url: str) -> bool:
+def http_ok(url: str, retry_after: float = 20.0) -> bool:
+    """200 from the URL. A deep check (pipeline run) gets 70 s and one retry before it counts as down."""
+    deep = "deep=1" in url
+    for attempt in range(2 if deep else 1):
+        try:
+            with urllib.request.urlopen(url, timeout=70 if deep else 8) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            pass
+        if attempt == 0 and deep:
+            time.sleep(retry_after)
+    return False
+
+
+def notify(text: str) -> bool:
+    """One text to Charlie through the coordinator's delegate sender (Messages.app, Charlie only)."""
+    import importlib.util
     try:
-        with urllib.request.urlopen(url, timeout=8) as r:
-            return r.status == 200
-    except Exception:
+        spec = importlib.util.spec_from_file_location("delegate_watchdog", str(NOTIFY_MODULE))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return bool(mod._send_imessage(text))
+    except Exception as e:  # noqa: BLE001
+        log(f"notify failed: {e}")
         return False
 
 
@@ -287,9 +311,9 @@ def main(argv: list[str]) -> int:
                 remember(text)
                 alerted.add(key)
         elif a.startswith("tell_charlie:"):
-            r = sh(*NOTIFY, a.split(":", 1)[1], timeout=90)
-            log(f"told Charlie rc={r.returncode} {r.stdout.strip()[-80:]}")
-            new["told_charlie"] = r.returncode == 0
+            ok = notify(a.split(":", 1)[1])
+            log(f"told Charlie ok={ok}")
+            new["told_charlie"] = ok
         elif a == "recovered":
             down = int((now - state.get("down_since", now)) // 60)
             log(f"Picky back after ~{down} min")
