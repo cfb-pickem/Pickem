@@ -4,8 +4,8 @@ League Assistant chat backend.
 FastAPI service that answers natural-language questions about the pick'em league.
 Context is pulled from Supabase using the caller's own JWT so RLS applies;
 inference runs on the local Ollama daemon on the mini. Live replies never call
-Anthropic: the old hosted-model path is dormant (off unless PICKY_USE_CLAUDE=1,
-and PICKY_NO_ANTHROPIC=1 always keeps it off).
+Anthropic: there is no hosted-model path at all (deleted 2026-11-17, review R10/section 4:
+Picky must never cost Charlie money).
 
 Public surface:
   POST /chat   {messages, supabase_jwt}  -> SSE stream of assistant tokens
@@ -35,7 +35,6 @@ import zoneinfo
 from pathlib import Path
 from typing import Any
 
-import anthropic
 import httpx
 
 import cfbd
@@ -51,7 +50,6 @@ import live_flag
 import live_games
 import matchup_guard
 import news
-import picky_claude
 import rare_bits
 import pick_strategy
 import slate_cards
@@ -80,11 +78,6 @@ AUTH = f"{SUPABASE_URL}/auth/v1"
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 SLATE_CARDS = os.environ.get("PICKY_SLATE_CARDS", "1") != "0"  # genius exam fix 2026-11-16; 0 = off
 MODEL = os.environ.get("PICKEM_CHAT_MODEL", "gemma4:12b-it-qat")
-CLAUDE_MODEL = picky_claude.MODEL  # dormant live path (below); every Anthropic call uses the one model
-CLAUDE_EFFORT = os.environ.get("PICKY_CLAUDE_EFFORT", "medium")
-# The API key never touches the repo (public GitHub Pages): env first, else
-# the login keychain, account "drake".
-KEYCHAIN_SERVICE = os.environ.get("PICKY_ANTHROPIC_KEYCHAIN", "DCC__ANTHROPIC_API_KEY")
 IMAGE_URL = os.environ.get("PICKY_IMAGE_URL", "http://127.0.0.1:8767")
 
 # Ollama's default num_ctx (4096 here) silently drops the front of a long
@@ -104,9 +97,6 @@ for _k, _env in (("temperature", "PICKY_TEMPERATURE"), ("top_p", "PICKY_TOP_P"),
     if os.environ.get(_env):
         OLLAMA_OPTIONS[_k] = float(os.environ[_env]) if _k != "top_k" else int(os.environ[_env])
 MAX_ANSWER_WORDS = 300
-# The fallback only loads when Claude fails; let it unload afterwards instead
-# of pinning ~6.5 GB next to the VM and the image model.
-OLLAMA_FALLBACK_KEEP_ALIVE = "15m"
 # As the primary model: how long it stays loaded after the last message. 24h so the first text
 # after a quiet spell doesn't pay a cold load (pictures still unload it, see _image_stream).
 OLLAMA_KEEP_ALIVE = os.environ.get("PICKY_OLLAMA_KEEP_ALIVE", "24h")
@@ -501,29 +491,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("picky")
 
-
-def _anthropic_key() -> str | None:
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return os.environ["ANTHROPIC_API_KEY"]
-    try:
-        r = subprocess.run(
-            ["security", "find-generic-password", "-a", "drake", "-s", KEYCHAIN_SERVICE, "-w"],
-            capture_output=True, text=True, timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as e:
-        log.warning("keychain lookup failed: %s", e)
-        return None
-    return r.stdout.strip() or None
-
-
-# Off by default: Picky runs 100% on the local model so there are no API costs.
-# PICKY_USE_CLAUDE=1 turns the Claude path back on (key isn't even read otherwise).
-USE_CLAUDE = os.environ.get("PICKY_USE_CLAUDE") == "1" and not picky_claude.disabled()
-_key = _anthropic_key() if USE_CLAUDE else None
-CLAUDE = anthropic.AsyncAnthropic(api_key=_key, max_retries=1, timeout=60.0) if _key else None
-if not CLAUDE:
-    log.warning("Claude off (PICKY_USE_CLAUDE=%s); running on Ollama %s only",
-                os.environ.get("PICKY_USE_CLAUDE", "unset"), MODEL)
 
 app = FastAPI(title="Pick'em League Assistant")
 
@@ -5582,7 +5549,7 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     """Yield SSE-framed assistant tokens from Ollama."""
     payload = {"model": MODEL, "messages": messages, "stream": True,
                "options": {**OLLAMA_OPTIONS, **(OPTIONS_OVERRIDE.get() or {})},
-               "keep_alive": OLLAMA_FALLBACK_KEEP_ALIVE if CLAUDE else OLLAMA_KEEP_ALIVE}
+               "keep_alive": OLLAMA_KEEP_ALIVE}
     if OLLAMA_THINK is not None:
         payload["think"] = OLLAMA_THINK == "true"
     # read covers the wait in Ollama's queue before the first token; the
@@ -5628,32 +5595,7 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
 
 
 async def _model_stream(messages: list[dict], prefix: str | None = None):
-    """Claude first; on any API failure before the first token, the local
-    Ollama model answers instead. `messages[0]` is the system prompt."""
-    if CLAUDE:
-        started = False
-        try:
-            async with CLAUDE.messages.stream(
-                model=CLAUDE_MODEL,
-                max_tokens=4096,
-                system=messages[0]["content"],
-                messages=messages[1:],
-                output_config={"effort": CLAUDE_EFFORT},
-            ) as stream:
-                async for text in stream.text_stream:
-                    started = True
-                    yield _sse({"content": text})
-                final = await stream.get_final_message()
-            if started:
-                yield "data: [DONE]\n\n"
-                return
-            log.warning("claude returned no text (stop_reason=%s); falling back", final.stop_reason)
-        except anthropic.APIError as e:
-            log.warning("claude failed (%s); %s", type(e).__name__,
-                        "mid-stream" if started else "falling back to ollama")
-            if started:
-                yield _sse({"error": "model_error"})
-                return
+    """The one model path: local Ollama. `messages[0]` is the system prompt."""
     async for chunk in _ollama_stream(messages, prefix):
         yield chunk
 
@@ -7279,8 +7221,7 @@ async def _image_stream(prompt: str, user_id: str):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "model": CLAUDE_MODEL if CLAUDE else MODEL,
-            "fallback": MODEL if CLAUDE else None,
+    return {"ok": True, "model": MODEL,
             "gate": {"members_active": GATE.members(), "test_busy": GATE.test_busy, **GATE.stats}}
 
 
@@ -7616,9 +7557,6 @@ async def _http_error(_req: Request, exc: HTTPException):
 async def _warm():
     asyncio.create_task(asyncio.to_thread(_cfbd_index))
     asyncio.create_task(load_mascots())
-    if CLAUDE:  # Ollama is only the fallback now; it loads on demand
-        return
-
     async def _go():
         try:
             async with httpx.AsyncClient(timeout=60.0) as c:

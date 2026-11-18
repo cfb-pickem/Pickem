@@ -36,7 +36,6 @@ for k, name in (("PICKY_HOT_TAKES", "hot_takes_bank.md"), ("PICKY_INSIDER", "ins
 os.environ["PICKY_PRIVATE_DIR"] = str(TMP / "private")
 os.environ["PICKY_CLAUDE_USAGE_DIR"] = str(TMP / "usage")
 os.environ["PICKY_NO_ANTHROPIC"] = "1"
-os.environ["PICKY_USE_CLAUDE"] = "1"  # the dormant hosted path asked for: the kill switch still wins
 (TMP / "private").mkdir()
 
 import picky_claude  # noqa: E402
@@ -140,7 +139,7 @@ except picky_claude.AnthropicDisabled:
 import chat  # noqa: E402
 import game_cards  # noqa: E402
 
-check("dormant hosted path off even with PICKY_USE_CLAUDE (kill switch)", chat.CLAUDE is None)
+check("no hosted-model path in chat.py (deleted 2026-11-17)", not hasattr(chat, "CLAUDE") and not hasattr(chat, "anthropic"))
 ctx = {"season": 2026, "current_week": 12, "teams": ["Ackbar", "Chuck P"], "you": {"team_name": "Ackbar"},
        "games_this_week": [{"id": 1, "away": "Utah", "home": "Iowa", "line": -3.5, "status": "scheduled",
                             "winner": None, "start": "2026-11-21T14:30:00"}]}

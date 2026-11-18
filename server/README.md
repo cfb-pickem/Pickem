@@ -35,11 +35,8 @@ Env vars (set in the plist):
 | `PICKEM_CHAT_MODEL` | `qwen2.5:7b-instruct` | The plist sets `qwen3.5:9b-q4_K_M` (GGUF on llama.cpp; the default `qwen3.5:9b` tag runs on MLX, whose prompt cache grew to ~16 GB). |
 | `PICKY_OLLAMA_THINK` | (unset) | `false` for qwen3.5: thinking took minutes per answer. Leave unset for models without thinking. |
 | `PICKY_OLLAMA_KEEP_ALIVE` | `30m` | How long the model stays loaded after the last message. |
-| `PICKY_USE_CLAUDE` | (unset) | `1` turns the Claude path back on (paid API, Ollama becomes the fallback). Unset, the key is never read. |
 | `PICKY_CLAUDE_MODEL` | `claude-opus-5-5` | The one model for every `claude -p` call (`picky_claude.py`). |
 | `PICKY_NO_ANTHROPIC` | (unset) | `1` = Anthropic kill switch: every `claude -p` call fails fast, fallbacks run. |
-| `PICKY_CLAUDE_EFFORT` | `medium` | `low` is faster but sloppier on multi-step facts. |
-| `ANTHROPIC_API_KEY` | (unset) | If unset, read from the login keychain: account `drake`, service `PICKY_ANTHROPIC_KEYCHAIN` (default `DCC__ANTHROPIC_API_KEY`). Never commit it. |
 | `PORT` | `8766` | Next free after metra's 8765. |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama only. |
 
