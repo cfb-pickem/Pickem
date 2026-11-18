@@ -302,7 +302,10 @@ def check(T: Truth, it: dict, spec: tuple, a: str) -> tuple[bool, str]:
         return not bad and bool(re.search("cover", a, re.I)), f"live picks to mention: {bad}"
     if kind == "my_week":
         w, lo, live = T.week(CHUCK, at)
-        ok = (f"{w}-{lo}" in a or w + lo == 0) and all(has_team(a, g[side]) for g, side, _ in live)
+        finals = [(gid, side) for gid, side in CHUCK_PICKS.items() if T.game(gid, at)["state"] == "post"]
+        per_pick = all(has_team(a, T.game(gid, at)[side]) for gid, side in finals) and bool(
+            re.search(r"\b(won|covered|cashed|hit|lost|missed)\b", a, re.I))  # each finished pick graded by name
+        ok = (f"{w}-{lo}" in a or w + lo == 0 or per_pick) and all(has_team(a, g[side]) for g, side, _ in live)
         return ok, f"week {w}-{lo} + live picks {[g[s]['loc'] for g, s, _ in live]}"
     if kind == "my_place":
         r = next(x for x in T.standings(at) if x["team"] == CHUCK)
@@ -311,7 +314,8 @@ def check(T: Truth, it: dict, spec: tuple, a: str) -> tuple[bool, str]:
     if kind == "leader_now":
         rows = T.standings(at)
         lead = [r["team"] for r in rows if r["rank"] == 1]
-        return all(n.lower() in a.lower() for n in lead), f"leader(s) {lead}"
+        you = CHUCK in lead and re.search(r"\byou('re| are|'d be)?\b[^.]{0,30}\b(first|1st|lead)", a, re.I)
+        return all(n.lower() in a.lower() for n in lead if n != CHUCK or not you), f"leader(s) {lead}"
     if kind == "ackbar":
         r = next(x for x in T.standings(at) if x["team"] == "Ackbar")
         return "ackbar" in a.lower() and bool(re.search(r"\d", a)), f"Ackbar {r['w']}-{r['l']} rank {r['rank']}"

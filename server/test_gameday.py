@@ -131,6 +131,34 @@ def test_why_after_cover_ask():
     assert "Texas +5.5 is covering by 1.5" in G.answer("gd_why", {}, "why?")
 
 
+def _league_ctx():
+    return {"you": {"team_name": "Chuck P"},
+            "standings_ytd": [{"team": "Chuck P", "w": 27, "l": 18}, {"team": "Ackbar", "w": 27, "l": 18},
+                              {"team": "TG", "w": 20, "l": 25}],
+            "games_this_week": [{"id": "1", "away": "Texas", "home": "LSU", "line": -5.5, "winner": None},
+                                {"id": "2", "away": "Florida", "home": "Kentucky", "line": -3.0, "winner": "Florida"}],
+            "revealed_picks_this_week": {"Chuck P": [{"game_id": "1", "pick": "Texas"}, {"game_id": "2", "pick": "Florida"}],
+                                         "Ackbar": [{"game_id": "1", "pick": "LSU"}, {"game_id": "2", "pick": "Kentucky"}]},
+            "live_games": [{"GameId": "1", "Status": "in_progress", "AwayPts": 10, "HomePts": 14},
+                           {"GameId": "2", "Status": "final", "AwayPts": 21, "HomePts": 14}]}
+
+
+def test_ended_now_and_member_week():
+    setup()
+    d = json.loads(Path(os.environ["PICKY_LIVE_CACHE"]).read_text())
+    d["pool_ids"] = ["1", "2"]
+    L._write(d, Path(os.environ["PICKY_LIVE_CACHE"]))
+    assert G.league_intent("if it ended right now where would i be") == "gd_ended"
+    assert G.league_intent("ackbar's week?") == "gd_week"
+    ctx = _league_ctx()
+    a = G.answer("gd_ended", ctx, "if it ended right now where would i be")
+    assert "you're in first at 28-18, 1 up on Ackbar" in a, a  # Texas +5.5 covering at 10-14 counts for Chuck
+    a = G.answer("gd_week", ctx, "how am i doing this week")
+    assert a.startswith("You are 1-0 on finished games this week") and "Texas +5.5 covering by 1.5" in a, a
+    a = G.answer("gd_week", ctx, "ackbar's week?")
+    assert a.startswith("Ackbar is 0-1") and "LSU -5.5 NOT covering" in a, a
+
+
 def test_whatif_unranked_and_missing_cache():
     setup()
     orig = G.SLATE_INTEL

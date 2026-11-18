@@ -197,6 +197,29 @@ def _player_games(q: str, gs: dict) -> list[tuple[dict, str, str, list]]:
     return first if len(whos) == 1 else []  # a first name only counts when one player on today's boards has it
 
 
+ENDED = re.compile(r"\bif (it|the (week|day|games?)) (ended|ends|was over)\b|\bas it stands\b|\b(rn|right now|live)\b"
+                   r"|\bat the moment\b|\bcurrently\b", re.I)
+LEAGUE_PLACE = re.compile(r"\b(standings?|where (am i|would i be|do i stand|i'?m at)|what place|my place|in first|"
+                          r"in last|leading the (league|pool)|winning the (league|pool)|who'?s (in )?(first|1st|last))\b", re.I)
+WEEK_ASK = re.compile(r"^\W*(\w[\w ]{0,20}?)'?s week\W*$|\bhow'?s (\w[\w ]{0,20}?) doing\b|\bhow'?s (\w[\w ]{0,20}?)'?s week\b"
+                      r"|\b(my|how'?s my) week\b|\bhow am i doing\b", re.I)
+
+
+def league_intent(q: str, ctx_teams: list[str] | None = None) -> str | None:
+    """League asks with a live twist (pool games in progress): 'if it ended right now where am I' / 'whos in first rn',
+    'ackbar's week?'. Only while a pool game is live; otherwise the normal standings/record lanes are exact."""
+    t = (q or "").replace("’", "'")
+    gs = games()
+    pool = set(map(str, (L.load() or {}).get("pool_ids") or []))
+    if not any(g.get("state") == "in" for gid, g in gs.items() if gid in pool):
+        return None
+    if LEAGUE_PLACE.search(t) and ENDED.search(t):
+        return "gd_ended"
+    if WEEK_ASK.search(t) and not re.search(r"\blast week\b|\bweek \d+\b", t, re.I):
+        return "gd_week"
+    return None
+
+
 def intent(q: str, prev: str = "") -> str | None:
     t = (q or "").replace("’", "'")
     gs = games()
@@ -678,10 +701,97 @@ def ans_whatif(q: str, gs: dict) -> str | None:
     return " ".join(out) or None
 
 
+def _live_picks(ctx: dict, gs: dict) -> dict:
+    """{team: [(row, pick, game, covering)]} for every revealed pick in a pool game that's live in the feed."""
+    rows = {str(g["id"]): g for g in ctx.get("games_this_week") or [] if g.get("line") is not None and not g.get("tiebreaker")}
+    out = {}
+    for team, ps in (ctx.get("revealed_picks_this_week") or {}).items():
+        for p in ps or []:
+            row, g = rows.get(str(p.get("game_id"))), gs.get(str(p.get("game_id")))
+            if not row or not g or g.get("state") != "in" or g.get("away_score") is None:
+                continue
+            m = g["home_score"] + float(row["line"]) - g["away_score"]
+            home = L._same(p["pick"], row["home"])
+            out.setdefault(team, []).append((row, p["pick"], g, (m > 0) == home if m else not home, abs(m)))
+    return out
+
+
+def _ord(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def ended_now(ctx: dict, gs: dict) -> list[dict]:
+    """Season standings if every live pool game ended at its current score (finals already graded in ctx)."""
+    live = _live_picks(ctx, gs)
+    rows = []
+    for r in ctx.get("standings_ytd") or []:
+        add = live.get(r["team"]) or []
+        w = r["w"] + sum(1 for x in add if x[3])
+        rows.append({"team": r["team"], "w": w, "l": r["l"] + sum(1 for x in add if not x[3])})
+    rows.sort(key=lambda r: -r["w"])
+    for r in rows:
+        r["rank"] = 1 + sum(1 for x in rows if x["w"] > r["w"])
+        r["tied"] = sum(1 for x in rows if x["w"] == r["w"]) > 1
+    return rows
+
+
+def ans_ended(ctx: dict, q: str, gs: dict) -> str | None:
+    rows = ended_now(ctx, gs)
+    me = (ctx.get("you") or {}).get("team_name")
+    if not rows:
+        return None
+    lead = [r for r in rows if r["rank"] == 1]
+    mine = next((r for r in rows if r["team"] == me), None)
+    n_live = len({x[2]["id"] for xs in _live_picks(ctx, gs).values() for x in xs})
+    head = f"If it ended right now (finals plus {n_live} live pool game{'s' if n_live != 1 else ''} at the current score): "
+    if mine and mine["rank"] == 1:
+        others = [r for r in rows if r["rank"] == 1 and r["team"] != me]
+        nxt = next((r for r in rows if r["rank"] > 1), None)
+        tail = (f", tied with {', '.join(r['team'] for r in others)}" if others else
+                f", {mine['w'] - nxt['w']} up on {', '.join(r['team'] for r in rows if nxt and r['w'] == nxt['w'])}" if nxt else "")
+        return head + f"you're in first at {mine['w']}-{mine['l']}{tail}."
+    ld = ", ".join(f"{r['team']} {r['w']}-{r['l']}" for r in lead)
+    you = f" You'd be {'tied for ' if mine['tied'] else ''}{_ord(mine['rank'])} at {mine['w']}-{mine['l']}." if mine else ""
+    return head + f"{ld} in first.{you}"
+
+
+def ans_week(ctx: dict, q: str, gs: dict) -> str | None:
+    t = (q or "").split(" ||| ")[0].replace("’", "'")
+    me = (ctx.get("you") or {}).get("team_name")
+    teams = [r["team"] for r in ctx.get("standings_ytd") or []]
+    who = next((x for x in sorted(teams, key=len, reverse=True) if re.search(rf"\b{re.escape(x)}\b", t, re.I)), None)
+    if not who:
+        m = WEEK_ASK.search(t)
+        name = next((g for g in (m.groups() if m else ()) if g), "") or ""
+        if re.search(r"\b(my|i)\b", t, re.I) or not name or name.lower() in ("my", "how's my"):
+            who = me
+        else:
+            who = next((x for x in teams if x.lower().startswith(name.lower().strip()[:4])), None)
+    if not who:
+        return None
+    import chat
+    res = [r for r in chat.member_pick_results(ctx, who) if not r["tiebreaker"]]
+    w, lo = chat.results_record(res)
+    live = _live_picks(ctx, gs).get(who) or []
+    you = who == me
+    bits = [f"{'You' if you else who} {'are' if you else 'is'} {w}-{lo} on finished games this week"]
+    if live:
+        bits.append("live: " + "; ".join(
+            f"{L.side_label(pick if L._same(pick, row['home']) else row['away'], row['home'], row['line'])} "
+            f"{'covering' if cov else 'NOT covering'} by {L._num(mg)} ({g['away']['name']} {g['away_score']}-"
+            f"{g['home']['name']} {g['home_score']}, {_qtr(g)})" for row, pick, g, cov, mg in live))
+    left = sum(1 for r in res if r["result"] == "NOT STARTED")
+    if left:
+        bits.append(f"{left} not started")
+    return ", ".join(bits[:1]) + (". " + ". ".join(b[0].upper() + b[1:] for b in bits[1:]) if len(bits) > 1 else "") + "."
+
+
 def answer(kind: str, ctx: dict | None, q: str) -> str | None:
     gs = games()
     if not gs:
         return None
+    if kind in ("gd_ended", "gd_week"):
+        return (ans_ended if kind == "gd_ended" else ans_week)(ctx or {}, q, gs) if ctx else None
     if kind == "gd_why":
         return why_text(gs, ctx)
     fn = {"gd_score": ans_score, "gd_upsets": ans_upsets, "gd_stats": ans_stats, "gd_drive": ans_drive,

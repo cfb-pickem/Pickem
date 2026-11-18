@@ -1067,9 +1067,12 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             prev_r = next((m["content"] for m in reversed(hist) if m["role"] == "assistant"), "")
             gameday.PRIOR.set((prev_q, prev_r))
             gameday.WHO.set(s.team or "")
-            gk = gameday.intent(q, prev_q)
-            if gk and not (route.lane == "fact" and route.kind in ("my_picks", "standings", "record", "results",
-                                                                   "playoff_today", "chase", "cover")):
+            if gameday.wants_detail(q) and len(q.split()) <= 6 and prev_q and router.classify(prev_q).lane == "fact":
+                q = f"{prev_q}. {q}"  # 'break it down for me': the same lane as the last ask, at full length
+                route = router.classify(q)
+            gk = gameday.league_intent(q) or gameday.intent(q, prev_q)
+            if gk and (gk in ("gd_ended", "gd_week") or not (route.lane == "fact" and route.kind in (
+                    "my_picks", "standings", "record", "results", "playoff_today", "chase", "cover"))):
                 route = router.Route("fact", gk, why=f"gameday.{gk}", mixed=route.mixed, ptype=route.ptype)
         if charlie and (route.lane == "ignore" or (route.lane == "banter" and route.kind == "spiral")):
             # Charlie's test texts always get a (warm) answer: no mute, no brush-off
