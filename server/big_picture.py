@@ -137,8 +137,9 @@ def _coach_answer(c: dict, q: str, named: list[str], notes, heads, rows) -> str 
             used.append(link[0]["fact"])
         else:
             out.append(f"Nothing in this week's headlines ties him to {target}, so that's talk, not news.")
-    else:
-        out.append(f"{c['name']}'s FBS head-coaching stops: {_stops_text(c)}.")
+    elif re.search(r"\b(career|stops|résumé|resume|record|history|where has he|coached where)\b", q or "", re.I) or not (
+            c["current"] or c["stops"]):
+        out.append(f"{c['name']}'s FBS head-coaching stops: {_stops_text(c)}.")  # the list only when asked: it read as a résumé dump
     school = c["school"] if c["current"] else None
     if school:
         t, tf = _team_facts(school)

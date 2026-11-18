@@ -976,7 +976,7 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     if row:
         used.append(factstore.status_fact(row))
         out.append(f"{player} ({team}) is {factstore.STATUS_PHRASE.get(st, st)}, per {row['source_name']} "
-                   f"({row['when']}): \"{_q(row['quote'])}\"")
+                   f"({row['when']}): {_q(row['quote'])}")  # no quote marks: the filters split them (genius: dangling ")
     else:
         out.append(f"{player} ({team}): nothing in my sources (news, ESPN's injury listings) has him hurt or out.")
     also = [r for k, r in outs.items() if k != factstore.norm(player) and not hit and r["age_days"] <= FRESH_D]
@@ -1831,8 +1831,11 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     prs = sorted([r for r in side if r["age_days"] <= FRESH_D and (not r.get("already_out") or _just_out(r))],
                  key=lambda r: (r.get("pos") != "QB", -(r.get("value") or 0), r["age_days"]))[:2]
     # a starting QB out since before the opener: not the move's cause, but the context everyone needs (OSU: Sayin)
+    room = factstore.qb_room(hit_team) if hit_team else []
+    top_qb = max(room, key=lambda x: x.get("starts") or 0)["name"] if room else None  # the real starter, not a backup
     old_qb = next((r for r in side if hit_team and r not in prs and r.get("pos") == "QB" and r["status"] in
-                   factstore.OUT_STATUSES and (r["age_days"] > FRESH_D or r.get("already_out"))), None)
+                   factstore.OUT_STATUSES and (r["age_days"] > FRESH_D or r.get("already_out"))
+                   and top_qb and factstore.norm(r["player"]) == factstore.norm(top_qb)), None)
     extra = [factstore.status_fact(r) for r in prs + ([old_qb] if old_qb else [])]
     notes, intel_as_of = factstore.availability(away, home)
     facts = [f for f in notes if f.get("kind") == "injury" or f.get("status")]
@@ -1868,11 +1871,18 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     if prs:
         srcs = {r.get("source_name") for r in prs}
         if len(prs) > 1 and len(srcs) == 1:  # one outlet for both: cite it once
-            news = " ".join(_q(r["quote"]) for r in prs).rstrip(".") + f" (per {prs[0]['source_name']}, {prs[0]['when']})."
+            news_txt = " ".join(dict.fromkeys(_q(r["quote"]) for r in prs)).rstrip(".") + \
+                f" (per {prs[0]['source_name']}, {prs[0]['when']})."  # one report naming both: said once
         else:
-            news = " ".join(_per(r) for r in prs)
+            news_txt = " ".join(_per(r) for r in prs)
         # minor non-QB news yields to a long-out starting QB's context when it runs long (OSU: an RB vs Sayin)
-        parts.append((2 if old_qb and not any(r.get("pos") == "QB" for r in prs) else 0, say("news", news=news)))
+        parts.append((2 if old_qb and not any(r.get("pos") == "QB" for r in prs) else 0, say("news", news=news_txt)))
+        out_qb = next((r for r in prs if r.get("pos") == "QB" and r["status"] in factstore.OUT_STATUSES), None)
+        if out_qb and hit_team:  # who plays instead is the real story (Clemson: Pearman; North Texas: Jimerson)
+            outs_n = {factstore.norm(r["player"]) for r in rows if r["status"] in factstore.OUT_STATUSES}
+            nx = factstore.backup_for(factstore.qb_room(hit_team), out_qb["player"], outs_n)
+            if nx:
+                parts.append((1, f"Next up: {_qb_bio(nx)}."))
     elif pick:
         parts.append((0, say("news", news=" ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))))
         if starter:  # the first thing to go when the answer runs long

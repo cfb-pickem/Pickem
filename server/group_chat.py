@@ -1071,15 +1071,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             if gameday.wants_detail(q) and len(q.split()) <= 6 and prev_q and router.classify(prev_q).lane == "fact":
                 q = f"{prev_q}. {q}"  # 'break it down for me': the same lane as the last ask, at full length
                 route = router.classify(q)
-            gk = gameday.league_intent(q) or gameday.intent(q, prev_q)
-            gs_now = gameday.games() if gk else {}  # 'whos winning in Columbus' / 'how'd Jeremiah Smith end up': a game
-            named_game = bool(gk) and bool(gameday._named(q, gs_now) or gameday._player_games(q, gs_now))
-            # 'can Michigan score on UCLA?' before kickoff is a unit read (unit_lane), not the score lane
-            unit_pre = route.lane == "fact" and route.kind == "unit_matchup" and not any(
-                g.get("state") in ("in", "post") for g in (gameday._named(q, gs_now) if gk else []) or [])
-            if gk and not unit_pre and (gk in ("gd_ended", "gd_week") or named_game or not (route.lane == "fact" and route.kind in (
-                    "my_picks", "standings", "record", "results", "playoff_today", "chase", "cover"))):
-                route = router.Route("fact", gk, why=f"gameday.{gk}", mixed=route.mixed, ptype=route.ptype)
+            route = gameday.override(route, q, prev_q)  # 'whos winning in Columbus': the game-day lanes (pure rule)
         if charlie and (route.lane == "ignore" or (route.lane == "banter" and route.kind == "spiral")):
             # Charlie's test texts always get a (warm) answer: no mute, no brush-off
             route.lane, route.kind, route.level, route.why = "banter", "insult", 1, f"charlie ({route.why})"

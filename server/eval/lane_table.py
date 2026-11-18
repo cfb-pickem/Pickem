@@ -51,10 +51,23 @@ def classify(q: str):
     return router.classify(TRIGGER.sub("", q).strip())
 
 
+def pre_board() -> dict:
+    """The worst case for lane steals: every game on the live board kicking off in 2 hours (game day is active,
+    nothing has started). Genius asks are pre-game DMs, so they must keep their lanes on it."""
+    import time
+    import gameday
+    soon = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 7200))
+    return {k: {**g, "state": "pre", "start": soon} for k, g in (gameday.games() or {}).items()}
+
+
 def check_rows(rows: list[dict]) -> list[dict]:
-    out = []
+    out, board = [], None
     for r in rows:
         rt = classify(r["q"])
+        if r.get("src") == "genius":  # a DM: group_chat's game-day precedence rule applies (gameday.override)
+            import gameday
+            board = pre_board() if board is None else board
+            rt = gameday.override(rt, TRIGGER.sub("", r["q"]).strip(), "", board)
         ok = rt.label() in r["ok"] or rt.lane in r["ok"]
         st = ("XPASS" if ok else "XFAIL") if r.get("xfail") else ("PASS" if ok else "FAIL")
         out.append({**r, "got": rt.label(), "why_rule": rt.why, "status": st})

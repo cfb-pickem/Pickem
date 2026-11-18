@@ -192,7 +192,7 @@ def test_qb_status_out_starter_already_replaced():
     """Sayin (out for the regular season per the fixture's intel) has been replaced: Fahey's starts, record, ATS."""
     with use(built()["path"]):
         out = router.qb_status_text({}, "Is Sayin playing Saturday? If not, what's the backup done?")
-    assert out.startswith("Julian Sayin") and "out for the season" in out and "Luke Fahey" in out, out
+    assert out.startswith("Julian Sayin") and "out for the rest of the regular season" in out and "Luke Fahey" in out, out
     assert "3 starts" in out and "1-2" in out and "0-3" in out, out
     assert "already" in out, "a QB who's missed games is in the number already"
     ok_facts(out)
@@ -201,7 +201,7 @@ def test_qb_status_out_starter_already_replaced():
 def test_qb_status_out_gives_backup_value_and_line_move():
     with use(built()["path"]):
         out = router.qb_status_text({}, "Who's starting at QB for North Texas?")
-    assert "Tayven Jackson" in out and "out for the season" in out, out
+    assert "Tayven Jackson" in out and "out for the rest of the regular season" in out, out
     assert "per " in out and "Next up:" in out and "first start" in out, out
     assert "worth about" in out and "line has moved" in out, out
     ok_facts(out)

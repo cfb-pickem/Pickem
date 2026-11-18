@@ -207,11 +207,11 @@ WEEK_ASK = re.compile(r"^\W*(\w[\w ]{0,20}?)'?s week\W*$|\bhow'?s (\w[\w ]{0,20}
                       r"|\b(my|how'?s my) week\b|\bhow am i doing\b", re.I)
 
 
-def league_intent(q: str, ctx_teams: list[str] | None = None) -> str | None:
+def league_intent(q: str, ctx_teams: list[str] | None = None, gs: dict | None = None) -> str | None:
     """League asks with a live twist (pool games in progress): 'if it ended right now where am I' / 'whos in first rn',
     'ackbar's week?'. Only while a pool game is live; otherwise the normal standings/record lanes are exact."""
     t = (q or "").replace("’", "'")
-    gs = games()
+    gs = games() if gs is None else gs
     pool = set(map(str, (L.load() or {}).get("pool_ids") or []))
     if not any(g.get("state") == "in" for gid, g in gs.items() if gid in pool):
         return None
@@ -222,9 +222,9 @@ def league_intent(q: str, ctx_teams: list[str] | None = None) -> str | None:
     return None
 
 
-def intent(q: str, prev: str = "") -> str | None:
+def intent(q: str, prev: str = "", gs: dict | None = None) -> str | None:
     t = (q or "").replace("’", "'")
-    gs = games()
+    gs = games() if gs is None else gs
     if not gs or not active(gs):
         return None
     if prev and re.fullmatch(r"\W*(why|how come|how|huh|wdym|explain)\W*\??\W*", t, re.I) and re.search(
@@ -239,6 +239,29 @@ def intent(q: str, prev: str = "") -> str | None:
         if p and p not in ("gd_upsets", "gd_whatif"):
             return p
     return own
+
+
+# what a code lane already owns before kickoff: the league lanes, plus a pre-game unit read ('can Michigan score on
+# UCLA?' is unit_lane, not the score lane)
+LEAGUE_KINDS = ("my_picks", "standings", "record", "results", "playoff_today", "chase", "cover")
+
+
+def override(route, q: str, prev_q: str = "", gs: dict | None = None):
+    """The DM game-day lane decision (group_chat's one precedence rule, pure so the lane table can check it):
+    a game-day intent takes the ask unless a code lane owns it."""
+    import router
+    gs = games() if gs is None else gs
+    gk = league_intent(q, gs=gs) or intent(q, prev_q, gs=gs)
+    if not gk:
+        return route
+    named = _named(q, gs)
+    named_game = bool(named or _player_games(q, gs))
+    unit_pre = route.lane == "fact" and route.kind == "unit_matchup" and not any(
+        g.get("state") in ("in", "post") for g in named)
+    if not unit_pre and (gk in ("gd_ended", "gd_week") or named_game or not (
+            route.lane == "fact" and route.kind in LEAGUE_KINDS)):
+        return router.Route("fact", gk, why=f"gameday.{gk}", mixed=route.mixed, ptype=route.ptype)
+    return route
 
 
 _PRE_SCORE = re.compile(r"\bthe score\b|\bscores?\W*$|\bscore of\b|\bwinning\b|\bwho won\b|\bfinal\b|\bwhat time\b|"

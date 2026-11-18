@@ -1114,7 +1114,7 @@ def all_availability() -> list[tuple[dict, dict]]:
 
 CAUSE_STATUSES = ("out", "season", "doubtful", "questionable", "TBD", "suspended", "benched", "portal", "opt-out")
 OUT_STATUSES = ("out", "season", "doubtful", "suspended", "portal", "opt-out", "benched")
-STATUS_PHRASE = {"out": "out", "season": "out for the season", "doubtful": "doubtful", "questionable": "questionable",
+STATUS_PHRASE = {"out": "out", "season": "out for the rest of the regular season", "doubtful": "doubtful", "questionable": "questionable",
                  "probable": "probable", "TBD": "TBD (no call made yet)", "available": "good to go",
                  "benched": "benched", "suspended": "suspended", "portal": "in the transfer portal",
                  "opt-out": "opting out"}

@@ -1082,6 +1082,16 @@ async def fact_reply(st: dict, prefix: str, answer: str) -> str:
     return out
 
 
+def fact_fallback(ans: str, text: str, fact_text: str) -> str:
+    """The code answer whole after the filters cut part of a fact reply, plus the voice line when the filters kept IT
+    (they cut code sentences whose numbers they can't see, e.g. a unit lane's 57% run rate: genius mid1 lost 8 of
+    10 kept lines this way)."""
+    if ans in text:
+        return ans + " " + text.split(ans, 1)[1].strip()
+    line = fact_text[len(ans):].strip() if fact_text.startswith(ans) else ""
+    return ans + (" " + line if line and text.rstrip().endswith(line) else "")
+
+
 async def _text_stream(text: str):
     if text:
         yield chat._sse({"content": text})
@@ -1474,7 +1484,7 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
                 ans = st.get("fact_answer") or ""
                 if ans and (drops or ans not in text):
                     log.info("fact reply lost part of the answer (%d drops): sending the code answer", drops)
-                    text = ans + ((" " + text.split(ans, 1)[1].strip()) if ans in text else "")
+                    text = fact_fallback(ans, text, st.get("fact_text") or "")
                 log.info("fact reply (%.0fs, %s): %r", time.time() - t0, route.label(), text[:160])
                 _trace(st, q, sender, route, [Draft(text, drops, 0)], [0], 0, "fact", t0)
                 return text.strip(), None
