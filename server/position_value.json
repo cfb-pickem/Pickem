@@ -1,0 +1,41 @@
+{
+ "version": 1,
+ "unit": "points of spread for one starter missing vs his replacement",
+ "note": "Static market rules of thumb (plan phase 4), checked by personnel.validate_position_values. QB is priced by the starter-vs-backup passer rating gap (NCAA efficiency, season to date); a backup with too few attempts to rate is 'unknown_backup'. Non-QBs are flat per position; the 1 roles (WR1, RB1, CB1) are a team's top player there. status_weight scales a player's value by how sure the absence is. A team's missing total at or above line_mover is a line-mover; below it, it matters at the margin.",
+ "qb": {
+  "tiers": [
+   {"min_gap": 40, "pts": 6.0},
+   {"min_gap": 25, "pts": 4.5},
+   {"min_gap": 10, "pts": 3.0},
+   {"min_gap": 0, "pts": 1.5}
+  ],
+  "unknown_backup": 4.0,
+  "min_backup_att": 30,
+  "max": 7.0
+ },
+ "positions": {
+  "RB1": 1.0, "RB": 0.25,
+  "WR1": 1.0, "WR": 0.5,
+  "TE": 0.5,
+  "LT": 0.75, "OL": 0.5,
+  "EDGE": 0.75, "DL": 0.5,
+  "LB": 0.5,
+  "CB1": 1.0, "CB": 0.5,
+  "S": 0.5,
+  "K": 0.5, "P": 0.25, "LS": 0.1,
+  "ATH": 0.25
+ },
+ "aliases": {
+  "QB": "QB", "FB": "RB", "HB": "RB",
+  "OT": "OL", "T": "OL", "RT": "OL", "OG": "OL", "G": "OL", "LG": "OL", "RG": "OL", "C": "OL", "IOL": "OL",
+  "DE": "EDGE", "DT": "DL", "NT": "DL",
+  "ILB": "LB", "OLB": "LB", "MLB": "LB",
+  "DB": "S", "FS": "S", "SS": "S",
+  "PK": "K"
+ },
+ "status_weight": {
+  "out": 1.0, "season": 1.0, "suspended": 1.0, "portal": 1.0, "opt-out": 1.0,
+  "doubtful": 0.75, "benched": 0.5, "TBD": 0.5, "questionable": 0.4, "probable": 0.1, "available": 0.0
+ },
+ "line_mover": 1.5
+}
