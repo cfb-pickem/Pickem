@@ -255,14 +255,14 @@ def test_qb_status_non_qb_injuries_matter_at_the_margin():
     assert out and "Buchanan" in out and re.search(r"margin|doesn'?t move the number", out, re.I), out
 
 
-def _with_move_game(fn, line, lean):
+def _with_move_game(fn, line, lean, intel=None):
     sc = router.slate_cards
     saved = (sc.cfbd.load_index, sc.find_game, sc._line, sc.lean_lines, router._intel)
     sc.cfbd.load_index = lambda: {"teams": {}}
     sc.find_game = lambda q, ctx, idx=None: ({"awayTeam": "Clemson", "homeTeam": "Duke", "lines": [line]}, None)
     sc._line = lambda g: line
     sc.lean_lines = lambda g, idx, pg, ask=None: lean
-    router._intel = lambda: INTEL
+    router._intel = lambda: INTEL if intel is None else intel
     try:
         return fn()
     finally:
@@ -286,10 +286,7 @@ def test_line_move_names_starter_says_priced_in_and_keeps_the_facts():
 def test_line_move_unexplained_big_move_says_dont_fight_it():
     q = "Duke went from -8.5 to -13.5, what changed?"
     empty = {"games": {}, "as_of": "Wed Nov 18 2:45 AM CT"}
-    orig = router._intel
-    out = _with_move_game(lambda: (setattr(router, "_intel", lambda: empty), router.slate_move_text({}, q))[1],
-                          {"spread": -13.5, "spreadOpen": -8.5}, LEAN)
-    router._intel = orig
+    out = _with_move_game(lambda: router.slate_move_text({}, q), {"spread": -13.5, "spreadOpen": -8.5}, LEAN, intel=empty)
     assert "-8.5" in out and "-13.5" in out and "Wed Nov 18" in out, out
     assert not re.search(r"\blean\b", out, re.I), out  # no lean against a move nobody can explain
 
@@ -308,12 +305,7 @@ OLD_QB = {"as_of": "now", "games": {"1": {"away": "Clemson", "home": "Duke", "fa
 def test_line_move_old_injury_was_already_in_the_opener():
     q = "Duke went from -8.5 to -13.5. Why'd it move?"
     sc = router.slate_cards
-    orig = router._intel
-    try:
-        out = _with_move_game(lambda: (setattr(router, "_intel", lambda: OLD_QB), router.slate_move_text({}, q))[1],
-                              {"spread": -13.5, "spreadOpen": -8.5}, LEAN)
-    finally:
-        router._intel = orig
+    out = _with_move_game(lambda: router.slate_move_text({}, q), {"spread": -13.5, "spreadOpen": -8.5}, LEAN, intel=OLD_QB)
     assert "Vizzina" in out and not re.search(r"priced in|\broom\b", out, re.I), out
     assert re.search(r"open(er|ing)", out, re.I), out  # old news: the opening number already had it
     assert sc is router.slate_cards
@@ -329,6 +321,54 @@ def test_qb_status_old_injury_was_already_in_the_opener():
         router._intel, router._game_move = orig_i, orig_m
     assert out and "Vizzina" in out and not re.search(r"priced in|\broom\b", out, re.I), out
     assert re.search(r"open(er|ing)", out, re.I), out
+
+
+QUESTIONABLE = {"as_of": "now", "games": {"1": {"away": "Clemson", "home": "Duke", "facts": [
+    {"status": "questionable", "kind": "injury", "team": "away", "players": ["Christopher Vizzina"], "source_name": "X",
+     "date": _days_ago(1), "text": "Clemson QB Christopher Vizzina (ankle) sat out last week and Dabo Swinney gave no update."}]}}}
+
+
+def test_line_move_unsure_qb_wait_line_counts_as_the_lean():
+    """'Wait for the status' must read as the answer's side call, or chat.lean_fact tacks a contradicting
+    'Lean: Duke ..., mainly because SP+ ...' after it (genius r2 lv-uga-sc-move)."""
+    import chat
+    card = ("GAME CARD Clemson at Duke\n  COMPUTED ATS LEAN (vs the current market line): Duke -13.5 (lean; x)\n"
+            "    + for Duke: SP+ projects Duke by 15\n")
+    q = "Duke went from -8.5 to -13.5. Why'd it move, and is 13.5 worth laying?"
+    check, _ = chat.lean_fact(card, q)
+    try:
+        for i in range(30):
+            os.environ["PICKY_PHRASING_SEED"] = f"c{i}"
+            out = _with_move_game(lambda: router.slate_move_text({}, q), {"spread": -13.5, "spreadOpen": -8.5}, LEAN,
+                                  intel=QUESTIONABLE)
+            assert "Vizzina" in out and check(out), out
+    finally:
+        os.environ.pop("PICKY_PHRASING_SEED", None)
+
+
+def test_line_move_keeps_the_key_number_when_asked():
+    q = "Duke is only -3 after opening -5.5. Why is it dropping, and does sitting right on 3 matter?"
+    for i in range(20):
+        os.environ["PICKY_PHRASING_SEED"] = f"k{i}"
+        try:
+            out = _with_move_game(lambda: router.slate_move_text({}, q), {"spread": -3, "spreadOpen": -5.5}, LEAN)
+        finally:
+            os.environ.pop("PICKY_PHRASING_SEED", None)
+        assert re.search(r"key number", out) and len(out) <= 600, out
+
+
+def test_line_move_news_feed_qb_out_says_priced_in():
+    import news
+    q = "Duke went from -8.5 to -13.5. What changed?"
+    orig_b = news.breaking_for
+    news.breaking_for = lambda *a, **k: ["Clemson QB Christopher Vizzina out with upper-body injury."]
+    try:
+        out = _with_move_game(lambda: router.slate_move_text({}, q), {"spread": -13.5, "spreadOpen": -8.5}, LEAN,
+                              intel={"games": {}, "as_of": "now"})
+    finally:
+        news.breaking_for = orig_b
+    assert "Vizzina" in out and re.search(r"priced in", out, re.I), out
+    assert "QB status" not in out, out
 
 
 def test_conf_control():

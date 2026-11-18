@@ -256,7 +256,8 @@ def _pre_game_ok(t: str, k: str | None, gs: dict) -> str | None:
     named = _named(t, gs)
     if not named or any(g.get("state") in ("in", "post") for g in named):
         return k
-    if k == "gd_score" and (len(t.split()) <= 3 or (len(t.split()) <= 8 and _PRE_SCORE.search(t))):
+    if k == "gd_score" and ((len(t.split()) <= 3 and not re.search(r"\b(why|how come|not|who|take|like)\b", t, re.I))
+                            or (len(t.split()) <= 8 and _PRE_SCORE.search(t))):
         return k
     if k == "gd_whatif" and _PRE_WHATIF.search(t):
         return k

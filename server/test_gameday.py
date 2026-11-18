@@ -188,7 +188,7 @@ def test_pre_game_football_asks_keep_their_lanes():
     for q in ("Can Iowa stop Purdue's run game?", "Purdue went from +7 to +10.5 at Iowa. Why'd it move?",
               "Who's starting at QB for Iowa vs Purdue?", "Any injuries that matter for Purdue at Iowa?",
               "Iowa or Purdue, who you got?", "Is the move already priced in or is there still value on Iowa?",
-              "Can Iowa score on Purdue?", "Who's rested in Purdue-Iowa?",
+              "Can Iowa score on Purdue?", "Who's rested in Purdue-Iowa?", "why not Iowa?", "how come Purdue?",
               "How many time zones is Purdue crossing for Iowa, and what's kickoff on their body clock?"):
         assert G.intent(q) is None, (q, G.intent(q))
     assert G.intent("what channel is purdue iowa on") == "gd_tv"

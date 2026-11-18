@@ -77,13 +77,13 @@
    "It's parked on {k}, one of the key numbers: a {k}-point win means a push at the books. League lines are half points, so for us it's {lo} or {hi}."
   ],
   "cond": [
-   "If {player} plays, the move looks overdone; if he's out, it's earned. I'd wait on his status before locking.",
-   "So it comes down to {player}: if he plays, the move's too much; if he sits, it's fair. I'd wait on his status before locking.",
-   "If {player} goes, that move's overdone. If he doesn't, it's earned. Wait on the status before locking it in.",
-   "It all hinges on {player}. Playing means the move overshot; out means it's right. I'd hold off until there's word on him.",
-   "{player} is the whole story: plays, and the move looks like too much; sits, and it's earned. Hold off until there's news.",
-   "My read: overdone if {player} plays, earned if he's out. I'd sit tight until his status is clear.",
-   "If {player} suits up, the move went too far; if he's out, it's fair. Wait for the status."
+   "If {player} plays, the move looks overdone; if he's out, it's earned. I'd wait on his status before picking a side.",
+   "So it comes down to {player}: if he plays, the move's too much; if he sits, it's fair. I'd wait on his status before taking a side.",
+   "If {player} goes, that move's overdone. If he doesn't, it's earned. Wait on the status before picking a side.",
+   "It all hinges on {player}. Playing means the move overshot; out means it's right. I'd hold off on either side until there's word on him.",
+   "{player} is the whole story: plays, and the move looks like too much; sits, and it's earned. No side until there's news.",
+   "My read: overdone if {player} plays, earned if he's out. I'd sit tight on either side until his status is clear.",
+   "If {player} suits up, the move went too far; if he's out, it's fair. Wait for the status before you pick a side."
   ],
   "lean": [
    "Lean: {label}, mainly because {why}.",

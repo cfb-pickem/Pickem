@@ -1434,13 +1434,12 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     outs_hit = [f for f in qb if (f.get("status") or "").lower() == "out" and f.get("team") == hit_side]
     qb_out = moved and any(_fresh(f.get("date")) for f in outs_hit)
     stale = moved and bool(outs_hit) and not qb_out  # every QB-out report predates the opener
+    starter = None
     if phrasing.on() and pick:  # a QB out brings his team's named starter ('who's playing instead' is the real story)
         outs = {f.get("team") for f in qb if (f.get("status") or "").lower() in ("out", "doubtful")}
         starter = next((x for x in (gi or {}).get("facts") or [] if x not in pick and x.get("team") in outs
                         and not x.get("status") and _STARTER_TXT.search(x.get("text") or "")), None)
-        if starter:
-            pick = pick[:1] + [starter] + pick[1:]
-    news_line = None
+    news_line, news_team = None, None
     if not pick:  # the intel run can miss a game: the news feed's QB/injury items for either team (live-80/genius r4)
         try:
             import news as _news
@@ -1448,20 +1447,26 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
                 hits = [x for x in _news.breaking_for(f"{t} QB injury", teams=[t], limit=3) or []
                         if re.search(r"\b(QB|quarterback|out|injur\w*|miss(es)?|surgery|doubtful|questionable)\b", x, re.I)]
                 if hits:
-                    news_line = re.sub(r"^[^:]{0,120}?:\s*", "", hits[0]).strip()
+                    news_line, news_team = re.sub(r"^[^:]{0,120}?:\s*", "", hits[0]).strip(), t
                     break
         except Exception:  # noqa: BLE001
             news_line = None
     if pick:
         parts.append((0, say("news", news=" ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))))
+        if starter:  # the first thing to go when the answer runs long
+            parts.append((2, re.sub(r"\s+", " ", starter["text"]).strip()))
     elif news_line:
         parts.append((0, say("news", news=news_line)))
     else:
         parts.append((0, say("news_none", as_of=d.get("as_of") or "this week")))
+    if news_line and moved and news_team == (away if hit_side == "away" else home) and \
+            re.search(r"\b(QB|quarterback)\b", news_line) and re.search(r"\bout\b|\bmiss(es)?\b|\bsurgery\b", news_line, re.I):
+        qb_out = True  # the feed's QB-out item (it only carries recent news) on the side the line moved against
     a = abs(now)
+    key_ask = bool(re.search(r"key number|\bhook\b|sitting (right )?on|\bon (a |the )?(key )?(number|3|7|10|14)\b", q or "", re.I))
     for k in (3, 7, 10, 14):
         if a == k:
-            parts.append((2, say("key_on", k=k, lo=f"{k - 0.5:g}", hi=f"{k + 0.5:g}")))
+            parts.append((0 if key_ask else 2, say("key_on", k=k, lo=f"{k - 0.5:g}", hi=f"{k + 0.5:g}")))
     try:
         ll = slate_cards.lean_lines(g, idx, None, ask=q)
     except Exception:  # noqa: BLE001
