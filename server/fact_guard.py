@@ -559,6 +559,17 @@ def finals_overrides(idx: dict | None, live: dict | None, resolve) -> dict[str, 
     return out
 
 
+def _score_near(corpus: str, team: str, a: str, b: str, span: int = 70) -> bool:
+    """Both numbers of an 'a-b' score printed near the team ('Boise State 46, Oregon State 34, LIVE')."""
+    if int(a) < 3 and int(b) < 3:
+        return False
+    for m in re.finditer(rf"(?<![\w&]){re.escape(team)}(?![\w&])", corpus or ""):
+        w = corpus[max(0, m.start() - span): m.end() + span]
+        if re.search(rf"(?<![\d.]){a}(?![\d.])", w) and re.search(rf"(?<![\d.]){b}(?![\d.])", w):
+            return True
+    return False
+
+
 def team_true(t: dict, over: dict | None = None) -> tuple[set[str], set[str]]:
     """(true W-Ls, true scores 'a-b' both orders) for one CFBD team. `over` = finals_overrides()[name]."""
     over = over or {}
@@ -610,6 +621,9 @@ def team_fact_check(idx: dict | None, corpus: str = "", members: list[str] | Non
             src = corpus if ats_words else re.sub(r"\bATS [^;\n]*", " ", corpus or "")  # card ATS splits aren't SU records
             if val in ok_vals or any(_near(src, n, val) for n, *_ in teams):
                 continue
+            a_, b_ = val.split("-")
+            if any(_score_near(src, n, a_, b_) for n, *_ in teams):
+                continue  # a live/final score printed 'Boise State 46, Oregon State 34' (live-80 r3)
             if log:
                 log.info("team fact dropped (%s %s): %r", near[0], val, sent[:100])
             return False

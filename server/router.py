@@ -917,8 +917,11 @@ def unknown_school(q: str) -> str | None:
         name = m.group(1).strip()
         if len(name.split()) < 2:
             continue
-        if not slate_cards.cfbd.resolve_team(name, idx):
-            return name
+        words = name.split()
+        subs = [" ".join(words[i:j]) for i in range(len(words)) for j in range(i + 1, len(words) + 1)]
+        if any(slate_cards.cfbd.resolve_team(x, idx) for x in subs if len(x.split()) >= 2):
+            continue  # 'Boise Oregon State' = Boise + Oregon State (live-80 r3); 'Montana Tech' stays unknown
+        return name
     return None
 
 
@@ -2104,6 +2107,10 @@ def score_text(ctx: dict, q: str) -> str | None:
     if any(x is None for x in out):
         return None
     sc = _scored_text(ctx, q, named[0]) if SCORED_ASK.search(q or "") else None
+    if re.search(r"\bhow many (total )?points\b|\btotal points\b|\bcombined\b", q or "", re.I):
+        g = by_id.get(named[0]["id"]) or {}
+        if g.get("AwayPts") is not None and g.get("HomePts") is not None:
+            out.append(f"That's {int(chat._num(g['AwayPts'])) + int(chat._num(g['HomePts']))} total points.")
     return " ".join(out + ([sc] if sc else []))
 
 
@@ -2793,7 +2800,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if kind in ("lines_now", "spread", "value", "line_move", "qb", "score", "cover", "pick", "h2h", "keynum", "qb_status"):
         ghost = unknown_school((q or "").split(" ||| ")[0])
         if ghost:
-            return f"There's no {ghost} in my data, so no line or score for them. Check the name?"
+            return f"I've got nothing on {ghost}: no line, no score, no record. Check the name?"  # maybe NAIA: never 'no such' 
     try:
         if kind in ("results", "score") and re.search(r"\b(my|our) (picks?|week)\b|\bam i\b|\bare we\b", q or "", re.I):
             lg = chat.live_games

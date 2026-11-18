@@ -7055,6 +7055,9 @@ def lean_fact(card: str, question: str) -> tuple | None:
     if re.search(r"\blast (week|year|season|time)\b|\b(took|picked|did \w+(?: \w+)? (take|pick|have)|was|were|won|lost|covered)\b",
                  question or "", re.I):
         return None  # 'who did Clam take ... last week?' is history, not a bet (fact exam r3: a -20.5 lean tacked on)
+    if re.search(r"\b(covering|right now|still|update|score|live|halftime|half|quarter|q[1-4]|\d(st|nd|rd|th) quarter|"
+                 r"threw|scored|ball|drive|injur\w*|hurt|winning|leading|down by|up by|is my|am i|are we)\b", question or "", re.I):
+        return None  # a live-game ask ('is my Oregon State pick covering?'): never a pre-game lean (live-80 r3)
     if m:
         label, conf = m.group(1).strip(), m.group(2)
         top = re.search(r"\n\s+\+ for [^:]+: ([^\n]+)", card[m.end():])

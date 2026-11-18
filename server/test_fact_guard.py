@@ -247,6 +247,14 @@ def test_ats_as_record_and_site():
     assert site("Wyoming is 3-1 at home this season.")
 
 
+def test_live_scores_pass_team_check():
+    idx = {"teams": {"boise state": {"name": "Boise State", "record": "8-2", "conf_record": "5-1", "ats": (5, 5, 0, 0.0),
+                                     "scores": [], "games": [1]}}}
+    ok = fg.team_fact_check(idx, corpus="LIVE GAME FEED: Boise State 46, Oregon State 34, LIVE, 6:16 left in Q4")
+    assert ok("Boise State is up 46-34 with 6:16 left.")
+    assert not ok("Boise State is up 46-24.")
+
+
 def test_coach_moves():
     ok = fg.coach_move_check("Coach note: UTEP fired Scotty Walden. Kyle Whittingham is Michigan's coach (no firing).")
     assert ok("UTEP fired Scotty Walden.")

@@ -139,6 +139,8 @@ def test_lw_pick_and_past_lean():
     assert router.lw_pick_text(ctx, "who did Bravo take in Wake Forest vs SMU last week?") == "Bravo took SMU +1.5 (missed) in week 11."
     assert router.lw_pick_text(ctx, "what did I take last week?") == "You took Wake Forest -1.5 (covered) in week 11."
     assert chat.lean_fact(CARD, "who did Bravo take in Memphis Navy last week?") is None
+    assert chat.lean_fact(CARD, "is my Memphis pick covering right now?") is None  # live ask (live-80 r3)
+    assert router.unknown_school("how many total points have been scored in Boise Oregon State?") is None
 
 
 def test_conf_not_looks():
