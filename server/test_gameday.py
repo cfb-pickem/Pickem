@@ -13,6 +13,7 @@ sys.path.insert(0, str(HERE))
 TMP = Path(tempfile.mkdtemp())
 os.environ["PICKY_LIVE_CACHE"] = str(TMP / "live.json")
 os.environ["PICKY_GAMEDAY_FILE"] = str(TMP / "gameday.json")
+os.environ["PICKY_LIVE_BASE"] = "http://127.0.0.1:9"  # nothing listens: an on-demand refetch fails fast
 NOW = time.time()
 os.environ["PICKY_REPLAY_CLOCK"] = str(TMP / "clock")
 (TMP / "clock").write_text(str(NOW))
@@ -200,6 +201,47 @@ def test_shorten_and_combine():
     assert G.short_for("Chuck P") and not G.short_for("Ackbar")
     (TMP / "gameday.json").write_text(json.dumps({"Chuck P": {"date": "2000-01-01", "short": True}}))
     assert not G.short_for("Chuck P") and day
+
+
+def _aged(age_s):
+    gs = json.loads(json.dumps(GAMES))
+    for g in gs.values():
+        g["ts"] = g["sb_ts"] = g["detail_ts"] = time.time() - age_s
+    L._overlay.clear()
+    L._write({"v": 1, "updated_ts": time.time() - age_s, "mode": "live", "games": gs, "pool_ids": []},
+             Path(os.environ["PICKY_LIVE_CACHE"]))
+
+
+def test_stale_live_answer_says_as_of():
+    # the poller is 2 min behind and the on-demand refetch fails: the score goes out tagged with its time
+    setup()
+    _aged(120)
+    t0 = time.monotonic()
+    k, a = ask("whos winning in columbus")
+    assert time.monotonic() - t0 < 3, "the refetch has a short deadline"
+    when = dt.datetime.fromtimestamp(time.time() - 120, G.CT).strftime("%-I:%M %p")
+    assert a.startswith(f"As of {when} CT") and "Ohio State 7" in a, a
+    k, a = ask("any upsets")
+    assert a.startswith("As of"), a
+
+
+def test_fresh_live_answer_has_no_as_of():
+    setup()
+    _aged(2)
+    k, a = ask("whos winning in columbus")
+    assert "As of" not in a and "Ohio State 7" in a, a
+
+
+def test_newer_score_feed_row_wins():
+    # the poller's copy is 90 s old; the Supabase score row for the same game changed 4 s ago
+    setup()
+    _aged(90)
+    row = {"GameId": 3, "Away": "Northwestern", "Home": "Ohio State", "AwayPts": 6, "HomePts": 14,
+           "Status": "in_progress", "Period": 3, "Clock": "12:01", "possession": "away",
+           "SourceUpdatedAt": (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=4)).isoformat()}
+    G.PRIOR.set(("", ""))
+    a = G.answer("gd_score", {"live_games": [row]}, "whos winning in columbus")
+    assert "Ohio State 14" in a and "As of" not in a, a
 
 
 def test_rank_survives_summary_merge():
