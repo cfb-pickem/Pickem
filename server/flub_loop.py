@@ -759,9 +759,10 @@ def _exam(wt: str, port: int, tag: str) -> int:
             side.kill()
 
 
-def _release() -> dict:
-    """Ship origin/main through release.sh (suite, tag, switch, reload, canary, rollback). Never in the freeze."""
-    p = _sh(["/bin/zsh", RELEASE, "origin/main"], timeout=3 * 3600)
+def _release(ref: str = "main") -> dict:
+    """Ship <ref> (the commit just pushed) through release.sh (suite, tag, switch, reload, canary, rollback).
+    Never in the freeze."""
+    p = _sh(["/bin/zsh", RELEASE, ref], timeout=3 * 3600)
     return {"rc": p.returncode, "tail": (p.stdout + p.stderr).strip()[-300:]}
 
 
@@ -785,13 +786,14 @@ def promote_pending(dry: bool = False) -> dict:
                     out["kept"].append(f"flub/{b} (rebase conflict)")
                     continue
                 _sh(["git", "push", "-q", "origin", "HEAD:main"], cwd=wt, check=True)
+                out["sha"] = _sh(["git", "rev-parse", "HEAD"], cwd=wt).stdout.strip()
                 _sh(["git", "fetch", "-q", "origin"], cwd=wt)
                 _sh(["git", "push", "-q", "origin", "--delete", f"flub/{b}"], cwd=wt)
                 out["promoted"].append(f"flub/{b}")
             finally:
                 _sh(["git", "-C", str(REPO), "worktree", "remove", "--force", str(wt)])
         if out["promoted"]:
-            out["release"] = _release()
+            out["release"] = _release(out["sha"])
     except Exception as e:  # noqa: BLE001  (never sinks the night)
         out["error"] = repr(e)[:300]
     return out
@@ -879,7 +881,7 @@ def _fix(date: str, flubs: list[dict]) -> dict:
             return res | {"status": "branched", "branch": f"flub/{date}",
                           "why": "gates passed; game-day freeze, so it waits on flub/<date> for release.sh after Sun 04:00 CT"}
         _sh(["git", "push", "-q", "origin", f"{branch}:main"], cwd=fix_wt, check=True)
-        rel = _release()
+        rel = _release(_sh(["git", "rev-parse", "HEAD"], cwd=fix_wt).stdout.strip())
         res["release"] = rel
         return res | ({"status": "shipped", "why": "gates passed; live via release.sh"} if rel["rc"] == 0 else
                       {"status": "pushed", "why": f"gates passed, pushed to main; release.sh rc {rel['rc']}: {rel['tail']}"})

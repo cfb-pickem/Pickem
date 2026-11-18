@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Picky's one way to ship to live (review R4, 2026-11-17).
 #
-#   tools/release/release.sh [ref]              # default origin/main
+#   tools/release/release.sh [ref]              # default: local main of /Users/Agent/cfb-pickem (jobs merge there;
+#                                               # origin may lag if GitHub pushes fail)
 #   tools/release/release.sh --dry-run [ref]    # prints every step, changes nothing (shows the rollback path)
 #   tools/release/release.sh --fail-canary ...  # rollback drill: a real release whose canary is forced to fail
 #   tools/release/release.sh --rollback         # put live back on the previous release tag
@@ -28,7 +29,7 @@ RLOCK=/tmp/picky-release.lock
 ELOCK=/tmp/picky-exam.lock
 EXAM_WAIT=${PICKY_RELEASE_EXAM_WAIT:-3600}
 
-DRY=0; FAILC=0; MODE=release; REF=origin/main; PHASE=""
+DRY=0; FAILC=0; MODE=release; REF=main; PHASE=""
 ORIG=("$@")
 while [ $# -gt 0 ]; do
   case $1 in
@@ -147,7 +148,7 @@ if [ $MODE = rollback ]; then
   exit $rc
 fi
 
-run git -C $REPO fetch -q origin --tags
+run git -C $REPO fetch -q origin --tags || say "WARNING: git fetch failed (GitHub unreachable?); releasing local refs"
 SHA=$(git -C $REPO rev-parse --verify "$REF^{commit}") || { say "unknown ref $REF"; exit 1; }
 say "candidate $REF = ${SHA:0:10}"
 if [ "$(git -C $LIVE rev-parse HEAD 2>/dev/null)" = "$SHA" ] && [ $FAILC = 0 ]; then
@@ -170,7 +171,7 @@ fi
 
 TAG=picky-live-$(date +%Y%m%d-%H%M%S)
 run git -C $REPO tag -a $TAG $SHA -m "Picky live release $TAG"
-run git -C $REPO push -q origin $TAG
+run git -C $REPO push -q origin $TAG || say "WARNING: tag push failed (GitHub?); $TAG stays local, rollback still works"
 say "tagged $TAG; waiting for the exam lock (up to ${EXAM_WAIT}s) to switch live"
 if [ $DRY = 1 ]; then
   PREV=$(git -C $LIVE rev-parse HEAD 2>/dev/null)

@@ -348,7 +348,7 @@ def log_repair(rec: dict) -> None:
 
 def run_release() -> dict:
     """origin/main to live through release.sh (suite, tag, switch, reload, canary, auto-rollback)."""
-    p = subprocess.run(["/bin/zsh", str(HERE.parent / "tools" / "release" / "release.sh"), "origin/main"],
+    p = subprocess.run(["/bin/zsh", str(HERE.parent / "tools" / "release" / "release.sh"), "main"],
                        capture_output=True, text=True, timeout=3 * 3600)
     return {"rc": p.returncode, "tail": (p.stdout + p.stderr).strip()[-300:]}
 
