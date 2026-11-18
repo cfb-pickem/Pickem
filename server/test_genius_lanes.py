@@ -94,6 +94,8 @@ def test_fact_exam_round1_lanes():
     last = dict(CTX, you={"team_name": "Wedge"})
     assert router.chase_text(last, "whos chasing me").startswith("Nobody's behind you: you're last at 25-23")
     assert not router.voice_line_ok("Oregon State ruined your weekend.", "x", {})
+    assert not router.voice_line_ok("Your math is as broken as your last three picks.", "x", {})
+    assert router.voice_line_ok("That quarterback room is a crime scene.", "x", {})  # the prompt's own example passes
 
 
 def test_move_why_routes():
@@ -146,6 +148,12 @@ def test_lw_pick_and_past_lean():
 def test_conf_not_looks():
     assert router.classify("Picky what would you rate Charlie's looks on a scale of 1-10").kind != "conf"
     assert router.classify("how confident are you in your picks 1-10").kind == "conf"
+
+
+def test_thought_i_was_premise():
+    assert router.classify("wait I thought I was 28-20 and in first").kind == "premise"
+    out = router.fact_answer("premise", CTX, "wait I thought I was 33-15 and in first")
+    assert out and "25-23" in out, out
 
 
 def test_h2h_text_format():

@@ -869,7 +869,7 @@ def lw_pick_text(ctx: dict, q: str) -> str | None:
 
 MISS_MARGIN = re.compile(r"\bhow (bad|badly|close|much|far off) (did|was) (i|my)\b|\bby how much did (i|my)\b|"
                          r"\bhow (bad|close) (was|is) (my|that)\b", re.I)
-PREMISE_ASK = re.compile(r"\bwhy did i (take|pick|go with|ride|back)\b|\b(covered|cover|won|lost|ended|finished|beat)\b[^?]{0,40}"
+PREMISE_ASK = re.compile(r"\bi thought i (was|had|went)\b|\bwhy did i (take|pick|go with|ride|back)\b|\b(covered|cover|won|lost|ended|finished|beat)\b[^?]{0,40}"
                          r"\b(right|correct|yeah|yea|yes|no)\s*\?|\bended \d{1,2}\s*-\s*\d{1,2}\b", re.I)
 
 
@@ -2869,7 +2869,7 @@ POOL_GAME_KINDS = {"value", "qb", "line_move", "spread", "flip", "pick", "defend
 
 FACT_TAIL = """
 
-TASK RIGHT NOW: the answer to the NEWEST TEXT is already written below (THE ANSWER) and goes out exactly as is. Don't restate it. Write ONE short line of personality to send right after it, like a buddy in the group text: 12 words max, no numbers, no records, no team names, no new facts. Make it a sharp quip about what THE ANSWER says (like "Books don't move a line like that for fun."), never a generic "trust me". Return JSON only."""
+TASK RIGHT NOW: the answer to the NEWEST TEXT is already written below (THE ANSWER) and goes out exactly as is. Don't restate it. Write ONE short line of personality to send right after it, like a buddy in the group text: 12 words max, no numbers, no records, no team names, no new facts. Make it a sharp quip about what THE ANSWER says (like "That quarterback room is a crime scene."), never a generic "trust me". Return JSON only."""
 FACT_SCHEMA = {"type": "object", "properties": {"line": {"type": "string"}}, "required": ["line"]}
 FACT_TOKENS = 32
 
@@ -2907,7 +2907,8 @@ def voice_line_ok(line: str, answer: str, ctx: dict | None, leader: bool = False
     import no_repeat
     if not line or len(line.split()) > 14 or _FACTY.search(line) or PREACHY.search(line) or no_repeat.banned_tic(line):
         return False
-    if re.search(r"\byour (picks?|portfolio|week|weekend|bets?|money|wallet|ticket|slip|season|card)\b", line, re.I):
+    if re.search(r"\byour\b[^.!?]{0,25}\b(picks?|portfolio|week|weekend|bets?|money|wallet|ticket|slip|season|card|record|"
+                 r"calls?|streak|run|form)\b|\b(last|past|previous) (two|three|four|five|six|few|couple)\b", line, re.I):
         return False  # 'a total disaster for your portfolio' after a pick that covered (fact judge 2026-11-17)
     if leader:
         return bool(LEADER_TITLE.search(line)) and chat.sentence_ok(line, set())

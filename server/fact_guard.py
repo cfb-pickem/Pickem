@@ -230,7 +230,13 @@ def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
                 owners[r] = "__other__"
                 if not any(r in f.any_true(x) for x in f.st):
                     out.append(f"someone {r} (no member has it)")
+        weekly_of = lambda m_: {f"{v[0]}-{v[1]}" for v in (f.weekly.get(m_) or {}).values()}  # noqa: E731
         for r in recs:
+            o_ = owners.get(r, who)
+            if o_ in f.st and re.search(rf"(?<![\d-]){re.escape(r)}\s+(week|weekend|slate)\b", s, re.I) \
+                    and r not in weekly_of(o_):
+                out.append(f"{o_} {r} week (no such week)")  # 'your 0-4 week' when he never went 0-4 (fact exam r4)
+                continue
             if owners.get(r, who) == "__other__":
                 continue
             if owners.get(r, who) != who:

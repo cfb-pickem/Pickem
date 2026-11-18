@@ -76,6 +76,7 @@ def test_wrong_member_claims_drop():
               "Echo is in last place.", "You're 30-18 overall and 4 wins ahead of 4th.",
               "You're chasing his 31-17 record.",
               "My 5-1 record speaks for itself.",
+              "Your eyes are as blurry as your 0-4 week.",
               "Bravo is in first, 2 up on you."]:
         assert not ok(s), s
 
