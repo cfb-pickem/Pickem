@@ -151,8 +151,9 @@ def _coach_answer(c: dict, q: str, named: list[str], notes, heads, rows) -> str 
     else:
         last = c["stops"][-1]["school"] if c["stops"] else None
         t, tf = _team_facts(last) if last else ({}, [])
-        if t.get("coach") and t["coach"] != c["name"]:
-            out.append(f"He isn't a head coach this season; {last}'s coach now is {t['coach']}.")
+        if t.get("coach") and t["coach"] != c["name"]:  # a false premise: the correction goes first
+            out.insert(0, f"{c['name']} isn't {last}'s coach anymore: it's {t['coach']} now"
+                          + (f", and {last} is {t['record']}" if t.get("record") else "") + ".")
             used += [x for x in tf if x["kind"] == "coach" and x["id"].endswith(".head")]
         school = last
     if not target:
@@ -167,6 +168,12 @@ def _coach_answer(c: dict, q: str, named: list[str], notes, heads, rows) -> str 
     if g:
         bit, mf = _line_bit(g)
         used += mf
+        opp = g["homeTeam"] if g["awayTeam"] == school else g["awayTeam"]
+        back = next((x for x in c["stops"] if x["school"] == opp), None)
+        if back and not target:  # 'Kiffin going back to Knoxville': this week IS the return
+            yrs = f"{back['from']}" if back["from"] == back["to"] else f"{back['from']}-{back['to']}"
+            out.insert(0, f"Yeah, this week is {c['name']}'s return to {opp}, where he was head coach in {yrs}"
+                          + (f" ({back['w']}-{back['l']})" if back.get("seasons") else "") + " before he left.")
         out.append(f"This week it's {bit}; coaching noise isn't something the number moves on by itself, so it "
                    f"doesn't change how I'd play that line.")
     elif school and c["current"]:

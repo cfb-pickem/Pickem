@@ -497,7 +497,7 @@ def classify(date: str, dry: bool = False, facts: dict | None = None, opus=None)
         out["verdicts"] = code_verdicts(h)
     elif not h["candidates"]:
         out["note"] = "no candidates"
-    elif dry or not facts:
+    elif dry or not facts or "facts" not in facts:  # a bundle without its facts text is no bundle
         out["note"] = "dry run" if dry else "no facts bundle"
         out["verdicts"] = code_verdicts(h)
     else:

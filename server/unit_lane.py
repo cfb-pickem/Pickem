@@ -38,11 +38,11 @@ class CfbdSource:
         return (t or {}).get("sp")
 
     def game(self, q: str, ctx: dict | None = None) -> dict | None:
-        import slate_cards
-        g, pg = slate_cards.find_game(q, ctx or {})
+        import factstore  # the shared entity resolver ('Virginia Tech ... Miami' is VT-Miami, not a 'Tech' game)
+        g, pg = factstore.find_game(q, ctx or {})
         if not g:
             return None
-        ln = slate_cards._line(g) or {}
+        ln = factstore.market(g) or {}
         league = pg is not None and pg.get("line") is not None
         return {"away": g["awayTeam"], "home": g["homeTeam"], "league": league,
                 "spread": float(pg["line"]) if league else ln.get("spread"), "total": ln.get("overUnder")}
@@ -133,6 +133,8 @@ _YESNO = re.compile(r"(^|[.!?:]\s+)\W*(can|could|will|would|does|do|did|is|are|s
 
 def subject(q: str, away: str, home: str) -> str | None:
     """The first team the text names (the subject of 'can X stop Y' / 'will X's pass rush get home')."""
+    qs = [x for x in re.split(r"(?<=[.!?])\s+", q or "") if "?" in x]
+    q = qs[-1] if qs else q  # 'UCLA -3.5 at Michigan. Can Michigan score on UCLA?': the question's subject
     tn = f" {cfbd.norm(re.sub(r"['’]s\b", "", q or ''))} "
     spots = sorted((p, t) for t, o in ((away, home), (home, away)) for p, _ in units._all_pos(t, tn, o))
     return spots[0][1] if spots else None

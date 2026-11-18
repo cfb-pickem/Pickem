@@ -961,7 +961,8 @@ def thin_citations(text: str) -> str:
     head, tail = t[: first.end()], t[first.end():]
     head = _AGO.sub("", head[: first.start()]) + head[first.start():]
     tail = _PER.sub("", _AGO.sub("", tail))
-    t = head + tail
+    tail = re.sub(r"\s*\(\s*[,/]?\s*(?:,\s*)?(?:today|yesterday|\w+day|last report [^()]*|[A-Z][a-z]{2} \d{1,2})?\s*\)", "", tail)
+    t = head + tail  # an emptied '(per ESPN, Monday)' -> '(, Monday)' goes whole
     t = re.sub(r"(^|(?<=[.!?]\s))(Also|And|Plus)?\s*,\s*", lambda m: m.group(1) + (m.group(2) + " " if m.group(2) else ""), t)
     t = re.sub(r"\s+([,.!?])", r"\1", t)
     t = re.sub(r",\s*,", ",", t)

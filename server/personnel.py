@@ -516,7 +516,7 @@ _ST_RX = [
                  r"\bdon'?t think (?:it|he) will be (?:this week|ready)"),
     ("out", r"\bruled out\b|\b(?:won'?t|will not|isn'?t going to) play\b|\bis out\b|\bout (?:vs\.?|against|for) |"
             r"\bwill miss\b|\b(?:expected|set|going) to miss\b|\bnot expected to play\b|\bsidelined\b"),
-    ("benched", r"\bbench(?:ed|ing)\b|\b(?:to|will) sit\b|\bdemoted\b|\blost (?:his|the) (?:starting )?job\b"),
+    ("benched", r"\bbench(?:ed|ing)\b|(?<!decision )\b(?:to|will) sit\b|\bdemoted\b|\blost (?:his|the) (?:starting )?job\b"),
     ("questionable", r"\bquestionable\b|\bgame[- ]time decision\b|\bday[- ]to[- ]day\b|\blimited in practice\b|"
                      r"\buncertain\b|\bconcussion protocol\b"),
     ("probable", r"\bprobable\b|\bexpected to play\b|\bshould play\b|\blikely to play\b"),

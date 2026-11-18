@@ -2619,7 +2619,8 @@ def games_named(question: str, games: list[dict], cap: int = 3) -> list[dict]:
             names[_match_key(side)].append(g)
     keys = sorted(names, key=len, reverse=True)
     techs = [k for k in keys if k.endswith(" tech")]
-    if len(techs) == 1 and " tech " in q and f" {techs[0]} " not in q:  # 'tech is overrated' = the slate's only X Tech
+    if len(techs) == 1 and " tech " in q and f" {techs[0]} " not in q and not re.search(
+            r" (virginia|georgia|louisiana|texas|va|ga|la) tech ", q):  # 'tech is overrated' = the slate's only X Tech
         q = q.replace(" tech ", f" {techs[0]} ")
     stems = {k[: -len(" state")]: k for k in keys if k.endswith(" state")}
     keys += [s for s in sorted(stems, key=len, reverse=True) if s not in names]

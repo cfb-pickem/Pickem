@@ -1097,7 +1097,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
             await save_turn(key, q_hist, reply, who, lane=route.label())
             return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
-        if playoff_race.is_need_question(q) or chat._RACE_ASK.search(q):
+        if (playoff_race.is_need_question(q) or chat._RACE_ASK.search(q)) and not (
+                route.lane == "fact" and route.kind == "strategy"):  # 'any pick strategy that gets me in?': the plan
             exact = race_answer(q, s, await race_data())
             if exact:
                 route.lane, route.kind = "fact", "playoff"
