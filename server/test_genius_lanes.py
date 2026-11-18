@@ -75,7 +75,9 @@ def test_fact_exam_router_fixes():
     assert router.fact_answer("record", CTX, "what was my record in week 14?") == "Week 14 hasn't been played yet, so no record for it."
     assert router.fact_answer("record", CTX, "what was my record in week 11?") == "You went 2-2 in week 11."
     out = router.fact_answer("standings", CTX, "now that I'm in first, where am I")
-    assert out.startswith("Not quite: you're 3rd at 25-23"), out
+    assert out.startswith("You're 3rd at 25-23"), out  # the answer already states the real place: no double fix
+    out = router.fact_answer("record", CTX, "now that I'm in first, what's Bravo's record?")
+    assert out.startswith("Not quite: you're 3rd at 25-23") and "Bravo" in out, out
 
 
 def test_h2h_text_format():

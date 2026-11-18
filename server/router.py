@@ -2370,7 +2370,7 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if out and ctx and not ctx.get("error"):
         try:
             import fact_guard
-            prem = fact_guard.premise_facts(ctx, q, chat.same_team)
+            prem = fact_guard.premise_facts(ctx, (q or "").split(" ||| ")[0], chat.same_team)  # the sender's words only
         except Exception:  # noqa: BLE001
             prem = []
         truth_vals = []
