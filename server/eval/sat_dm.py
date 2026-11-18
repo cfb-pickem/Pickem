@@ -269,6 +269,9 @@ def check(T: Truth, it: dict, spec: tuple, a: str) -> tuple[bool, str]:
         g = T.game(args[0], at)
         lead = g["away"] if g["away"]["score"] > g["home"]["score"] else g["home"]
         return has_team(a, lead), f"leader {lead['loc']}"
+    if kind == "yes":  # a yes/no question answered the right way round
+        rx = r"^\W*(yep|yes|yeah|yup)\b" if args[0] else r"^\W*(nope|no|nah)\b"
+        return bool(re.search(rx, a, re.I)), f"should open with {'yes' if args[0] else 'no'}"
     if kind == "final_word":
         return bool(re.search(r"\bfinal\b|\bwon\b|\bbeat\b|\bwin\b|\bwins\b|\bheld on\b", a, re.I)), "say it's final/won"
     if kind == "names_live":
