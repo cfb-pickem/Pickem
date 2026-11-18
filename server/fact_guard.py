@@ -1098,3 +1098,42 @@ def site_check(idx: dict | None, games: list[dict] | None = None, log=None):
                 return False
         return True
     return ok
+
+
+# ---- 'you missed that one' about the game the question names ------------------------------------------------------
+
+_YOU_MISSED = re.compile(r"\byou(?:'ve)?\s+(?:\w+\s+){0,3}(miss(?:ed)?|blew|blow|whiff(?:ed)?|chok(?:e|ed)|botch(?:ed)?|fumbled|lost|lose|"
+                         r"got burned|brick(?:ed)?)\b", re.I)
+_YOU_HIT = re.compile(r"\byou(?:'ve)?\s+(?:\w+\s+){0,3}(hit|nailed|cashed|covered|won|called|got)\s+(that|it|this)\b", re.I)
+
+
+def sender_result_check(ctx: dict, question: str, same_team=None, log=None):
+    """'how about that SMU game?' -> 'how you managed to miss that one' when the sender's Wake Forest pick
+    covered (real replay r4): with one of last week's games named in the question, 'you missed/hit that' must
+    match the sender's real result there."""
+    me = (ctx.get("you") or {}).get("team_name")
+    same = same_team or (lambda a, b: (a or "").lower() == (b or "").lower())
+    q = question or ""
+    games = [g for g in (ctx.get("last_week") or {}).get("games") or []
+             if re.search(rf"(?<!\w){re.escape(g['away'])}(?!\w)", q, re.I) or re.search(rf"(?<!\w){re.escape(g['home'])}(?!\w)", q, re.I)]
+    if not me or len(games) != 1:
+        return None
+    g = games[0]
+    pk = (g.get("picks") or {}).get(me)
+    if not pk or not g.get("covered"):
+        return None
+    hit = same(pk, g["covered"])
+
+    def ok(sent: str) -> bool:
+        if _NEG.search(sent) and not re.search(r"\bhow\b", sent, re.I):
+            return True
+        if _YOU_MISSED.search(sent) and hit:
+            if log:
+                log.info("sender result dropped (they hit %s): %r", pk, sent[:100])
+            return False
+        if _YOU_HIT.search(sent) and not hit:
+            if log:
+                log.info("sender result dropped (they missed %s): %r", pk, sent[:100])
+            return False
+        return True
+    return ok

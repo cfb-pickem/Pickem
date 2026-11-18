@@ -256,6 +256,15 @@ def test_live_scores_pass_team_check():
     assert not ok("Boise State is up 46-24.")
 
 
+def test_sender_result():
+    ok = fg.sender_result_check(CTX, "how about that UTSA game?", same)  # Alpha took UTSA, it covered
+    assert not ok("I'm still trying to figure out how you managed to miss that one.")
+    assert ok("You nailed that one.")
+    ok2 = fg.sender_result_check(dict(CTX, you={"team_name": "Bravo"}), "how about that UTSA game?", same)  # Bravo had North Texas
+    assert not ok2("You nailed that one.")
+    assert ok2("You whiffed on that one.")
+
+
 def test_coach_moves():
     ok = fg.coach_move_check("Coach note: UTEP fired Scotty Walden. Kyle Whittingham is Michigan's coach (no firing).")
     assert ok("UTEP fired Scotty Walden.")
