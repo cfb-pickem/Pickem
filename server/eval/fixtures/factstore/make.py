@@ -6,6 +6,7 @@
 Writes cfbd.json.gz (trimmed CFBD datasets), slate_intel.json, weather.json, espn_rankings.json and
 espn_scoreboard.json next to this file. Re-run only to refresh the fixture; tests pin NOW below."""
 import gzip
+import re
 import json
 import sqlite3
 import sys
@@ -38,6 +39,43 @@ def _odds(o):
             "total": lines(o.get("total"))}
 
 
+def coaches_all(ds: dict) -> list[dict]:
+    """Full careers (CFBD /coaches since 1980), trimmed to coaches active this season or last."""
+    season = max((r.get("year") or 0 for r in ds.get("records") or []), default=0)
+    keep = ("school", "year", "games", "wins", "losses", "ties")
+    return [{"firstName": c.get("firstName"), "lastName": c.get("lastName"), "hireDate": c.get("hireDate"),
+             "seasons": [{k: s.get(k) for k in keep} for s in c.get("seasons") or []]}
+            for c in ds.get("coaches_all") or [] if any((s.get("year") or 0) >= season - 1 for s in c.get("seasons") or [])]
+
+
+def add_coaches_all() -> int:
+    """Add only coaches_all to the frozen cfbd.json.gz (the rest of the fixture stays as frozen)."""
+    db = sqlite3.connect(CACHE / "cfbd.sqlite")
+    ds = {n: json.loads(j) for n, j in db.execute("select name, json from datasets where name in ('records', 'coaches_all')")}
+    p = HERE / "cfbd.json.gz"
+    out = json.loads(gzip.decompress(p.read_bytes()))
+    out["coaches_all"] = coaches_all(ds)
+    p.write_bytes(gzip.compress(json.dumps(out, separators=(",", ":")).encode(), 9))
+    print(len(out["coaches_all"]), p.stat().st_size)
+    return 0
+
+
+NEWS_KEYS = ("title", "link", "source", "date", "teams", "insider", "author", "story", "label")
+COACHY = re.compile(r"coach|fire[sd]?\b|firing|hot seat|interim|hire|carousel|search|candidate|\bjob\b|buyout|extension", re.I)
+
+
+def add_news() -> int:
+    """Freeze coach-related headlines (public news items) and the insider wire's carousel items for the coach lane."""
+    items = json.loads((CACHE / "news.json").read_text()).get("items") or {}
+    keep = {k: {f: v.get(f) for f in NEWS_KEYS} for k, v in items.items() if COACHY.search(v.get("title") or "")}
+    (HERE / "news.json").write_text(json.dumps({"items": keep}, indent=0))
+    wire = json.loads(Path("/Users/Agent/cfb-pickem-private/insider_wire.json").read_text())
+    rows = [r for r in wire.get("items") or [] if "Coaching carousel" in (r.get("sections") or [])]
+    (HERE / "insider_wire.json").write_text(json.dumps({"generated_at": wire.get("generated_at"), "items": rows}, indent=0))
+    print(len(keep), len(rows))
+    return 0
+
+
 def main() -> int:
     db = sqlite3.connect(CACHE / "cfbd.sqlite")
     ds = {n: json.loads(j) for n, j in db.execute("select name, json from datasets")}
@@ -48,6 +86,7 @@ def main() -> int:
                   for g in ds["lines"] if fbs(g)],
         "records": [r for r in ds["records"] if r.get("classification") == "fbs"],
         "ats": ds["ats"], "sp": ds["sp"], "srs": ds["srs"], "coaches": ds["coaches"],
+        "coaches_all": coaches_all(ds),
     }
     pairs = {frozenset((g["homeTeam"], g["awayTeam"])) for g in ds["lines"] if g["week"] in (12, 13)}
     out["lines_prev"] = [g for g in ds["lines_prev"] if frozenset((g["homeTeam"], g["awayTeam"])) in pairs]
@@ -79,4 +118,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(add_coaches_all() if sys.argv[1:2] == ["--add-coaches-all"] else add_news() if sys.argv[1:2] == ["--add-news"]
+             else main())
