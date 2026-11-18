@@ -827,6 +827,46 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
 
 
+LW_PICK_ASK = re.compile(r"\b(who|what) did ([\w' .-]{1,30}?) (take|pick|have|go with|ride)\b[^?]{0,60}\blast week\b", re.I)
+
+
+def lw_pick_text(ctx: dict, q: str) -> str | None:
+    """Last week's revealed pick for the member a text names (or the sender for 'I'), in the game it names
+    (or all their picks), with the result against the league line."""
+    m = LW_PICK_ASK.search(q or "")
+    st = ctx.get("standings_ytd") or []
+    me = (ctx.get("you") or {}).get("team_name")
+    if not m:
+        return None
+    who_txt = m.group(2).strip()
+    who = me if re.fullmatch(r"(i|me)", who_txt, re.I) else next(
+        (r["team"] for r in st if r["team"].lower() == who_txt.lower()), None)
+    if not who:
+        fz = fuzzy_members(who_txt, st, None)
+        who = fz[0]["team"] if fz else None
+    lw = ctx.get("last_week") or {}
+    games = lw.get("games") or []
+    if not who or not games:
+        return None
+    named = [g for g in games if re.search(rf"(?<!\w){re.escape(g['away'])}(?!\w)", q, re.I)
+             or re.search(rf"(?<!\w){re.escape(g['home'])}(?!\w)", q, re.I)] or games
+    parts = []
+    for g in named:
+        pk = (g.get("picks") or {}).get(who)
+        if not pk:
+            continue
+        ln = float(g["line"]) if g.get("line") is not None else None
+        sp = (ln if chat.same_team(pk, g["home"]) else -ln) if ln is not None else None
+        res = ""
+        if g.get("covered"):
+            res = " (covered)" if chat.same_team(pk, g["covered"]) else " (missed)"
+        parts.append(f"{pk}{f' {sp:+g}' if sp is not None else ''}{res}")
+    if not parts:
+        return f"{'You' if who == me else who} didn't have a pick in that one."
+    subj = "You" if who == me else who
+    return f"{subj} took " + ", ".join(parts) + f" in week {lw.get('week')}."
+
+
 MISS_MARGIN = re.compile(r"\bhow (bad|badly|close|much|far off) (did|was) (i|my)\b|\bby how much did (i|my)\b|"
                          r"\bhow (bad|close) (was|is) (my|that)\b", re.I)
 PREMISE_ASK = re.compile(r"\bwhy did i (take|pick|go with|ride|back)\b|\b(covered|cover|won|lost|ended|finished|beat)\b[^?]{0,40}"
@@ -1197,6 +1237,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if why_lane.why_kind(t):  # 'why?' / 'how come' / 'why not Ohio State?' after a call: the next unused reason
         return "why", "WHY_ASK"
+    if LW_PICK_ASK.search(t):
+        return "lw_pick", "LW_PICK_ASK"  # 'who did Clam take in Wake Forest vs SMU last week?': revealed, code-answered
     if MISS_MARGIN.search(t):
         return "results", "MISS_MARGIN"  # 'how bad did I miss on Boise last week?' (fact exam real miss)
     if PREMISE_ASK.search(t):
@@ -2793,7 +2835,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text,
               "interim": interim_text, "strategy": pick_strategy.answer,
-              "picky_record": picky_record_text, "premise": premise_text, "read": read_text, "pool_games": pool_games_text,
+              "picky_record": picky_record_text, "premise": premise_text, "lw_pick": lw_pick_text, "read": read_text, "pool_games": pool_games_text,
               "ghost_player": ghost_player_text, "recap": recap_text,
               "ghost_school": ghost_school_text}.get(kind)
         if fn:

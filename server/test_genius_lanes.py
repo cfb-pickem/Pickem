@@ -131,6 +131,16 @@ def test_qb_status_team_possessive():
     assert out is None or "Clemson" in out.split(".")[0], out
 
 
+def test_lw_pick_and_past_lean():
+    ctx = dict(CTX, you={"team_name": "Wedge"}, last_week={"week": 11, "games": [
+        {"away": "Wake Forest", "home": "SMU", "away_pts": 49, "home_pts": 7, "line": 1.5, "covered": "Wake Forest",
+         "picks": {"Bravo": "SMU", "Wedge": "Wake Forest"}}]})
+    assert router.classify("who did Bravo take in Wake Forest vs SMU last week?").kind == "lw_pick"
+    assert router.lw_pick_text(ctx, "who did Bravo take in Wake Forest vs SMU last week?") == "Bravo took SMU +1.5 (missed) in week 11."
+    assert router.lw_pick_text(ctx, "what did I take last week?") == "You took Wake Forest -1.5 (covered) in week 11."
+    assert chat.lean_fact(CARD, "who did Bravo take in Memphis Navy last week?") is None
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:

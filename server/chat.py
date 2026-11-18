@@ -7052,6 +7052,9 @@ def lean_fact(card: str, question: str) -> tuple | None:
     m = _CARD_LEAN.search(card or "")
     if not _LEAN_ASK.search(question or "") or _HOWTO_ASK.search(question or ""):
         return None
+    if re.search(r"\blast (week|year|season|time)\b|\b(took|picked|did \w+(?: \w+)? (take|pick|have)|was|were|won|lost|covered)\b",
+                 question or "", re.I):
+        return None  # 'who did Clam take ... last week?' is history, not a bet (fact exam r3: a -20.5 lean tacked on)
     if m:
         label, conf = m.group(1).strip(), m.group(2)
         top = re.search(r"\n\s+\+ for [^:]+: ([^\n]+)", card[m.end():])
