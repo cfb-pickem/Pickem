@@ -409,6 +409,8 @@ def grade_item(T: Truth, it: dict, row: dict) -> dict:
     a = row.get("reply") or ""
     res = [(spec[0],) + check(T, it, spec, a) for spec in it["checks"]] if a else [("reply", False, "no reply")]
     cap = DETAIL_CHARS if it.get("detail") else MAX_CHARS
+    if it.get("clump"):  # one text answering several stacked-up texts: +100 chars per extra text, max 500
+        cap = min(500, MAX_CHARS + 100 * (len(it["clump"]) - 1))
     one = row.get("n_replies", 1) == 1 and bool(a) and not row.get("image")
     short = len(a) <= cap
     return {"facts_ok": all(r[1] for r in res), "fails": [f"{r[0]}: {r[2]}" for r in res if not r[1]],

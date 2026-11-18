@@ -107,7 +107,7 @@ def _int(x):
 
 def _rank(c: dict):
     r = ((c.get("curatedRank") or {}).get("current"))
-    r = _int(r)
+    r = _int(r) or _int(c.get("rank"))  # the summary header says 'rank' (it used to wipe the scoreboard's rank)
     return r if r and r <= 25 else None
 
 
@@ -200,6 +200,12 @@ def parse_scoreboard(d: dict) -> dict[str, dict]:
             lp = sit.get("lastPlay") or {}
             if lp.get("text"):
                 g["last_play"] = _clean_play(lp["text"])
+        city = ((comp.get("venue") or {}).get("address") or {}).get("city")
+        if city:  # 'who's winning in Columbus'
+            g["city"] = city
+        od = (comp.get("odds") or [{}])[0]
+        if od.get("details") or od.get("overUnder") is not None:  # ESPN hides odds once live: the poller's merge keeps these
+            g["odds"] = {"details": od.get("details"), "over_under": od.get("overUnder"), "spread": od.get("spread")}
         tv = [n for b in comp.get("broadcasts") or [] for n in b.get("names") or [] if n]
         if tv:  # the chat's channel lane + close_cover's scoreboard fallback (drill 11/17: they had none)
             g["broadcasts"] = tv
@@ -473,8 +479,62 @@ def parse_summary(d: dict, event_id=None) -> dict | None:
                                                                 if p.get("wallclock")), None),
               "injuries": inj_out[-8:], "qb": qb, "news": news[:3], "detail": True,
               "players": sorted({_abbr_key(m.group(2)).split(".", 1)[-1] for p in plays
-                                 for m in _PLAYER_IN.finditer(str(p.get("text") or ""))})[:400]})
+                                 for m in _PLAYER_IN.finditer(str(p.get("text") or ""))})[:400],
+              "box": parse_box(d), "drives": parse_drives(d, abbr)})
     return g
+
+
+BOX_TEAM = ("firstDowns", "thirdDownEff", "fourthDownEff", "totalYards", "netPassingYards", "completionAttempts",
+            "rushingYards", "rushingAttempts", "turnovers", "fumblesLost", "interceptions", "totalPenaltiesYards",
+            "possessionTime", "sacksYardsLost")
+BOX_PLAYERS = {"passing": 3, "rushing": 4, "receiving": 4, "interceptions": 2, "defensive": 2, "kicking": 1}
+
+
+def parse_box(d: dict) -> dict:
+    """ESPN's box score (live or final), compact: team stats + the top players per category with ESPN's own labels.
+    {"teams": {abbr: {stat: value}}, "players": {abbr: {cat: {"labels": [...], "rows": [[name, stats...]]}}}}.
+    The Saturday DM lanes (gameday.py) answer stat questions from it in code; the model never does the math."""
+    box = d.get("boxscore") or {}
+    teams, players = {}, {}
+    for t in box.get("teams") or []:
+        ab = (t.get("team") or {}).get("abbreviation")
+        if ab:
+            teams[ab] = {x["name"]: x.get("displayValue") for x in t.get("statistics") or []
+                         if x.get("name") in BOX_TEAM and x.get("displayValue") not in (None, "")}
+    for t in box.get("players") or []:
+        ab = (t.get("team") or {}).get("abbreviation")
+        if not ab:
+            continue
+        cats = {}
+        for c in t.get("statistics") or []:
+            n = BOX_PLAYERS.get(c.get("name"))
+            rows = [[(a.get("athlete") or {}).get("displayName")] + list(a.get("stats") or [])
+                    for a in (c.get("athletes") or [])[:n or 0] if (a.get("athlete") or {}).get("displayName")]
+            if n and rows:
+                cats[c["name"]] = {"labels": c.get("labels") or [], "rows": rows}
+        if cats:
+            players[ab] = cats
+    return {"teams": teams, "players": players} if teams or players else {}
+
+
+def parse_drives(d: dict, abbr: dict | None = None) -> list[dict]:
+    """The last 3 drives (the one in progress last): team, ESPN's description ('8 plays, 75 yards, 3:12'), result,
+    where it started/ended, quarter + clock at the start and its last 4 plays."""
+    dr = d.get("drives") or {}
+    out = []
+    items = list(dr.get("previous") or [])[-3:] + ([dr["current"]] if dr.get("current") else [])
+    for x in items[-3:]:
+        tm = x.get("team") or {}
+        ps = [p for p in x.get("plays") or [] if (p.get("type") or {}).get("text") not in NON_PLAYS | {"Timeout"}]
+        st = x.get("start") or {}
+        out.append({"team": tm.get("abbreviation") or (abbr or {}).get(str(tm.get("id"))),
+                    "description": x.get("description"), "result": x.get("displayResult") or x.get("result"),
+                    "live": x is dr.get("current"),
+                    "start": (st.get("text") or ""), "start_q": _int((st.get("period") or {}).get("number")),
+                    "start_clock": (st.get("clock") or {}).get("displayValue"),
+                    "end": ((x.get("end") or {}).get("text") or ""),
+                    "plays": [_clean_play(p.get("text"))[:140] for p in ps[-4:]]})
+    return out
 
 
 # ----------------------------------------------------------------------------

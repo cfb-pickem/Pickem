@@ -96,6 +96,7 @@ import ollama_gate  # noqa: E402
 import live_games  # noqa: E402
 import maintenance  # noqa: E402
 import fact_guard  # noqa: E402
+import gameday  # noqa: E402  (Saturday DM lanes: any game's score/stats/drives/TV in code, one short text)
 import matchup_guard  # noqa: E402
 import member_memory  # noqa: E402  (forget handler, receipt check, Charlie rule)
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
@@ -405,9 +406,15 @@ def _you_block(ctx: dict) -> str:
     return "\n".join(ln for ln in out.split("\n") if not re.search(r" has (NOT )?made picks this week\.$", ln))
 
 
+GAMEDAY_RIDER = ("\n\nGAME DAY: they're texting from inside a stadium on a weak signal. Reply with ONE short text: "
+                 "the answer in the first sentence, under 300 characters, no wind-up, no lists.")
+
+
 def _system_tail(ctx: dict) -> str:
     if _site():
-        return _orig_system_tail(ctx) + (WEB_RIDER if WEB.get() else DM_RIDER)
+        s = SENDER.get()
+        day = GAMEDAY_RIDER if not WEB.get() and s and gameday.short_for(s.team) else ""
+        return _orig_system_tail(ctx) + (WEB_RIDER if WEB.get() else DM_RIDER) + day
     if MODE.get() == "dm-public":
         return _orig_system_tail(ctx) + PUBLIC_DM_RIDER + (
             " This person isn't matched to a team: treat them as a league member and don't guess who.")
@@ -1054,6 +1061,16 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         route = router.classify(q)
         if THREAD_RULES:
             route = THREADS.route(route, key, s.team or s.handle, dm, recent, text=q)
+        if mode != "group" and route.lane != "jailbreak":  # game day, DMs: any game's score/stats/drive/TV in code
+            hist = load_history(key, sender=who)
+            prev_q = next((m["content"] for m in reversed(hist) if m["role"] == "user"), "")
+            prev_r = next((m["content"] for m in reversed(hist) if m["role"] == "assistant"), "")
+            gameday.PRIOR.set((prev_q, prev_r))
+            gameday.WHO.set(s.team or "")
+            gk = gameday.intent(q, prev_q)
+            if gk and not (route.lane == "fact" and route.kind in ("my_picks", "standings", "record", "results",
+                                                                   "playoff_today", "chase", "cover")):
+                route = router.Route("fact", gk, why=f"gameday.{gk}", mixed=route.mixed, ptype=route.ptype)
         if charlie and (route.lane == "ignore" or (route.lane == "banter" and route.kind == "spiral")):
             # Charlie's test texts always get a (warm) answer: no mute, no brush-off
             route.lane, route.kind, route.level, route.why = "banter", "insult", 1, f"charlie ({route.why})"
@@ -1240,14 +1257,21 @@ async def group(req: Request):
     REQ_T0.set(t0)
     recent = body.get("recent") if isinstance(body.get("recent"), list) else None
     callbacks.CHAT.set((chat_id, VIEWER.sender(handle).team, dm))  # for the exam rider (PICKY_CALLBACK_RIDER=1)
+    texts = [str(x) for x in body.get("texts") or [] if str(x or "").strip()] if dm else []
     prio = test_priority(req) if test else None  # a real text is live wherever live_flag marks it (never waits on its own flag)
     held = live_flag.held() if prio != "low" else contextlib.nullcontext()  # a member (or a live probe) raises the flag
     with held, ollama_gate.priority(prio or ("low" if live_flag.is_side() else "live")):
-        out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
-                           recent=recent)
+        if len(texts) > 1:  # several DMs landed at once (dead zone): one combined reply (watcher batches them)
+            out = await answer_clump(handle, texts, chat_id, bool(body.get("allowlisted")))
+        else:
+            out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
+                               recent=recent)
     if out is None:
         log.info("dm skipped sender=%s: not a mapped member or allowlisted", handle[-4:] or "?")
         return {"reply": None}
+    if dm and len(texts) <= 1 and out.get("reply") and not out.get("image") \
+            and gameday.short_for(VIEWER.sender(handle).team):  # at a game on a weak signal: ONE short text, answer first
+        out["reply"] = gameday.shorten(out["reply"], text)
     if out.get("reply") and not test:
         callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text), out.get("reply_en") or out["reply"],
                        is_dm=dm)
@@ -1255,6 +1279,35 @@ async def group(req: Request):
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]),
              out.get("lane") or "-")
     return {"reply": out["reply"] or None, "image": out["image"], "lane": out.get("lane")}
+
+
+CLUMP_MAX = 4  # most recent distinct questions answered from one stacked-up batch
+
+
+async def answer_clump(handle: str, texts: list[str], chat_id: str, allowlisted: bool) -> dict | None:
+    """Texts that stacked up while he had no signal -> ONE reply. Repeats collapse, pure banter is skipped when
+    there's a real question, the newest CLUMP_MAX questions are answered in order (each through the normal DM
+    pipeline, so follow-ups see the earlier ones) and joined into one short text (gameday.combine)."""
+    seen, uniq = set(), []
+    for t in texts:
+        k = re.sub(r"[^a-z0-9 ]", "", t.lower()).strip()
+        if k and k not in seen:
+            seen.add(k)
+            uniq.append(t)
+    qs = [t for t in uniq if router.classify(strip_trigger(t)).lane != "banter" or "?" in t]
+    qs = (qs or uniq[-1:])[-CLUMP_MAX:]
+    parts, lanes, last = [], [], None
+    for t in qs:
+        out = await answer(handle, t, chat_id=chat_id, dm=True, allowlisted=allowlisted)
+        if out is None:
+            return None
+        last = out
+        lanes.append(out.get("lane") or "-")
+        if out.get("reply") and not out.get("image"):
+            parts.append((t, out["reply"]))
+    log.info("clump: %d texts -> %d answered (%s)", len(texts), len(parts), ",".join(lanes))
+    return {**(last or {}), "reply": gameday.combine(parts) or None, "image": None,
+            "mode": (last or {}).get("mode", "dm"), "lane": "clump:" + ",".join(lanes)}
 
 
 def web_history(msgs: list) -> list[dict]:

@@ -2829,6 +2829,9 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
         if kind in POOL_GAME_KINDS and slate_cards.covers(q, ctx) and not chat.games_named(
                 q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]):
             return None  # names a non-pool game: the full brain answers from its GAME CARD (genius exam 2026-11-17)
+        if kind.startswith("gd_"):  # Saturday DM lanes (gameday.py): any FBS game, from the live poller's cache
+            import gameday
+            return gameday.answer(kind, ctx, q)
         fn = {"standings": standings_text, "record": record_text, "results": results_text, "cover": cover_text,
               "score": score_text, "lock": lock_text, "payout": payout_answer, "playoff_today": playoff_today_text,
               "pick": pick_text, "slate": slate_text, "weeks_left": weeks_left_text,

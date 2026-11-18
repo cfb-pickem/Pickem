@@ -94,7 +94,7 @@ ITEMS = [
     # ---------------- playoff / rankings what-ifs ----------------
     {"id": "wi-texas", "cat": "whatif", "at": T7, "turns": ["if texas loses what happens"], "checks": [("cfp_rank", "Texas")]},
     {"id": "wi-uk", "cat": "whatif", "at": T815, "turns": ["if kentucky loses does that matter for the playoff"], "checks": [("cfp_rank", "Kentucky")]},
-    {"id": "wi-who-in", "cat": "whatif", "at": T11, "turns": ["whos in the playoff rn"], "checks": [("cfp_top", 4)]},
+    {"id": "wi-who-in", "cat": "whatif", "at": T11, "turns": ["whos in the cfp rn"], "checks": [("cfp_top", 4)]},
     {"id": "wi-uga-1", "cat": "whatif", "at": T3, "turns": ["is uga still 1"], "checks": [("cfp_rank", "Georgia")]},
     {"id": "wi-bama", "cat": "whatif", "at": T3, "turns": ["where's bama ranked"], "checks": [("cfp_rank", "Alabama")]},
     # ---------------- banter ----------------
