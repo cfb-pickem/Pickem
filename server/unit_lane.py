@@ -147,11 +147,11 @@ def _lead(e: dict, q: str, n: int, rng: random.Random) -> str:
     ol, dl = SHORT[u]
     what = units.PAIRS[u][4]
     if w == o:
-        core = f"{_p(o)} {ol} has the edge on {_p(d)} {dl}, #{e['ro']} vs #{e['rd']} in {what} (of {n} FBS)"
+        core = f"{_p(o)} {ol} has the edge on {_p(d)} {dl}, #{e['ro']} vs #{e['rd']} in {what}"
     elif w == d:
-        core = f"{_p(d)} {dl} has the edge on {_p(o)} {ol}, #{e['rd']} vs #{e['ro']} in {what} (of {n} FBS)"
+        core = f"{_p(d)} {dl} has the edge on {_p(o)} {ol}, #{e['rd']} vs #{e['ro']} in {what}"
     else:
-        core = f"{_p(o)} {ol} is #{e['ro']} and {_p(d)} {dl} #{e['rd']} in {what} (of {n} FBS), no clear edge"
+        core = f"{_p(o)} {ol} is #{e['ro']} and {_p(d)} {dl} #{e['rd']} in {what}, no clear edge"
     if not _YESNO.search(q or ""):
         return core[0].upper() + core[1:] + "."
     asked_def = subject(q, o, d) == d
@@ -347,6 +347,8 @@ def build(q: str, ctx: dict | None = None, src=None, seed=None) -> dict | None:
     spl = _sp(first, second, src)
     topic = _topic(us, edges)
     vt = _verdict_text(v, g, topic, rng)
+    # reads more like a text (genius mid1/mid2: 'stat dump', voice 2): the style line only for a run / pace ask
+    style = style if set(us) & {"rush", "pace"} else ""
     for extra in ([style, spl], [spl], []):  # drop style first, then SP+; never the other direction or the verdict
         text = " ".join(x for x in [head, *rest, *extra, vt] if x)
         if len(text) <= LIMIT:

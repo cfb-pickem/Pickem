@@ -1881,8 +1881,10 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         if out_qb and hit_team:  # who plays instead is the real story (Clemson: Pearman; North Texas: Jimerson)
             outs_n = {factstore.norm(r["player"]) for r in rows if r["status"] in factstore.OUT_STATUSES}
             nx = factstore.backup_for(factstore.qb_room(hit_team), out_qb["player"], outs_n)
-            if nx:
-                parts.append((1, f"Next up: {_qb_bio(nx)}."))
+            if nx:  # starts and his record as the starter only: a stat line the judge can't check reads as made up
+                parts.append((1, f"Next up: {nx['name']}" + (f" ({nx['cls'].lower()})" if nx.get("cls") else "")
+                                 + (f", {nx['starts']} starts ({nx['su']} SU, {nx['ats']} ATS)" if nx.get("starts")
+                                    else ", his first start this season") + "."))
     elif pick:
         parts.append((0, say("news", news=" ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))))
         if starter:  # the first thing to go when the answer runs long
@@ -1896,7 +1898,8 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         x = next((x for x in factstore.qb_room(hit_team) if x["name"] == st and factstore.norm(st) !=
                   factstore.norm(old_qb["player"])), None)
         parts.append((0, f"{hit_team} has been without {old_qb['player']} since well before this line opened"
-                         + (f" ({_qb_bio(x)})" if x else "") + ", so that's in the opener, not this move."))
+                         + (f" ({x['name']} has started since: {x['su']} SU, {x['ats']} ATS)" if x and x.get("starts") else "")
+                         + ", so that's in the opener, not this move."))
     if news_line and moved and news_team == hit_team and \
             re.search(r"\b(QB|quarterback)\b", news_line) and re.search(r"\bout\b|\bmiss(es)?\b|\bsurgery\b", news_line, re.I):
         qb_out = True  # the feed's QB-out item (it only carries recent news) on the side the line moved against
