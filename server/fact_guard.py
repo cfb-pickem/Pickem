@@ -188,6 +188,14 @@ def problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
 
 def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
     out = []
+    mine = re.findall(r"\b(?i:my)\s+(\d{1,2})\s*-\s*(\d{1,2})\b", s)  # 'my 0-3 record': Picky's own
+    if mine:
+        pt = f.picky_true()
+        for a, b in mine:
+            r = f"{int(a)}-{int(b)}"
+            if pt and r not in pt:
+                out.append(f"Picky {r} (true {sorted(pt)})")
+        s = re.sub(r"\b(?i:my)\s+\d{1,2}\s*-\s*\d{1,2}\b", "my record", s)
     who = subject(s, f)
     recs = [f"{int(a)}-{int(b)}" for a, b in _REC.findall(s)]
     # Picky's own record ('I'm 0-3', 'my 25-10 season')
@@ -238,7 +246,20 @@ def _problems(s: str, f: Facts, card_recs: set[str] = frozenset()) -> list[str]:
                 out.append(f"{who} {r} (true {sorted(x for x in (lab or {f.season(who)}) if x)})")
     rank = f.st[who]["rank"] if who in f.st else None
     if rank is not None and not _WEEKN.search(s) and not _LASTWK.search(s) and not _THISWK.search(s):
+        pmarks = [(mm.start(), name) for name in f.members for mm in re.finditer(rf"(?<!\w){re.escape(name)}(?!\w)", s, re.I)]
+        if f.me:
+            pmarks += [(mm.start(), f.me) for mm in _YOU.finditer(s)]
         for m in _PLACE.finditer(s):
+            prior = [x for x in pmarks if x[0] < m.start()]
+            owner = max(prior)[1] if prior else who  # 'You are in first ..., 2 up on Ackbar': the place is yours
+            if owner != who:
+                orank = f.st.get(owner, {}).get("rank")
+                g0 = [x for x in m.groups() if x]
+                n0 = int(g0[0]) if g0 and g0[0].isdigit() else ORD.get((g0[0] if g0 else "").lower())
+                if orank is not None and n0 is not None and n0 != orank and n0 <= len(f.st) and not re.search(
+                        r"(\b(of|on|from|than|to|behind|over|past|for the|ahead of|clear of)|\()\s*$", s[:m.start()], re.I):
+                    out.append(f"{owner} place {n0} (is {orank})")
+                continue
             # 'ahead of 5th place', 'back of first', '(4th place has 27)': another spot, not the subject's place
             if re.search(r"(\b(of|on|from|than|to|behind|over|past|for the|ahead of|clear of)|\()\s*$", s[:m.start()], re.I) and \
                     not re.search(r"\btied for\s*$", s[:m.start()], re.I):

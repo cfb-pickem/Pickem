@@ -1291,8 +1291,9 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "value", "VALUE_ASK"
     if FADE_ASK.search(t):
         return "fade", "FADE_ASK"
-    if CONF_ASK.search(t):
-        return "conf", "CONF_ASK"
+    if CONF_ASK.search(t) and not re.search(r"\b(looks?|face|hot|ugly|attractive|handsome|cute|body|weight|fat|"
+                                           r"wife|girlfriend|mom|dad|hair|height|iq|smart|dumb)\b", t, re.I):
+        return "conf", "CONF_ASK"  # 'rate Charlie's looks 1-10' isn't pick confidence (nightly flub 11/17)
     if OTHERS_ASK.search(t):
         return "others", "OTHERS_ASK"
     if SHORT_ASK.search(t):

@@ -63,7 +63,9 @@ def test_true_member_claims_pass():
               "Closest to you (30-18): Bravo 2 back.",
               "You're asking like you have a chance of catching up to his 28-20 record.",
               "Bravo is 28-20 on the season and he went 3-1 last week.",
-              "He keeps up his 8-19 trend against Alpha."]:
+              "He keeps up his 8-19 trend against Alpha.",
+              "You are in first at 30-18, 2 points up on Bravo.",
+              "My 0-3 record is the only thing lower than your football IQ."]:
         assert ok(s), s
 
 
@@ -72,7 +74,9 @@ def test_wrong_member_claims_drop():
     for s in ["Your 33-15 record is nice.", "You're 5-3 lately.", "Bravo is in 3rd place.", "You're third.",
               "Zulu is 3 points behind first.", "I'm 9-2 on the season.", "Echo went 4-0 last week.",
               "Echo is in last place.", "You're 30-18 overall and 4 wins ahead of 4th.",
-              "You're chasing his 31-17 record."]:
+              "You're chasing his 31-17 record.",
+              "My 5-1 record speaks for itself.",
+              "Bravo is in first, 2 up on you."]:
         assert not ok(s), s
 
 

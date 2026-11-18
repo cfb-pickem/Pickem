@@ -141,6 +141,11 @@ def test_lw_pick_and_past_lean():
     assert chat.lean_fact(CARD, "who did Bravo take in Memphis Navy last week?") is None
 
 
+def test_conf_not_looks():
+    assert router.classify("Picky what would you rate Charlie's looks on a scale of 1-10").kind != "conf"
+    assert router.classify("how confident are you in your picks 1-10").kind == "conf"
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:
