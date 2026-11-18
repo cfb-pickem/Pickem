@@ -5,7 +5,7 @@
 
 Writes next to this file:
   personnel.json.gz  ESPN rosters + CFBD /games/players rows (weeks so far) for the TEAMS below
-  news.json          public news headlines (title/summary/players/teams/date/source/link/label) naming those teams
+  news.json          public news headlines naming those teams, merged into the file (make.py's coach headlines stay)
   dossiers/12/401856754.json   the LSU-Tennessee dossier's sourced facts (no take, no leads)
 Re-run only to refresh the fixture; tests pin NOW."""
 import gzip
@@ -38,7 +38,13 @@ def main() -> int:
     items = json.loads((CACHE / "news.json").read_text())["items"]
     keep = {k: {f: v.get(f) for f in NEWS_KEYS if f in v} for k, v in items.items()
             if v.get("players") and set(v.get("teams") or []) & set(TEAMS)}
-    (HERE / "news.json").write_text(json.dumps({"items": keep}, indent=0))
+    try:  # news.json is shared with make.py --add-news (coach headlines): merge, never drop its items
+        have = json.loads((HERE / "news.json").read_text()).get("items") or {}
+    except (OSError, ValueError):
+        have = {}
+    for k, v in keep.items():
+        have[k] = {**have.get(k, {}), **v}
+    (HERE / "news.json").write_text(json.dumps({"items": have}, indent=0))
     src = CACHE / "dossiers" / "12" / "401856754.json"
     d = json.loads(src.read_text())
     dd = HERE / "dossiers" / "12"
