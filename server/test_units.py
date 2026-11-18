@@ -88,6 +88,11 @@ check(A("do they finish drives in the red zone?") == ["redzone"], "red zone -> r
 check(A("who wins the turnover battle") == ["turnovers"], "turnovers")
 check(set(A("is this a shootout?")) == {"pace", "explosive"}, "shootout -> pace + big plays")
 check(A("Can Michigan score on UCLA?") == ["eff"], "score on -> overall offense vs defense")
+check(A("Who finishes drives in UCLA-Michigan?") == ["redzone"], "'finishes drives' -> redzone (unit lane, phase 6)")
+check(A("Can Minnesota's offense do anything against Northwestern?") == ["eff"], "'offense do anything against' -> eff")
+check(A("Who has the edge when Texas Tech's offense faces Baylor's defense?") == ["eff"], "'offense faces defense' -> eff")
+check(A("Can Iowa's defense hold Illinois?") == ["eff"] and A("can their defense be trusted to stop them") == ["eff"],
+      "'X's defense hold/stop Y' -> eff")
 check(A("who should I pick this week?") == [] and A("lock in my picks") == [], "pick talk isn't a unit question")
 O = U.ask_offense
 check(O("Can South Carolina stop Georgia's run game?", "Georgia", "South Carolina") == "Georgia", "'stop X' -> X's offense")
