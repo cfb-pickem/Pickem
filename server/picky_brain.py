@@ -597,6 +597,7 @@ CHARLIE_LINES = ["Ha. Love you too.", "Fair. I've earned that one.", "Noted. Sti
                  "Rough day? I'm still on your side.", "You know you love me.", "Tough crowd. I'll allow it from you.",
                  "Wow. And I was about to say nice things about you.", "That's fair. Still glad you're here.",
                  "Deserved. Carry on.", "I'll take it. Anything for you."]
+CHARLIE_TONE = "Chuck, your guy: warm, no dig at him, his picks or his record (the exam got 'your picks are heavy on the disappointment')."
 # a sentence that insults Charlie or fires a comeback at him (group_chat.charlie_guard cuts it)
 MEAN_TO_CHARLIE = re.compile(
     r"\b(you'?re|you are|ur|u r)\s+(such\s+)?(an?\s+)?(little\s+|fucking\s+|total\s+)?(idiot|moron|loser|clown|bum|fraud|joke|"
@@ -605,6 +606,8 @@ MEAN_TO_CHARLIE = re.compile(
     r"|\byour (picks?|record|season|week)\s+(is|are|was|were)\s+(a\s+)?(trash|garbage|pathetic|a joke|joke|embarrassing|"
     r"terrible|awful|a crime scene|brutal)\b"
     r"|\b(guy|man|dude|someone) who'?s\b|\bsays the (guy|man|dude)\b|\brich,? coming from\b|\bcoming from (a|the) (guy|man|dude)\b"
+    r"|\byour (picks?|record|season|week|takes?)\b[^.!?]{0,40}\b(disappoint\w*|bad|awful|terrible|trash|garbage|ugly|"
+    r"brutal|sad|embarrass\w*|joke|crime|suck\w*|stink\w*|dumpster|tire fire|pathetic)\b"
     r"|\blook who'?s talking\b|\byou'?ll regret\b|\b(big|tough) talk\b|\ba lot of (energy|talk|noise)\b|\bkeep crying\b"
     r"|\bsit (down|this one out)\b|\bwho asked\b|\bstay in your lane\b|\bpot (calling|meet\w*) the kettle\b", re.I)
 
@@ -952,8 +955,10 @@ async def banter_reply(st: dict, prefix: str) -> str:
 
 def banter_tone(st: dict, ptype: str) -> str:
     """Member memory's tone read for the banter call (how they've treated Picky lately), '' when neutral."""
-    if ptype == "charlie" or charlie_caller(st):
+    if ptype == "charlie":
         return ""
+    if charlie_caller(st):  # his off-topic / compliment / bot asks: still warm, no dig at him or his picks
+        return CHARLIE_TONE
     t = tone_stance(st)
     if t:
         log.info("banter tone (member memory): %s", t["stance"])

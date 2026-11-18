@@ -190,6 +190,11 @@ def test_comebacks_gemma_wrote_on_the_exam_never_reach_charlie():
         assert out in pb.CHARLIE_LINES, (line, out)
         reply, *_ = ask(CHARLIES["handle"], "go suck my dick, bitch", line)
         assert reply in pb.CHARLIE_LINES, (line, reply)
+    beer = "A cold light beer because your picks are already heavy enough on the disappointment."  # exam text-beer
+    assert gc.charlie_guard(beer, "Chuck P", "k") in pb.CHARLIE_LINES
+    assert pb.banter_tone({"team": "Chuck P", "charlie": True}, "beer") == pb.CHARLIE_TONE
+    _, user, st, _ = ask(CHARLIES["handle"], "best beer?", "Coors Light, ice cold.", route=router.Route("banter", "beer"))
+    assert "THEIR TONE WITH YOU LATELY: " + pb.CHARLIE_TONE in user, user
     keep = "Iowa is -8.5 in the pool. Tough game to call."
     assert gc.charlie_guard(keep, "Chuck P", "k") == keep  # facts and normal answers pass untouched
     cut = "Iowa is -8.5 in the pool. You're a clown for asking."
@@ -312,7 +317,7 @@ def test_nightly_never_logs_charlies_mean_texts_but_does_shift_others():
         assert pb.tone_stance({"team": "TG", "dm": False}) is None
         assert pb.banter_tone({"team": "TG", "dm": True, "route": router.Route("banter", "insult")}, "insult") \
             == pb.STANCE_HOW["sharp"]
-        assert pb.banter_tone({"team": "Chuck P", "dm": True}, "insult") == ""
+        assert pb.banter_tone({"team": "Chuck P", "dm": True}, "insult") == pb.CHARLIE_TONE  # never sharp
         reply, user, st, _ = ask(TG, "you suck picky", "k, noted, clown.")
         assert "THEIR TONE WITH YOU LATELY: " + pb.STANCE_HOW["sharp"] in user and st["ptype"] == "insult", user
         assert "Chuck's 30-18" in user  # TG still gets the normal roast material
