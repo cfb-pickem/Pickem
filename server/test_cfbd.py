@@ -185,6 +185,36 @@ with tempfile.TemporaryDirectory() as d:
 
     check("count is per calendar month", cfbd.calls_used(db, "1999-01") == 0)
 
+# -- coach careers (plan phase 5): every season in ONE call, refreshed at most monthly ------------------
+check("coaches_all is one /coaches call over a year range (full careers)",
+      cfbd.DATASETS.get("coaches_all", ("", {}))[0] == "/coaches"
+      and set(cfbd.DATASETS["coaches_all"][1]) == {"minYear", "maxYear"}, cfbd.DATASETS.get("coaches_all"))
+check("coaches_all refreshes at most monthly", cfbd.STATIC_MAX_AGE.get("coaches_all", 0) >= 30 * 86400,
+      cfbd.STATIC_MAX_AGE.get("coaches_all"))
+
+
+class ParamClient(FakeClient):
+    def __init__(self):
+        super().__init__()
+        self.seen = []
+
+    def get(self, path, params=None):
+        if path != "/info":
+            self.seen.append((path, dict(params or {})))
+        return super().get(path, params)
+
+
+with tempfile.TemporaryDirectory() as d:
+    db = cfbd.connect(os.path.join(d, "c.sqlite"))
+    c = ParamClient()
+    out = cfbd.refresh(db=db, client=c, year=2026, only=["coaches_all"])
+    check("coaches_all refresh = exactly one paid call with the year range filled in",
+          c.paid == 1 and c.seen == [("/coaches", {"minYear": "1980", "maxYear": "2026"})], (c.paid, c.seen))
+    c = ParamClient()
+    cfbd.refresh(db=db, client=c, year=2026)
+    check("a fresh coaches_all copy is not pulled again", ("/coaches", {"minYear": "1980", "maxYear": "2026"}) not in c.seen,
+          c.seen)
+
 # -- per-question rows ---------------------------------------------------------
 POOL = [("Oregon State", "Boise State")]
 MEMBERS = ["Chuck P", "Andrew Bub", "TG", "Kevin Culligan"]
