@@ -704,7 +704,7 @@ def jackpot_hit_text(ctx: dict, q: str) -> str | None:
         return None
     if not jp.get("last_pop_at"):
         n = jp.get("pulls_since_pop")
-        return "Nobody's hit it this season" + (f": {n} slots pulls and the football hasn't popped." if n else ".")
+        return "Nobody's hit it this season" + (f": {n} pulls since the football last popped." if n else ".")
     when = str(jp["last_pop_at"])[:10]
     return f"{jp.get('last_pop_team') or 'Somebody'} hit it ({when}). It only pops once a regular season."
 

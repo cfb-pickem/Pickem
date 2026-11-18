@@ -81,7 +81,7 @@ def test_stale_book_lines_and_records_are_skipped():
 def test_good_numbers_spun_not_mocked():
     f = nemesis.facts(LORE, BOOK)
     rec = [c["text"] for c in nemesis.code_jabs(f, True) if c["angle"] == "nemesis:record"][0]
-    assert rec.startswith("28-20 and 2nd") and "training wheels" in rec
+    assert rec.startswith("You're 28-20 and 2nd") and "training wheels" in rec  # a subjectless '28-20 and 2nd' read as someone else's
     assert not re.search(r"looking for a win|fluke|bad|terrible|awful", " ".join(all_jabs(True)), re.I)
     # h2h vs the asker only when Ackbar is losing it (TG: Ackbar leads 16-7, no jab off that)
     assert not [c for c in nemesis.code_jabs(f, False, "TG") if "h2h" in c["angle"]]

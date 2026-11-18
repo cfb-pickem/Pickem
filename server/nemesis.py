@@ -124,10 +124,10 @@ def code_jabs(f: dict, you: bool, asker: str | None = None) -> list[dict]:
     if f.get("record"):
         w, l, rank, good = f["record"]
         if good or w >= l:  # spin a good number, never mock it
-            add("record", f"{w}-{l} and {_ord(rank)}, riding favorites like training wheels the whole way.",
+            add("record", f"You're {w}-{l} and {_ord(rank)}, riding favorites like training wheels the whole way.",
                 f"Ackbar's {w}-{l} and {_ord(rank)}, riding favorites like training wheels the whole way.")
         else:
-            add("record", f"{w}-{l} laying points every week. The chalk isn't saving you.",
+            add("record", f"You're {w}-{l} laying points every week. The chalk isn't saving you.",
                 f"Ackbar's {w}-{l} laying points every week. The chalk isn't saving him.")
     if f.get("last8"):
         a, b = f["last8"]

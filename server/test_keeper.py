@@ -642,7 +642,7 @@ def test_jackpot_history():
     assert router.classify("have i ever hit it").label() == "fact:jackpot_hit"
     assert router.classify("has anyone hit the jackpot").label() == "fact:jackpot_hit"
     assert router.fact_answer("jackpot_hit", ctx, "have i ever hit it") == \
-        "Nobody's hit it this season: 230 slots pulls and the football hasn't popped."
+        "Nobody's hit it this season: 230 pulls since the football last popped."
 
 
 def test_k1c_fixes():
