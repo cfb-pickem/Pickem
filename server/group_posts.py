@@ -240,8 +240,10 @@ def cover_margin(g: dict, side: str, ap=None, hp=None) -> float | None:
 
 
 def covered_side(g: dict, ap=None, hp=None) -> str | None:
+    """The side the league grades as covered. Dead even goes to Away, like set_winner_on_final
+    and league_rules.cover_winner (there's no push in this league). None = no score yet."""
     m = cover_margin(g, g["Home"], ap, hp)
-    return None if m is None or m == 0 else (g["Home"] if m > 0 else g["Away"])
+    return None if m is None else (g["Home"] if m > 0 else g["Away"])
 
 
 def matchup(g: dict) -> str:
@@ -821,7 +823,6 @@ def make_ping(lg: League, finals: list[tuple[dict, float, float]]) -> list[str]:
     for g, ap, hp in finals:
         cov = covered_side(g, ap, hp)
         if not cov:
-            parts.append(f"{matchup(g)} pushes on the line ({score_line(g, ap, hp)})")
             continue
         picks = [p for p in lg.picks(g["week"]) if p["game_id"] == g["GameId"] and p.get("pick") and p["team_id"] in lg.tid]
         won = [lg.tid[p["team_id"]] for p in picks if pr.same(p["pick"], cov)]

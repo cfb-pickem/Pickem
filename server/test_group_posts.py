@@ -219,6 +219,19 @@ def test_labels_and_cover():
     assert gp.cover_margin(g, "Boise State") == -8.5
 
 
+def test_push_goes_to_away_like_the_league():
+    """A dead-even cover is Away's (set_winner_on_final: (HomePts + line) > AwayPts else Away).
+    group_posts, league_rules and chat must agree; there is no 'push' in this league."""
+    import chat
+    import league_rules
+    g = {"Away": "Utah", "Home": "Iowa", "line": -7.0, "AwayPts": 10, "HomePts": 17}
+    assert gp.covered_side(g) == "Utah"
+    assert league_rules.cover_winner("Iowa", "Utah", 17, 10, -7.0) == "Utah"
+    assert chat.covering_side(g) == "Utah"
+    assert gp.covered_side({**g, "HomePts": 18}) == "Iowa"
+    assert gp.covered_side({**g, "HomePts": None}) is None
+
+
 # -- watcher drain + sidecar race answers --------------------------------------
 
 def _chat_db(groups):
