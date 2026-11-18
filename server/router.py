@@ -28,7 +28,9 @@ holds the per-chat thread state (pile-ons, spirals).
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from dataclasses import dataclass, field
 
 import burn_book
@@ -649,6 +651,114 @@ def rules_answer(q: str, n_teams: int | None = None) -> str | None:
         return None
 
 
+# 'what happened last time Clemson played Duke?', 'when Northwestern and Minnesota played last year', 'h2h Iowa
+# Illinois' (genius exam 2026-11-17: the 12B dodged with a joke though the card had the 2025 meeting)
+H2H_ASK = re.compile(r"\blast (time|year|season)\b[^?.!]{0,40}\b(play|played|met|meet|faced)\b"
+                     r"|\b(played|met|faced)\b[^?.!]{0,30}\blast (time|year|season)\b|\blast meeting\b|\bhead[- ]to[- ]head\b"
+                     r"|\bh2h\b|\bhistory between\b|\bthe series\b", re.I)
+
+
+# 'Who's starting at QB for Tennessee vs LSU?', 'Is LaNorris Sellers playing vs Georgia?' (genius exam 2026-11-17:
+# the intel said 'has not named a starter' and the 12B said MacIntyre starts)
+QB_STATUS_ASK = re.compile(r"\b(who'?s|who is|who will be|whos)\s+(starting|the starter|gonna start|going to start|under center|"
+                           r"playing qb|the qb)\b|\bstarting (qb|quarterback)\b|\bis [A-Z][\w'.-]+ [A-Z][\w'.-]+ "
+                           r"(playing|starting|going to play|gonna play|out|available|good to go|healthy|hurt)\b", re.I)
+
+
+def qb_status_text(ctx: dict, q: str) -> str | None:
+    """The sourced availability notes (cache/slate_intel.json, validated offline) for the QB / player a text
+    asks about, in their own words: no starter named stays no starter named."""
+    try:
+        d = json.loads((Path(__file__).resolve().parent / "cache" / "slate_intel.json").read_text())
+    except (OSError, ValueError):
+        return None
+    idx = slate_cards.cfbd.load_index()
+    named = slate_cards.cfbd.other_teams_named(q or "", [], idx) if idx else []
+    player = re.search(r"\b(?i:is) ([A-Z][\w'.-]+ [A-Z][\w'.-]+)", q or "")
+    hits = []
+    for g in (d.get("games") or {}).values():
+        for f in g.get("facts") or []:
+            team = g.get(f.get("team")) if f.get("team") in ("home", "away") else None
+            txt = f.get("text") or ""
+            if player:
+                if any(player.group(1).lower() in (p or "").lower() for p in f.get("players") or []) or \
+                        player.group(1).split()[-1].lower() in txt.lower():
+                    hits.append(f)
+            elif team and any(slate_cards.cfbd.norm(team) == slate_cards.cfbd.norm(n) for n in named) and \
+                    re.search(r"\bQB\d?\b|\bquarterback", txt, re.I):
+                hits.append(f)
+                hits += [x for x in g.get("facts") or [] if x is not f and x.get("team") == f.get("team")
+                         and re.search(r"\bwould start|\bstart(s|ing)? (at|for|in)\b|\bQB2\b", x.get("text") or "", re.I)]
+    if not hits:
+        return None
+    seen, uniq = set(), []
+    for f in hits:
+        if id(f) not in seen:
+            seen.add(id(f))
+            uniq.append(f)
+    hits = sorted(uniq, key=lambda f: f.get("kind") != "injury")
+    lines = [re.sub(r"\s+", " ", f["text"]).strip() for f in hits[:2]]
+    src = hits[0].get("source_name")
+    out = " ".join(lines)
+    return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
+
+
+KEYNUM_ASK = re.compile(r"\bkey numbers?\b|\bwhere does the hook\b|\bon (a|the) (key )?number\b|\bthe hook matter", re.I)
+
+
+def keynum_text(ctx: dict, q: str) -> str | None:
+    """This week's spreads sitting on 3/7/10/14 or a half point off one (market from the CFBD cache's DraftKings
+    line; pool games use the league line), most notable games first."""
+    import datetime as _dt
+    idx = slate_cards.cfbd.load_index()
+    if not idx:
+        return None
+    games = slate_cards.notable(slate_cards.upcoming_games(idx, _dt.datetime.now(_dt.timezone.utc)), idx, n=40)
+    on, hook = [], []
+    for g in games:
+        ln = slate_cards._line(g) or {}
+        sp = ln.get("spread")
+        if sp is None:
+            continue
+        fav, num = (g["homeTeam"], sp) if sp < 0 else (g["awayTeam"], -sp)
+        where = f"at {g['homeTeam']}" if fav == g["awayTeam"] else f"vs {g['awayTeam']}"
+        a = abs(num)
+        for k in (3, 7, 10, 14, 17, 21):
+            if a == k:
+                on.append(f"{fav} {num:g} {where}")
+            elif abs(a - k) == 0.5:
+                side = "the dog gets the hook" if a > k else "the favorite only has to win by " + str(k)
+                hook.append((k not in (3, 7), f"{fav} {num:g} {where} ({side})"))
+    if not on and not hook:
+        return None
+    out = []
+    if on:
+        out.append("Right on a key number: " + ", ".join(on[:3]) + ".")
+    if hook:
+        out.append("Half a point off one: " + ", ".join(x for _, x in sorted(hook, key=lambda h: h[0])[:3]) + ".")
+    out.append("3 and 7 are the most common final margins, so the half point around them is where pushes turn into wins or losses.")
+    return " ".join(out)
+
+
+def h2h_text(ctx: dict, q: str) -> str | None:
+    """The last meeting of the game a text names (CFBD lines_prev), with the line and who covered."""
+    g, _ = slate_cards.find_game(q, ctx)
+    if not g:
+        return None
+    lm = slate_cards.last_meeting(g)
+    if not lm:
+        return f"I don't have a 2025 meeting between {g['awayTeam']} and {g['homeTeam']} in my data, so no recent game to go on."
+    m = re.match(r"\s*Last meeting \((\d{4})\): (.+?) won (\d+-\d+) (at home vs .+?|at .+?)(?:, line (.+?): (.+?) covered by ([\d.]+))?$",
+                 lm)
+    if not m:
+        return lm.strip() + "."
+    yr, win, score, where, line, cov, by = m.groups()
+    out = f"Last time they played ({yr}), {win} won {score} {where}."
+    if line:
+        out += f" {line} was the line, so {cov} covered by {by}."
+    return out
+
+
 def fact_intent(q: str) -> tuple[str, str] | None:
     """(intent, rule) for a factual question code can answer exactly, else None."""
     t = (q or "").replace("’", "'")
@@ -656,6 +766,12 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "why", "WHY_ASK"
     if playoff_race.is_need_question(t) and not CFP_WORDS.search(t):
         return "playoff", "playoff_race.is_need_question"
+    if QB_STATUS_ASK.search(t) and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and qb_status_text({}, t):
+        return "qb_status", "QB_STATUS_ASK"  # 'who's starting at QB for Tennessee': the sourced intel note, verbatim
+    if KEYNUM_ASK.search(t):
+        return "keynum", "KEYNUM_ASK"  # 'which lines are on a key number': computed from this week's market
+    if H2H_ASK.search(t) and not re.search(r"\b(my|our|i|me|picky|you)\b", t, re.I):
+        return "h2h", "H2H_ASK"  # 'what happened last time Clemson played Duke': the cache's last meeting
     if PLAYER_LATEST.search(t) and not chat.games_named(t, []):
         return "qb", "PLAYER_LATEST"  # 'whats the latest on castellanos': the cards' note, else the full brain + news
     if (QB_ASK.search(t) or PLAYER_ASK.search(t)) and not re.search(r"\b(news|latest|lates|report\w*|rumou?r\w*|any news)\b", t, re.I):
@@ -2066,7 +2182,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "others": others_text, "short": short_text, "value": value_text, "rules2": rules2_text,
               "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text,
               "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text, "pick_ctx": pick_ctx_text,
-              "worst": worst_text, "fade": fade_text, "why": why_lane.answer, "channel": channel.answer}.get(kind)
+              "worst": worst_text, "fade": fade_text, "why": why_lane.answer, "channel": channel.answer,
+              "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

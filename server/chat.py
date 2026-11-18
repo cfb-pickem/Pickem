@@ -7050,6 +7050,29 @@ def _required_fact(ctx: dict, question: str) -> tuple | None:
     return None
 
 
+_LEAN_ASK = re.compile(r"\b(lean|pick|take|value|side|who covers?|cover|worth|bet|play|like|matter|edge|priced in|"
+                       r"which way|who (do|would) you|what do you think|best case|matchup|match up)\b", re.I)
+_CARD_LEAN = re.compile(r"COMPUTED ATS LEAN \(vs the current market line\): (.+?) \((strong lean|lean|coin flip);")
+
+
+def lean_fact(card: str, question: str) -> tuple | None:
+    """A betting ask about a GAME CARD game must end with a side against the number (genius exam 2026-11-17:
+    true card facts, then no conclusion). The computed lean + its top reason are appended when the answer
+    never names the lean side; a coin flip says so."""
+    m = _CARD_LEAN.search(card or "")
+    if not m or not _LEAN_ASK.search(question or "") or _HOWTO_ASK.search(question or ""):
+        return None
+    label, conf = m.group(1).strip(), m.group(2)
+    side = re.split(r"\s[+-]\d|\sPK\b", label)[0].strip()
+    top = re.search(r"\n\s+\+ for [^:]+: ([^\n]+)", card[m.end():])
+    if conf == "coin flip":
+        add = f" My numbers call it a coin flip at {label}, so I'd pass or go small."
+    else:
+        add = f" Lean: {label}" + (f", mainly because {top.group(1).rstrip('.')}." if top else ".")
+    return (lambda t, sd=side: bool(re.search(rf"(?<!\w){re.escape(sd)}(?!\w)", t, re.I))
+            and bool(re.search(r"\b(lean|take|like|cover|pick|play|side|grab|ride|give me|i'?d go)\b", t, re.I)), add)
+
+
 def rankings_fact(note: str) -> tuple | None:
     m = re.search(r"released (\w+ \d+)", note or "")
     if not m:
@@ -7529,7 +7552,7 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
                                      ("attribution", fact_guard.attribution_check(corpus))])
                 if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or (None if "GAME CARD" in sc else live_games.required_fact(ctx, qtext))
-                                     or (None if sc else required_fact(ctx, qtext)) or rankings_fact(rn))
+                                     or (lean_fact(sc, qtext) if sc else required_fact(ctx, qtext)) or rankings_fact(rn))
                 if not ctx.get("error")
                 else None))))),
         media_type="text/event-stream",
