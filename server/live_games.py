@@ -642,7 +642,7 @@ _lock = threading.Lock()
 def _write(data: dict, path: Path = None) -> None:
     path = path or CACHE
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(f"{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp")  # one per writer: no collisions
     tmp.write_text(json.dumps(data, separators=(",", ":")))
     os.replace(tmp, path)
 

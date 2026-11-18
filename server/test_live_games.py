@@ -642,5 +642,30 @@ class Exam80Fixes(unittest.TestCase):
         self.assertNotIn(G.ENSURED, G.dm_trim(raw))
 
 
+class ConcurrentWrites(unittest.TestCase):
+    def test_two_writers_never_collide_on_the_temp_file(self):
+        """The poller's save and a chat-side refetch (or the drill's fixture fill) write the same cache at once:
+        a shared 'live_games.tmp' let one writer rename the other's file away (FileNotFoundError, final run
+        2026-11-18 sat drill)."""
+        import threading
+        path = Path(_TMP) / "race" / "live_games.json"
+        errors = []
+
+        def writer(n):
+            try:
+                for i in range(200):
+                    L._write({"v": 1, "writer": n, "i": i, "games": {}}, path)
+            except Exception as e:  # noqa: BLE001
+                errors.append(repr(e))
+        ts = [threading.Thread(target=writer, args=(n,)) for n in range(4)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(json.loads(path.read_text())["v"], 1)
+        self.assertEqual([x.name for x in path.parent.iterdir()], ["live_games.json"], "no temp files left behind")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
