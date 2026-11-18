@@ -121,6 +121,10 @@ def _sources() -> dict[str, Source]:
                _p("PICKY_LIVE_CACHE", CACHE / "live_games.json"), "com.pickem.live-games", False, "age",
                ("server/live_games.py", "server/com.pickem.live-games.plist"), ("test_live_games.py",)),
         Source("live_game", (90, 90), (10 * M, 10 * M)),
+        # Picky's fact store (factstore.py): rebuilt by the news-refresh tick every 5 min and after cfbd refresh.
+        # Monitored for age (a stale store kicks the tick); no repair allowlist, so no model ever edits it.
+        Source("factstore", (30 * M, 15 * M), (D, 12 * H), "json:built_ts",
+               _p("PICKY_FACTSTORE", CACHE / "factstore.json"), "com.pickem.news-refresh", False, "age"),
     ]
     return {s.name: s for s in S}
 

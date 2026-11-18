@@ -182,6 +182,42 @@ def _side_of(g: dict, team_id) -> str | None:
 # ----------------------------------------------------------------------------
 
 
+def _line_num(x) -> float | None:
+    """'-3.5' / '+3.5' / 'o47.5' / 'u47.5' / 'EVEN' / -170 -> a number."""
+    if x is None:
+        return None
+    s = str(x).strip().lower().lstrip("ou")
+    if s in ("even", "pk", "pick"):
+        return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def market_fields(od: dict) -> dict:
+    """The market history fields (market_snapshot.py): DraftKings open + current home spread, total and moneyline.
+    The home side's pointSpread line is the sign; ESPN's 'details' abbreviation can differ from the team's."""
+    ps, tot, ml = od.get("pointSpread") or {}, od.get("total") or {}, od.get("moneyline") or {}
+
+    def pick(d, side, when):
+        return ((d.get(side) or {}).get(when) or {})
+
+    sh = _line_num(pick(ps, "home", "close").get("line"))
+    if sh is None and od.get("spread") is not None:  # older payloads: unsigned spread + favorite flags
+        a = abs(_line_num(od.get("spread")) or 0)
+        sh = -a if (od.get("homeTeamOdds") or {}).get("favorite") else a
+    t = _line_num(pick(tot, "over", "close").get("line"))
+    if t is None:
+        t = _line_num(od.get("overUnder"))
+    ml_h, ml_a = _line_num(pick(ml, "home", "close").get("odds")), _line_num(pick(ml, "away", "close").get("odds"))
+    return {"spread_home": sh, "total": t,
+            "spread_home_open": _line_num(pick(ps, "home", "open").get("line")),
+            "total_open": _line_num(pick(tot, "over", "open").get("line")),
+            "ml_home": int(ml_h) if ml_h is not None else None, "ml_away": int(ml_a) if ml_a is not None else None,
+            "book": (od.get("provider") or {}).get("name") or "ESPN"}
+
+
 def parse_scoreboard(d: dict) -> dict[str, dict]:
     """{event id: game} with score, clock, possession, down & distance, last play."""
     out = {}
@@ -205,7 +241,8 @@ def parse_scoreboard(d: dict) -> dict[str, dict]:
             g["city"] = city
         od = (comp.get("odds") or [{}])[0]
         if od.get("details") or od.get("overUnder") is not None:  # ESPN hides odds once live: the poller's merge keeps these
-            g["odds"] = {"details": od.get("details"), "over_under": od.get("overUnder"), "spread": od.get("spread")}
+            g["odds"] = {"details": od.get("details"), "over_under": od.get("overUnder"), "spread": od.get("spread"),
+                         **market_fields(od)}
         tv = [n for b in comp.get("broadcasts") or [] for n in b.get("names") or [] if n]
         if tv:  # the chat's channel lane + close_cover's scoreboard fallback (drill 11/17: they had none)
             g["broadcasts"] = tv
@@ -723,8 +760,9 @@ def refresh_board_if_stale(max_age: float | None = None) -> bool:
 
 class Poller:
     def __init__(self, client: httpx.Client | None = None, clock=time.time, cache: Path | None = None,
-                 pool_ids_fn=None):
+                 pool_ids_fn=None, snapshot=None):
         self.client = client or httpx.Client(http2=False)
+        self.snapshot = snapshot  # market_snapshot.hook in run(): called with the board after each scoreboard
         self.clock = clock
         self.cache = cache or CACHE
         self.games: dict[str, dict] = {}
@@ -795,6 +833,11 @@ class Poller:
                         keep_detail = {k: v for k, v in prev.items() if k not in g}
                         self.games[gid] = {**keep_detail, **g, "sb_ts": now, "ts": now}
                     changed = True
+                    if self.snapshot:
+                        try:
+                            self.snapshot(self.games, now)
+                        except Exception as e:  # noqa: BLE001 - market history never stops the score feed
+                            log.warning("live: market snapshot failed: %r", e)
                 self._ok("sb")
             except (httpx.HTTPError, ValueError) as e:
                 ra = getattr(getattr(e, "response", None), "headers", {}).get("retry-after") \
@@ -881,7 +924,14 @@ def fetch_pool_ids() -> list[str] | None:
 
 
 def run(stop: threading.Event | None = None, sleep=time.sleep, poller: Poller | None = None) -> None:
-    p = poller or Poller()
+    if poller is None:
+        try:
+            import market_snapshot
+            hook = market_snapshot.hook
+        except Exception:  # noqa: BLE001 - the score feed runs without market history
+            hook = None
+        poller = Poller(snapshot=hook)
+    p = poller
     log.info("live: poller up, cache %s", CACHE)
     last_note = 0.0
     while not (stop and stop.is_set()):

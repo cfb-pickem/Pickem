@@ -3832,6 +3832,15 @@ _RANK_ASK = re.compile(
 async def load_rankings(client: httpx.AsyncClient) -> dict | None:
     if _rank_memo["data"] is not None and time.time() - _rank_memo["at"] < RANKINGS_TTL:
         return _rank_memo["data"]
+    try:  # the fact store's polls cache: ESPN, refreshed hourly by the news tick and checked by polls.sanity
+        import polls as _polls
+        cached = {k: {"date": p["date"], "ranks": [(r["rank"], r["team"], r["record"]) for r in p["ranks"]]}
+                  for k in ("CFP", "AP") for p in [_polls.serve(k)] if p}
+        if cached:
+            _rank_memo.update(at=time.time(), data=cached)
+            return cached
+    except Exception as e:  # noqa: BLE001 - fall back to the live fetch
+        log.warning("rankings cache unreadable: %r", e)
     try:
         r = await client.get(RANKINGS_URL, timeout=8)
         r.raise_for_status()

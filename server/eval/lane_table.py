@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Router lane regression table (review R7).
 
-Every real ask in picky_exchanges.jsonl plus every exam item, with the lane(s) it should take, checked
+Every real ask in picky_exchanges.jsonl plus every exam item (genius exam: all 75 asks; the fact/group exams),
+with the lane(s) it should take, checked
 against router.classify (code only: no model, no league data, no network).
 
   lane_table.py build      # (re)build the PRIVATE table from the exchange log + exam items; keeps hand labels
@@ -13,7 +14,7 @@ Files:
   server/eval/lane_table_synthetic.json   public: hand-written asks only, never member text
   <private>/eval/lane_table.json          real member asks + exam items (0600)
 
-Row: {"q", "ok": [labels or lanes], "src": "real|exam|synthetic", "xfail": "<flub id>"?, "why"?}.
+Row: {"q", "ok": [labels or lanes], "src": "real|genius|exam|synthetic", "xfail": "<flub id>"?, "why"?}.
 A row passes when classify(q).label() or its lane is in "ok". A row with "xfail" is expected to fail
 (a queued flub the nightly fix round owns): XFAIL while it still fails, XPASS once fixed (not an error).
 build() pins today's lane for new rows (a regression pin); hand-fixed rows keep their labels.
@@ -104,6 +105,20 @@ def exam_asks() -> list[str]:
     return qs
 
 
+def genius_asks() -> list[str]:
+    """Every genius exam item's first text: the week's questions (genius/run.py's questions_file rule: the repo
+    file unless the weekly refresh wrote a newer week privately) plus the private game-theory items. 75 today."""
+    repo = HERE / "genius" / "questions.json"
+    qf, week = repo, (load(repo) or {}).get("week") or 0
+    for p in (PRIVATE / "genius").glob("questions-w*.json"):
+        w = p.stem.split("-w")[-1]
+        if w.isdigit() and int(w) > week:
+            qf, week = p, int(w)
+    items = (load(qf) or {}).get("items") or []
+    items += (load(PRIVATE / "genius" / "items-private.json") or {}).get("items") or []
+    return [i["turns"][0] for i in items if i.get("turns")]
+
+
 def hand_labels() -> dict[str, dict]:
     """real_replay's hand-labeled fixtures (lanes + expected_fail) win over a pinned snapshot."""
     out = {}
@@ -120,7 +135,7 @@ def build() -> dict:
     old = {norm(r["q"]): r for r in load(PRIVATE_TABLE)}
     hand = hand_labels()
     rows, seen = [], set()
-    for src, qs in (("real", real_asks()), ("exam", exam_asks())):
+    for src, qs in (("real", real_asks()), ("genius", genius_asks()), ("exam", exam_asks())):
         for q in qs:
             k = norm(q)
             if not k or k in seen:
@@ -136,7 +151,8 @@ def build() -> dict:
                 rows.append({"q": q, "src": src, "ok": [classify(q).label()], "why": "pinned (build)"})
     write_private(PRIVATE_TABLE, json.dumps(rows, indent=1) + "\n")
     return {"rows": len(rows), "real": sum(r["src"] == "real" for r in rows),
-            "exam": sum(r["src"] == "exam" for r in rows), "hand": sum(bool(r.get("hand")) for r in rows)}
+            "genius": sum(r["src"] == "genius" for r in rows), "exam": sum(r["src"] == "exam" for r in rows),
+            "hand": sum(bool(r.get("hand")) for r in rows)}
 
 
 def check(synthetic_only: bool = False, quiet: bool = False) -> int:

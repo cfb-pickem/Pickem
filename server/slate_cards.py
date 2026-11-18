@@ -933,21 +933,20 @@ def conference_note(question: str) -> str:
 
 
 def cfp_note(question: str) -> str:
-    """The committee's latest CFP rankings (slate_intel, sourced), for CFP-picture questions."""
+    """The committee's latest CFP rankings from ESPN, served only after polls.sanity passed (fact store)."""
     if not _CFP_ASK.search(question or ""):
         return ""
     try:
-        import slate_intel
-        c = slate_intel.cfp()
+        import factstore
+        c = factstore.rankings("CFP")
     except Exception:  # noqa: BLE001
         c = None
     if not c:
         return ("CFP COMMITTEE RANKINGS: not in your data right now. Don't guess a ranking or a field; say you don't "
                 "have the latest committee top 12.")
-    top = "; ".join(f"{x['rank']} {x['team']}" + (f" ({x['record']})" if x.get("record") else "") for x in c["top"][:12])
-    return (f"CFP COMMITTEE RANKINGS (released {c.get('released')}, per {c.get('source_name')}"
-            + (f"; next release {c['next_release']}" if c.get("next_release") else "")
-            + f"): {top}. 12-team field: the top-ranked teams as the committee seeds them; "
+    top = "; ".join(f"{x['rank']} {x['team']}" + (f" ({x['record']})" if x.get("record") else "") for x in c["ranks"][:12])
+    return (f"CFP COMMITTEE RANKINGS (released {c.get('date')}, per {c.get('source', 'ESPN')}): {top}. "
+            "12-team field: the top-ranked teams as the committee seeds them; "
             "don't invent bracket matchups or a format detail you don't see here.")
 
 

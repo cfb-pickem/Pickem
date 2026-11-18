@@ -157,16 +157,17 @@ def test_thought_i_was_premise():
 
 
 def test_h2h_text_format():
-    orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
+    fs = router.factstore
+    orig_find, orig_lm = fs.find_game, fs.last_meeting
     try:
-        router.slate_cards.find_game = lambda q, ctx, idx=None: ({"awayTeam": "Clemson", "homeTeam": "Duke"}, None)
-        router.slate_cards.last_meeting = lambda g: "  Last meeting (2025): Duke won 46-45 at Clemson, line Clemson -4: Duke covered by 5"
+        fs.find_game = lambda q, ctx: ({"awayTeam": "Clemson", "homeTeam": "Duke"}, None)
+        fs.last_meeting = lambda g: "  Last meeting (2025): Duke won 46-45 at Clemson, line Clemson -4: Duke covered by 5"
         out = router.h2h_text({}, "last time Clemson played Duke?")
         assert out == "Last time they played (2025), Duke won 46-45 at Clemson. Clemson -4 was the line, so Duke covered by 5."
-        router.slate_cards.last_meeting = lambda g: None
+        fs.last_meeting = lambda g: None
         assert "don't have a 2025 meeting" in router.h2h_text({}, "last time Clemson played Duke?")
     finally:
-        router.slate_cards.find_game, router.slate_cards.last_meeting = orig_find, orig_lm
+        fs.find_game, fs.last_meeting = orig_find, orig_lm
 
 
 CARD = ("GAME CARD Memphis at Navy\n  COMPUTED ATS LEAN (vs the current market line): Navy +3.5 (lean; factor score "

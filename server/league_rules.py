@@ -1013,6 +1013,7 @@ def strip_comments(text: str) -> str:
 # a function nobody has heard of yet ("auto_seed_playoffs") still flags the
 # right section.
 SQL_SECTIONS = {
+    "picky_push": [], "picky_pull": [],  # Picky's fact-store mirror (public football facts), not a league rule
     "set_winner_on_final": ["FORMAT"], "half_point_line": ["FORMAT", "EDGE CASES"],
     "line_lock_at": ["FORMAT"], "sync_espn_lines": ["FORMAT"],
     "picks_open_for_game": ["DEADLINE AND PRIVACY", "STANDINGS AND PLAYOFFS"],

@@ -283,7 +283,7 @@ def test_observe_watches_loaded_agents_only():
     def info(label):
         return {"com.pickem.news-refresh": {"exit": 0}, "com.pickem.picky-dossier": {"exit": 1}}.get(label)
     obs = FM.observe(time.time(), info=info)
-    assert set(obs) == {"news", "dossier"}, obs
+    assert set(obs) == {"news", "dossier", "factstore"}, obs  # the fact store rides the news-refresh tick
     assert obs["dossier"]["ok"] is False and "exit code 1" in obs["dossier"]["why"], obs
 
 
