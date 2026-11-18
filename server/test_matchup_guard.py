@@ -56,7 +56,7 @@ check("no 'at' / no pairs: same text", mg.fix("Picky likes Iowa.", []) == "Picky
 check("unknown game untouched", mg.fix("Baylor at TCU tonight") == "Baylor at TCU tonight")
 
 src = (HERE / "group_chat.py").read_text()
-check("group sidecar runs the guard on both reply paths", src.count("matchup_guard.fix(") == 2)
+check("group sidecar runs the guard on its reply path", src.count("matchup_guard.fix(") >= 1)  # one path since 8ce9029 (legacy loop deleted)
 check("chat.py sentence stream runs the guard", "sent = matchup_guard.fix(sent)" in (HERE / "chat.py").read_text())
 
 if FAILED:
