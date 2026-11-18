@@ -415,7 +415,8 @@ class Tagger:
             players |= {self._player_lc[m.group(0).lower()] for m in self.player_re.finditer(text)}
             text = self.player_re.sub(" ", text)  # "Isaiah Marshall" is not Marshall
         if self.team_re:
-            teams |= {self._team_lc[m.group(0).lower()] for m in self.team_re.finditer(text)}
+            teams |= {self._team_lc[m.group(0).lower()] for m in self.team_re.finditer(text)
+                      if not _STATE_USE.match(text, m.end())}
             teams = {t for t in teams if self.team_conf.get(t) in FBS_CONFS}
         if self.conf_re:
             confs |= {CONF_WORDS[m.group(0)] for m in self.conf_re.finditer(text)}
@@ -425,6 +426,8 @@ class Tagger:
 
 
 _tagger: Tagger | None = None
+# "an Ohio native" is the state, not the Ohio Bobcats
+_STATE_USE = re.compile(r"\s+(native|high school)\b", re.I)
 
 
 def tagger() -> Tagger | None:
@@ -464,7 +467,7 @@ TOPICS = [
                r"\bankle\b|\bknee\b|\bhamstring\b|\bshoulder\b|cleared to (play|return)"),
     ("suspension", r"suspen\w*|ineligib\w*|arrest\w*|dismiss\w* from|charged with|NCAA investigation"),
     ("coaching", r"\bfire[sd]?\b(?! back| up)|firing|\b(he'?s|he is) out at\b|\bhire[sd]?\b|hiring|coach(ing)? search|hot seat|buyout|interim coach|"
-                 r"carousel|contract extension|steps? down|resign\w*|parts? ways|\bretir\w*|"
+                 r"pressure (grows|mounts|builds) (at|on)\b|carousel|contract extension|steps? down|resign\w*|parts? ways|\bretir\w*|"
                  r"(new|next) (head )?coach\b|(coaching|head coach(ing)?) (job|opening|vacancy|search)|"
                  r"coordinator (hire|search|fired|out)"),
     ("portal", r"transfer portal|\bportal\b|transfer(s|ring|red)?\b|enter(s|ed)? the portal"),
@@ -488,21 +491,30 @@ _ST_DOUBT = re.compile(r"\bdoubtful\b", re.I)
 _ST_QUES = re.compile(r"\b(questionable|game[- ]time decision|day[- ]to[- ]day|status (is )?(uncertain|unclear)|"
                       r"limited in practice|banged up|uncertain)\b", re.I)
 _ST_AVAIL = re.compile(r"\b(will play|cleared to (play|return)|expected to (play|start)|available|"
-                       r"returns? to practice|back at practice|probable|good to go|will start)\b", re.I)
+                       r"(?:'s|’s) return\b|returns? to practice|back at practice|probable|good to go|will start)\b", re.I)
 
 _REPORTED = re.compile(r"\b(report(s|ed|edly)?|sources?|per (sources|a source)|according to|rumou?r\w*|"
                        r"told (espn|the athletic|on3|cbs|yahoo|reporters? off)|in talks|frontrunner|front-runner)\b",
                        re.I)
 _OFFICIAL = re.compile(r"\b(announc\w+|officially|confirm\w*|statement|has been (fired|hired|named|suspended|"
                        r"dismissed)|fires(?! back)|(?<!\bget )(?<!\bgetting )(?<!\bbe )(?<!\bon )(?<!\bthe )fired(?! up)|commits to|committed to|names|named|hires|hired|undergoes|underwent|ruled out|suspends|"
-                       r"suspended|signs|signed|steps down|resigns|retires|fines|fined|reprimand\w*)\b", re.I)
+                       r"suspended|signs(?! (point|of)\b)|signed|will be without|steps down|resigns|retires|fines|fined|reprimand\w*)\b", re.I)
 # "coach X said" confirms only an event (injury, firing, ...), not pregame quotes
 _SAID = re.compile(r"\b(coach|sarkisian|school|program|team)\b[^.]{0,40}\b(said|says|announced)\b", re.I)
 _EVENT = {"injury", "suspension", "coaching", "portal", "recruiting"}
 # a headline arguing for a move is a take ("Michigan has to fire Whittingham"), never reported/confirmed
 _OPINION = re.compile(r"\b(ha(ve|s) to|should|must|needs? to) (fire|hire|move on from)\b", re.I)
 _SOFT = re.compile(r"\b(expected to|is set to|set to (hire|become|be named)|plans? to|nearing|finaliz\w+|"
-                   r"targeting|likely to|intends? to|considering|candidate)\b", re.I)
+                   r"targeting|likely to|intends? to|considering|candidate|emerg\w* as (the )?favorite)\b", re.I)
+
+
+# a report of a done deal ("agrees to hire") vs an expected one ("targeting", "favorite")
+_DEAL = re.compile(r"\b(agree[sd]?|agreement|accept(s|ed)|reache[sd] a deal)\b", re.I)
+
+
+def _stage(it: dict) -> str | None:
+    t = f"{it.get('title', '')}. {it.get('summary') or ''}"
+    return "deal" if _DEAL.search(t) else "soft" if _SOFT.search(t) else None
 
 
 def injury_state(text: str) -> str | None:
@@ -582,6 +594,8 @@ def _status_clash(a: dict, b: dict) -> bool:
     so the newer one can supersede the older."""
     if a.get("status") and b.get("status") and a["status"] != b["status"]:
         return True
+    if a.get("label") == b.get("label") == "reported" and {_stage(a), _stage(b)} == {"soft", "deal"}:
+        return True
     return {a.get("label"), b.get("label")} == {"reported", "confirmed"}
 
 
@@ -591,7 +605,9 @@ def same_story(a: dict, b: dict, team_words: set[str] = frozenset()) -> bool:
     ents = (set(a.get("teams") or []) | set(a.get("players") or [])) & \
            (set(b.get("teams") or []) | set(b.get("players") or []))
     sa, sb = (set(re.findall(r"[a-z0-9']{4,}", (x.get("summary") or "").lower())) for x in (a, b))
-    if len(sa) >= 6 and _jacc(sa, sb) >= 0.6:
+    # (a reused stock blurb under a headline naming teams the other lacks is not the same story)
+    tagged = any(x.get("teams") or x.get("players") for x in (a, b))
+    if len(sa) >= 6 and _jacc(sa, sb) >= 0.6 and (bool(ents) or not tagged):
         return True  # same wire blurb under two headlines
     # team names alone ('michigan state ... oregon visits') don't make two headlines alike
     wa, wb = _words(a), _words(b)
@@ -683,7 +699,9 @@ def supersede(cache: dict, tg: Tagger | None = None) -> int:
                 old["status"] and new["status"] and old["status"] != new["status"]
             confirmed = old["label"] == "reported" and new["label"] == "confirmed" and \
                 set(old["topics"]) & set(new["topics"])
-            if injury or confirmed:
+            deal = old["label"] == new["label"] == "reported" and _stage(a) == "soft" and \
+                _stage(b) == "deal" and set(old["topics"]) & set(new["topics"])
+            if injury or confirmed or deal:
                 for it in old["items"]:
                     it["superseded_by"] = new["id"]
                 n += 1
