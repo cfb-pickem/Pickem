@@ -1011,6 +1011,11 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             if nr is not rt and nr.lane == "banter" and football_thread(st):
                 log.info("route (from brief): kept full, a football follow-up (%r)", st["q"][:60])
                 nr = rt
+            elif nr is not rt and nr.lane == "banter" and str(rt.why).startswith("fact miss"):
+                # a fact question the code lane couldn't answer is still a question ('how am I doing this
+                # week' -> banter -> cut line -> 'Tough to argue.', Saturday drill 11/17)
+                log.info("route (from brief): kept full, %s (%r)", rt.why, st["q"][:60])
+                nr = rt
             if nr is not rt:
                 log.info("route (from brief): %s -> %s", rt.label(), nr.label())
                 rt.__dict__.update(nr.__dict__)
