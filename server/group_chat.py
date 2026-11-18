@@ -1074,7 +1074,10 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             gk = gameday.league_intent(q) or gameday.intent(q, prev_q)
             gs_now = gameday.games() if gk else {}  # 'whos winning in Columbus' / 'how'd Jeremiah Smith end up': a game
             named_game = bool(gk) and bool(gameday._named(q, gs_now) or gameday._player_games(q, gs_now))
-            if gk and (gk in ("gd_ended", "gd_week") or named_game or not (route.lane == "fact" and route.kind in (
+            # 'can Michigan score on UCLA?' before kickoff is a unit read (unit_lane), not the score lane
+            unit_pre = route.lane == "fact" and route.kind == "unit_matchup" and not any(
+                g.get("state") in ("in", "post") for g in (gameday._named(q, gs_now) if gk else []) or [])
+            if gk and not unit_pre and (gk in ("gd_ended", "gd_week") or named_game or not (route.lane == "fact" and route.kind in (
                     "my_picks", "standings", "record", "results", "playoff_today", "chase", "cover"))):
                 route = router.Route("fact", gk, why=f"gameday.{gk}", mixed=route.mixed, ptype=route.ptype)
         if charlie and (route.lane == "ignore" or (route.lane == "banter" and route.kind == "spiral")):

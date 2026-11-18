@@ -41,6 +41,8 @@ import game_cards  # noqa: E402
 import group_chat as gc  # noqa: E402
 import live_games  # noqa: E402
 import picky_brain as pb  # noqa: E402
+import unit_lane  # noqa: E402
+from test_unit_lane import FakeSource  # noqa: E402  synthetic unit table (Iowa, Illinois rows), no CFBD cache
 
 # a fresh, empty news cache: the news rider rides ('nothing in your feed') without the live feed
 Path(os.environ["PICKY_NEWS_CACHE"]).write_text(json.dumps(
@@ -145,7 +147,8 @@ def run(asks: list[tuple[str, str]], dm: bool) -> dict[str, list[dict]]:
             patch.object(chat, "_now_ct_naive", lambda: NOW), \
             patch.object(chat, "_prime", _noop), \
             patch.object(pb, "_json_call", _json_call), \
-            patch.object(pb, "_orig_ollama_stream", _stream):
+            patch.object(pb, "_orig_ollama_stream", _stream), \
+            patch.object(unit_lane, "SOURCE", FakeSource()):
         gc.VIEWER.jwt, gc.VIEWER.uid = "jwt-picky", "uuid-picky"
         for aid, text in asks:
             n = len(CALLS)
@@ -179,13 +182,14 @@ ASKS = [  # (id, text): picks, a game read, news, rules, record, trash talk, sta
     ("offtopic", "best beer for a tailgate?"),
     ("read2", "what do you think of Texas Tech at Baylor?"),
     ("lastweek", "how did I do last week?"),
+    ("unit", "can Iowa run the ball on Illinois?"),  # unit matchup code lane (phase 6): was the full brain, ~58 s
 ]
 # after-prefix token budgets per text (chars/4). Main before the speed lane, on this snapshot (group/DM):
 # picks 1585/1634, read 2086/2445, news 2441/2345, read2 3629/3682, lastweek 3889/3942 (every old turn
 # re-rendered with its riders, live blocks for games 5 days out, full intel next to the card). 'lastweek'
 # is a code-written fact-lane answer since the router's Monday last-week lane (e76c807).
 BUDGET = {"picks": 1650, "read": 1600, "news": 1150, "rules": 250, "record": 200, "trash": 350,
-          "standings": 200, "offtopic": 350, "read2": 1450, "lastweek": 300}
+          "standings": 200, "offtopic": 350, "read2": 1450, "lastweek": 300, "unit": 400}
 
 RESULTS: dict[bool, dict] = {}
 
@@ -244,6 +248,20 @@ def test_required_rules_and_data_survive():
         assert "own" in json.dumps(res["trash"][0]["messages"]) or "NEWEST TEXT" in latest("trash")
         if dm:  # a member's own picks ride with a picks ask in his DM
             assert "Mack's picks this week" in latest("picks")
+
+
+def test_unit_ask_takes_the_code_lane_under_12s():
+    """A unit ask is code-written (no understand pass, no draft): one short voice-line call, under 12 s end to end."""
+    for dm in (False, True):
+        calls = results(dm)["unit"]
+        kinds = [c["kind"] for c in calls]
+        assert kinds == ["fact"], kinds
+        ans = calls[0]["messages"][-1]["content"]
+        assert "THE ANSWER" in ans and "Iowa" in ans and "Illinois" in ans and "SP+" in ans, ans
+    import time
+    t0 = time.time()
+    run([("unit2", "Can Illinois stop Iowa's run game?")], True)
+    assert time.time() - t0 < 12, time.time() - t0
 
 
 def test_intel_capped_when_a_card_rides():
