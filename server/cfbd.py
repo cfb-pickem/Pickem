@@ -840,6 +840,13 @@ if __name__ == "__main__":
             log.warning("refresh skipped, budget: %s", e)
             print(json.dumps({"ok": False, "skipped": str(e)}))
             sys.exit(0)
+        try:  # player box scores (one /games/players call when a week is due; Sat evening partials, Sun final)
+            import personnel
+            print(json.dumps(personnel.refresh_player_games(push="default")))
+        except BudgetExceeded as e:
+            log.warning("player games skipped, budget: %s", e)
+        except Exception as e:  # noqa: BLE001
+            log.warning("player games refresh failed: %r", e)
         try:  # new records / lines / finals: rebuild the fact store now, not at the next 5-minute tick
             import factstore
             print(json.dumps(factstore.build()))
