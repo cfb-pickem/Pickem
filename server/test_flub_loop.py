@@ -30,6 +30,9 @@ os.environ.pop("PICKY_FLUB_AUTOFIX", None)
 sys.path.insert(0, str(HERE))
 import flag_flub  # noqa: E402
 import flub_loop as fl  # noqa: E402
+import picky_claude as _pc  # noqa: E402
+# Claude up: the picky_claude booster gate open, keeping the kill switch (the gate itself, cap and auth are covered in test_zero_maintenance.py)
+_pc.why_not = lambda entry=None: "PICKY_NO_ANTHROPIC set" if _pc.disabled() else ""
 
 fails = []
 
@@ -123,7 +126,7 @@ with patch.dict(os.environ, {"PICKY_NO_ANTHROPIC": "1"}):
     def boom(_p):
         raise AssertionError("opus called with the kill switch on")
     cv = fl.classify(D, facts=FACTS, opus=boom)
-check(cv["by"] == "code" and cv["note"] == "PICKY_NO_ANTHROPIC", "kill switch: code-only signals")
+check(cv["by"] == "code" and cv["note"].startswith("Claude unavailable"), "kill switch: code-only signals")
 cats = {x["cid"]: x for x in cv["verdicts"]}
 check(cats.get(c_news, {}).get("why", "").startswith("flagged"), "code-only: the queued flag is a flub")
 check(cats.get(c_pick2, {}).get("why", "").startswith("member pushback"), "code-only: pushback is a flub")
@@ -209,7 +212,7 @@ check(fl.fix_round(D)["status"] == "off", "kill switch file stops the fix round"
 with patch.dict(os.environ, {"PICKY_FLUB_AUTOFIX": "0"}):
     check(fl.fix_round(D)["status"] == "off", "PICKY_FLUB_AUTOFIX=0 stops the fix round")
 with patch.dict(os.environ, {"PICKY_NO_ANTHROPIC": "1"}), patch.object(fl, "_fix", side_effect=AssertionError):
-    check(fl.fix_round(D)["why"] == "PICKY_NO_ANTHROPIC", "Anthropic off: no fix round")
+    check(fl.fix_round(D)["why"].startswith("Claude unavailable"), "Anthropic off: no fix round")
 base = {"det_pass": 80, "scored": 100, "invented": 0, "leaks": 0, "flub_pass": 2, "flub_n": 3}
 check(fl.gate(base, dict(base, det_pass=81)) == [], "gate: better det. pass ships")
 check(fl.gate(base, dict(base, det_pass=79)), "gate: fewer det. passes blocks")

@@ -1,7 +1,8 @@
 """
 League material sheet: fresh, data-backed roast / praise lines per member,
 the week's league storylines and Picky's own season narrative, written ahead
-of time by Claude so Picky's small live model only has to deliver them.
+of time by the box's local gemma (offline, zero maintenance: no Claude since phase 8) so the live
+reply path only has to deliver them.
 
 PRIVATE: the output names real members and their records, so it lives
 outside the public repo at /Users/Agent/cfb-pickem-private/league_material.json
@@ -13,16 +14,16 @@ Nobody maintains this. LaunchAgent com.pickem.league-material runs
   - "midweek": Wednesday 10 AM CT refresh (fresh angles, same numbers);
   - "drift": the standings no longer match the sheet (stat correction, a
     regraded game), at most once per 12 hours.
-Otherwise a run is a few Supabase GETs and exits. ~2-3 `claude -p` calls a week, plus
-one for banter.py's weekly comeback/banter bank (banter.refresh_if_due on every tick).
+Otherwise a run is a few Supabase GETs and exits. ~2-3 local gemma writes a week (local_llm.py,
+behind the live-first Ollama gate).
 
 Pipeline:
   1. Facts, deterministic (no LLM): lore.load()/lore.compute() over the
      service-key DB read (final games only: never an unstarted pick), plus
      standings gaps, last week, streaks, chalk vs dog rates, best and worst
      picks, Picky's own record. Each fact gets an id.
-  2. `claude -p` (Opus via picky_claude, no tools, zero MCP, ANTHROPIC_API_KEY stripped)
-     writes lines that cite fact ids, with the running bits as canon.
+  2. local gemma4:12b-it-qat (local_llm.json_call, the JSON schema below) writes lines that cite
+     fact ids, with the running bits as canon.
   3. validate(): every number in a line must appear in the facts it cites,
      every member named must be in those facts, nothing body/family/dark,
      no report-speak. Bad lines are dropped; a member with no lines left
@@ -63,7 +64,6 @@ OUT = Path(os.environ.get("PICKY_LEAGUE_MATERIAL", "/Users/Agent/cfb-pickem-priv
 LOG_PATH = HERE / "logs" / "league_material.log"
 LOCK = Path("/tmp/picky-material.lock")
 LOCK_STALE_S = 2 * 3600
-TIMEOUT_S = 900
 PICKY_TEAM = "Picky"
 LEADER_TEAM = "Chuck P"
 DRIFT_COOLDOWN_S = 12 * 3600
@@ -456,6 +456,13 @@ def write_private(p: Path, data: dict) -> None:
     os.chmod(p, 0o600)
 
 
+def default_research():
+    """The writer: local gemma with this file's schema (raises local_llm.LocalLLMError; the run keeps the
+    previous sheet)."""
+    import local_llm
+    return lambda p: local_llm.json_call("", p, SCHEMA, caller="league_material")
+
+
 def run(force: bool = False, out: Path | None = None, data: dict | None = None, research=None,
         now: dt.datetime | None = None) -> dict:
     out = out or OUT
@@ -472,7 +479,8 @@ def run(force: bool = False, out: Path | None = None, data: dict | None = None, 
     if not reason:
         log.info("week %s: nothing due", fs.get("week"))
         return {"ok": True, "built": False, "week": fs.get("week")}
-    research = research or (lambda p: dossier.run_claude(p, TIMEOUT_S, SCHEMA, "", caller="league_material"))
+    by = "injected writer" if research else f"local {__import__('local_llm').MODEL}"
+    research = research or default_research()
     t0 = time.time()
     try:
         raw = research(build_prompt(fs, now.strftime("%A %Y-%m-%d")))
@@ -486,7 +494,7 @@ def run(force: bool = False, out: Path | None = None, data: dict | None = None, 
         raise RuntimeError(f"only {covered} of {len(fs['teams'])} members have valid lines; kept previous "
                            f"({len(dropped)} dropped: {'; '.join(dropped)[:300]})")
     doc = {"schema": 1, "season": fs["season"], "week": fs["week"], "generated_at": now.isoformat(timespec="seconds"),
-           "trigger": reason, "by": f"claude -p {dossier.picky_claude.MODEL} (no tools)", "final_games": fs["final_games"],
+           "trigger": reason, "by": by, "final_games": fs["final_games"],
            "picky_record": fs["picky"], **sheet, "dropped": dropped, "facts": fs["facts"]}
     write_private(out, doc)
     fail.unlink(missing_ok=True)

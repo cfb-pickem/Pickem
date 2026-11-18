@@ -4,6 +4,12 @@ Nightly flub loop (LaunchAgent com.pickem.flub-nightly, 23:00 CT; plist in tools
 Picky's REAL exchanges from one CT day -> flubs -> regression items for the text exam -> an
 optional Opus fix that ships only if nothing regresses -> a short private morning report.
 
+OPTIONAL ADD-ON (zero maintenance, phase 8): the only scheduled job picky_claude lets call Claude.
+Without it (subscription cancelled, claude binary missing, API errors, PICKY_NO_ANTHROPIC) the
+nightly still harvests, classifies from code signals and writes the report; the Opus classify and
+the fix round just skip. Nothing else reads its output to work (member_memory's log-parser import
+is optional and wrapped).
+
   flub_loop.py harvest|classify|items|fix|report|nightly [--date YYYY-MM-DD] [--dry]
 
   harvest   the day's live rows from picky_exchanges.jsonl (team null = test handles and side/exam
@@ -13,7 +19,7 @@ optional Opus fix that ships only if nothing regresses -> a short private mornin
             prime failed, reply secs), member pushback (the same chat's next text within 10 min:
             "wrong", "huh", "that's not", ...) and the private flub queue (flag_flub.py, top
             priority; consumed here) -> flubs/harvest-<date>.json
-  classify  ONE offline Opus pass (picky_claude; PICKY_NO_ANTHROPIC or --dry = code-only signals):
+  classify  ONE offline Opus pass (picky_claude; Claude unavailable or --dry = code-only signals):
             flub y/n, category, why, a proposed exam item, against the facts bundle (eval/run.py
             truth_bundle + checked CFB notes + this week's game cards) -> flubs/classify-<date>.json
   items     every proposed item verified in code (each number/name in must_include / any_of must be
@@ -486,10 +492,13 @@ def classify(date: str, dry: bool = False, facts: dict | None = None, opus=None)
             facts = None
     if facts:
         write_private(FLUB_DIR / f"facts-{date}.json", json.dumps(facts))
-    if not h["candidates"]:
+    if not picky_claude.available():  # optional add-on: no Claude (cancelled, missing, kill switch) = code signals
+        out["note"] = "Claude unavailable: code signals only"
+        out["verdicts"] = code_verdicts(h)
+    elif not h["candidates"]:
         out["note"] = "no candidates"
-    elif dry or picky_claude.disabled() or not facts:
-        out["note"] = "dry run" if dry else ("PICKY_NO_ANTHROPIC" if picky_claude.disabled() else "no facts bundle")
+    elif dry or not facts:
+        out["note"] = "dry run" if dry else "no facts bundle"
         out["verdicts"] = code_verdicts(h)
     else:
         keep = ("cid", "priority", "mode", "team", "q", "a", "lane", "secs", "signals", "flag_text", "note")
@@ -817,8 +826,8 @@ def fix_round(date: str, dry: bool = False) -> dict:
         out.update(status="skipped", why="no fixable flubs")
     elif dry:
         out.update(status="dry", why=f"would run an Opus fix for {len(flubs)} flub(s) + gates")
-    elif picky_claude.disabled():
-        out.update(status="skipped", why="PICKY_NO_ANTHROPIC")
+    elif not picky_claude.available():
+        out.update(status="skipped", why="Claude unavailable (optional add-on)")
     else:
         out.update(_fix(date, flubs))
     write_private(FLUB_DIR / f"fix-{date}.json", json.dumps(out, indent=1))

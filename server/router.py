@@ -40,6 +40,7 @@ import news
 import pick_strategy
 import slate_cards
 import playoff_race
+import season  # date-derived season state: offseason answers (zero maintenance)
 import why_lane
 import channel  # the channel lane (drill 11/17)
 
@@ -1033,7 +1034,7 @@ def interim_text(ctx: dict, q: str) -> str | None:
         m = re.search(r"\b(Oct|Nov|Sep)\w*\.? (\d{1,2})", c["text"])
         if m and idx:
             mon = {"Sep": 9, "Oct": 10, "Nov": 11}[m.group(1)[:3]]
-            since = _dt.date(2026, mon, int(m.group(2))).isoformat()
+            since = season.date_in_season(mon, int(m.group(2)), chat._now_ct_naive().date()).isoformat()
             rows = [r for r in slate_cards.team_rows(c["school"], idx, "9999") if r["date"] > since]
             if rows:
                 su_w = sum(1 for r in rows if r["pts"][0] > r["pts"][1])
@@ -2813,6 +2814,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if not ctx or ctx.get("error"):
         return None
+    if (kind in season.WEEK_KINDS or kind.startswith("gd_")) and season.offseason(ctx, chat._now_ct_naive()):
+        return season.offseason_text(ctx)  # zero maintenance: no week to talk about, never last season's games
     if kind in ("lines_now", "spread", "value", "line_move", "qb", "score", "cover", "pick", "h2h", "keynum", "qb_status"):
         ghost = unknown_school((q or "").split(" ||| ")[0])
         if ghost:

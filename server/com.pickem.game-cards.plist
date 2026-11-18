@@ -7,10 +7,10 @@
   11:00 AM CT line lock, Fri 5 PM, Sat 7 AM CT, or the game's dossier was
   rebuilt) and exits after two Supabase GETs when not. Every run is pure
   code (no model). Opus writes one case per game per WEEK, at the first run
-  after the Tue line lock (retried at most once a day; picky_claude.MODEL,
-  --strict-mcp-config + empty MCP config, ANTHROPIC_API_KEY stripped); the
-  card carries it while it's fresh and its numbers still hold. Anthropic
-  down / PICKY_NO_ANTHROPIC=1 = code card only. Never after kickoff.
+  after the Tue line lock (retried at most once a day), only while the
+  picky_claude booster gate is open (Claude there, subscription only, under
+  the daily cap); the card carries it while it's fresh and its numbers still
+  hold. Gate shut or the call failed = code card only. Never after kickoff.
   Install: cp to ~/Library/LaunchAgents and launchctl bootstrap gui/$(id -u) it.
 -->
 <plist version="1.0">

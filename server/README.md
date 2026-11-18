@@ -101,27 +101,29 @@ skipped). All in `edge.py`, weights documented at its top, tests in
 `test_edge.py`. Splits and Open-Meteo are fetched per breakdown question
 (20 / 60 minute caches, fail soft) and never touch the shared system prompt.
 
-## Anthropic (offline only)
+## Anthropic (optional, capped booster)
 
-Anthropic trains, grades and spoon-feeds data; Picky never needs it at runtime.
-Every `claude -p` call goes through `picky_claude.run()` (shell scripts: `picky_claude.py run`):
-model `claude-opus-5-5`, `--strict-mcp-config` + `empty.mcp.json`, `ANTHROPIC_API_KEY` stripped,
-and one line per call in the private daily usage log (`cfb-pickem-private/claude_usage/<date>.jsonl`;
-`picky_claude.py usage` sums calls and minutes per day and caller). `PICKY_NO_ANTHROPIC=1` makes
-every call fail fast; `test_anthropic_down.py` (GPU-free suite) proves the paths below still work.
+Claude helps the scheduled advanced analysis when it's there; Picky never needs it, and live replies never
+call it. Every `claude -p` call goes through `picky_claude.run()` (shell scripts: `picky_claude.py run`):
+model `claude-opus-5-5`, `--strict-mcp-config` + `empty.mcp.json`, `ANTHROPIC_API_KEY` stripped, and one
+line per call in the private daily usage log (`cfb-pickem-private/claude_usage/<date>.jsonl`;
+`picky_claude.py usage` sums calls, minutes and booster use per day). The gate refuses live reply processes,
+`PICKY_NO_ANTHROPIC=1`, a missing binary, a login that isn't the claude.ai subscription, and boosters past the
+daily cap (12 calls / 45 min). Every booster falls back to code / local gemma on its own; see
+`docs/picky-zero-maintenance.md` and `test_zero_maintenance.py`.
 
-| Path | Primary | Anthropic down |
+| Path | Booster (gate open) | Gate shut / call failed |
 |---|---|---|
-| live replies (DM + group), in-reply judge | local model | same (never calls Anthropic) |
-| lock reminders, final-score pings | Opus writer | plain fact line |
-| recap / Thursday preview / Saturday post | Opus writer | plain fact-only template |
-| Picky's weekly picks | code (market / SP+ / FPI) | same |
-| news digest (`news.py`) | feeds + local model | same (no Anthropic in it) |
-| dossiers | Opus web research | local model over news-cache leads |
-| analyst takes, game-card cases | Opus | previous take/case (marked stale), else code factors |
-| league material, banter bank, burn book, hot takes, insider notes | Opus (Sun/Wed) | last good copy under freshness.py's age limits |
-| league rules re-verify (`league_rules.py --check`) | Opus review | code-extracted rules, change flagged "verify" |
-| exam judges, LoRA harvest/gen, wit loop (paused), feed repairs | Opus | skipped |
+| live replies (DM + group), in-reply judge | never | local model + code lanes |
+| lock reminders, final-score pings, recap / preview / Saturday post | no Claude | local gemma writer / plain fact template |
+| Picky's weekly picks | no Claude | code (market / SP+ / FPI) |
+| news digest (`news.py`) | no Claude | feeds + local model |
+| dossiers, slate intel | Opus web research (weekly / Fri + Sat) | code over news-cache leads (+ ESPN rankings) |
+| analyst takes, game-card cases | Opus (weekly) | previous take/case while fresh, else code factors |
+| burn book, banter bank, hot takes, insider notes | Opus (Sun/Wed, insider ≤ daily) | last good copy + code pool / wire |
+| league material, member memory, week breakdown | no Claude | local gemma, validated |
+| league rules re-verify (`league_rules.py --check`) | Opus review | code verification, unconfirmable change flagged "verify" |
+| exam judges (not capped), flub loop, feed repairs (hand only) | Opus | skipped |
 
 ## Game dossiers (`dossier.py`)
 

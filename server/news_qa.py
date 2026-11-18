@@ -14,8 +14,10 @@ If at least ERROR_RATE of the sampled stories have a wrong field, it hands the
 examples to feed_monitor.repair("news", why=...): a throwaway worktree on
 branch picky-repair/news-<stamp> where Claude may edit only news.py / its
 plist, merged only if test_news.py passes (otherwise the branch stays for a
-look). Anthropic down or PICKY_NO_ANTHROPIC=1: logged and skipped; the news
-pipeline itself never notices.
+look). Zero maintenance (phase 8): this QA only feeds code repair, which isn't one
+of the capped Claude boosters, so the daily run logs "skipped" (news.py's own
+refresh logs feed-health lines in code); it runs by hand (PICKY_OPUS_MANUAL=1
+news_qa.py run).
 
   news_qa.py run [--no-repair]     news_qa.py sample   (print what Opus would see)
 """
@@ -81,6 +83,11 @@ def run(repair: bool = True, opus=None, fixer=None, cache: dict | None = None) -
         return _log(rec)
     if opus is None:
         import dossier
+        import picky_claude
+        if not (picky_claude.manual() and picky_claude.available()):
+            rec.update(result="skipped", reason="hand-only (PICKY_OPUS_MANUAL=1): it feeds code repair, not one of "
+                                                "the capped boosters; news.py logs feed health")
+            return _log(rec)
         opus = lambda p: dossier.run_claude(p, TIMEOUT_S, SCHEMA, "")  # noqa: E731
     try:
         errs = [e for e in (opus(prompt_for(rows)).get("errors") or []) if 0 <= e.get("id", -1) < len(rows)]

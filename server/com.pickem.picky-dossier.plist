@@ -5,9 +5,9 @@
   decides if anything is due (new pool game / Fri 5 PM / Sat 7 AM CT) and
   exits after two Supabase GETs when not. Every run is pure code over the
   news cache + r/CFB (no model). Opus web research + the analyst take run at
-  most once a week per game (Fri 5 PM - Sun window, or dossier.py run --opus)
-  via picky_claude (ANTHROPIC_API_KEY stripped, web tools only, zero MCP
-  servers). Logs: server/logs/dossier.log.
+  most once a week per game (Fri 5 PM - Sun window) and only while the
+  picky_claude booster gate is open (subscription only, daily cap); gate shut
+  or a failed call = the code dossier. Logs: server/logs/dossier.log.
   Install: cp to ~/Library/LaunchAgents and launchctl load it.
 -->
 <plist version="1.0">

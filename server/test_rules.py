@@ -306,9 +306,10 @@ def _flag_env(td):
 
 
 def test_check_adapts_and_hedges_without_opus():
-    """The watcher: no change = nothing flagged; a rules change with no Opus
-    (Anthropic off) = that section flagged in the live copy, Picky hedges; with
-    a verifier that passes it = the regenerated rule from the new code."""
+    """The watcher (zero maintenance, phase 8: no Opus on the schedule): no change = nothing flagged; a rules
+    change the generator models (the regenerated text moves with the code) = stated from code, no flag; a
+    change the generator can't see (same text out) = that section flagged, Picky hedges; an Opus stand-in
+    verdict still works when one is given."""
     old_env = {k: os.environ.get(k) for k in ("PICKY_RULES_STATE", "PICKY_RULES_LIVE", "PICKY_NO_ANTHROPIC")}
     try:
         with tempfile.TemporaryDirectory() as td:
@@ -316,21 +317,25 @@ def test_check_adapts_and_hedges_without_opus():
             rep = L.check(L.Repo(), use_live=False, use_opus=False)
             assert rep["flagged"] == {} and rep["changed"] == [], rep
             assert L.flagged_sections() == []
-            change = _new_fn("bj_deal", "least(25, chips)", "least(50, chips)")
             os.environ["PICKY_NO_ANTHROPIC"] = "1"  # kill switch: picky_claude.guard() raises
-            rep = L.check(_Overlay(change), use_live=False, use_opus=True)
+            unseen = _new_fn("bj_deal", "least(25, chips)", "least(25, chips) /* same rule, new comment */")
+            rep = L.check(_Overlay(unseen), use_live=False, use_opus=True)
             assert "THE PIT" in rep["flagged"] and "opus unavailable" in rep["opus"], rep
             assert L.flagged_sections() == ["THE PIT"], L.flagged_sections()
-            assert "Bets 25-500" not in L.current_text() and L.FLAG in L.section("THE PIT")
+            assert L.FLAG in L.section("THE PIT")
             assert "half point" in L.section("FORMAT")  # untouched sections stay stated
-            # a verifier (Opus stand-in) that confirms the regenerated section
-            ok = lambda secs, gen, src, changed: {"sections": {s: {"verdict": "ok"} for s in secs}}  # noqa: E731
-            rep = L.check(_Overlay(change), use_live=False, use_opus=True, verifier=ok)
-            assert rep["flagged"] == {}, rep
-            assert "Bets 50-500" in L.section("THE PIT"), L.section("THE PIT")
-            # the same change is now verified: no re-flag on the next tick
+            rep = L.check(_Overlay(unseen), use_live=False)  # still unseen next tick: still flagged
+            assert "THE PIT" in rep["flagged"], rep
+            change = _new_fn("bj_deal", "least(25, chips)", "least(50, chips)")
+            rep = L.check(_Overlay(change), use_live=False, use_opus=True)
+            assert rep["flagged"] == {}, rep  # modeled change: the code states the new rule
+            assert "Bets 50-500" in L.section("THE PIT") and L.FLAG not in L.section("THE PIT"), L.section("THE PIT")
             rep = L.check(_Overlay(change), use_live=False, use_opus=False)
             assert rep["flagged"] == {} and rep["changed"] == [], rep
+            # a verifier (Opus stand-in) still gets the last word when there is one
+            ok = lambda secs, gen, src, changed: {"sections": {s: {"verdict": "ok"} for s in secs}}  # noqa: E731
+            rep = L.check(_Overlay(unseen), use_live=False, use_opus=True, verifier=ok)
+            assert rep["flagged"] == {}, rep
     finally:
         for k, v in old_env.items():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)

@@ -29,11 +29,11 @@ stance_hint (cold -> sharp, warm -> friendly) when no record stance fires. See "
   skipped, the same way flub_loop.harvest does it. Web rows carry no team and are skipped.
 
   NIGHTLY (LaunchAgent com.pickem.member-memory, 22:30 CT): every real row from the last
-  LOOKBACK_DAYS not yet processed -> one offline Opus pass per batch via picky_claude (no tools,
+  LOOKBACK_DAYS not yet processed -> one offline local gemma pass per batch via local_llm (no Claude,
   JSON schema) -> code validation (the quote must be an exact substring of the member's own
   message, msg ids and speakers must match, game ids must exist, the sensitive filter) -> merge
-  -> grade every pending receipt -> save. Zero local Ollama use. PICKY_NO_ANTHROPIC=1 skips
-  extraction (grading still runs).
+  -> grade every pending receipt -> save. The local call waits behind live member texts
+  (ollama_gate); Ollama down = the batch stays unprocessed for the next night (grading still runs).
 
   PRIVACY. DM-sourced items are returned ONLY when the caller is that same member AND dm=True:
   never in group context, never to or about another member (visible()). Sensitive personal info
@@ -91,8 +91,7 @@ LOOKBACK_DAYS = 3           # the nightly picks up anything unprocessed this far
 HALF_LIFE_DAYS = 10.0       # treatment decay
 COLD, WARM = -0.3, 0.3      # stance thresholds on the decayed score in [-1, 1]
 MIN_WEIGHT = 1.5            # below this much decayed evidence (~2 fresh messages) the stance stays neutral
-BATCH = 60                  # messages per Opus call
-OPUS_TIMEOUT = 900
+BATCH = 20                  # messages per local-model call (gemma's 16k context, room for the prompt)
 KINDS = ("fact", "beef", "joke", "line")
 SUBKINDS = ("favorite_team", "alma_mater", "hates_team", "other")
 TIER = {"receipt": 0, "beef": 1, "fact": 2, "joke": 3, "line": 4}
@@ -587,7 +586,7 @@ def stance_hint(team: str, dm: bool = False, caller: str | None = None, now: flo
 
 
 # ---------------------------------------------------------------------------------------------------
-# extraction (offline Opus) + validation + merge
+# extraction (offline, local gemma) + validation + merge
 # ---------------------------------------------------------------------------------------------------
 
 SCHEMA = {
@@ -680,16 +679,12 @@ def build_prompt(rows: list[dict], lg: League | None) -> str:
     return PROMPT.format(members=members or "(map missing)", games=_games_block(lg, rows), messages="\n".join(msgs))
 
 
-def run_opus(prompt: str) -> dict:
-    import picky_claude
-    p = picky_claude.run(prompt, timeout=OPUS_TIMEOUT, caller="member_memory", tools="", schema=SCHEMA)
-    if p.returncode != 0:
-        raise RuntimeError(f"claude exit {p.returncode}: {(p.stderr or p.stdout)[-300:]}")
-    out = json.loads(p.stdout)
-    so = out.get("structured_output")
-    if out.get("is_error") or not isinstance(so, dict):
-        raise RuntimeError(f"claude result not usable: {str(out.get('result'))[:300]}")
-    return so
+def run_local(prompt: str) -> dict:
+    """The extractor: the box's local gemma with SCHEMA (zero maintenance, phase 8: no Claude on the nightly).
+    Raises local_llm.LocalLLMError; process() leaves the batch unprocessed for the next night. merge() checks
+    every quote against the member's own message, so a loose extraction is dropped, never stored."""
+    import local_llm
+    return local_llm.json_call("", prompt, SCHEMA, caller="member_memory", temperature=0.1)
 
 
 def _in_text(quote: str, text: str) -> bool:
@@ -1181,7 +1176,7 @@ def _lock():
     return f
 
 
-def process(rows: list[dict], lg: League | None, extractor=run_opus, dry: bool = False) -> dict:
+def process(rows: list[dict], lg: League | None, extractor=run_local, dry: bool = False) -> dict:
     """Extract + merge + grade for these rows (already filtered to unprocessed). Saves unless dry."""
     st = _load_state()
     done = st.setdefault("processed", {})

@@ -34,8 +34,9 @@ neutral cwd, hard timeout) researches the game; its claims are validated
 (every URL fetched, 404 / dead host dropped) and kept in d["opus"]. The same
 run writes the analyst take (analyst.py, one no-tools call). Later code runs
 carry the Opus layer and the take while they're fresh (6 days); a newer code
-injury report on the same player replaces Opus's. Anthropic down,
-PICKY_NO_ANTHROPIC=1 or a failed run = the code dossier alone (plus the last
+injury report on the same player replaces Opus's. picky_claude's booster gate
+shut (Claude missing, logged out, daily cap hit, PICKY_NO_ANTHROPIC=1) or a
+failed run = the code dossier alone (plus the last
 good Opus layer while fresh).
 
 Atomic write to cache/dossiers/<week>/<game_id>.json. On any failure the
@@ -606,8 +607,10 @@ def save_state(week_dir: Path, st: dict) -> None:
 
 
 def prune_weeks(base: Path, keep: int = KEEP_WEEKS) -> None:
-    weeks = sorted((d for d in base.iterdir() if d.is_dir() and d.name.isdigit()), key=lambda d: int(d.name)) \
-        if base.exists() else []
+    """Keep the `keep` most recently written week dirs. By write time, not week number: next August's week 1
+    is newer than last season's weeks 14-16 (sorting by number deleted it the moment it was written)."""
+    weeks = sorted((d for d in base.iterdir() if d.is_dir() and d.name.isdigit()),
+                   key=lambda d: (d.stat().st_mtime, int(d.name))) if base.exists() else []
     for d in weeks[:-keep]:
         shutil.rmtree(d, ignore_errors=True)
 

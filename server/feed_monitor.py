@@ -10,7 +10,11 @@ installed isn't broken). Broken = cache past max_age ("age" feeds) or the
 refresher's last exit code != 0 ("exit" feeds). Escalation per feed:
   check 1 broken   note it
   check 2 broken   kickstart the refresher (bootout + bootstrap if wedged)
-  check 3 broken   unattended Claude repair, in the background:
+  check 3 broken   (zero maintenance, phase 8: code repair is not a capped booster, so this step is off
+                   on the schedule; repairable() needs PICKY_OPUS_MANUAL=1: the feed keeps
+                   getting kicked, its refresher keeps its last good copy, and feed_health.py logs
+                   format changes. What follows only runs by hand with PICKY_OPUS_MANUAL=1:)
+                   unattended Claude repair, in the background:
                    claude -p (picky_claude.MODEL, guard(), --strict-mcp-config +
                    empty MCP config, no API key) in a fresh worktree on branch
                    picky-repair/<feed>-<stamp>, 30 min timeout, one at a time
@@ -25,6 +29,8 @@ refresher's last exit code != 0 ("exit" feeds). Escalation per feed:
   caps             3 repair runs per day in total (CT), 3 per outage per feed.
   Charlie          texted (existing notify path) at most once a day, and only
                    for a feed down 24h+ whose repairs are used up.
+Supabase keepalive: every pass calls keepalive.ping(), which reads one row at most once a day so the
+free project never pauses for inactivity (the offseason), and records a paused / unreachable DB.
 Every repair writes one JSON line to cfb-pickem-private/feed_repairs.log
 (result, reason, files, duration) and one line to the project memory so the
 coordinator knows.
@@ -69,6 +75,7 @@ NOTIFY = [PY, "-I", "/Users/Agent/picky-marathon/wit_eval.py", "notify"]
 DAILY_CAP = 3            # repair runs per CT day, all feeds together
 OUTAGE_CAP = 3           # repair runs per feed per outage
 TELL_AFTER = 24 * 3600   # down this long with repairs used up -> one text to Charlie
+KICK_EVERY = 8           # checks (2 h) between kicks of a feed nothing can repair
 REPAIR_TIMEOUT = 30 * 60
 TEST_TIMEOUT = 10 * 60
 CLAUDE_TOOLS = "Bash,Read,Edit,Write,Grep,Glob"
@@ -148,7 +155,10 @@ def observe(now: float, info=agent_info) -> dict[str, dict]:
 # -----------------------------------------------------------------------------
 
 def repairable(s: Source) -> bool:
-    return bool(s.files and s.tests)
+    """A Claude repair is possible: never on the schedule (agentic code repair isn't one of the capped analysis
+    boosters, zero maintenance); by hand with PICKY_OPUS_MANUAL=1 when Claude is there."""
+    import picky_claude
+    return bool(s.files and s.tests) and picky_claude.manual() and picky_claude.available()
 
 
 def decide(obs: dict[str, dict], state: dict, now: float) -> tuple[list[tuple[str, str]], dict]:
@@ -171,8 +181,8 @@ def decide(obs: dict[str, dict], state: dict, now: float) -> tuple[list[tuple[st
         f.setdefault("since", now)
         f["why"] = o["why"]
         s = freshness.source(name)
-        if f["bad"] == 2:
-            acts.append(("kick", name))
+        if f["bad"] == 2 or (f["bad"] > 2 and not repairable(s) and f["bad"] % KICK_EVERY == 2):
+            acts.append(("kick", name))  # no repair possible (the schedule): keep kicking every KICK_EVERY checks
         elif f["bad"] >= 3 and repairable(s) and len(runs) < DAILY_CAP and f.get("repairs", 0) < OUTAGE_CAP:
             acts.append(("repair", name))
             runs.append(now)
@@ -222,6 +232,14 @@ def spawn_repair(name: str) -> None:
 
 def run_pass(dry: bool = False, now: float | None = None) -> int:
     now = time.time() if now is None else now
+    if not dry:
+        try:  # the daily Supabase keepalive rides this 15-minute tick (never blocks the pass)
+            import keepalive
+            ka = keepalive.ping()
+            if not ka.get("skipped"):
+                log(f"supabase keepalive: {ka}")
+        except Exception as e:  # noqa: BLE001
+            log(f"supabase keepalive failed: {type(e).__name__}: {e}")
     try:
         state = json.loads(STATE_FILE.read_text())
     except (OSError, ValueError):

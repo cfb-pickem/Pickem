@@ -21,6 +21,8 @@ os.environ.pop("PICKY_NO_ANTHROPIC", None)  # research is faked here; the tests 
 import httpx  # noqa: E402
 
 import dossier  # noqa: E402
+# Claude up: the picky_claude booster gate open, keeping the kill switch (the gate itself, cap and auth are covered in test_zero_maintenance.py)
+dossier.picky_claude.why_not = lambda entry=None: "PICKY_NO_ANTHROPIC set" if dossier.picky_claude.disabled() else ""
 
 FAILED = []
 CT = dossier.CT

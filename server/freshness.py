@@ -100,12 +100,14 @@ def _sources() -> dict[str, Source]:
                                "server/com.pickem.league-material.plist"), ("test_analyst.py",)),
         Source("banter", (5 * D, 5 * D), (14 * D, 14 * D), "json:generated_at",
                _p("PICKY_BANTER_BANK", PRIVATE / "banter_bank.json"), "com.pickem.league-material"),
-        # curated by offline claude -p runs (Sun + Wed); opinions / slow facts
+        # written by offline claude -p runs, no longer on a schedule (zero maintenance, phase 8): the bank
+        # ages out by these limits and nothing watches it (no "feed down" alarms for a feed that's retired)
         Source("hot_takes", (4.5 * D, 4.5 * D), (10 * D, 10 * D), "mtime",   # Wed -> Sun is 4 days
-               _p("PICKY_HOT_TAKES", PRIVATE / "hot_takes_bank.md"), "com.charlie.picky-hottakes", False, "age"),
-        # same limits as the voice lane's INSIDER_STALE_DAYS / INSIDER_MAX_AGE_DAYS
+               _p("PICKY_HOT_TAKES", PRIVATE / "hot_takes_bank.md"), "com.charlie.picky-hottakes", False, None),
+        # same limits as the voice lane's INSIDER_STALE_DAYS / INSIDER_MAX_AGE_DAYS. The notes file is no longer
+        # refreshed on a schedule (the code wire is, every 2 h): watched by the refresher's exit code, not age
         Source("insider", (8 * D, 8 * D), (21 * D, 21 * D), "mtime",
-               _p("PICKY_INSIDER", PRIVATE / "insider_bank.md"), "com.pickem.insider-refresh", False, "age",
+               _p("PICKY_INSIDER", PRIVATE / "insider_bank.md"), "com.pickem.insider-refresh", False, "exit",
                ("server/insider_refresh.py", "server/insider_refresh_prompt.md",
                 "server/com.pickem.insider-refresh.plist"), ("test_insider.py",)),
         # other lanes' artifacts (registered here so they share the rules)

@@ -83,6 +83,9 @@ os.environ["PICKY_HOT_TAKES"] = str(TMP / "takes.md")
 
 sys.path.insert(0, ".")
 import chat  # noqa: E402
+import picky_claude  # noqa: E402
+# Claude up: the picky_claude booster gate open, keeping the kill switch (the gate itself, cap and auth are covered in test_zero_maintenance.py)
+picky_claude.why_not = lambda entry=None: "PICKY_NO_ANTHROPIC set" if picky_claude.disabled() else ""
 
 CTX = {"season": 2026, "current_week": 11, "mode": "leaderboard", "jackpot": {},
        "you": {"team_name": "Clam", "team_id": 9}, "leader": {"team_name": "Chuck P", "team_id": 6},

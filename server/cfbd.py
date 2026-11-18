@@ -185,7 +185,20 @@ def refresh(db=None, client=None, year: int | None = None, only: list[str] | Non
             if r.status_code != 200:
                 failed[name] = r.status_code
                 continue
-            data = r.json()
+            try:
+                data = r.json()
+            except ValueError:
+                data = None
+            # format change / empty response: keep the stored copy and log a health line (feed_health).
+            # Empty is fine for a new season (the stored copy is last year's), never for the same year.
+            old = db.execute("SELECT year, json FROM datasets WHERE name=?", (name,)).fetchone()
+            prev = json.loads(old[1]) if old else None
+            import feed_health
+            data, ok = feed_health.accept(f"cfbd:{name}", data, prev, kind=list,
+                                          allow_empty=bool(old and old[0] != year))
+            if not ok:
+                failed[name] = "bad format"
+                continue
             db.execute(
                 "INSERT OR REPLACE INTO datasets VALUES(?,?,?,?)",
                 (name, year, time.time(), json.dumps(data, separators=(",", ":"))),

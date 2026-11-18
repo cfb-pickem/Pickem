@@ -28,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chat  # noqa: E402
 import game_cards as gc  # noqa: E402
 import picky_claude  # noqa: E402
+# Claude up: the picky_claude booster gate open, keeping the kill switch (the gate itself, cap and auth are covered in test_zero_maintenance.py)
+picky_claude.why_not = lambda entry=None: "PICKY_NO_ANTHROPIC set" if picky_claude.disabled() else ""
 import re  # noqa: E402
 
 chat.MASCOT_ANY = re.compile(r"\b(Sooners|Aggies)s?\b")  # analyst's nickname check without the Supabase fetch

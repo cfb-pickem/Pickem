@@ -14,7 +14,7 @@ Code computes every fact (facts_for):
   protection, finishing drives, explosiveness, turnovers), a Saturday forecast
   at the stadium (Open-Meteo, free, keyless) and travel distance / time zones
   (CFBD venues).
-Opus phrases it offline (claude -p via dossier.run_claude, no tools): one text
+The box's local gemma phrases it offline (local_llm.py; no Claude since phase 8): one text
 per game in Picky's voice, ending in "Lean: <the card's lean label>".
 verify() checks every draft in code: every number and W-L must be in that
 game's facts, capitalized names must be in the facts, the lean line must match
@@ -25,7 +25,7 @@ number and still goes out with Anthropic down.
 
 CLI:
   week_breakdown.py facts [--week N]      print the fact sheets
-  week_breakdown.py draft [--week N]      facts + Opus + verify, print (no queue)
+  week_breakdown.py draft [--week N]      facts + gemma + verify, print (no queue)
 """
 
 from __future__ import annotations
@@ -53,7 +53,6 @@ CT = zoneinfo.ZoneInfo("America/Chicago")
 UTC = dt.timezone.utc
 CARD_DIR = HERE / "cache" / "game_cards"
 OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
-WRITE_TIMEOUT_S = 420
 MAX_CHARS = 900
 
 # -----------------------------------------------------------------------------
@@ -518,8 +517,10 @@ Return only the JSON object {{"intro": "...", "games": [{{"game_id": <id>, "text
 
 
 def run_writer(prompt: str) -> dict:
-    import dossier
-    return dossier.run_claude(prompt, WRITE_TIMEOUT_S, SCHEMA, "", caller="week_breakdown")
+    """The breakdown writer: the box's local gemma (zero maintenance, phase 8: no Claude). compose() verifies
+    every number and falls back to the code-written text per game."""
+    import local_llm
+    return local_llm.json_call("", prompt, SCHEMA, caller="week_breakdown", temperature=0.5, num_predict=2000)
 
 
 def compose(gfs: list[dict], week: int, lock_text: str, member_names: list[str] | None = None,
@@ -637,7 +638,7 @@ def cards_ready(week: int, games: list[dict]) -> bool:
 
 
 def prepare(lg, week: int, games: list[dict], lock: dt.datetime, now: dt.datetime, writer=None) -> dict:
-    """Facts + Opus draft + verify, saved to the week's state file. Returns the state."""
+    """Facts + local draft + verify, saved to the week's state file. Returns the state."""
     import group_posts as gp
     gfs = facts_for(games, week, now=now)
     texts, rep = compose(gfs, week, gp.kick_text(lock), list(gp.all_names(lg.names)),

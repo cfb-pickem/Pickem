@@ -49,6 +49,7 @@ import league_rules
 import live_flag
 import ollama_gate
 import live_games
+import season  # offseason rider in _system_tail (zero maintenance)
 import matchup_guard
 import news
 import rare_bits
@@ -3450,6 +3451,7 @@ def _system_tail(ctx: dict) -> str:
         # to the hour only: a per-minute clock would change the prompt (and
         # cost a full reprocess) on every message
         + f"\nRight now it is {now:%a %b %-d}, between {now:%-I}:00 and {now:%-I}:59 {now:%p} CT."
+        + season.offseason_rider(ctx, now)  # "" in season; offseason: no current week (zero maintenance)
     )
 
 

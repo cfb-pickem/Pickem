@@ -29,7 +29,8 @@ One JSON card per pool game in cache/game_cards/<week>/<game_id>.json:
     the league line is the one it was written for, and every number in a
     reason still appears in the card's brief; lines whose numbers moved drop
     out. No Opus case yet = the dossier's (fresh) analyst take, else none:
-    the card stands on the code factors, and PICKY_NO_ANTHROPIC=1 never
+    the card stands on the code factors, and a shut booster gate (picky_claude:
+    no Claude, logged out, daily cap, PICKY_NO_ANTHROPIC=1) never
     spawns anything.
 
 Live chat never computes or calls anything here: chat.py reads the card and
