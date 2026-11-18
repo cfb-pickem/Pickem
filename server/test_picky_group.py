@@ -89,16 +89,16 @@ def test_should_act():
 
 def test_rate_limit():
     t = [1000.0]
-    rl = watcher.RateLimit(clock=lambda: t[0])
+    rl = watcher.RateLimit(clock=lambda: t[0])  # replies: 3 s gap, 90 an hour (posts have their own 60)
     assert rl.wait_needed() == 0.0
     rl.mark()
-    t[0] += 4
-    assert abs(rl.wait_needed() - 6.0) < 1e-9
-    for _ in range(59):
+    t[0] += 1
+    assert abs(rl.wait_needed() - 2.0) < 1e-9
+    for _ in range(89):
         t[0] += 10
         rl.mark()
     t[0] += 10
-    assert rl.wait_needed() is None   # 60 in the last hour
+    assert rl.wait_needed() is None   # 90 in the last hour
     t[0] += 3600
     assert rl.wait_needed() == 0.0
 
