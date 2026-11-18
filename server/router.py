@@ -760,6 +760,41 @@ def lookahead_slate_text(ctx: dict, q: str) -> str | None:
     return "Spots on paper: " + "; ".join(hits[:4]) + "."
 
 
+INTERIM_ASK = re.compile(r"\binterim\b|\b(fired|firing) (their |the )?(head )?coach\b[^?]{0,40}\b(matter|affect|impact|effect)\b"
+                         r"|\bnew coach\b[^?]{0,30}\b(matter|bump|affect)\b", re.I)
+
+
+def interim_text(ctx: dict, q: str) -> str | None:
+    """A midseason coaching change for the team a text names (cache/slate_intel.json, sourced), plus the team's
+    straight-up and ATS record since the change (CFBD results + lines). Small sample, said plainly."""
+    import datetime as _dt
+    try:
+        d = json.loads((Path(__file__).resolve().parent / "cache" / "slate_intel.json").read_text())
+    except (OSError, ValueError):
+        return None
+    idx = slate_cards.cfbd.load_index()
+    named = slate_cards.cfbd.other_teams_named(q or "", [], idx) if idx else []
+    for c in d.get("coaching") or []:
+        if not any(slate_cards.cfbd.norm(c.get("school", "")) == slate_cards.cfbd.norm(n) for n in named):
+            continue
+        out = c["text"].rstrip(".") + "."
+        m = re.search(r"\b(Oct|Nov|Sep)\w*\.? (\d{1,2})", c["text"])
+        if m and idx:
+            mon = {"Sep": 9, "Oct": 10, "Nov": 11}[m.group(1)[:3]]
+            since = _dt.date(2026, mon, int(m.group(2))).isoformat()
+            rows = [r for r in slate_cards.team_rows(c["school"], idx, "9999") if r["date"] > since]
+            if rows:
+                su_w = sum(1 for r in rows if r["pts"][0] > r["pts"][1])
+                g = [r for r in rows if r["cover"] is not None]
+                ats = slate_cards._rec(g) if g else None
+                games = "; ".join(f"{'beat' if r['pts'][0] > r['pts'][1] else 'lost to'} {r['opp']} {r['pts'][0]}-{r['pts'][1]}"
+                                  for r in rows)
+                out += (f" Since then: {su_w}-{len(rows) - su_w} straight up" + (f", {ats} ATS" if ats else "")
+                        + f" ({games}). Small sample, so it's a nudge, not a reason on its own.")
+        return out
+    return None
+
+
 CAREER_ATS = re.compile(r"\bcareer\b[^?.!]{0,40}\b(ATS|against the spread|cover\w*)\b|\b(ATS|against the spread)\b[^?.!]{0,40}\bcareer\b",
                         re.I)
 HYPO_VALUE = re.compile(r"\b(lock|locks|locked|league has|we get)\b[^?]{0,40}?[+-]\d{1,2}(\.5)?\b[^?]{0,60}?\b(market|vegas|books?)\b"
@@ -882,6 +917,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if LOOKAHEAD_SLATE.search(t) and len(slate_cards.cfbd.other_teams_named(t, [], slate_cards.cfbd.load_index() or {"teams": {}})
                                          if slate_cards.cfbd.load_index() else []) == 0:
         return "lookahead_slate", "LOOKAHEAD_SLATE"  # 'any lookahead spots this week': every notable game's verdict
+    if INTERIM_ASK.search(t) and interim_text({}, t):
+        return "interim", "INTERIM_ASK"  # 'Baylor's playing for an interim, does it matter?': the change + SU/ATS since
     if CAREER_ATS.search(t):
         return "career_ats", "CAREER_ATS"  # coach career ATS splits aren't in the data: say so + this season's team ATS
     if HYPO_VALUE.search(t):
@@ -2303,7 +2340,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "worst": worst_text, "fade": fade_text, "why": why_lane.answer, "channel": channel.answer,
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
-              "career_ats": career_ats_text, "hypo_value": hypo_value_text}.get(kind)
+              "career_ats": career_ats_text, "hypo_value": hypo_value_text,
+              "interim": interim_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

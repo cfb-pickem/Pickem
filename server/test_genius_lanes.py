@@ -42,6 +42,11 @@ def test_hypo_value_and_career():
     assert router.career_ats_text({}, "Nick Nobody career ATS").startswith("I don't have career ATS splits")
 
 
+def test_interim_routes():
+    assert router.INTERIM_ASK.search("Baylor's playing for an interim coach right? Does that matter vs Texas Tech?")
+    assert not router.INTERIM_ASK.search("who's the coach at Baylor")
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:
