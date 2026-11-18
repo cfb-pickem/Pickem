@@ -1575,6 +1575,15 @@ def _cfbd_index() -> dict | None:
         return None
 
 
+def _finals_overrides() -> dict:
+    """Team records from today's finals (live_games.json) that the CFBD cache doesn't have yet (R6)."""
+    try:
+        return fact_guard.finals_overrides(_cfbd_index(), live_games.load(), cfbd.resolve_team)
+    except Exception as e:  # noqa: BLE001 - a check input, never fatal
+        log.warning("finals overrides failed: %s", e)
+        return {}
+
+
 def cfbd_game_lines(away: str, home: str, idx: dict | None) -> list[str]:
     """Season stats, SP+, ATS for both teams, plus who has the better
     defense/offense, already decided."""
@@ -7522,7 +7531,8 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
                                      ("line_num", fact_guard.line_num_check(ctx, week_cards(ctx), corpus)),
                                      ("premise_echo", fact_guard.premise_echo_check(ctx, qtext, same_team)),
                                      ("team_fact", fact_guard.team_fact_check(
-                                         _cfbd_index(), corpus, [r["team"] for r in ctx.get("standings_ytd") or []])),
+                                         _cfbd_index(), corpus, [r["team"] for r in ctx.get("standings_ytd") or []],
+                                         finals=_finals_overrides())),
                                      ("pick_side", fact_guard.pick_side_check(ctx, same_team)),
                                      ("coach_move", fact_guard.coach_move_check(corpus)),
                                      ("stat_rank", fact_guard.stat_rank_check(_cfbd_index(), corpus)),

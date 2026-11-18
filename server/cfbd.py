@@ -385,11 +385,13 @@ def load_index(db_path: Path | str | None = None) -> dict | None:
             return None
         if _index is not None and stamp == _index_stamp:
             return _index
-        data = {n: json.loads(j) for n, j in db.execute("SELECT name, json FROM datasets")}
+        rows = db.execute("SELECT name, json, fetched_at FROM datasets").fetchall()
     finally:
         db.close()
+    data = {n: json.loads(j) for n, j, _ in rows}
     _index, _index_stamp = build_index(data), stamp
     _index["fetched_at"] = stamp
+    _index["fetched"] = {n: f for n, _, f in rows}  # per dataset (fact_guard.finals_overrides reads 'records')
     return _index
 
 

@@ -20,6 +20,7 @@ cache; no model. Two pieces:
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 ORD = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
@@ -472,23 +473,75 @@ def _near(corpus: str, team: str, val: str, span: int = 90) -> bool:
     return False
 
 
-def team_true(t: dict) -> tuple[set[str], set[str]]:
-    """(true W-Ls, true scores 'a-b' both orders) for one CFBD team."""
-    recs = {t.get("record"), t.get("conf_record")}
+def _bump(rec: str | None, won: bool) -> str | None:
+    m = re.fullmatch(r"(\d+)-(\d+)", rec or "")
+    if not m:
+        return None
+    w, l = int(m.group(1)), int(m.group(2))
+    return f"{w + 1}-{l}" if won else f"{w}-{l + 1}"
+
+
+def finals_overrides(idx: dict | None, live: dict | None, resolve) -> dict[str, dict]:
+    """Records derived from finals in live_games.json that the CFBD cache doesn't have yet (review R6).
+    CFBD refreshes a few times a day; on a Saturday night a team's true record is the cached one plus
+    tonight's result. A final counts as 'not in the cache' when its score isn't in that team's CFBD
+    scores. Returns {cfbd name: {"record", "conf_record"?, "score"}}; the stale cached record is replaced,
+    so 'Texas is 8-2' after Texas went to 9-2 tonight gets cut and '9-2' passes."""
+    out: dict[str, dict] = {}
+    if not idx or not live:
+        return out
+    rec_ts = (idx.get("fetched") or {}).get("records") or 0
+    games = live.get("games") or {}
+    for g in (games.values() if isinstance(games, dict) else games):
+        if g.get("state") != "post":
+            continue
+        a, h = g.get("away_score"), g.get("home_score")
+        if a is None or h is None or a == h:
+            continue
+        end = g.get("latest_wallclock")
+        try:
+            end_ts = dt.datetime.fromisoformat(end.replace("Z", "+00:00")).timestamp() if end else (g.get("ts") or 0)
+        except ValueError:
+            end_ts = g.get("ts") or 0
+        if rec_ts and end_ts and rec_ts > end_ts + 1800:
+            continue  # CFBD records were pulled well after this final: trust them (never double-count)
+        sides = []
+        for side, pts, opp in (("away", a, h), ("home", h, a)):
+            t = resolve((g.get(side) or {}).get("name") or "", idx)
+            sides.append((t, pts, opp))
+        conf_game = all(t and t.get("conference") for t, *_ in sides) and sides[0][0].get("conference") == sides[1][0].get("conference")
+        for t, pts, opp in sides:
+            if not t or not t.get("name"):
+                continue
+            if (pts, opp) in {tuple(x) for x in t.get("scores") or []}:
+                continue  # the cache already has this game
+            o = {"record": _bump(t.get("record"), pts > opp), "score": f"{pts}-{opp}"}
+            if conf_game and t.get("conf_record"):
+                o["conf_record"] = _bump(t.get("conf_record"), pts > opp)
+            out[t["name"]] = o
+    return out
+
+
+def team_true(t: dict, over: dict | None = None) -> tuple[set[str], set[str]]:
+    """(true W-Ls, true scores 'a-b' both orders) for one CFBD team. `over` = finals_overrides()[name]."""
+    over = over or {}
+    recs = {over.get("record") or t.get("record"), over.get("conf_record") or t.get("conf_record")}
     ats = t.get("ats")
     if ats and len(ats) >= 2:
         recs.add(f"{ats[0]}-{ats[1]}")
     scores = set()
-    for a, b in t.get("scores") or []:
+    for a, b in list(t.get("scores") or []) + ([tuple(over["score"].split("-"))] if over.get("score") else []):
         if a is not None and b is not None:
             scores |= {f"{a}-{b}", f"{b}-{a}"}
     return {r for r in recs if r}, scores
 
 
-def team_fact_check(idx: dict | None, corpus: str = "", members: list[str] | None = None, log=None):
+def team_fact_check(idx: dict | None, corpus: str = "", members: list[str] | None = None, log=None,
+                    finals: dict | None = None):
     """A W-L, score or 'No. N' rank tied to an FBS team must be true per the CFBD cache (record, conference
     record, ATS, a game score) or printed next to that team in the prompt. 'Texas is 9-1' with Texas 8-2,
-    an invented 'No. 5 Texas', a wrong final: dropped."""
+    an invented 'No. 5 Texas', a wrong final: dropped. `finals` = finals_overrides(): today's finals the
+    CFBD cache hasn't caught up on yet."""
     if not idx:
         return None
     rx, by_name = _team_regex(idx)
@@ -510,7 +563,7 @@ def team_fact_check(idx: dict | None, corpus: str = "", members: list[str] | Non
                 continue
             ok_vals = set()
             for name, *_ in teams:
-                recs, scores = team_true(by_name.get(name) or {})
+                recs, scores = team_true(by_name.get(name) or {}, (finals or {}).get(name))
                 ok_vals |= recs | scores
             if val in ok_vals or any(_near(corpus, n, val) for n, *_ in teams):
                 continue

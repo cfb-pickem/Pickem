@@ -149,6 +149,28 @@ def test_team_facts():
     assert ok("Texas isn't 9-1, it's 8-2.")
 
 
+def test_team_facts_accept_todays_finals():
+    """Saturday night: Texas beat LSU 30-17 tonight, the CFBD cache still says 8-2 / 7-3 (review R6)."""
+    idx = {"teams": {k: {**v, "conference": "SEC"} for k, v in IDX["teams"].items()}}
+    live = {"games": {"1": {"state": "post", "away": {"name": "LSU"}, "home": {"name": "Texas"},
+                            "away_score": 17, "home_score": 30},
+                      "2": {"state": "in", "away": {"name": "Alabama"}, "home": {"name": "Auburn"},
+                            "away_score": 21, "home_score": 0},
+                      "3": {"state": "post", "away": {"name": "Alabama"}, "home": {"name": "LSU"},
+                            "away_score": 31, "home_score": 13}}}  # already in the cache: no bump
+    fin = fg.finals_overrides(idx, live, lambda n, ix: ix["teams"].get(n.lower()))
+    assert fin["Texas"]["record"] == "9-2" and fin["Texas"]["conf_record"] == "6-2"
+    assert fin["LSU"]["record"] == "7-4" and "Alabama" not in fin
+    ok = fg.team_fact_check(idx, corpus="", members=[], finals=fin)
+    assert ok("Texas is 9-2 after tonight.")
+    assert not ok("Texas is 8-2.")  # the stale morning record
+    assert ok("Texas beat LSU 30-17.")
+    assert ok("LSU fell to 7-4.")
+    assert ok("Alabama is 8-2.")  # no final tonight: cache stands
+    plain = fg.team_fact_check(idx, corpus="", members=[])
+    assert plain("Texas is 8-2.") and not plain("Texas is 9-2 after tonight.")
+
+
 def test_pick_sides():
     ok = fg.pick_side_check(CTX, same)
     assert ok("Bravo took North Texas and got burned.")
