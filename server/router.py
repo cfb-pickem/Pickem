@@ -699,6 +699,9 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     player = re.search(r"\b(?i:is) ([A-Z][\w'.-]+(?: [A-Z][\w'.-]+)?) (?i:playing|starting|out|available|healthy|hurt|going|gonna)",
                        q or "")
     injury_ask = bool(re.search(r"\binjur|\blost a\b", q or "", re.I))
+    if player and (re.search(r"'s\b|\b(QB|quarterback|starter|coach)\b", player.group(1), re.I)
+                   or (idx and slate_cards.cfbd.resolve_team(player.group(1), idx))):
+        player = None  # 'is Clemson's QB playing' names a team's QB, not a player called "Clemson's QB"
     hits = []
     for g in (d.get("games") or {}).values():
         for f in g.get("facts") or []:

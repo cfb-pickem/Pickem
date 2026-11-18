@@ -126,6 +126,11 @@ def test_typos_and_followups():
     assert router.classify("whats the record for most points").kind != "record"
 
 
+def test_qb_status_team_possessive():
+    out = router.qb_status_text({}, "is Clemson's QB playing this week?")
+    assert out is None or "Clemson" in out.split(".")[0], out
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:
