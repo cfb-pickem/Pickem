@@ -1,0 +1,179 @@
+{
+ "lane": "line_move",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "move": [
+   "It opened {fav_open} and it's {fav_now} now ({pts} points toward {toward}).",
+   "{fav_open} at the open, {fav_now} now. That's {pts} points toward {toward}.",
+   "It's moved {pts} points toward {toward}: opened {fav_open}, sitting at {fav_now} now.",
+   "Opened {fav_open}, now {fav_now}, so {pts} points of movement toward {toward}.",
+   "The number went from {fav_open} to {fav_now}, {pts} points toward {toward}.",
+   "{pts} points toward {toward} since it opened. {fav_open} then, {fav_now} now.",
+   "Yeah, it's gone from {fav_open} to {fav_now}. {pts} points toward {toward}.",
+   "Big picture: {fav_open} at the open, {fav_now} today, a {pts}-point move toward {toward}."
+  ],
+  "no_move": [
+   "The market's {fav_now}.",
+   "Market has it {fav_now}.",
+   "Books are sitting at {fav_now}.",
+   "It's {fav_now} in the market right now.",
+   "Right now the market says {fav_now}.",
+   "Current number: {fav_now}."
+  ],
+  "league_locked": [
+   "Our league line: {league} (locked).",
+   "Our pool line is locked at {league}.",
+   "In our league it's locked at {league}.",
+   "League line's locked at {league}.",
+   "For the pool we've got {league}, and that's locked.",
+   "Our number is {league}, locked in."
+  ],
+  "league_open": [
+   "Our league line: {league}.",
+   "Our pool line right now: {league}.",
+   "In our league it's {league} for now.",
+   "League line is {league} at the moment.",
+   "For the pool we're at {league}.",
+   "Our number right now is {league}."
+  ],
+  "implied": [
+   "With a {total} total that's roughly {fteam} {hi}, {dteam} {lo} implied.",
+   "The {total} total implies about {fteam} {hi}, {dteam} {lo}.",
+   "Run it through the {total} total and it's roughly {fteam} {hi}, {dteam} {lo}.",
+   "Implied score off the {total} total: {fteam} {hi}, {dteam} {lo}, give or take.",
+   "That {total} total works out to something like {fteam} {hi}, {dteam} {lo}.",
+   "Total's {total}, so the implied split is about {fteam} {hi} and {dteam} {lo}."
+  ],
+  "low_total": [
+   "In a {total} total, {spread} points is a lot to lay: a low total makes a big spread harder to cover.",
+   "And {spread} is a lot of points in a {total} total. Low totals make big spreads hard to cover.",
+   "That matters: {spread} in a {total} total means a couple of stops can wreck the favorite's cover.",
+   "Honestly {spread} is a big ask in a {total} total; fewer points means fewer ways to cover a big number.",
+   "Laying {spread} in a game totaled at {total} is tough, since there just aren't many points to go around.",
+   "With only {total} points expected, {spread} is a lot to give."
+  ],
+  "news": [
+   "The news: {news}",
+   "Here's what's out there: {news}",
+   "The news behind it: {news}",
+   "What I've got on it: {news}",
+   "The latest on that game: {news}",
+   "Here's the news that matters: {news}"
+  ],
+  "news_none": [
+   "No confirmed injury or news in my sources explains it (as of {as_of}), so the market may know something; I wouldn't fight a move that size.",
+   "Nothing in my sources explains it as of {as_of}, no injury, no news. When a line moves like that with no story, the market usually knows something, so I wouldn't fight it.",
+   "I can't find a confirmed injury or news item behind it (as of {as_of}). A move that big with no story usually means somebody knows something; I'm not fighting it.",
+   "No injury or news I can confirm explains it, as of {as_of}. That's the kind of move I don't bet against.",
+   "My sources have nothing on it as of {as_of}: no injury, no news. I'd respect the move instead of fading it.",
+   "Can't pin it on anything confirmed (sources as of {as_of}). Unexplained moves that size, I let them be."
+  ],
+  "key_on": [
+   "It's sitting right on {k}, a key number: a {k}-point win is a push in the market. League lines are half points, so a pool line would be {lo} or {hi}.",
+   "And yes, {k} matters: it's a key number, so a {k}-point win pushes in the market. Our league uses half points, so it'd be {lo} or {hi} for us.",
+   "Sitting on {k} is a big deal since it's a key number; a {k}-point win is a push at the books. Pool lines are half points, so ours would land on {lo} or {hi}.",
+   "Right on {k}, which is a key number: win by exactly {k} and the market pushes. We don't do pushes, so a pool line would be {lo} or {hi}.",
+   "{k} is a key number, so a {k}-point win is a push in the market. In our league it'd be {lo} or {hi}, no pushes.",
+   "It's parked on {k}, one of the key numbers: a {k}-point win means a push at the books. League lines are half points, so for us it's {lo} or {hi}."
+  ],
+  "cond": [
+   "If {player} plays, the move looks overdone; if he's out, it's earned. I'd wait on his status before picking a side.",
+   "So it comes down to {player}: if he plays, the move's too much; if he sits, it's fair. I'd wait on his status before taking a side.",
+   "If {player} goes, that move's overdone. If he doesn't, it's earned. Wait on the status before picking a side.",
+   "It all hinges on {player}. Playing means the move overshot; out means it's right. I'd hold off on either side until there's word on him.",
+   "{player} is the whole story: plays, and the move looks like too much; sits, and it's earned. No side until there's news.",
+   "My read: overdone if {player} plays, earned if he's out. I'd sit tight on either side until his status is clear.",
+   "If {player} suits up, the move went too far; if he's out, it's fair. Wait for the status before you pick a side."
+  ],
+  "lean": [
+   "Lean: {label}, mainly because {why}.",
+   "I lean {label}, mostly because {why}.",
+   "My lean is {label}, and the main reason is {why}.",
+   "Lean {label}. Biggest reason: {why}.",
+   "I'd lean {label}, mainly since {why}.",
+   "Give me {label} as a lean, mostly because {why}."
+  ],
+  "lean_nowhy": [
+   "Lean: {label}.",
+   "I lean {label}.",
+   "My lean is {label}.",
+   "Lean {label}, nothing fancy.",
+   "I'd lean {label}.",
+   "Give me {label} as a lean."
+  ],
+  "coin": [
+   "At {label} my numbers call it a coin flip, so the move looks priced in.",
+   "At {label} it's a coin flip by my numbers, so the move looks priced in.",
+   "My numbers have {label} as a coin flip now, which says the move's priced in.",
+   "{label} grades out as a coin flip for me, so the market's caught up.",
+   "Coin flip at {label} by my numbers. The move looks priced in.",
+   "By my numbers {label} is a coin flip, so I think the market already has it."
+  ],
+  "priced_in": [
+   "A starting QB out is usually worth 3 to 7 points, so a {pts}-point move has most of it priced in already.",
+   "A starter at QB is worth roughly 3 to 7 points, and it's already moved {pts}, so most of that is priced in.",
+   "That's about what losing a starting QB is worth (3 to 7 points), so the {pts}-point move has it mostly priced in.",
+   "Losing the starter is worth somewhere around 3 to 7 points, and the market's moved {pts}, so it's mostly priced in.",
+   "QB out is a 3 to 7 point thing, and this already moved {pts}. Mostly priced in at this point.",
+   "The {pts}-point move covers most of what a starting QB is worth (3 to 7 points), so it's mostly priced in."
+  ],
+  "room": [
+   "A starting QB out is usually worth 3+ points and this has only moved {pts}, so there may still be room.",
+   "Losing a starting QB is usually worth 3 or more points, and it's only moved {pts}. There may be room left.",
+   "Only {pts} points of movement for a starting QB out? Usually that's worth 3+, so there could still be room.",
+   "That's light: a starting QB out usually moves a line 3+ points, and this one's moved {pts}. Could be some room left.",
+   "A {pts}-point move for a missing starter is small; those are usually worth 3+ points. Could still be room.",
+   "Starting QBs are worth 3+ points as a rule, and this has moved just {pts}, so there might still be room."
+  ],
+  "stale": [
+   "That injury news is from {when}, so the opening number already had it; it doesn't explain the move by itself.",
+   "That's old news ({when}), so it was already in the opener. It doesn't explain this move on its own.",
+   "The injury's been known since {when}, so the opener priced it; on its own it doesn't explain the move.",
+   "Careful: that news dates to {when}, before this line opened, so it isn't what moved it.",
+   "That's been out there since {when}, so the opening number already reflected it. The move needs another reason.",
+   "Old news ({when}): the opener already had it, so it's not the reason for the move by itself."
+  ]
+ },
+ "fixtures": [
+  {
+   "fav_open": "Duke -8.5",
+   "fav_now": "Duke -13.5",
+   "pts": "5",
+   "toward": "Duke",
+   "league": "Duke -13.5",
+   "total": "40.5",
+   "fteam": "Iowa",
+   "hi": "24.5",
+   "dteam": "Illinois",
+   "lo": "16.0",
+   "spread": "8.5",
+   "as_of": "Wed Nov 18 2:45 AM CT",
+   "news": "Clemson QB Christopher Vizzina is out vs Duke with what Dabo Swinney called a 'pretty severe' concussion. Clemson will start fifth-year walk-on Trent Pearman at QB at Duke in his first career start (2-of-6 for 6 yards vs Georgia Tech); freshman Brock Bradley is QB2.",
+   "k": "3",
+   "player": "LaNorris Sellers",
+   "label": "Duke -13.5",
+   "why": "QB status: Clemson QB Tait Reynolds is out",
+   "when": "Nov 5"
+  },
+  {
+   "fav_open": "North Texas -13.5",
+   "fav_now": "North Texas -6.5",
+   "pts": "7",
+   "toward": "Tulane",
+   "league": "Iowa -8.5",
+   "total": "62.5",
+   "fteam": "Ohio State",
+   "hi": "33.0",
+   "dteam": "Nebraska",
+   "lo": "29.5",
+   "spread": "3",
+   "as_of": "this week",
+   "news": "Illinois starting QB Katin Houser broke his nose vs UCLA and is having surgery.",
+   "k": "7",
+   "player": "Katin Houser",
+   "label": "Illinois +8.5",
+   "why": "SP+ projects Ohio State by 4.8",
+   "when": "Nov 5"
+  }
+ ]
+}

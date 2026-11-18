@@ -13,6 +13,7 @@ fake source with fixed data, so they never depend on this week's caches.
 from __future__ import annotations
 
 import datetime as dt
+import os
 import re
 import sys
 from pathlib import Path
@@ -304,7 +305,11 @@ def test_card_crowd_is_the_league_lean_from_past_habits():
 
 
 def test_protect_posture_is_unchanged():
-    out = pick_strategy.answer(ctx_last(you={"team_name": "Alpha"}), "what's my strategy?", facts=facts(crowd=CROWD))
+    os.environ["PICKY_PHRASING"] = "0"  # variant 0 of the phrasing bank = the pre-bank wording
+    try:
+        out = pick_strategy.answer(ctx_last(you={"team_name": "Alpha"}), "what's my strategy?", facts=facts(crowd=CROWD))
+    finally:
+        os.environ.pop("PICKY_PHRASING", None)
     assert out == ("You're 30-18, 1st, in a playoff spot, 5 ahead of 5th place (25), with about 14 picks left. Protect it: "
                    "side with the best numbers and the consensus, don't fade the field. Catching 1st only buys seeding, "
                    "because points reset in the playoffs."), out

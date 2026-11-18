@@ -1,0 +1,87 @@
+{
+ "lane": "hypo_value",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "same": [
+   "No value either way: the league and the market both have {team} {line}.",
+   "No edge either way, the league and the market are both at {team} {line}.",
+   "Same number both places ({team} {line}), so no value on either side.",
+   "Nothing there: {team} {line} in the league and in the market.",
+   "Wash. League and market both say {team} {line}.",
+   "No value: it's {team} {line} in both spots."
+  ],
+  "value": [
+   "Value on {side}: you'd have {team} at {lk} when the market says {mk}, a {pts}-point edge.",
+   "{side} has the value. You'd be holding {team} {lk} with the market at {mk}, so {pts} points better.",
+   "That's value on {side}: {team} {lk} in the league vs {mk} in the market, a {pts}-point edge.",
+   "{side}. The league has {team} {lk} and the market's at {mk}, so that's a {pts}-point edge.",
+   "Value's on {side}: {team} at {lk} while the market sits at {mk}. {pts} points of edge.",
+   "Value on {side}, by {pts} points: {team} {lk} in our league, {mk} out there.",
+   "The value's with {side}. League {team} {lk}, market {mk}, a {pts}-point gap."
+  ],
+  "cross": [
+   "That crosses {k}, a key number, so it's worth more than the raw points.",
+   "And it crosses {k}, which is a key number. That makes it worth more than it looks.",
+   "It goes across {k} too, a key number, so it's bigger than the points say.",
+   "Crossing {k} matters: it's a key number, so those points are worth extra.",
+   "Plus it jumps over {k}, a key number. Worth more than the plain math.",
+   "And {k} sits in between, a key number, so that edge is worth extra."
+  ],
+  "good_side": [
+   "{lk} is on the good side of {k}: {outcome} at the league number.",
+   "And {lk} sits on the right side of {k}: {outcome} at our number.",
+   "{lk} is the good side of {k}, so {outcome} in our league.",
+   "Being at {lk} instead of {k} matters: {outcome} at the league number.",
+   "The hook on {k} helps: at {lk}, {outcome} in our league.",
+   "At {lk} it's the good side of {k}: {outcome}."
+  ],
+  "verdict_real": [
+   "That's real value: {side} is the better side, and anyone on {other} has the worse number.",
+   "That's a real edge, so I'd take {side}. {other} backers are getting the worse number.",
+   "Real value on {side}, so that's the side; {other} has the worse number.",
+   "I like it: that's enough of an edge to matter on {side}, and {other} is stuck with the worse number.",
+   "Enough to matter, so {side} is the side to be on and {other} has the worse number.",
+   "That's the kind of gap that actually matters. I'd take {side}; {other} has the worse number."
+  ],
+  "verdict_small": [
+   "Small edge on {side}, more tiebreaker than reason, but it's the better side; {other} just has the slightly worse number.",
+   "It's a small edge, so {side} is the side only as a tiebreaker. {other} has the slightly worse number.",
+   "Slight lean {side} on the number alone, but it's small. {other} has the slightly worse number.",
+   "Not a lot, so it's a tiebreaker: I'd take {side} if it's close. {other} has the slightly worse number.",
+   "Small, but {side} is still the better side and {other} has the slightly worse number.",
+   "That's a nudge, nothing more: slight lean {side}. {other} has the slightly worse number."
+  ],
+  "verdict_hook": [
+   "Small in points, but it's the hook on {k}, about the most valuable half point there is. {side} is the better side; {other} has the worse number.",
+   "Half a point doesn't sound like much, but on {k} it's the most valuable half point there is. I'd take {side}; {other} has the worse number.",
+   "Only half a point, but it's the hook on {k}, and that's the one that matters most. Better side: {side}. Worse number: {other}.",
+   "It's just the hook, but the hook on {k} is the good one. {side} is the side; {other} has the worse number.",
+   "Tiny on paper, but {k} is a key number, so that half point is gold. I like {side}, and {other} has the worse number.",
+   "The half point lands on {k}, which is where it counts. {side} is the better side; {other} has the worse number."
+  ]
+ },
+ "fixtures": [
+  {
+   "team": "Duke",
+   "line": "-13.5",
+   "side": "Duke",
+   "lk": "-13.5",
+   "mk": "-15",
+   "pts": "1.5",
+   "k": "14",
+   "other": "Clemson",
+   "outcome": "a 3-point win still covers"
+  },
+  {
+   "team": "Illinois",
+   "line": "+8.5",
+   "side": "the favorite",
+   "lk": "+8.5",
+   "mk": "+10",
+   "pts": "1.5",
+   "k": "3",
+   "other": "the other side",
+   "outcome": "a 3-point loss still covers for the dog"
+  }
+ ]
+}

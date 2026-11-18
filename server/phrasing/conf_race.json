@@ -1,0 +1,68 @@
+{
+ "lane": "conf_race",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "lead": [
+   "{leader} leads the {conf} at {rec} ({overall} overall), then {chasers}.",
+   "{leader} is on top of the {conf} at {rec} ({overall} overall), with {chasers} chasing.",
+   "{conf}: {leader} {rec} in conference play ({overall} overall), then {chasers}.",
+   "It's {leader}'s race right now at {rec} in the {conf} ({overall} overall). Behind them: {chasers}.",
+   "{leader} sits first in the {conf} at {rec}, {overall} overall. Next up: {chasers}.",
+   "Top of the {conf}: {leader} at {rec} ({overall} overall), followed by {chasers}."
+  ],
+  "rule": [
+   "The top two in conference record make the title game; ties go to the conference's tiebreakers.",
+   "Top two in conference record play for the title, and ties go to the tiebreakers.",
+   "Best two conference records make the title game. Ties get settled by the conference tiebreakers.",
+   "The title game is the top two by conference record, with tiebreakers for any ties.",
+   "It's the top two in conference play that make the title game; tiebreakers settle ties.",
+   "Two best conference records go to the title game, and the tiebreakers handle ties."
+  ],
+  "week": [
+   "This week: {games}.",
+   "This week it's {games}.",
+   "On deck this week: {games}.",
+   "This week's games for them: {games}.",
+   "Up this week: {games}.",
+   "Their games this week: {games}."
+  ],
+  "control_both": [
+   "{a} and {b} control it: win out and they're both in the title game.",
+   "Right now it's {a} and {b}'s to lose. Win out and they meet in the title game.",
+   "{a} and {b} are in control: if they keep winning, nobody can pass them.",
+   "It's in {a} and {b}'s hands: they control it, and if they win out they're the title game.",
+   "{a} and {b} control their own path; win out and that's the title game.",
+   "Who's in control: {a} and {b}. If both win out, nobody else gets in."
+  ],
+  "control_one": [
+   "{a} controls it: win out and they're in. {rest} are fighting for the other spot, and tiebreakers could decide it.",
+   "Only {a} is in full control. Behind them, {rest} are tied up for the other spot, so tiebreakers could matter.",
+   "{a} is the only team that controls its path. {rest} need help or a tiebreaker for the second spot.",
+   "It's {a}'s to lose; the second spot is between {rest}, and that might come down to tiebreakers.",
+   "{a} wins out and they're in. The other spot is {rest}, which could come down to tiebreakers.",
+   "In control: {a}. Second spot: {rest}, with tiebreakers in play."
+  ],
+  "control_none": [
+   "Nobody controls it yet: {teams} are bunched up, so it's going to come down to results and tiebreakers.",
+   "No one's in control: {teams} are all in the mix, and tiebreakers could decide it.",
+   "Wide open: {teams} are bunched together, so expect tiebreakers to matter.",
+   "Nobody has it wrapped up: {teams} are all close, with tiebreakers in play.",
+   "It's a scrum between {teams}; nobody controls it, so tiebreakers matter.",
+   "No one controls their path yet. {teams} are all bunched, so tiebreakers come into play."
+  ]
+ },
+ "fixtures": [
+  {
+   "leader": "Utah",
+   "conf": "Big 12",
+   "rec": "7-0",
+   "overall": "10-0",
+   "chasers": "Texas Tech 6-1 and BYU 5-2",
+   "games": "Utah at TCU, Texas Tech at Baylor, BYU at Kansas",
+   "a": "Utah",
+   "b": "Texas Tech",
+   "rest": "Indiana and Oregon",
+   "teams": "Utah, Texas Tech and BYU"
+  }
+ ]
+}

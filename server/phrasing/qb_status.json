@@ -1,0 +1,81 @@
+{
+ "lane": "qb_status",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "status": [
+   "{player}: {status}.",
+   "{player} is {status}.",
+   "Short version: {player} is {status}.",
+   "Status on {player}: {status}.",
+   "Bottom line, {player} is {status}.",
+   "Last word on {player}: {status}."
+  ],
+  "note": [
+   "{note}",
+   "Here's the latest: {note}",
+   "What I've got: {note}",
+   "Latest I have: {note}",
+   "Here's where it stands: {note}",
+   "The latest: {note}"
+  ],
+  "source": [
+   "(per {src}, {when})",
+   "That's from {src}, {when}.",
+   "Per {src}, {when}.",
+   "Source: {src}, {when}.",
+   "({src}, {when})",
+   "Via {src}, {when}."
+  ],
+  "verdict_priced": [
+   "The line's already moved {pts} against {team} on it, so most of that is priced in.",
+   "Market's already moved {pts} points against {team}, so it's mostly priced in.",
+   "It's already cost {team} {pts} points in the line, so most of it is priced in.",
+   "The number moved {pts} against {team} for this already. Mostly priced in.",
+   "The line has already moved {pts} against {team}, so it's mostly priced in.",
+   "The line's moved {pts} away from {team}, so most of it is priced in now."
+  ],
+  "verdict_room": [
+   "A starting QB is worth 3+ points and the line has barely moved against {team}, so keep an eye on it.",
+   "Losing a starting QB is usually a 3+ point hit, and the number hasn't really moved against {team}. Could be room.",
+   "The line hasn't moved much against {team}, and a starting QB is usually worth 3+ points. Might be room there.",
+   "That should be worth 3+ points against {team}, and the market hasn't moved much. Worth watching.",
+   "Usually that's a 3+ point hit, and the line's barely moved on {team}. Could still be room.",
+   "Starting QB out normally costs 3+ points; the line on {team} has barely budged. There may be room."
+  ],
+  "verdict_wait": [
+   "Until there's a real update on {player}, I'd call it a coin flip and wait before locking anything in.",
+   "No real update on {player} yet, so I'd wait on it. Coin flip until then.",
+   "I'd wait for word on {player} before locking anything in. Right now it's a coin flip.",
+   "Wait on {player}. Until there's news, it's a coin flip either way.",
+   "With {player} up in the air, I'd wait. It's a coin flip until he's cleared or ruled out.",
+   "{player}'s status is the swing, so I'd wait for the update before deciding."
+  ],
+  "verdict_margin": [
+   "No starting QB is out, so it matters at the margin; it doesn't move the number much.",
+   "The QB isn't on the injury list, so this is a margin thing, not a line-mover.",
+   "No QB is out, so it matters at the margin and doesn't move the number much.",
+   "Since no starting QB is out, I'd call it a margin thing, not a reason to switch sides.",
+   "It matters at the margin, but no starting QB is out, so it doesn't move the number much.",
+   "Margin stuff. With no starting QB out, it doesn't move the number much."
+  ],
+  "verdict_old": [
+   "That's been known since {when}, so it was already in the opening number.",
+   "Old news ({when}), so the opener already had it priced.",
+   "It's been out there since {when}, so the opening line already reflected it.",
+   "Nothing new there since {when}; the opener priced it.",
+   "The market's known since {when}, so it was baked into the opening number.",
+   "That's {when} news, so the opening line already had it."
+  ]
+ },
+ "fixtures": [
+  {
+   "player": "LaNorris Sellers",
+   "status": "questionable",
+   "note": "South Carolina QB LaNorris Sellers (ankle) sat out the loss at Arkansas and Shane Beamer gave no specific update on him; backup Cutter Woods started and threw three interceptions.",
+   "src": "WIS-TV",
+   "when": "Tuesday",
+   "pts": "5",
+   "team": "Clemson"
+  }
+ ]
+}

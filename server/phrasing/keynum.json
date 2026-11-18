@@ -1,0 +1,55 @@
+{
+ "lane": "keynum",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "on": [
+   "Right on a key number: {games}.",
+   "Sitting right on a key number: {games}.",
+   "On the number exactly: {games}.",
+   "Parked right on a key number: {games}.",
+   "These are dead on a key number: {games}.",
+   "Exactly on a key number this week: {games}."
+  ],
+  "hook": [
+   "Half a point off one: {games}.",
+   "Half a point away: {games}.",
+   "On the hook: {games}.",
+   "A hook off a key number: {games}.",
+   "Half a point off: {games}.",
+   "Next to one, with the hook: {games}."
+  ],
+  "why": [
+   "3 and 7 are the most common final margins, so the half point around them is where pushes turn into wins or losses.",
+   "3 and 7 are the margins games land on most, which is why the half point around them matters.",
+   "Games end on 3 and 7 more than anything else, so that half point is where a push becomes a win or a loss.",
+   "3 and 7 come up as final margins way more than other numbers, so the hook around them swings a lot of picks.",
+   "Final margins pile up on 3 and 7, so the half point next to them decides a lot of games against the number.",
+   "Most common final margins are 3 and 7. The half point around them is where wins and losses flip."
+  ],
+  "verdict_dog": [
+   "The hook that matters most this week is {game}: a {k}-point win is a cover for {dog} and a loss for the favorite.",
+   "If one hook matters, it's {game}. A {k}-point win cashes for {dog} backers and burns the favorite.",
+   "Biggest hook on the board: {game}. Win by exactly {k} and {dog} still covers.",
+   "{game} is the one I'd watch: {dog} gets the hook, so a {k}-point loss still covers.",
+   "The hook I'd care about is {game}. At that number, a {k}-point game is a cover for {dog}.",
+   "Most important hook: {game}, where {dog} covers even if they lose by {k}."
+  ],
+  "verdict_fav": [
+   "The hook that matters most this week is {game}: {fav} only has to win by {k} to cover.",
+   "If one hook matters, it's {game}. {fav} covers with a {k}-point win.",
+   "Biggest hook on the board: {game}, where a {k}-point {fav} win still covers.",
+   "{game} is the one I'd watch: {fav} gets the half point, so winning by {k} is enough.",
+   "The hook I'd care about is {game}. {fav} only needs {k}.",
+   "Most important hook: {game}, where {fav} covers by winning by just {k}."
+  ]
+ },
+ "fixtures": [
+  {
+   "games": "Ohio State -3 at Nebraska, Utah -7 at TCU",
+   "game": "Texas Tech -3.5 at Baylor",
+   "k": "3",
+   "dog": "Baylor",
+   "fav": "Utah"
+  }
+ ]
+}

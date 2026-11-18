@@ -73,6 +73,28 @@ def allowed_ats(item: dict, facts: dict) -> set[str]:
     return out
 
 
+def window_ats(item: dict, facts: dict) -> set[str]:
+    """ATS records over a trailing window of each team's games ("since the coaching change", "last 3"): every
+    suffix of the season's graded games, as W-L. Only accepted next to a window word (check_ats_records)."""
+    out: set[str] = set()
+    for gid in item.get("games") or []:
+        g = (facts.get("games") or {}).get(str(gid)) or {}
+        for t in (g.get("teams") or {}).values():
+            res = [x.get("ats") for x in sorted(t.get("games") or [], key=lambda x: x.get("date") or "")
+                   if x.get("ats") in ("C", "L", "P")]
+            for i in range(len(res)):
+                tail = res[i:]
+                w, l, p = tail.count("C"), tail.count("L"), tail.count("P")
+                out.add(f"{w}-{l}")
+                if p:
+                    out.add(f"{w}-{l}-{p}")
+    return out
+
+
+_WINDOW = re.compile(r"\b(since|last (\d{1,2}|two|three|four|five|six|few)\b|past (\d{1,2}|two|three|four|five|six|few)\b|"
+                     r"under (the )?interim|interim|recent(ly)?|streak)", re.I)
+
+
 def _num(v) -> float | None:
     if v is None:
         return None
@@ -94,11 +116,17 @@ def check_lines(ans: str, allowed: set[float]) -> tuple:
     return "lines_match_market", not bad, ("unverified: " + ", ".join(bad)) if bad else ""
 
 
-def check_ats_records(ans: str, allowed: set[str]) -> tuple:
+def check_ats_records(ans: str, allowed: set[str], windows: set[str] | None = None) -> tuple:
     bad = []
     for m in _ATS_REC.finditer(ans or ""):
         rec = f"{m.group(1)}-{m.group(2)}" + (f"-{m.group(3)}" if m.group(3) else "")
         if rec not in allowed and f"{m.group(1)}-{m.group(2)}" not in allowed:
+            a = ans or ""
+            st = max(a.rfind(". ", 0, m.start()), a.rfind("! ", 0, m.start()), a.rfind("? ", 0, m.start())) + 1
+            en = min([i for i in (a.find(". ", m.end()), a.find("! ", m.end()), a.find("? ", m.end())) if i >= 0] or [len(a)])
+            sent = a[st:en]  # the sentence holding the record
+            if windows and rec in windows and _WINDOW.search(sent):
+                continue  # a true record over a trailing window ('since then: 2-1 ATS')
             bad.append(rec)
     return "ats_records_real", not bad, ("not in data: " + ", ".join(bad)) if bad else ""
 
@@ -135,10 +163,11 @@ def run_checks(item: dict, answers: list[str], facts: dict, market: dict) -> lis
     det = item.get("det") or {}
     lines = allowed_lines(item, facts, market)
     ats = allowed_ats(item, facts)
+    win = window_ats(item, facts)
     out = []
     for i, a in enumerate(answers):
         sfx = f"@t{i + 1}" if len(answers) > 1 else ""
-        for name, ok, d in (check_replied(a), check_length(a), check_lines(a, lines), check_ats_records(a, ats)):
+        for name, ok, d in (check_replied(a), check_length(a), check_lines(a, lines), check_ats_records(a, ats, win)):
             out.append((name + sfx, ok, d))
         if det.get("records"):
             name, ok, d = check_records(a, det["records"])

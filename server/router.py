@@ -37,6 +37,7 @@ import burn_book
 import callbacks
 import chat
 import news
+import phrasing  # code-lane wording bank + verdict lines (ontology plan Phase 1)
 import pick_strategy
 import situational
 import slate_cards
@@ -878,6 +879,64 @@ def _value_line(team: str, pts: float, g: dict | None, used: list, what: str) ->
     return s + ", and the line hasn't moved, so either it's not in the number yet or the market doesn't buy it."
 
 
+def _when(date: str | None) -> str:
+    """'today' / 'yesterday' / 'Monday' within the week, else 'Nov 5' (a source note's date, said like a text)."""
+    import datetime as _dt
+    try:
+        d = _dt.date.fromisoformat(str(date)[:10])
+    except ValueError:
+        return str(date or "")
+    days = ((_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=6)).date() - d).days
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if 1 < days < 7:
+        return d.strftime("%A")
+    return f"{d.strftime('%b')} {d.day}"
+
+
+def _fresh(date: str | None, days: int = 5) -> bool:
+    """A report from the last `days` days: older news was already in this week's opening line."""
+    import datetime as _dt
+    try:
+        d = _dt.date.fromisoformat(str(date)[:10])
+    except ValueError:
+        return True  # undated: don't claim it's old
+    return ((_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=6)).date() - d).days <= days
+
+
+_QB_TXT = re.compile(r"\bQB\d?\b|\bquarterback", re.I)
+_STARTER_TXT = re.compile(r"\bwill start\b|\bstarts? at QB\b|\bwould start|\bstart(s|ing)? (at|for|in)\b|\bQB2\b|"
+                          r"\bnamed .{0,20}\bstarter\b", re.I)
+_UNSURE = ("questionable", "doubtful", "game-time decision")
+
+
+def qb_verdict(fx: list[tuple[dict, dict]], injury_ask: bool, seed: str) -> str | None:
+    """The 'so what' for a QB / injury answer: a starting QB out -> how much the line already moved against his
+    team (3+ = mostly priced in, less = maybe room); a QB unsure -> wait, coin flip; only non-QB injuries on an
+    injury ask -> margin, doesn't move the number. fx = (fact, game) pairs that went into the answer."""
+    for f, g in fx:
+        if (f.get("status") or "").lower() == "out" and _QB_TXT.search(f.get("text") or "") and f.get("team") in ("home", "away"):
+            if not _fresh(f.get("date")):  # old news: the opener had it, so the move since open says nothing about it
+                return phrasing.say("qb_status", "verdict_old", seed, when=_when(f.get("date")))
+            mk = factstore.market({"id": g.get("id"), "sheet": g}) if g else {}
+            if mk.get("spread") is None or mk.get("spreadOpen") is None:
+                return None
+            o, n = float(mk["spreadOpen"]), float(mk["spread"])
+            against = (o - n) if f["team"] == "away" else (n - o)  # home spread falls = the line moved toward home
+            team = g.get(f["team"])
+            if against >= 3:
+                return phrasing.say("qb_status", "verdict_priced", seed, pts=f"{against:g}", team=team)
+            return phrasing.say("qb_status", "verdict_room", seed, team=team)
+    for f, _ in fx:
+        if (f.get("status") or "").lower() in _UNSURE and _QB_TXT.search(f.get("text") or ""):
+            return phrasing.say("qb_status", "verdict_wait", seed, player=(f.get("players") or ["him"])[0])
+    if injury_ask:
+        return phrasing.say("qb_status", "verdict_margin", seed)
+    return None
+
+
 def qb_status_text(ctx: dict, q: str) -> str | None:
     """A QB's (or player's) latest status from the normalized availability list, verbatim with its source and
     day (TBD stays TBD; > 7 days old says 'last report <day>'). Out or doubtful: who's next (class, starts,
@@ -1089,10 +1148,12 @@ def _qb_status_intel(ctx: dict, q: str) -> str | None:
     if player and (re.search(r"'s\b|\b(QB|quarterback|starter|coach)\b", player.group(1), re.I)
                    or factstore.resolve(player.group(1))):
         player = None  # 'is Clemson's QB playing' names a team's QB, not a player called "Clemson's QB"
-    hits = []
-    for g, f in factstore.all_availability():
+    hits, game_of = [], {}
+    avail = factstore.all_availability()
+    for g, f in avail:
         team = g.get(f.get("team")) if f.get("team") in ("home", "away") else None
         txt = f.get("text") or ""
+        game_of[id(f)] = g
         if player:
             if any(player.group(1).lower() in (p or "").lower() for p in f.get("players") or []) or \
                     player.group(1).split()[-1].lower() in txt.lower():
@@ -1113,10 +1174,37 @@ def _qb_status_intel(ctx: dict, q: str) -> str | None:
             seen.add(id(f))
             uniq.append(f)
     hits = sorted(uniq, key=lambda f: f.get("kind") != "injury")
-    lines = [re.sub(r"\s+", " ", f["text"]).strip() for f in hits[:3 if injury_ask else 2]]
-    src = hits[0].get("source_name")
-    out = " ".join(lines)
-    return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
+    if not phrasing.on():
+        lines = [re.sub(r"\s+", " ", f["text"]).strip() for f in hits[:3 if injury_ask else 2]]
+        src = hits[0].get("source_name")
+        out = " ".join(lines)
+        return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
+    # a QB who's out (or doubtful) brings his team's named starter: 'who starts?' is the real question
+    out_teams = {(id(game_of[id(f)]), f.get("team")) for f in hits if (f.get("status") or "").lower() in ("out", "doubtful")
+                 and _QB_TXT.search(f.get("text") or "")}
+    starters = [x for g, x in avail
+                if (id(g), x.get("team")) in out_teams and not x.get("status") and _STARTER_TXT.search(x.get("text") or "")]
+    starting_ask = bool(not player and not injury_ask and re.search(r"\bstart|\bwho'?s\b|\bwho is\b|\bQB\b|quarterback", q or "", re.I))
+    rest = [f for f in hits if f not in starters]
+    pick = (starters[:1] + rest[:2]) if starting_ask else (rest[:3 if injury_ask else 2] + starters[:1])
+    if not starting_ask and starters and len(pick) > 3:
+        pick = rest[:2] + starters[:1]
+    sd = phrasing.seed_for(ctx, q)
+    note = " ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick)
+    parts = []
+    if player:
+        f0 = next((f for f in pick if f.get("status")), None)
+        if f0 and f0["status"].lower() not in f0.get("text", "").lower():
+            name = next((p for p in f0.get("players") or [] if player.group(1).split()[-1].lower() in p.lower()), player.group(1))
+            parts.append((1, phrasing.say("qb_status", "status", sd, player=name, status=f0["status"].lower())))
+    parts.append((0, phrasing.say("qb_status", "note", sd, note=note)))
+    src = pick[0].get("source_name")
+    if src:
+        parts.append((3, phrasing.say("qb_status", "source", sd, src=src, when=_when(pick[0].get("date")))))
+    v = qb_verdict([(f, game_of.get(id(f), {})) for f in pick], injury_ask, sd)
+    if v:
+        parts.append((2, v))
+    return phrasing.join(parts)
 
 
 LW_PICK_ASK = re.compile(r"\b(who|what) did ([\w' .-]{1,30}?) (take|pick|have|go with|ride)\b[^?]{0,60}\blast week\b", re.I)
@@ -1343,6 +1431,28 @@ def conf_race_text(ctx: dict, q: str) -> str | None:
     return factstore.answer(" ".join(out), used)
 
 
+def conf_control(rows: list[tuple[str, str]], seed: str) -> str:
+    """Who controls the title-game race, from conference W-L: a team controls its path when at most one other
+    team has as few losses or fewer (win out and nobody can pass it). Tiebreakers aren't computed, so a shared
+    second spot says 'tiebreakers'."""
+    losses = [(t, int(r.split("-")[1])) for t, r in rows]
+    ctrl = [t for t, l_ in losses if sum(1 for t2, l2 in losses if t2 != t and l2 <= l_) <= 1]
+    if len(ctrl) >= 2:
+        return phrasing.say("conf_race", "control_both", seed, a=ctrl[0], b=ctrl[1])
+    others = [(t, l_) for t, l_ in losses if t not in ctrl]
+    if ctrl:
+        lo = min(l_ for _, l_ in others)
+        return phrasing.say("conf_race", "control_one", seed, a=ctrl[0], rest=_and([t for t, l_ in others if l_ == lo][:3]))
+    lv = sorted({l_ for _, l_ in losses})[:2]
+    return phrasing.say("conf_race", "control_none", seed, teams=_and([t for t, l_ in losses if l_ in lv][:4]))
+
+
+def spots_verdict(kinds: list[str], seed: str) -> str:
+    """Backtest (ledger B12 / pick-factors): spots on paper are about a coin flip against the number, letdowns
+    held up a little better. Tiebreaker, not a reason."""
+    return phrasing.say("lookahead", "verdict_let" if "letdown" in kinds else "verdict_look", seed)
+
+
 def lookahead_slate_text(ctx: dict, q: str) -> str | None:
     """Every notable game's lookahead / letdown verdict (slate_cards.lookahead_line), real spots only."""
     rows = factstore.upcoming()
@@ -1357,13 +1467,28 @@ def lookahead_slate_text(ctx: dict, q: str) -> str | None:
         spots = [x.strip() for x in v.group(1).split(";") if re.match(r"(lookahead|letdown) spot for", x.strip())]
         for x in spots:
             hits.append(f"{g['awayTeam']} at {g['homeTeam']}: {x}")
+    sd = phrasing.seed_for(ctx, q)
     if not hits:
-        return "No real lookahead or letdown setups on paper this week."
-    return "Spots on paper: " + "; ".join(hits[:4]) + "."
+        return phrasing.say("lookahead", "none", sd)
+    out = phrasing.say("lookahead", "spots", sd, spots="; ".join(hits[:4]))
+    if phrasing.on():
+        out = phrasing.join([(0, out), (1, spots_verdict([h.split(": ", 1)[1].split()[0] for h in hits[:4]], sd))])
+    return out
 
 
 INTERIM_ASK = re.compile(r"\binterim\b|\b(fired|firing) (their |the )?(head )?coach\b[^?]{0,40}\b(matter|affect|impact|effect)\b"
                          r"|\bnew coach\b[^?]{0,30}\b(matter|bump|affect)\b", re.I)
+
+
+def interim_verdict(team: str, w: int, l: int, seed: str) -> str:
+    """ATS since a midseason coaching change: covering = no reason to fade them for it; not covering = the fade
+    has been real; even = doesn't move the number. Always a small sample."""
+    ats = f"{w}-{l}"
+    if w > l:
+        return phrasing.say("interim", "verdict_cover", seed, team=team, ats=ats)
+    if w < l:
+        return phrasing.say("interim", "verdict_fade", seed, team=team, ats=ats)
+    return phrasing.say("interim", "verdict_even", seed, team=team)
 
 
 CAREER_ATS = re.compile(r"\bcareer\b[^?.!]{0,40}\b(ATS|against the spread|cover\w*)\b|\b(ATS|against the spread)\b[^?.!]{0,40}\bcareer\b",
@@ -1524,23 +1649,80 @@ def hypo_value_text(ctx: dict, q: str) -> str | None:
     team, lk, team2, mk = m.group(1), float(m.group(2)), m.group(3) or m.group(1), float(m.group(4))
     if team2 != team and not team2.lower().startswith(team.lower()):
         return None
+    sd = phrasing.seed_for(ctx, q)
     if lk == mk:
-        return f"No value either way: the league and the market both have {team} {lk:+g}."
+        return phrasing.say("hypo_value", "same", sd, team=team, line=f"{lk:+g}")
     if lk < 0:  # favorite: a smaller number to lay than the market is value on the favorite
         diff = abs(mk) - abs(lk)
-        side = team if diff > 0 else "the dog"
     else:  # dog: more points than the market is value on the dog
         diff = lk - mk
-        side = team if diff > 0 else "the favorite"
     pts = abs(diff)
-    return (f"Value on {side}: you'd have {team} at {lk:+g} when the market says {mk:+g}, a {pts:g}-point edge"
-            + (" across the key number 14" if min(abs(lk), abs(mk)) < 14 < max(abs(lk), abs(mk)) else "")
-            + (" across 7" if min(abs(lk), abs(mk)) < 7 < max(abs(lk), abs(mk)) else "")
-            + (" across 3" if min(abs(lk), abs(mk)) < 3 < max(abs(lk), abs(mk)) else "")
-            + next((f", and {lk:+g} is on the good side of {k}: a {k}-point {('win' if lk < 0 else 'loss')} still "
-                    f"{'covers' if lk < 0 else 'covers for the dog'} at the league number"
-                    for k in (3, 7, 10, 14) if abs(abs(mk) - k) < 0.01 and abs(abs(lk) - k) == 0.5 and diff > 0), "")
-            + ".")
+    opp = _hypo_opponent(q, team, ctx)
+    if diff > 0:
+        side, other = team, opp or "the other side"
+    else:
+        side, other = opp or ("the dog" if lk < 0 else "the favorite"), team
+    lo, hi = sorted((abs(lk), abs(mk)))
+    crossed = [k for k in (3, 7, 14) if lo < k < hi]
+    good = next((k for k in (3, 7, 10, 14) if abs(abs(mk) - k) < 0.01 and abs(abs(lk) - k) == 0.5 and diff > 0), None)
+    parts = [(0, phrasing.say("hypo_value", "value", sd, side=side, team=team, lk=f"{lk:+g}", mk=f"{mk:+g}", pts=f"{pts:g}"))]
+    if crossed:
+        parts.append((2, phrasing.say("hypo_value", "cross", sd, k=crossed[0])))
+    if good:
+        outcome = f"a {good}-point win still covers" if lk < 0 else f"a {good}-point loss still covers for the dog"
+        parts.append((2, phrasing.say("hypo_value", "good_side", sd, lk=f"{lk:+g}", k=good, outcome=outcome)))
+    if phrasing.on():
+        hook = next((k for k in [good] + crossed if k in (3, 7)), None)
+        if pts == 0.5 and hook:
+            parts.append((1, phrasing.say("hypo_value", "verdict_hook", sd, side=side, k=hook, other=other)))
+        elif pts >= 1.5:
+            parts.append((1, phrasing.say("hypo_value", "verdict_real", sd, side=side, other=other)))
+        else:
+            parts.append((1, phrasing.say("hypo_value", "verdict_small", sd, side=side, other=other)))
+    return phrasing.join(parts)
+
+
+def _hypo_opponent(q: str, team: str, ctx: dict | None) -> str | None:
+    """The other team in a hypothetical-value text: 'value on Duke or Clemson', 'Northwestern -2.5 at Minnesota',
+    else the named team's game this week."""
+    nm = r"([A-Z][\w&'.]*(?:\s[A-Z][\w&'.]*)?)"
+    for rx in (rf"\b{nm}\s+or\s+{nm}\b", rf"\b(?:at|vs\.?|versus|against)\s+{nm}"):
+        for m in re.finditer(rx, q or ""):
+            for x in m.groups():
+                if x and x != team and not x.lower().startswith(team.lower()) and x.lower() not in ("i", "the"):
+                    return x
+    try:
+        g, _ = slate_cards.find_game(team, ctx or {})
+    except Exception:  # noqa: BLE001
+        g = None
+    if g and team in (g.get("awayTeam"), g.get("homeTeam")):
+        return g["homeTeam"] if g["awayTeam"] == team else g["awayTeam"]
+    return None
+
+
+def move_verdict(pts: float, qb_out: bool, seed: str) -> str | None:
+    """'Is the move priced in?': a starting QB out is worth about 3-7 points (plan 3.3), so a 3+ point move has
+    most of it in the number and a smaller one may leave room. No confirmed QB out: None (the card lean speaks)."""
+    if not qb_out:
+        return None
+    return phrasing.say("line_move", "priced_in" if pts >= 3 else "room", seed, pts=f"{pts:g}")
+
+
+def low_total_note(total: float, spread: float, seed: str) -> str | None:
+    """A big spread in a low total is hard to cover: said only when it's true (total <= 45, spread >= 7)."""
+    if total > 45 or abs(spread) < 7:
+        return None
+    return phrasing.say("line_move", "low_total", seed, total=f"{total:g}", spread=f"{abs(spread):g}")
+
+
+def keynum_verdict(hooks: list[tuple], seed: str) -> str | None:
+    """The one hook that matters most (3 before 7 before the rest): hooks = (key, label, fav, dog, dog_gets_hook)."""
+    if not hooks:
+        return None
+    k, game, fav, dog, dog_hook = min(hooks, key=lambda h: (h[0] != 3, h[0] != 7, h[0]))
+    if dog_hook:
+        return phrasing.say("keynum", "verdict_dog", seed, game=game, k=k, dog=dog)
+    return phrasing.say("keynum", "verdict_fav", seed, game=game, k=k, fav=fav)
 
 
 MOVE_WHY = re.compile(r"\bwhy('?d| did| is| has| was)?\b|\bwhat happened\b|\bwhat changed\b|\bwho got hurt\b|\bwhat'?s behind\b", re.I)
@@ -1556,7 +1738,7 @@ def keynum_text(ctx: dict, q: str) -> str | None:
     if not rows:
         return None
     games = factstore.notable(rows, n=40)
-    on, hook, used = [], [], [factstore.KEY_NUMBER_FACT]
+    on, hook, hooks, used = [], [], [], [factstore.KEY_NUMBER_FACT]
     for g in games:
         sp = factstore.market(g).get("spread")
         if sp is None:
@@ -1572,15 +1754,24 @@ def keynum_text(ctx: dict, q: str) -> str | None:
             elif abs(a - k) == 0.5:
                 side = "the dog gets the hook" if a > k else "the favorite only has to win by " + str(k)
                 hook.append((k not in (3, 7), f"{fav} {num:g} {where} ({side})"))
+                dog = g["awayTeam"] if fav == g["homeTeam"] else g["homeTeam"]
+                hooks.append((k, f"{fav} {num:g} {where}", fav, dog, a > k))
     if not on and not hook:
         return None
-    out = []
+    sd = phrasing.seed_for(ctx, q)
+    parts = []
     if on:
-        out.append("Right on a key number: " + ", ".join(on[:3]) + ".")
+        parts.append((0, phrasing.say("keynum", "on", sd, games=", ".join(on[:3]))))
     if hook:
-        out.append("Half a point off one: " + ", ".join(x for _, x in sorted(hook, key=lambda h: h[0])[:3]) + ".")
-    out.append("3 and 7 are the most common final margins, so the half point around them is where pushes turn into wins or losses.")
-    return factstore.answer(" ".join(out), used)
+        parts.append((0, phrasing.say("keynum", "hook", sd, games=", ".join(x for _, x in sorted(hook, key=lambda h: h[0])[:3]))))
+    parts.append((2, phrasing.say("keynum", "why", sd)))
+    if phrasing.on():
+        top = sorted(hook, key=lambda h: h[0])[:3]
+        shown = [h for h in hooks if any(x.startswith(h[1] + " (") for _, x in top)]
+        v = keynum_verdict(shown, sd)
+        if v:
+            parts.append((1, v))
+    return factstore.answer(phrasing.join(parts), used)
 
 
 def slate_move_text(ctx: dict, q: str) -> str | None:
@@ -1600,21 +1791,29 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
 
     def fav(sp):
         return (f"{home} {sp:g}" if sp < 0 else f"{away} {-sp:g}") if sp else "a pick'em"
-    out = []
-    if opn is not None and opn != now:
-        out.append(f"It opened {fav(opn)} and it's {fav(now)} now ({abs(now - opn):g} points"
-                   f" toward {home if now < opn else away}).")
+    sd = phrasing.seed_for(ctx, q)
+
+    def say(slot, **kw):
+        return phrasing.say("line_move", slot, sd, **kw)
+    parts = []  # (priority, sentence): 0 = the answer, higher = dropped first if it runs long
+    moved = opn is not None and opn != now
+    if moved:
+        parts.append((0, say("move", fav_open=fav(opn), fav_now=fav(now), pts=f"{abs(now - opn):g}",
+                             toward=home if now < opn else away)))
     else:
-        out.append(f"The market's {fav(now)}.")
+        parts.append((0, say("no_move", fav_now=fav(now))))
     if pg and pg.get("line") is not None:
         pl = float(pg["line"])
-        out.append(f"Our league line: {fav(pl)}" + (" (locked)." if ctx.get("lines_locked", True) else "."))
+        parts.append((2, say("league_locked" if ctx.get("lines_locked", True) else "league_open", league=fav(pl))))
     tot = ln.get("overUnder")
     if tot and re.search(r"\btotal\b|\bo/u\b|\bover.?under\b", q or "", re.I):
         hi, lo = (tot + abs(now)) / 2, (tot - abs(now)) / 2
         fteam = home if now < 0 else away
         dteam = away if now < 0 else home
-        out.append(f"With a {tot:g} total that's roughly {fteam} {hi:.1f}, {dteam} {lo:.1f} implied: a low total makes a big spread harder to cover.")
+        parts.append((1, say("implied", total=f"{tot:g}", fteam=fteam, hi=f"{hi:.1f}", dteam=dteam, lo=f"{lo:.1f}")))
+        low = low_total_note(tot, now, sd) if phrasing.on() else None
+        if low:
+            parts.append((1, low))
     # the normalized availability list first (news + ESPN + team notes, latest report per player), newest
     # absences only: someone out for weeks is in the number already
     prs = sorted([r for r in factstore.player_status(game=g) if r["status"] in factstore.CAUSE_STATUSES
@@ -1625,31 +1824,47 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     facts = [f for f in notes if f.get("kind") == "injury" or f.get("status")]
     qb = [f for f in facts if re.search(r"\bQB\d?\b|quarterback", f.get("text") or "", re.I)]
     pick = [] if prs else (qb or facts)[:2]
-    news_line = None
+    hit_side = "away" if moved and now < opn else "home"  # the team the line moved against
+    hit_team = away if hit_side == "away" else home
+    outs_hit = [f for f in qb if (f.get("status") or "").lower() == "out" and f.get("team") == hit_side]
+    qb_out = moved and (any(_fresh(f.get("date")) for f in outs_hit) or any(
+        r.get("pos") == "QB" and r["status"] in factstore.OUT_STATUSES and factstore.norm(r.get("team") or "") ==
+        factstore.norm(hit_team) for r in prs))
+    stale = moved and bool(outs_hit) and not qb_out  # every QB-out report predates the opener
+    starter = None
+    if phrasing.on() and pick:  # a QB out brings his team's named starter ('who's playing instead' is the real story)
+        outs = {f.get("team") for f in qb if (f.get("status") or "").lower() in ("out", "doubtful")}
+        starter = next((x for x in notes if x not in pick and x.get("team") in outs
+                        and not x.get("status") and _STARTER_TXT.search(x.get("text") or "")), None)
+    news_line, news_team = None, None
     if not pick and not prs:  # the intel run can miss a game: the news feed's QB/injury items for either team
         try:
             for t in (away, home):
                 hits = [x for x in factstore.news_lines(t, f"{t} QB injury")
                         if re.search(r"\b(QB|quarterback|out|injur\w*|miss(es)?|surgery|doubtful|questionable)\b", x, re.I)]
                 if hits:
-                    news_line = re.sub(r"^[^:]{0,120}?:\s*", "", hits[0]).strip()
+                    news_line, news_team = re.sub(r"^[^:]{0,120}?:\s*", "", hits[0]).strip(), t
                     break
         except Exception:  # noqa: BLE001
             news_line = None
     if prs:
-        out.append("The news: " + " ".join(_per(r) for r in prs))
+        parts.append((0, say("news", news=" ".join(_per(r) for r in prs))))
     elif pick:
-        out.append("The news: " + " ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))
+        parts.append((0, say("news", news=" ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))))
+        if starter:  # the first thing to go when the answer runs long
+            parts.append((2, re.sub(r"\s+", " ", starter["text"]).strip()))
     elif news_line:
-        out.append(f"The news: {news_line}")
+        parts.append((0, say("news", news=news_line)))
     else:
-        out.append(f"No confirmed injury or news in my sources explains it (as of {intel_as_of or 'this week'}), "
-                   "so the market may know something; I wouldn't fight a move that size.")
+        parts.append((0, say("news_none", as_of=intel_as_of or "this week")))
+    if news_line and moved and news_team == hit_team and \
+            re.search(r"\b(QB|quarterback)\b", news_line) and re.search(r"\bout\b|\bmiss(es)?\b|\bsurgery\b", news_line, re.I):
+        qb_out = True  # the feed's QB-out item (it only carries recent news) on the side the line moved against
     a = abs(now)
+    key_ask = bool(re.search(r"key number|\bhook\b|sitting (right )?on|\bon (a |the )?(key )?(number|3|7|10|14)\b", q or "", re.I))
     for k in (3, 7, 10, 14):
         if a == k:
-            out.append(f"It's sitting right on {k}, a key number: a {k}-point win is a push in the market. League lines are "
-                       f"half points, so a pool line would be {k - 0.5:g} or {k + 0.5:g}.")
+            parts.append((0 if key_ask else 2, say("key_on", k=k, lo=f"{k - 0.5:g}", hi=f"{k + 0.5:g}")))
     try:
         ll = factstore.lean(g, q)
     except Exception:  # noqa: BLE001
@@ -1661,16 +1876,22 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     unexplained_big = not pick and not prs and not news_line and opn is not None and abs(now - opn) >= 3
     q_out = [f for f in qb if (f.get("status") or "").lower() in ("questionable", "doubtful", "game-time decision")]
     q_rows = [r for r in prs if r.get("pos") == "QB" and r["status"] in ("questionable", "doubtful", "TBD")]
+    mv = move_verdict(abs(now - opn), qb_out, sd) if phrasing.on() and moved else None
+    if phrasing.on() and stale:
+        mv = say("stale", when=_when(min(f.get("date") or "" for f in outs_hit)))
+    if mv:
+        parts.append((1, mv))
+        if why and re.search(r"\bQB\b|quarterback", why, re.I) and (stale or abs(now - opn) >= 3):
+            why = None  # the QB is in the number already: not a reason on top of it
     if q_rows or (not prs and q_out and q_out[0].get("players")):
-        p = q_rows[0]["player"] if q_rows else q_out[0]["players"][0]
-        out.append(f"If {p} plays, the move looks overdone; if he's out, it's earned. I'd wait on his status before locking.")
+        parts.append((1, say("cond", player=q_rows[0]["player"] if q_rows else q_out[0]["players"][0])))
     elif unexplained_big:
         pass  # 'don't fight it' already said: no lean against a move nobody can explain
     elif m and m.group(2) != "coin flip":
-        out.append(f"Lean: {m.group(1)}" + (f", mainly because {why.rstrip('.')}." if why else "."))
+        parts.append((1, say("lean", label=m.group(1), why=why.rstrip(".")) if why else say("lean_nowhy", label=m.group(1))))
     elif m:
-        out.append(f"At {m.group(1)} my numbers call it a coin flip, so the move looks priced in.")
-    return factstore.answer(" ".join(out), factstore.facts(g) + extra)
+        parts.append((1, say("coin", label=m.group(1))))
+    return factstore.answer(phrasing.join(parts), factstore.facts(g) + extra)
 
 
 def h2h_text(ctx: dict, q: str) -> str | None:
@@ -1679,17 +1900,20 @@ def h2h_text(ctx: dict, q: str) -> str | None:
     if not g:
         return None
     lm = factstore.last_meeting(g)
+    sd = phrasing.seed_for(ctx, q)
     if not lm:
-        return f"I don't have a 2025 meeting between {g['awayTeam']} and {g['homeTeam']} in my data, so no recent game to go on."
+        return phrasing.say("h2h", "none", sd, away=g["awayTeam"], home=g["homeTeam"])
     m = re.match(r"\s*Last meeting \((\d{4})\): (.+?) won (\d+-\d+) (at home vs .+?|at .+?)(?:, line (.+?): (.+?) covered by ([\d.]+))?$",
                  lm)
     if not m:
         return lm.strip() + "."
     yr, win, score, where, line, cov, by = m.groups()
-    out = f"Last time they played ({yr}), {win} won {score} {where}."
+    parts = [(0, phrasing.say("h2h", "met", sd, yr=yr, win=win, score=score, where=where))]
     if line:
-        out += f" {line} was the line, so {cov} covered by {by}."
-    return out
+        parts.append((0, phrasing.say("h2h", "line", sd, line=line, cov=cov, by=by)))
+    if phrasing.on():
+        parts.append((1, phrasing.say("h2h", "verdict", sd)))
+    return phrasing.join(parts)
 
 
 def fact_intent(q: str) -> tuple[str, str] | None:
@@ -3415,6 +3639,11 @@ LEADER_TITLE = re.compile(r"dear leader|supreme \w+|glorious \w+|great leader|hi
 LEADER_HAIL = "Long live the Supreme Commissioner."
 
 
+_NO_DATA_CLAIM = re.compile(r"\b(don'?t|do not|haven'?t|have not|never|can'?t) (have|got|seen|see|know|find)\b[^.!?]{0,30}"
+                            r"\b(data|anything|info\w*|numbers?|idea|clue|news|word|backup)\b|\bno (clue|idea|data|info\w*)\b"
+                            r"|\bnothing else\b", re.I)
+
+
 def voice_line_ok(line: str, answer: str, ctx: dict | None, leader: bool = False) -> bool:
     """The wrap may only add personality aimed at the texter: no number, no result/standing word, no team or
     member name or he/they that could restate, contradict or mock someone in the code-written answer, nothing
@@ -3422,6 +3651,8 @@ def voice_line_ok(line: str, answer: str, ctx: dict | None, leader: bool = False
     import no_repeat
     if not line or len(line.split()) > 14 or _FACTY.search(line) or PREACHY.search(line) or no_repeat.banned_tic(line):
         return False
+    if _NO_DATA_CLAIM.search(line):
+        return False  # 'I don't have any data on a backup' after an answer that names him (genius 11-18: 3 code items)
     if re.search(r"\byour\b[^.!?]{0,25}\b(picks?|portfolio|week|weekend|bets?|money|wallet|ticket|slip|season|card|record|"
                  r"calls?|streak|run|form)\b|\b(last|past|previous) (two|three|four|five|six|few|couple)\b", line, re.I):
         return False  # 'a total disaster for your portfolio' after a pick that covered (fact judge 2026-11-17)
