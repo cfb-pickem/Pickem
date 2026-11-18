@@ -1,0 +1,118 @@
+{
+  "season": 2026,
+  "teams": 12,
+  "verified": "2026-11-18",
+  "auto_bids": {
+    "power4_champions": [
+      "SEC",
+      "Big Ten",
+      "ACC",
+      "Big 12"
+    ],
+    "group_of_six": {
+      "count": 1,
+      "rule": "the highest-ranked Group of Six team in the final CFP rankings (it doesn't have to be a conference champion)",
+      "conferences": [
+        "American Athletic",
+        "Mid-American",
+        "Mountain West",
+        "Pac-12",
+        "Sun Belt",
+        "Conference USA"
+      ]
+    },
+    "notre_dame": {
+      "team": "Notre Dame",
+      "max_rank": 12,
+      "rule": "Notre Dame gets a bid if it finishes in the top 12 of the final CFP rankings"
+    }
+  },
+  "at_large": "the rest of the field, highest-ranked first",
+  "seeding": "straight by CFP ranking; automatic qualifiers ranked outside the top 12 go in order at the bottom of the seeding",
+  "byes": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "first_round": [
+    [
+      5,
+      12
+    ],
+    [
+      6,
+      11
+    ],
+    [
+      7,
+      10
+    ],
+    [
+      8,
+      9
+    ]
+  ],
+  "first_round_host": "the higher seed's campus",
+  "quarterfinals": [
+    [
+      1,
+      8,
+      9
+    ],
+    [
+      2,
+      7,
+      10
+    ],
+    [
+      3,
+      6,
+      11
+    ],
+    [
+      4,
+      5,
+      12
+    ]
+  ],
+  "reseed": false,
+  "releases": [
+    "2026-11-03",
+    "2026-11-10",
+    "2026-11-17",
+    "2026-11-24",
+    "2026-12-01"
+  ],
+  "selection_day": "2026-12-06",
+  "sources": [
+    {
+      "url": "https://www.si.com/college/boise-state/football/college-football-playoff-changes-format-for-group-of-six-representation",
+      "published": "2026-01-27",
+      "verified": "2026-11-18",
+      "says": "12 teams in 2026; automatic bids to the Big Ten, SEC, ACC and Big 12 champions; the highest-ranked Group of Six team in the final rankings (not necessarily a champion); Notre Dame in with a top-12 finish"
+    },
+    {
+      "url": "https://fbschedules.com/college-football-playoff-to-remain-at-12-teams-for-2026-season/",
+      "published": "2026-01-23",
+      "verified": "2026-11-18",
+      "says": "CFP Management Committee keeps 12 teams for 2026; four power-conference champions get automatic bids; Notre Dame eligible for an automatic bid in the top 12; first-round games on campus"
+    },
+    {
+      "url": "https://fbschedules.com/college-football-playoff-sets-2026-rankings-release-schedule/",
+      "published": "2026-08-06",
+      "verified": "2026-11-18",
+      "says": "rankings on Tuesdays Nov. 3, 10, 17, 24 and Dec. 1; Selection Day Sunday, Dec. 6"
+    },
+    {
+      "url": "https://collegefootballplayoff.com/sports/2024/5/29/12-team-format.aspx",
+      "published": "official format page (read 2026-11-18)",
+      "verified": "2026-11-18",
+      "says": "4 automatic bids for the ACC, Big Ten, Big 12 and SEC champions; 1 for the highest-ranked team from the American, Conference USA, MAC, Mountain West, Pac-12 or Sun Belt; Notre Dame automatic if in the CFP top 12 on Selection Day (then 6 at-larges, else 7); seeded by the committee's final rankings; seeds 1-4 get byes, 5-12 play at the higher seed; automatic qualifiers outside the top 12 go at the bottom of the seeding; quarterfinals 1 vs 8/9, 2 vs 7/10, 3 vs 6/11, 4 vs 5/12; first round Dec. 18-19, 2026"
+    }
+  ],
+  "first_round_dates": [
+    "2026-12-18",
+    "2026-12-19"
+  ]
+}
