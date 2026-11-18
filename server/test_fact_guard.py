@@ -113,6 +113,8 @@ def test_premises():
     pf = lambda q, ctx=CTX: fg.premise_facts(ctx, q, same)  # noqa: E731
     assert "30-18" in pf("since I'm 33-15 on the season, should I play it safe?")[0]
     assert pf("I'm 30-18, who should I take") == []
+    zz = pf("wait I thought I was 33-15 and in first", dict(CTX, you={"team_name": "Echo"}))
+    assert any("33-15" in x for x in zz) and any("in 1st" in x for x in zz), zz
     assert pf("now that I'm in first who's chasing me") == []
     zulu = dict(CTX, you={"team_name": "Zulu"})
     assert "6th" in pf("now that I'm in first, who's chasing me?", zulu)[0]

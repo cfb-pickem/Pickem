@@ -149,6 +149,9 @@ def fact_audit(ans: str, t: Truth, caller: str) -> tuple[str, bool, str]:
                 if not who or who not in t.members:
                     continue
                 n = int(m.group(1)) if m.group(1) else next(k for k, v in ORD.items() if v == m.group(2).lower())
+                if m.group(2) and not re.match(r"[- ]?(place|spot)\b", s[m.end():], re.I) and \
+                        not re.search(r"\b(in|tied for|sitting|sits|sit|'re|is|are|alone in|holding)\s*$", s[:m.start()], re.I):
+                    continue  # 'shaky as a first date': a word ordinal needs place context
                 # 'back of first', 'up on second', 'ahead of 5th': another spot, not the subject's place
                 if re.search(r"(\b(of|on|from|than|to|behind|over|for the|past)|\()\s*$", s[:m.start()], re.I) and \
                         not re.search(r"\btied for\s*$", s[:m.start()], re.I):

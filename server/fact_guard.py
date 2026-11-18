@@ -286,8 +286,9 @@ def member_claim_check(ctx: dict, question: str = "", lore: dict | None = None, 
 
 # ---- wrong premises -----------------------------------------------------------------------------------------
 
-_Q_REC = re.compile(r"\b(?:i'?m|i am|im|i'?ve gone|i went|i sit at|i'?m sitting at|at|with my|my)\s+(\d{1,2})\s*-\s*(\d{1,2})\b", re.I)
-_Q_PLACE = re.compile(r"\b(?:i'?m|i am|im|i'?m sitting|i sit)\s+(?:in\s+)?(?:(\d{1,2})(?:st|nd|rd|th)|(" + "|".join(ORD) + r")|(last))\b", re.I)
+_Q_REC = re.compile(r"\b(?:i'?m|i am|im|i was|i'?ve gone|i went|i sit at|i'?m sitting at|at|with my|my)\s+(\d{1,2})\s*-\s*(\d{1,2})\b", re.I)
+_Q_PLACE = re.compile(r"\b(?:i'?m|i am|im|i was|i'?m sitting|i sit)\s+(?:\d{1,2}-\d{1,2}\s+and\s+)?(?:in\s+)?"
+                      r"(?:(\d{1,2})(?:st|nd|rd|th)|(" + "|".join(ORD) + r")|(last))\b", re.I)
 _Q_TOOK = re.compile(r"\b(?i:i|me)\s+(?i:took|take|picked|pick|had|went with|rode|backed)\s+([A-Z][\w&'.]*(?:\s+[A-Z][\w&'.]*){0,2})")
 _Q_COVER = re.compile(r"\b([A-Z][\w&'.]*(?:\s+[A-Z][\w&'.]*){0,2})\s+(?:covered|didn'?t cover|failed to cover)\b")
 _Q_LINE = re.compile(r"\b([A-Z][\w&'.]*(?:\s+[A-Z][\w&'.]*){0,2})\s+([+-]\d{1,2}(?:\.5)?)\b")

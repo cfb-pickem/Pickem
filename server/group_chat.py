@@ -1121,8 +1121,10 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
                                  group=mode == "group", recall=callbacks.is_recall(q))
             reply = router.nick_names(reply, chat.member_nicknames())  # team names, never real names
-            reply = no_repeat_screen(reply, q, s.team, key or chat_id, route, charlie=charlie)
-            reply = router.drop_repeat_jabs(reply, past[-3:], route, q)  # same jab hook as an earlier turn
+            if route.lane != "fact":  # a code-written fact repeated tomorrow is still the fact (fact exam r3:
+                # 'I'm 0-3 on the season' got screened out as a repeat on the second ask)
+                reply = no_repeat_screen(reply, q, s.team, key or chat_id, route, charlie=charlie)
+                reply = router.drop_repeat_jabs(reply, past[-3:], route, q)  # same jab hook as an earlier turn
             reply = fact_final(reply, q)  # wrong member W-L / place / gap / echoed false premise: dropped
             reply = live_games.final_guard(reply) if route.lane != "fact" else reply
             reply = matchup_guard.fix(reply)  # a flipped "Home at Away" of a known game, swapped back
