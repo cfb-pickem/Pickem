@@ -703,6 +703,63 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
 
 
+CONF_RACE_ASK = re.compile(r"\b(big 12|big xii|big ten|big 10|sec|acc|mountain west|sun belt|aac|american athletic|mac|"
+                           r"conference usa|c-?usa|pac-?12)\b[^?.!]{0,40}\b(race|title game|title picture|picture|standings|"
+                           r"lead(s|ing|er)?|who'?s winning|championship|title)\b"
+                           r"|\b(who|whos|who'?s) (leads?|leading|winning|on top of|first in) (the )?(big 12|big xii|big ten|big 10|"
+                           r"sec|acc|mountain west|sun belt|aac|mac|conference usa|pac-?12)\b", re.I)
+LOOKAHEAD_SLATE = re.compile(r"\b(any|which|what|best|biggest)\b[^?.!]{0,20}\b(look ?-?ahead|letdown|let down|trap|sandwich)\b"
+                             r"|\b(look ?-?ahead|letdown|trap|sandwich) (spots?|games?|situations?)\b", re.I)
+
+
+def conf_race_text(ctx: dict, q: str) -> str | None:
+    """Conference standings by conference record (CFBD), top 2 = the title game, and this week's games for the
+    top 3. Tiebreakers aren't computed, so a tie says 'tiebreakers'."""
+    import datetime as _dt
+    note = slate_cards.conference_note(q)
+    rows = re.findall(r"^\s+\d+\. (.+?) (\d+-\d+) \((\d+-\d+)\)$", note or "", re.M)
+    if not rows:
+        return None
+    conf = re.match(r"(.+?) STANDINGS", note).group(1).title().replace("Sec", "SEC").replace("Acc", "ACC").replace(
+        "Xii", "XII").replace("Aac", "AAC").replace("Mac", "MAC")
+    idx = slate_cards.cfbd.load_index()
+    games = slate_cards.upcoming_games(idx, _dt.datetime.now(_dt.timezone.utc)) if idx else []
+    def this_week(team):
+        for g in games:
+            if team in (g["awayTeam"], g["homeTeam"]):
+                return f"at {g['homeTeam']}" if team == g["awayTeam"] else f"vs {g['awayTeam']}"
+        return None
+    top = rows[:3]
+    lead = top[0]
+    out = [f"{lead[0]} leads the {conf} at {lead[1]} ({lead[2]} overall)" +
+           (f", then {top[1][0]} {top[1][1]}" if len(top) > 1 else "") + (f" and {top[2][0]} {top[2][1]}" if len(top) > 2 else "") + "."]
+    out.append("The top two in conference record make the title game; ties go to the conference's tiebreakers.")
+    wk = [f"{t[0]} {this_week(t[0])}" for t in top if this_week(t[0])]
+    if wk:
+        out.append("This week: " + ", ".join(wk) + ".")
+    return " ".join(out)
+
+
+def lookahead_slate_text(ctx: dict, q: str) -> str | None:
+    """Every notable game's lookahead / letdown verdict (slate_cards.lookahead_line), real spots only."""
+    import datetime as _dt
+    idx = slate_cards.cfbd.load_index()
+    if not idx:
+        return None
+    hits = []
+    for g in slate_cards.notable(slate_cards.upcoming_games(idx, _dt.datetime.now(_dt.timezone.utc)), idx, n=30):
+        ln = slate_cards.lookahead_line(g, idx) or ""
+        v = re.search(r"Verdict: (.+?)\.$", ln)
+        if not v:
+            continue
+        spots = [x.strip() for x in v.group(1).split(";") if re.match(r"(lookahead|letdown) spot for", x.strip())]
+        for x in spots:
+            hits.append(f"{g['awayTeam']} at {g['homeTeam']}: {x}")
+    if not hits:
+        return "No real lookahead or letdown setups on paper this week."
+    return "Spots on paper: " + "; ".join(hits[:4]) + "."
+
+
 KEYNUM_ASK = re.compile(r"\bkey numbers?\b|\bwhere does the hook\b|\bon (a|the) (key )?number\b|\bthe hook matter", re.I)
 
 
@@ -768,6 +825,11 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "playoff", "playoff_race.is_need_question"
     if QB_STATUS_ASK.search(t) and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and qb_status_text({}, t):
         return "qb_status", "QB_STATUS_ASK"  # 'who's starting at QB for Tennessee': the sourced intel note, verbatim
+    if CONF_RACE_ASK.search(t) and not re.search(r"\b(cfp|playoff|my|our|league)\b", t, re.I):
+        return "conf_race", "CONF_RACE_ASK"  # 'what's the Big 12 title game picture': CFBD conference records
+    if LOOKAHEAD_SLATE.search(t) and len(slate_cards.cfbd.other_teams_named(t, [], slate_cards.cfbd.load_index() or {"teams": {}})
+                                         if slate_cards.cfbd.load_index() else []) == 0:
+        return "lookahead_slate", "LOOKAHEAD_SLATE"  # 'any lookahead spots this week': every notable game's verdict
     if KEYNUM_ASK.search(t):
         return "keynum", "KEYNUM_ASK"  # 'which lines are on a key number': computed from this week's market
     if H2H_ASK.search(t) and not re.search(r"\b(my|our|i|me|picky|you)\b", t, re.I):
@@ -2183,7 +2245,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "hidden": hidden_text, "compare": compare_text, "chase": chase_text, "scenario": scenario_text,
               "jackpot_hit": jackpot_hit_text, "lock_pick": lock_pick_text, "pick_ctx": pick_ctx_text,
               "worst": worst_text, "fade": fade_text, "why": why_lane.answer, "channel": channel.answer,
-              "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text}.get(kind)
+              "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
+              "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":

@@ -24,6 +24,13 @@ def test_keynum_routes():
     assert router.classify("what are the key numbers this week").kind == "keynum"
 
 
+def test_conf_and_lookahead_routes():
+    for q in ["What's the Big 12 title game picture?", "who leads the SEC", "big ten race"]:
+        assert router.classify(q).kind == "conf_race", q
+    assert router.classify("Any lookahead or letdown spots this week?").kind == "lookahead_slate"
+    assert router.classify("what's the CFP picture").kind != "conf_race"
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:
