@@ -577,11 +577,17 @@ def team_fact_check(idx: dict | None, corpus: str = "", members: list[str] | Non
             near = min(teams, key=lambda t: min(abs(m.start() - t[2]), abs(t[1] - m.end())))
             if min(abs(m.start() - near[2]), abs(near[1] - m.end())) > 40:
                 continue
+            ats_words = bool(re.search(r"\bATS\b|against the spread|\bcover", sent, re.I))
             ok_vals = set()
             for name, *_ in teams:
-                recs, scores = team_true(by_name.get(name) or {}, (finals or {}).get(name))
+                t = by_name.get(name) or {}
+                recs, scores = team_true(t, (finals or {}).get(name))
+                ats = t.get("ats")
+                if ats and len(ats) >= 2 and not ats_words and f"{ats[0]}-{ats[1]}" not in {t.get("record"), t.get("conf_record")}:
+                    recs = recs - {f"{ats[0]}-{ats[1]}"}  # an ATS record said as a straight-up one ('a 7-3 favorite')
                 ok_vals |= recs | scores
-            if val in ok_vals or any(_near(corpus, n, val) for n, *_ in teams):
+            src = corpus if ats_words else re.sub(r"\bATS [^;\n]*", " ", corpus or "")  # card ATS splits aren't SU records
+            if val in ok_vals or any(_near(src, n, val) for n, *_ in teams):
                 continue
             if log:
                 log.info("team fact dropped (%s %s): %r", near[0], val, sent[:100])
@@ -1003,6 +1009,51 @@ def game_pair_check(idx: dict | None, log=None):
             if a and b and b not in opps(a) and a not in opps(b):
                 if log:
                     log.info("game pair dropped (%s vs %s never meet): %r", a, b, sent[:100])
+                return False
+        return True
+    return ok
+
+
+# ---- home / road -------------------------------------------------------------------------------------------------
+
+_HOME_CLAIM = re.compile(r"\b(at home|home (favorite|fav|dog|underdog|team|game)|hosting|hosts|in front of (its|their) (home )?crowd)\b", re.I)
+_ROAD_CLAIM = re.compile(r"\b(on the road|road (favorite|fav|dog|underdog|team|game|trip)|away from home|visiting|travels? to)\b", re.I)
+
+
+def site_check(idx: dict | None, games: list[dict] | None = None, log=None):
+    """'New Mexico is a 7-3 favorite at home' when New Mexico plays AT Wyoming (genius exam r3): a home/road claim
+    about a team must match where its game this week is. games = upcoming CFBD game rows (default: the cache)."""
+    if not idx:
+        return None
+    if games is None:
+        try:
+            import datetime as _dt
+            import slate_cards
+            games = slate_cards.upcoming_games(idx, _dt.datetime.now(_dt.timezone.utc))
+        except Exception:  # noqa: BLE001
+            games = []
+    where: dict[str, set] = {}
+    for g in games or []:
+        where.setdefault(g.get("homeTeam"), set()).add("home")
+        where.setdefault(g.get("awayTeam"), set()).add("away")
+    rx, _ = _team_regex(idx)
+
+    def ok(sent: str) -> bool:
+        if _NEG.search(sent) or re.search(r"\b(this season|on the year|splits?|record|ATS|last week|games)\b", sent, re.I):
+            return True  # season splits ('3-1 at home this season') aren't this week's site
+        for m in rx.finditer(sent):
+            team = m.group(1)
+            sites = where.get(team)
+            if not sites or len(sites) != 1:
+                continue
+            tail = sent[m.end(): m.end() + 45]
+            if _HOME_CLAIM.search(tail) and "away" in sites:
+                if log:
+                    log.info("site check dropped (%s is away): %r", team, sent[:100])
+                return False
+            if _ROAD_CLAIM.search(tail) and "home" in sites:
+                if log:
+                    log.info("site check dropped (%s is home): %r", team, sent[:100])
                 return False
         return True
     return ok

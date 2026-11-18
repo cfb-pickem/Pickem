@@ -227,6 +227,22 @@ def test_history_and_game_pairs():
     assert not g("I don't have data on the UTSA and UAB game from last week.")
 
 
+def test_ats_as_record_and_site():
+    idx = {"teams": {"new mexico": {"name": "New Mexico", "record": "8-2", "conf_record": "5-1", "ats": (7, 3, 0, 2.0),
+                                    "scores": [], "games": [1]},
+                     "wyoming": {"name": "Wyoming", "record": "7-3", "conf_record": "4-2", "ats": (6, 4, 0, 1.0),
+                                 "scores": [], "games": [1]}}}
+    ok = fg.team_fact_check(idx, corpus="GAME CARD: New Mexico (8-2): ATS 7-3 (fav 4-1, dog 3-2, home 3-1, road 4-2)")
+    assert not ok("New Mexico is a 7-3 favorite.")
+    assert ok("New Mexico is 7-3 ATS.")
+    assert ok("New Mexico is 8-2.")
+    site = fg.site_check(idx, games=[{"homeTeam": "Wyoming", "awayTeam": "New Mexico"}])
+    assert not site("New Mexico is a big favorite at home.")
+    assert site("New Mexico is a road favorite at Wyoming.")
+    assert not site("Wyoming is on the road this week.")
+    assert site("Wyoming is 3-1 at home this season.")
+
+
 def test_coach_moves():
     ok = fg.coach_move_check("Coach note: UTEP fired Scotty Walden. Kyle Whittingham is Michigan's coach (no firing).")
     assert ok("UTEP fired Scotty Walden.")

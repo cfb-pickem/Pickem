@@ -7606,7 +7606,8 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
                                      ("casino", fact_guard.casino_check(ctx, load_lore())),
                                      ("unplayed", fact_guard.unplayed_result_check(ctx)),
                                      ("history", fact_guard.history_check(corpus.replace(qtext, " ") if qtext else corpus)),
-                                     ("game_pair", fact_guard.game_pair_check(_cfbd_index()))])
+                                     ("game_pair", fact_guard.game_pair_check(_cfbd_index())),
+                                     ("site", fact_guard.site_check(_cfbd_index()))])
                 if not ctx.get("error") else None),
                 looks_bait(qtext)), (submission_fact(ctx, qtext) or (None if "GAME CARD" in sc else live_games.required_fact(ctx, qtext))
                                      or (lean_fact(sc, qtext) if sc else (pool_lean_fact(ctx, qtext) or required_fact(ctx, qtext)))
