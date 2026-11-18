@@ -29,9 +29,7 @@ supabase/.branches/
 # to commit, and committing it would just be a diff nobody remembered to make.
 tools/harness/js/blackjack.js
 
-# Picky style LoRA: code only; data, weights and adapters live in /Users/Agent/picky-lora
+# Python caches; model weights never go in the repo
 __pycache__/
 *.safetensors
 *.gguf
-tools/picky-lora/data/
-tools/picky-lora/adapters/

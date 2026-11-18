@@ -91,11 +91,6 @@ OLLAMA_OPTIONS = {"num_ctx": 16384, "temperature": 0.2, "presence_penalty": 0, "
 # Per-request sampling overrides (text Picky's multi-draft path, picky_brain.py). Never num_ctx: a
 # different context size makes Ollama reload the model.
 OPTIONS_OVERRIDE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("picky_options_override", default=None)
-# sampling A/B on a side instance (PICKY_TEMPERATURE=0.6 PICKY_TOP_P=0.9 ...); unset = the values above
-for _k, _env in (("temperature", "PICKY_TEMPERATURE"), ("top_p", "PICKY_TOP_P"),
-                 ("repeat_penalty", "PICKY_REPEAT_PENALTY"), ("top_k", "PICKY_TOP_K")):
-    if os.environ.get(_env):
-        OLLAMA_OPTIONS[_k] = float(os.environ[_env]) if _k != "top_k" else int(os.environ[_env])
 MAX_ANSWER_WORDS = 300
 # As the primary model: how long it stays loaded after the last message. 24h so the first text
 # after a quiet spell doesn't pay a cold load (pictures still unload it, see _image_stream).
