@@ -47,6 +47,21 @@ def test_interim_routes():
     assert not router.INTERIM_ASK.search("who's the coach at Baylor")
 
 
+def test_live80_misroutes():
+    assert router.classify("who won Texas LSU?").kind == "score"
+    assert router.classify("how many points have been scored in the Hawaii game?").kind == "score"
+    assert router.classify("did SMU ever score?").kind == "score"
+    assert router.classify("who won the jackpot?").kind == "jackpot_hit"
+    assert router.classify("how many points do you get for a correct pick?").kind == "rules"
+    rg = [{"away": {"name": "Wake Forest"}, "home": {"name": "SMU"}, "away_score": 49, "home_score": 7,
+           "scoring": [{"team": "Wake Forest", "text": "Gio Lopez 5 Yd Run"},
+                       {"team": "SMU", "text": "Yannick Smith 19 Yd pass from Kevin Jennings (Brendan Baird Kick)"}]}]
+    out = router._scored_text({"live_rider_games": rg}, "did SMU ever score?", {"Away": "Wake Forest", "Home": "SMU"})
+    assert "Yannick Smith 19 Yd pass from Kevin Jennings" in out
+    rg[0]["home_score"] = 0
+    assert router._scored_text({"live_rider_games": rg}, "did SMU score?", {"Away": "Wake Forest", "Home": "SMU"}) == "SMU hasn't scored."
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:

@@ -103,7 +103,12 @@ CHANNEL_ASK = re.compile(
 # ~22 s each in the one-slot queue during a burst). 'covering' ones before kickoff are pick asks: score_text steps aside.
 LIVE_STATE = re.compile(
     r"\bwho('?s|s| has|'?s got| got) (got )?the ball\b|\bhow much time('?s|s| is)? left\b|\btime left (in|on) the\b"
-    rf"|\bdid ({_T}) (just )?score\b|^\W*({_T}) covering\W*$|\bwho'?s covering ({_T})\b", re.I)
+    rf"|\bdid ({_T}) (just |ever |even )?score\b|\bhas ({_T}) (scored|even scored)\b|^\W*({_T}) covering\W*$|\bwho'?s covering ({_T})\b"
+    # live-80 2026-11-17: 'how many points have been scored in the Hawaii game?' went to the rules lane,
+    # 'who won Texas LSU?' to the jackpot lane
+    r"|\bhow many points (have been|were|got|has been) scored\b|\bpoints (have been |were )?scored in\b"
+    r"|\bwho (won|wins|is winning|'?s winning)\s+(?!the\b|it\b|last\b|this\b|that\b|a\b)[A-Z][\w.'&-]*(?: [A-Z&][\w.'&-]*){0,2}\s+"
+    r"(vs\.?\s+|v\s+|and\s+|at\s+)?[A-Z][\w.'&-]+", re.I)
 DID_COVER = re.compile(rf"\bdid ({_T}) (cover|hit)\b|\bwho covered\b|\bdid (it|they|that) cover\b", re.I)
 RESULTS_Q = re.compile(
     r"\bhow('?d| did) (i|we|my picks?|my week)\b[^?.!]{0,20}\b(do|go|look|end up|turn out)\b"
@@ -584,7 +589,8 @@ RULES_EXTRA = re.compile(
 
 
 JACKPOT_HIT = re.compile(r"\b(ever )?(hit|won|popped|cashed) (it|the jackpot|the football|the slots)\b|\bjackpot\b[^?.!]*\b(hit|won|popped)\b"
-                         r"|\b(who|anyone|anybody)( has| ever)? (hit|won|popped)\b", re.I)
+                         r"|\b(who|anyone|anybody)( has| ever)? (hit|won|popped)\b(?=[^?.!]*\b(jackpot|slots?|it|the football)\b)",
+                         re.I)  # 'who won Texas LSU?' is a game (live-80 2026-11-17), not the jackpot
 
 
 def jackpot_hit_text(ctx: dict, q: str) -> str | None:
@@ -1701,7 +1707,36 @@ def score_text(ctx: dict, q: str) -> str | None:
             (by_id.get(n["id"]) or {}).get("Status") in ("in_progress", "final") for n in named):
         return None  # 'who's covering X' before kickoff = who will cover: a pick ask, not a score
     out = [state(next(g for g in games if g["id"] == n["id"])) for n in named[:2]]
-    return None if any(x is None for x in out) else " ".join(out)
+    if any(x is None for x in out):
+        return None
+    sc = _scored_text(ctx, q, named[0]) if SCORED_ASK.search(q or "") else None
+    return " ".join(out + ([sc] if sc else []))
+
+
+# 'did SMU ever score?' (live-80 2026-11-17: the answer gave the score but not SMU's one TD, Smith from Jennings)
+SCORED_ASK = re.compile(r"\b(did|has|have)\b[^?.!]{0,25}\b(score|scored)\b|\bwho scored\b|\bscored yet\b|\bon the board\b", re.I)
+
+
+def _scored_text(ctx: dict, q: str, n: dict) -> str | None:
+    """The asked team's scoring plays from the live feed (every TD scorer via `tds` when the last-6 list rolled
+    past them), or 'hasn't scored' at 0."""
+    rg = next((g for g in ctx.get("live_rider_games") or []
+               if {g.get("away", {}).get("name"), g.get("home", {}).get("name")} >= {n.get("Away"), n.get("Home")}), None)
+    if not rg:
+        return None
+    teams = [(rg["away"]["name"], rg.get("away_score")), (rg["home"]["name"], rg.get("home_score"))]
+    asked = [t for t in teams if re.search(rf"(?<!\w){re.escape(t[0])}(?!\w)", q, re.I)]
+    if len(asked) != 1:
+        return None
+    team, pts = asked[0]
+    if not pts:
+        return f"{team} hasn't scored."
+    plays = [p["text"] for p in rg.get("scoring") or [] if p.get("team") == team]
+    if plays:
+        return f"{team}'s scoring: " + "; ".join(plays[-3:]) + "."
+    tds = [name for name, x in (rg.get("tds") or {}).items() if x.get("team") == team and (x.get("rec") or x.get("rush")
+                                                                                           or x.get("return"))]
+    return (f"{team}'s touchdowns: " + ", ".join(tds) + ".") if tds else None
 
 
 def lock_text(ctx: dict, q: str) -> str | None:
