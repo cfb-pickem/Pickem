@@ -264,7 +264,8 @@ GREETING = re.compile(r"^\W*(hey|hi|hello|yo|sup|howdy|hiya|heyy+|helo)\W*(there
                       r"|^\W*(hey |yo |hi )?(picky\W*)?i (have|got|'?ve got) a (quick )?question\W*$", re.I)
 GHOST_ASK = re.compile(r"\b(record|cover|covers|covering|line|spread|score)\b", re.I)
 STAT_ASK = re.compile(r"\bhow many (?:passing |rushing |receiving )?(?:touchdowns|tds?|yards|yds|sacks|interceptions|ints|"
-                      r"catches|receptions|carries|tackles)\b[^?.!]{0,12}\b(?:does|did|has)\s+([a-z][\w'.-]+(?:\s+[a-z][\w'.-]+){1,2}?)"
+                      r"catches|receptions|carries|tackles)\b[^?.!]{0,12}\b(?:does|did|has)\s+(?:[a-z][\w'&.-]*(?:\s+[a-z][\w'&.-]*)?\s+(?:qb|quarterback|rb|wr|te|"
+                      r"running back|receiver|tight end)\s+)?([a-z][\w'.-]+(?:\s+[a-z][\w'.-]+){1,2}?)"
                       r"\s+(?:have|got|had|throw\w*|run|rush\w*|catch\w*|this|on|in)\b", re.I)
 
 

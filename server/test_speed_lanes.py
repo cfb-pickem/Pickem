@@ -62,6 +62,7 @@ cases = {
     "What's the Montana Tech Moose Riders' record, and do they cover against SMU?": "fact:ghost_school",
     "How many touchdowns does Jaxon Smithfield-Bryce have this season?": "fact:ghost_player",
     "how many passing yards does tyler brannigan-fosse have": "fact:ghost_player",
+    "how many TDs does Iowa QB Brock Vandermeer have this year?": "fact:ghost_player",  # fact exam fx-ghost-player
 }
 for q, want in cases.items():
     got = lane(q)
@@ -97,6 +98,8 @@ a = answer("what happened in the Wake Forest SMU game?") or ""
 check("game recap = last week's pool final + who covered", a.startswith("Week 11: ") and "covered" in a, a)
 a = answer("How many touchdowns does Jaxon Smithfield-Bryce have this season?") or ""
 check("made-up player: says so, names him right", a.startswith("Never heard of Jaxon Smithfield-Bryce,"), a)
+a = answer("how many TDs does Iowa QB Brock Vandermeer have this year?") or ""
+check("made-up player behind a team + position: names just him", a.startswith("Never heard of Brock Vandermeer,"), a)
 a = answer("What's the Montana Tech Moose Riders' record, and do they cover against SMU?") or ""
 check("unknown school: nothing on them, never 'no such school' (it may be NAIA)",
       a.startswith("I've got nothing on Montana Tech") and "there's no" not in a.lower(), a)
