@@ -365,6 +365,21 @@ def test_strategy_names_who_is_around_you():
     assert "19-29" in out and ("Bravo" in out or "Cobra" in out) and re.search(r"fade", out, re.I), out
 
 
+def test_fact_guard_keeps_every_strategy_variant():
+    import fact_guard  # fact_final drops a sentence that ties a member to a wrong place/W-L ('first outside the cut' = 1st)
+    for me in ("Ack", "Lima", "Tango", "Bravo"):
+        ctx = dict(_sctx(me), weekly_records={}, last_week={"week": 10, "games": []})
+        ok = fact_guard.member_claim_check(ctx, "strategy?", {}, None)
+        for i in range(60):
+            os.environ["PICKY_PHRASING_SEED"] = f"g{i}"
+            try:
+                out = pick_strategy.answer(ctx, "strategy?")
+            finally:
+                os.environ.pop("PICKY_PHRASING_SEED", None)
+            for sent in re.split(r"(?<=[.!?])\s+", out):
+                assert ok is None or ok(sent), (me, sent)
+
+
 def test_lane_answers_stay_under_the_cap():
     q = "Say the league locks Duke -13.5 on Tuesday and by Saturday the market's Duke -15. Did I get value on Duke or Clemson?"
     for i in range(30):

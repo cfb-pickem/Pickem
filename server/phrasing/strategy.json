@@ -44,11 +44,11 @@
   ],
   "around_protect": [
    "{team} is the closest one outside at {pts}, so that's who you're really playing.",
-   "The one to watch is {team} at {pts}, the first team outside.",
-   "{team} at {pts} is the first one out, so that's the real opponent.",
-   "Keep an eye on {team}: first one out at {pts}.",
-   "The real threat is {team}, sitting first outside the cut at {pts}.",
-   "{team} is first outside the cut at {pts}; that's who you're racing."
+   "The one to watch is {team} at {pts}, the next team out.",
+   "{team} at {pts} is the next one out, so that's the real opponent.",
+   "Keep an eye on {team}: next one out at {pts}.",
+   "The real threat is {team}, sitting just outside the cut at {pts}.",
+   "{team} is the next one out at {pts}; that's who you're racing."
   ],
   "around_bubble": [
    "The guys right around the cut: {teams}.",
