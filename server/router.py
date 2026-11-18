@@ -42,6 +42,7 @@ import slate_cards
 import playoff_race
 import why_lane
 import channel  # the channel lane (drill 11/17)
+import factstore  # the fact store: every football lane in STORE_LANES reads only this + ctx
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
     import league_rules
@@ -784,35 +785,29 @@ QB_STATUS_ASK = re.compile(r"\b(who'?s|who is|who will be|whos)\s+(starting|the 
 def qb_status_text(ctx: dict, q: str) -> str | None:
     """The sourced availability notes (cache/slate_intel.json, validated offline) for the QB / player a text
     asks about, in their own words: no starter named stays no starter named."""
-    try:
-        d = json.loads((Path(__file__).resolve().parent / "cache" / "slate_intel.json").read_text())
-    except (OSError, ValueError):
-        return None
-    idx = slate_cards.cfbd.load_index()
-    named = slate_cards.cfbd.other_teams_named(q or "", [], idx) if idx else []
+    named = factstore.teams_named(q)
     player = re.search(r"\b(?i:is) ([A-Z][\w'.-]+(?: [A-Z][\w'.-]+)?) (?i:playing|starting|out|available|healthy|hurt|going|gonna)",
                        q or "")
     injury_ask = bool(re.search(r"\binjur|\blost a\b", q or "", re.I))
     if player and (re.search(r"'s\b|\b(QB|quarterback|starter|coach)\b", player.group(1), re.I)
-                   or (idx and slate_cards.cfbd.resolve_team(player.group(1), idx))):
+                   or factstore.resolve(player.group(1))):
         player = None  # 'is Clemson's QB playing' names a team's QB, not a player called "Clemson's QB"
     hits = []
-    for g in (d.get("games") or {}).values():
-        for f in g.get("facts") or []:
-            team = g.get(f.get("team")) if f.get("team") in ("home", "away") else None
-            txt = f.get("text") or ""
-            if player:
-                if any(player.group(1).lower() in (p or "").lower() for p in f.get("players") or []) or \
-                        player.group(1).split()[-1].lower() in txt.lower():
-                    hits.append(f)
-            elif team and any(slate_cards.cfbd.norm(team) == slate_cards.cfbd.norm(n) for n in named) and injury_ask and \
-                    (f.get("kind") == "injury" or f.get("status")):
+    for g, f in factstore.all_availability():
+        team = g.get(f.get("team")) if f.get("team") in ("home", "away") else None
+        txt = f.get("text") or ""
+        if player:
+            if any(player.group(1).lower() in (p or "").lower() for p in f.get("players") or []) or \
+                    player.group(1).split()[-1].lower() in txt.lower():
                 hits.append(f)
-            elif team and any(slate_cards.cfbd.norm(team) == slate_cards.cfbd.norm(n) for n in named) and \
-                    re.search(r"\bQB\d?\b|\bquarterback", txt, re.I):
-                hits.append(f)
-                hits += [x for x in g.get("facts") or [] if x is not f and x.get("team") == f.get("team")
-                         and re.search(r"\bwould start|\bstart(s|ing)? (at|for|in)\b|\bQB2\b", x.get("text") or "", re.I)]
+        elif team and any(factstore.norm(team) == factstore.norm(n) for n in named) and injury_ask and \
+                (f.get("kind") == "injury" or f.get("status")):
+            hits.append(f)
+        elif team and any(factstore.norm(team) == factstore.norm(n) for n in named) and \
+                re.search(r"\bQB\d?\b|\bquarterback", txt, re.I):
+            hits.append(f)
+            hits += [x for x in g.get("intel_facts") or [] if x is not f and x.get("team") == f.get("team")
+                     and re.search(r"\bwould start|\bstart(s|ing)? (at|for|in)\b|\bQB2\b", x.get("text") or "", re.I)]
     if not hits:
         return None
     seen, uniq = set(), []
@@ -967,15 +962,13 @@ LOOKAHEAD_SLATE = re.compile(r"\b(any|which|what|best|biggest)\b[^?.!]{0,20}\b(l
 def conf_race_text(ctx: dict, q: str) -> str | None:
     """Conference standings by conference record (CFBD), top 2 = the title game, and this week's games for the
     top 3. Tiebreakers aren't computed, so a tie says 'tiebreakers'."""
-    import datetime as _dt
-    note = slate_cards.conference_note(q)
+    note = factstore.conference_note(q)
     rows = re.findall(r"^\s+\d+\. (.+?) (\d+-\d+) \((\d+-\d+)\)$", note or "", re.M)
     if not rows:
         return None
     conf = re.match(r"(.+?) STANDINGS", note).group(1).title().replace("Sec", "SEC").replace("Acc", "ACC").replace(
         "Xii", "XII").replace("Aac", "AAC").replace("Mac", "MAC")
-    idx = slate_cards.cfbd.load_index()
-    games = slate_cards.upcoming_games(idx, _dt.datetime.now(_dt.timezone.utc)) if idx else []
+    games = factstore.upcoming()
     def this_week(team):
         for g in games:
             if team in (g["awayTeam"], g["homeTeam"]):
@@ -994,13 +987,12 @@ def conf_race_text(ctx: dict, q: str) -> str | None:
 
 def lookahead_slate_text(ctx: dict, q: str) -> str | None:
     """Every notable game's lookahead / letdown verdict (slate_cards.lookahead_line), real spots only."""
-    import datetime as _dt
-    idx = slate_cards.cfbd.load_index()
-    if not idx:
+    rows = factstore.upcoming()
+    if not rows:
         return None
     hits = []
-    for g in slate_cards.notable(slate_cards.upcoming_games(idx, _dt.datetime.now(_dt.timezone.utc)), idx, n=30):
-        ln = slate_cards.lookahead_line(g, idx) or ""
+    for g in factstore.notable(rows, n=30):
+        ln = factstore.lookahead(g) or ""
         v = re.search(r"Verdict: (.+?)\.$", ln)
         if not v:
             continue
@@ -1020,25 +1012,20 @@ def interim_text(ctx: dict, q: str) -> str | None:
     """A midseason coaching change for the team a text names (cache/slate_intel.json, sourced), plus the team's
     straight-up and ATS record since the change (CFBD results + lines). Small sample, said plainly."""
     import datetime as _dt
-    try:
-        d = json.loads((Path(__file__).resolve().parent / "cache" / "slate_intel.json").read_text())
-    except (OSError, ValueError):
-        return None
-    idx = slate_cards.cfbd.load_index()
-    named = slate_cards.cfbd.other_teams_named(q or "", [], idx) if idx else []
-    for c in d.get("coaching") or []:
-        if not any(slate_cards.cfbd.norm(c.get("school", "")) == slate_cards.cfbd.norm(n) for n in named):
+    named = factstore.teams_named(q)
+    for c in factstore.coaching():
+        if not any(factstore.norm(c.get("school", "")) == factstore.norm(n) for n in named):
             continue
         out = c["text"].rstrip(".") + "."
         m = re.search(r"\b(Oct|Nov|Sep)\w*\.? (\d{1,2})", c["text"])
-        if m and idx:
+        if m:
             mon = {"Sep": 9, "Oct": 10, "Nov": 11}[m.group(1)[:3]]
             since = _dt.date(2026, mon, int(m.group(2))).isoformat()
-            rows = [r for r in slate_cards.team_rows(c["school"], idx, "9999") if r["date"] > since]
+            rows = [r for r in factstore.team_rows(c["school"]) if r["date"] > since]
             if rows:
                 su_w = sum(1 for r in rows if r["pts"][0] > r["pts"][1])
                 g = [r for r in rows if r["cover"] is not None]
-                ats = slate_cards._rec(g) if g else None
+                ats = factstore.rec(g) if g else None
                 games = "; ".join(f"{'beat' if r['pts'][0] > r['pts'][1] else 'lost to'} {r['opp']} {r['pts'][0]}-{r['pts'][1]}"
                                   for r in rows)
                 out += (f" Since then: {su_w}-{len(rows) - su_w} straight up" + (f", {ats} ATS" if ats else "")
@@ -1055,9 +1042,8 @@ HYPO_VALUE = re.compile(r"\b(lock|locks|locked|league has|we get)\b[^?]{0,40}?[+
 
 def career_ats_text(ctx: dict, q: str) -> str | None:
     """Honest gap: no coach career splits in the data. Offer the coach's current team's season ATS instead."""
-    coaches, _ = slate_cards._coaches()
     who = None
-    for c in coaches:
+    for c in factstore.coaches():
         last = (c.get("lastName") or "").strip()
         if last and re.search(rf"\b{re.escape(last)}\b", q or "", re.I):
             seas = [x for x in c.get("seasons") or [] if x.get("year")]
@@ -1066,11 +1052,9 @@ def career_ats_text(ctx: dict, q: str) -> str | None:
                 break
     out = "I don't have career ATS splits for coaches, only this season's team numbers."
     if who:
-        idx = slate_cards.cfbd.load_index()
-        t = slate_cards.cfbd.resolve_team(who[1], idx) if idx else None
-        ats = (t or {}).get("ats")
-        if ats:
-            out += f" {who[1]} under {who[0]} is {ats[0]}-{ats[1]}" + (f"-{ats[2]}" if ats[2] else "") + " ATS this season."
+        ats = (factstore.team(who[1]) or {}).get("ats") or {}
+        if ats.get("w") is not None:
+            out += f" {who[1]} under {who[0]} is {ats['w']}-{ats['l']}" + (f"-{ats['p']}" if ats.get("p") else "") + " ATS this season."
     return out
 
 
@@ -1112,20 +1096,20 @@ KEYNUM_ASK = re.compile(r"\bkey numbers?\b|\bwhere does the hook\b|\bon (a|the) 
 def keynum_text(ctx: dict, q: str) -> str | None:
     """This week's spreads sitting on 3/7/10/14 or a half point off one (market from the CFBD cache's DraftKings
     line; pool games use the league line), most notable games first."""
-    import datetime as _dt
-    idx = slate_cards.cfbd.load_index()
-    if not idx:
+    rows = factstore.upcoming()
+    if not rows:
         return None
-    games = slate_cards.notable(slate_cards.upcoming_games(idx, _dt.datetime.now(_dt.timezone.utc)), idx, n=40)
-    on, hook = [], []
+    games = factstore.notable(rows, n=40)
+    on, hook, used = [], [], [factstore.KEY_NUMBER_FACT]
     for g in games:
-        ln = slate_cards._line(g) or {}
-        sp = ln.get("spread")
+        sp = factstore.market(g).get("spread")
         if sp is None:
             continue
         fav, num = (g["homeTeam"], sp) if sp < 0 else (g["awayTeam"], -sp)
         where = f"at {g['homeTeam']}" if fav == g["awayTeam"] else f"vs {g['awayTeam']}"
         a = abs(num)
+        if any(a == k or abs(a - k) == 0.5 for k in (3, 7, 10, 14, 17, 21)):
+            used += factstore.facts(g, ("market",))[:1]
         for k in (3, 7, 10, 14, 17, 21):
             if a == k:
                 on.append(f"{fav} {num:g} {where}")
@@ -1140,20 +1124,19 @@ def keynum_text(ctx: dict, q: str) -> str | None:
     if hook:
         out.append("Half a point off one: " + ", ".join(x for _, x in sorted(hook, key=lambda h: h[0])[:3]) + ".")
     out.append("3 and 7 are the most common final margins, so the half point around them is where pushes turn into wins or losses.")
-    return " ".join(out)
+    return factstore.answer(" ".join(out), used)
 
 
 def slate_move_text(ctx: dict, q: str) -> str | None:
     """Why a non-pool game's line moved (genius exam 2026-11-17: the 12B blamed SP+ when the cause was a QB):
     open vs now (CFBD DraftKings), the sourced availability notes for that game (slate_intel), or an honest
     'no confirmed news', the key number, and the card's computed lean (conditional on a questionable starter)."""
-    idx = slate_cards.cfbd.load_index()
-    g, pg = slate_cards.find_game(q, ctx, idx)
+    g, pg = factstore.find_game(q, ctx)
     if not g:
         return None
     if pg and not g.get("lines"):
-        return None  # a pool game the CFBD dataset doesn't have: the pool lane answers
-    ln = slate_cards._line(g) or {}
+        return None  # a pool game the store doesn't have: the pool lane answers
+    ln = factstore.market(g)
     now, opn = ln.get("spread"), ln.get("spreadOpen")
     if now is None:
         return None
@@ -1176,20 +1159,15 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         fteam = home if now < 0 else away
         dteam = away if now < 0 else home
         out.append(f"With a {tot:g} total that's roughly {fteam} {hi:.1f}, {dteam} {lo:.1f} implied: a low total makes a big spread harder to cover.")
-    try:
-        d = json.loads((Path(__file__).resolve().parent / "cache" / "slate_intel.json").read_text())
-    except (OSError, ValueError):
-        d = {}
-    gi = next((x for x in (d.get("games") or {}).values() if {x.get("away"), x.get("home")} == {away, home}), None)
-    facts = [f for f in (gi or {}).get("facts") or [] if f.get("kind") == "injury" or f.get("status")]
+    notes, intel_as_of = factstore.availability(away, home)
+    facts = [f for f in notes if f.get("kind") == "injury" or f.get("status")]
     qb = [f for f in facts if re.search(r"\bQB\d?\b|quarterback", f.get("text") or "", re.I)]
     pick = (qb or facts)[:2]
     news_line = None
     if not pick:  # the intel run can miss a game: the news feed's QB/injury items for either team (live-80/genius r4)
         try:
-            import news as _news
             for t in (away, home):
-                hits = [x for x in _news.breaking_for(f"{t} QB injury", teams=[t], limit=3) or []
+                hits = [x for x in factstore.news_lines(t, f"{t} QB injury")
                         if re.search(r"\b(QB|quarterback|out|injur\w*|miss(es)?|surgery|doubtful|questionable)\b", x, re.I)]
                 if hits:
                     news_line = re.sub(r"^[^:]{0,120}?:\s*", "", hits[0]).strip()
@@ -1201,7 +1179,7 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     elif news_line:
         out.append(f"The news: {news_line}")
     else:
-        out.append(f"No confirmed injury or news in my sources explains it (as of {d.get('as_of') or 'this week'}), "
+        out.append(f"No confirmed injury or news in my sources explains it (as of {intel_as_of or 'this week'}), "
                    "so the market may know something; I wouldn't fight a move that size.")
     a = abs(now)
     for k in (3, 7, 10, 14):
@@ -1209,7 +1187,7 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
             out.append(f"It's sitting right on {k}, a key number: a {k}-point win is a push in the market. League lines are "
                        f"half points, so a pool line would be {k - 0.5:g} or {k + 0.5:g}.")
     try:
-        ll = slate_cards.lean_lines(g, idx, None, ask=q)
+        ll = factstore.lean(g, q)
     except Exception:  # noqa: BLE001
         ll = []
     m = re.search(r"COMPUTED ATS LEAN \(vs the current market line\): (.+?) \((strong lean|lean|coin flip);", " ".join(ll))
@@ -1227,15 +1205,15 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         out.append(f"Lean: {m.group(1)}" + (f", mainly because {why.rstrip('.')}." if why else "."))
     elif m:
         out.append(f"At {m.group(1)} my numbers call it a coin flip, so the move looks priced in.")
-    return " ".join(out)
+    return factstore.answer(" ".join(out), factstore.facts(g))
 
 
 def h2h_text(ctx: dict, q: str) -> str | None:
     """The last meeting of the game a text names (CFBD lines_prev), with the line and who covered."""
-    g, _ = slate_cards.find_game(q, ctx)
+    g, _ = factstore.find_game(q, ctx)
     if not g:
         return None
-    lm = slate_cards.last_meeting(g)
+    lm = factstore.last_meeting(g)
     if not lm:
         return f"I don't have a 2025 meeting between {g['awayTeam']} and {g['homeTeam']} in my data, so no recent game to go on."
     m = re.match(r"\s*Last meeting \((\d{4})\): (.+?) won (\d+-\d+) (at home vs .+?|at .+?)(?:, line (.+?): (.+?) covered by ([\d.]+))?$",
@@ -2877,6 +2855,10 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
         logging.getLogger("picky-router").warning("fact answer %s failed", kind, exc_info=True)
     return None
 
+
+# the football lanes that read only the fact store + the league ctx (test_factstore.py checks it statically)
+STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, interim_text,
+               career_ats_text, hypo_value_text, qb_status_text)
 
 # code lanes built from the POOL games' cards: a text about another game goes to the full brain + slate card
 POOL_GAME_KINDS = {"value", "qb", "line_move", "spread", "flip", "pick", "defend", "others", "short", "compare", "upset"}

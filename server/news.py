@@ -1145,6 +1145,11 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["refresh"]:
         r = refresh(force="--force" in argv)
         print(json.dumps(r) if r else "not due")
+        try:  # this 5-minute tick also rebuilds Picky's fact store (polls 1 h TTL, ~2-4 s, pure code)
+            import factstore
+            factstore.refresh()
+        except Exception as e:  # noqa: BLE001 - never fails the news refresh
+            logging.getLogger("picky.factstore").warning("fact store build failed: %r", e)
         return 0
     if argv[:1] == ["lookup"]:
         q = " ".join(argv[1:]) or None

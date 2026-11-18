@@ -825,5 +825,10 @@ if __name__ == "__main__":
             log.warning("refresh skipped, budget: %s", e)
             print(json.dumps({"ok": False, "skipped": str(e)}))
             sys.exit(0)
+        try:  # new records / lines / finals: rebuild the fact store now, not at the next 5-minute tick
+            import factstore
+            print(json.dumps(factstore.build()))
+        except Exception as e:  # noqa: BLE001
+            log.warning("fact store build failed: %r", e)
     else:
         print(json.dumps(status(), indent=1))
