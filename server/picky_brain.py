@@ -824,7 +824,7 @@ BANTER_ADAPT = os.environ.get("PICKY_BANTER_ADAPT", "0") == "1"
 BANTER_TIMEOUT = 40.0
 BANTER_N = 4
 # burn-book type for each banter kind (pile-on / spiral levels map onto the book's own types)
-BOOK_TYPE = {"spiral2": "insult", "banter": None}
+BOOK_TYPE = {"spiral2": "insult", "banter": None, "greet": None}
 
 
 def lane() -> str | None:

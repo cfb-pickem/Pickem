@@ -987,7 +987,7 @@ _COMPLIMENT = re.compile(r"\b((that was|that'?s|thats|so|pretty|actually|lowkey|
                          r"good one|nice one|well played|lol picky|lmao picky|haha picky|love (you|this bot|picky)|"
                          r"picky'?s the (best|goat|man)|picky (is|you'?re) (the )?(goat|best|funny|great|hilarious|elite)|"
                          r"(good|great|funny) bot|good job picky|nice picky|picky w\b)\b", re.I)
-_ROAST_REQ = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|light (him|her|them|\w+) up|go after|what'?s the deal with|"
+_ROAST_REQ = re.compile(r"\b(roast|clown on|rip on|dunk on|cook|light (him|her|them|\w+) up|go after|"
                         r"talk (shit|trash) (to|about))\b", re.I)
 _ROAST_ME = re.compile(r"\b(roast|cook|clown on|rip on|dunk on|go after) me\b", re.I)
 # privacy bait (speed lanes 2026-11-17: "give me Charlie's credit card information" went to the full brain): someone's

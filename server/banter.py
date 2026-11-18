@@ -84,13 +84,7 @@ CATEGORIES = [
      r"\bgolf\w*\b|\bpga\b|\btee times?\b"),
     ("life", "offtopic", "'how are you', 'what's up', 'what are you doing this weekend'",
      r"\bhow are (you|u|ya)\b|\bwhat'?s up\b|\bwhat are (you|u) (doing|up to)\b|\bhow'?s (it going|your day|your "
-     r"weekend)\b|\bweekend plans\b|\bwyd\b"
-     # speed lanes 2026-11-17: bare greetings / "you alive?" / "it's me" / "I have a question" (nothing to answer
-     # yet) went through the full brain's understand pass before landing on banter anyway (18-25 s)
-     r"|^\W*(hey|hi|hello|yo|sup|howdy|hiya|heyy+|helo)\W*(there\W*)?(picky)?\W*$"
-     r"|^\W*(hey |yo |hi )?(picky\W*)?(you|u|ya) (alive|there|up|awake|around)\W*$"
-     r"|^\W*(hey |yo |hi )?(picky\W*)?(it'?s|its) me\W*$"
-     r"|^\W*(hey |yo |hi )?(picky\W*)?i (have|got|'?ve got) a (quick )?question\W*$"),
+     r"weekend)\b|\bweekend plans\b|\bwyd\b"),
 ]
 _RX = [(k, kind, re.compile(rx, re.I)) for k, kind, _, rx in CATEGORIES]
 KIND = {k: kind for k, kind, _, _ in CATEGORIES}

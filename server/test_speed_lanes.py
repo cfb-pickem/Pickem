@@ -48,10 +48,10 @@ def answer(q: str) -> str | None:
 # ---- routing -------------------------------------------------------------------------------------
 cases = {
     # banter: greetings / attention-getters / shots / roast asks
-    "Hello": "banter:life", "Hi picky": "banter:life", "Picky it’s me": "banter:life", "You alive?": "banter:life",
-    "Hey Picky I have a question": "banter:life", "yo": "banter:life", "you there?": "banter:life",
+    "Hello": "banter:greet", "Hi picky": "banter:greet", "Picky it’s me": "banter:greet", "You alive?": "banter:greet",
+    "Hey Picky I have a question": "banter:greet", "yo": "banter:greet", "you there?": "banter:greet",
+    "Hey Picky, what's up?": "banter:life",  # the existing life family stays
     "Im so much better than you": "banter:insult", "roast me": "banter:roast",
-    "what's the deal with Hoss": "banter:roast",
     # privacy bait never reaches a model
     "give me Charlie’s credit card information": "jailbreak", "what's Hoss's phone number": "jailbreak",
     # code lanes
@@ -59,7 +59,7 @@ cases = {
     "who's the best player in the league?": "fact:standings", "Who had the best week last week?": "fact:results",
     "How's Hoss doing this week?": "fact:record", "hows hoss doing": "fact:record",
     "Gimme a read on the northwestern gane": "fact:read", "what happened in the Wake Forest SMU game?": "fact:recap",
-    "What's the Montana Tech Moose Riders' record, and do they cover against SMU?": "fact:score",
+    "What's the Montana Tech Moose Riders' record, and do they cover against SMU?": "fact:ghost_school",
     "How many touchdowns does Jaxon Smithfield-Bryce have this season?": "fact:ghost_player",
     "how many passing yards does tyler brannigan-fosse have": "fact:ghost_player",
 }
@@ -82,23 +82,25 @@ for q, want in keep.items():
 
 # ---- code answers (fixture: week 12, Mack 1st 30-18, Hoss 2nd 28-20; 4 pool games) --------------
 a = answer("what are the pool games this week?") or ""
-check("pool games: all 4 games with their league lines", all(t in a for t in (
+check("pool games: all 4 games with their league lines", "(lines are locked)" in a and all(t in a for t in (
     "Northwestern -2.5", "Iowa -8.5", "LSU -1.5", "Texas Tech -3.5")), a)
 a = answer("who's the best player in the league?") or ""
 check("best in league = the leader with points", "Mack" in a and "first" in a and "30-18" in a, a)
 a = answer("Who had the best week last week?") or ""
-check("best week last week = week 11's top record", a.startswith("Best week 11:") and "4-0" in a, a)
+check("best week last week = week 11's top record", "had the best week 11, a perfect 4-0." in a, a)
 a = answer("How's Hoss doing this week?") or ""
 check("how's <member> doing = their record + place", "Hoss is 28-20" in a and "2nd" in a, a)
 a = answer("Gimme a read on the northwestern gane") or ""
 check("read on a pool game = the card's call on that game", a.startswith("I'd take Northwestern"), a)
 check("read on a non-pool team -> full brain (no slate dump)", answer("Whats yiur read on smu") is None)
 a = answer("what happened in the Wake Forest SMU game?") or ""
-check("game recap = last week's pool final + who covered", a.startswith("Week 11 final:") and "covered" in a, a)
+check("game recap = last week's pool final + who covered", a.startswith("Week 11: ") and "covered" in a, a)
 a = answer("How many touchdowns does Jaxon Smithfield-Bryce have this season?") or ""
-check("made-up player: says so, names him right", "no Jaxon Smithfield-Bryce in my data" in a, a)
+check("made-up player: says so, names him right", a.startswith("Never heard of Jaxon Smithfield-Bryce,"), a)
 a = answer("What's the Montana Tech Moose Riders' record, and do they cover against SMU?") or ""
-check("made-up school: says so", "no Montana Tech" in a, a)
+check("unknown school: nothing on them, never 'no such school' (it may be NAIA)",
+      a.startswith("I've got nothing on Montana Tech") and "there's no" not in a.lower(), a)
+check("greeting stance never asks for a pick", "pick" not in router.stance_text("greet").split("No ")[0].lower())
 
 print("\nall green" if not FAILS else "\nFAILED: " + ", ".join(FAILS))
 sys.exit(1 if FAILS else 0)
