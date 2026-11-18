@@ -552,8 +552,17 @@ def resolve(name: str) -> dict | None:
 
 
 def teams_named(q: str) -> list[str]:
+    """FBS teams a text names (longest names first), plus 3-letter schools (BYU, LSU, TCU, SMU, UCF...) that the
+    shared resolver skips as too short."""
     idx = teams_idx()
-    return cfbd.other_teams_named(q or "", [], idx) if idx["teams"] else []
+    if not idx["teams"]:
+        return []
+    out = cfbd.other_teams_named(q or "", [], idx)
+    for w in re.findall(r"\b[A-Za-z]{3}\b", q or ""):
+        t = idx["teams"].get(cfbd.norm(w))
+        if t and t.get("sp") and cfbd.norm(t["name"]) == cfbd.norm(w) and t["name"] not in out:
+            out.append(t["name"])
+    return out
 
 
 def _row(sheet: dict, now: float | None = None) -> dict:

@@ -308,6 +308,29 @@ def test_no_anthropic_on_the_store_path():
         assert "claude" not in src and "anthropic" not in src, mod.__name__
 
 
+def test_three_letter_schools_resolve():
+    """'is BYU's QB playing', 'LSU at Tennessee': the shared resolver skips 3-letter words; the store doesn't."""
+    FS.use(built()["path"], inputs(), now=NOW)
+    try:
+        assert "BYU" in FS.teams_named("is BYU's QB playing this week?"), FS.teams_named("is BYU's QB playing?")
+        assert set(FS.teams_named("LSU at Tennessee, who covers?")) == {"LSU", "Tennessee"}
+        assert FS.teams_named("the guy is out for the year") == []
+    finally:
+        FS.use(None)
+
+
+def test_sitfacts_reads_the_store():
+    import sitfacts
+    FS.use(built()["path"], inputs(), now=NOW)
+    try:
+        f = sitfacts.live()
+        g = f.find_game("LSU at Tennessee, any weather?")
+        assert g and g["home"] == "Tennessee" and g["away"] == "LSU", g
+        assert f.results("Georgia") == FS.team_rows("Georgia")
+    finally:
+        FS.use(None)
+
+
 # --- the store rides existing ticks (no new LaunchAgent) ---------------------------------------------------
 
 def test_news_refresh_tick_rebuilds_the_store():
