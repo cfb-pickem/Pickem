@@ -450,7 +450,44 @@ SUB_ASK = {  # the situational sub-question a text asks (genius exam: answer exa
     "weather": re.compile(r"\b(weather|wind\w*|rain\w*|snow\w*|cold|freez\w*|temperature|temps?|forecast|storm\w*|"
                           r"sleet|wet|elements|gusts?|dome|indoors)\b", re.I),
     "rest": re.compile(r"\b(rest(ed)?|bye( week)?|short week|extra week|days off|fresh(er)?|tired|fatigue)\b", re.I),
+    "motivation": re.compile(r"\b(motivat\w*|stakes|must[- ]win|bowl[- ]eligib\w*|bowl (spot|game|hopes)|something to play for|"
+                             r"nothing to play for|play(ing)? for|clinch\w*|title[- ]game spot|desperat\w*|angles?)\b", re.I),
 }
+
+
+def motivation_line(g: dict, idx: dict) -> str | None:
+    """Stakes in decided words: bowl eligibility (6 wins) and the conference title-game race, from CFBD records
+    and conference standings (top 2 by conference record make the title game)."""
+    bits = []
+    for team in (g["awayTeam"], g["homeTeam"]):
+        t = cfbd.resolve_team(team, idx) or {}
+        rec, conf = t.get("record"), t.get("conf_record")
+        if not rec:
+            continue
+        w, l = (int(x) for x in rec.split("-")[:2])
+        b = f"{team} {rec}" + (f" ({conf} {t.get('conference')})" if conf else "")
+        if w == 5:
+            b += ": one win from bowl eligibility (6 wins)"
+        elif w < 5 and w + (12 - w - l) >= 6:
+            b += f": needs {6 - w} more wins for a bowl"
+        elif w < 5:
+            b += ": can't reach 6 wins, no bowl on the line"
+        else:
+            b += ": already bowl eligible"
+        try:
+            note = conference_note(f"{t.get('conference') or ''} standings")
+            rows = re.findall(r"^\s+(\d+)\. (.+?) (\d+-\d+) \(", note or "", re.M)
+            pos = next((int(r[0]) for r in rows if r[1] == team), None)
+            if pos == 1:
+                b += f", leads the {t.get('conference')} (a win keeps the title-game spot in hand)"
+            elif pos == 2:
+                b += f", 2nd in the {t.get('conference')} (title-game spot on the line)"
+            elif pos == 3:
+                b += f", 3rd in the {t.get('conference')}, chasing a title-game spot"
+        except Exception:  # noqa: BLE001
+            pass
+        bits.append(b)
+    return ("  Motivation / stakes: " + "; ".join(bits) + ".") if bits else None
 
 
 def sub_asks(q: str) -> list[str]:
@@ -539,6 +576,8 @@ def sub_lines(q: str, g: dict, idx: dict, games_ds: dict, home_now: float | None
             elif k == "weather":
                 x = weather.line(g["id"]) or ("  Weather: no forecast on file for this game yet (it refreshes every "
                                               "6 hours inside the forecast window); say you don't have one, never guess.")
+            elif k == "motivation":
+                x = motivation_line(g, idx)
             else:
                 x = rest_line(g, idx, games_ds)
         except Exception as e:  # noqa: BLE001 - a bad fact never breaks the card
