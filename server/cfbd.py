@@ -64,12 +64,14 @@ DATASETS = {
     # head coaches this season + last (slate_cards.coach_note: "is Sherrone Moore getting fired?")
     "coaches": ("/coaches", {"year": "{year}"}),
     "coaches_prev": ("/coaches", {"year": "{prev}"}),
+    # every head coach's FBS career since 1980 in ONE call (factstore coach careers: stops, years, W-L)
+    "coaches_all": ("/coaches", {"minYear": "1980", "maxYear": "{year}"}),
 }
 
 # Datasets that barely change: refreshed only when the cached copy is older
 # than this (seconds), so venues cost ~1 call a month, not 30.
 STATIC_MAX_AGE = {"venues": 30 * 86400, "games": 6 * 86400, "srs": 6 * 86400, "lines_prev": 120 * 86400,
-                  "coaches": 6 * 86400, "coaches_prev": 120 * 86400}
+                  "coaches": 6 * 86400, "coaches_prev": 120 * 86400, "coaches_all": 30 * 86400}
 
 
 def season_year(today: dt.date | None = None) -> int:

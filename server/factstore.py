@@ -7,11 +7,14 @@ ESPN market snapshots (market_snapshot.py), checked ESPN polls (polls.py), the s
   - one GAME SHEET per game in the next 9 days (market open/now/move, ranks, records, availability, weather,
     last meeting, venue), and
   - one TEAM SHEET per FBS team (record, conference record, ranks, SP+, SRS, ATS, coach, results vs the number),
-each with a `facts` list of {id, kind, subject, value, text, source, as_of}. It writes server/cache/factstore.json
+each with a `facts` list of {id, kind, subject, value, text, source, as_of}, plus the big picture (plan phase 5):
+coach careers (CFBD /coaches, every season since 1980), coach headlines (news.py + the code-made insider wire),
+each conference's games and title race (title_race.race; conf_race() adds today's finals), and the committed CFP
+format (cfp_rules.json). It writes server/cache/factstore.json
 in one shot (temp file + rename) and mirrors changed sheets to Supabase picky.sheet. Readers use the local file
 (ms); a missing file is rebuilt from the Supabase copy. Public football facts only: no picks, no members.
 
-Lanes call the gateway functions below (find_game, market, availability, conference_note, ...) and nothing else
+Lanes call the gateway functions below (find_game, market, availability, conf_race, coach_careers, ...) and nothing else
 for football data; test_factstore.py checks that statically for router.STORE_LANES. A lane may return
 answer(text, facts) so the send point can check every number against facts_used (unsupported()).
 
@@ -44,8 +47,15 @@ VERSION = 1
 CACHE_PATH = Path(os.environ.get("PICKY_FACTSTORE", HERE / "cache" / "factstore.json"))
 HORIZON_D = 9
 KEY_NUMBERS = (3, 7, 10, 14)
-DATASETS = ("games", "lines", "lines_prev", "records", "ats", "sp", "srs", "coaches")
+DATASETS = ("games", "lines", "lines_prev", "records", "ats", "sp", "srs", "coaches", "coaches_prev", "coaches_all")
 MARKET_HARD_S = (6 * 3600, 3 * 3600)
+COACHING_FRESH_D = 8   # slate_intel's (Opus-made) coaching notes ride only while the file is this fresh
+COACH_NEWS_D = 7       # coach headlines this recent (news.py keeps 7 days)
+COACH_NEWS = re.compile(r"\b(fires|fired|firing|hot seat|on the seat|job security|coaching (search|carousel|change|changes|"
+                        r"candidates?|hires?|vacanc\w*|staff)|carousel|interim|head coach(ing)? (job|search|opening|"
+                        r"vacancy|candidates?)|hires?|hired|candidates?|buyout|contract extension|extension|parts? ways|"
+                        r"parted ways|steps? down|stepping down|resign\w*|(open|vacant) jobs?)\b", re.I)
+NOT_COACH_NEWS = re.compile(r"\bunder fire\b|\bfires? back\b|\bfires (another |a )?shot\b|athletic director|\bAD\b|\b(QB|quarterback|transfer|recruit\w*|commit\w*)\b", re.I)
 FIXTURE_FETCHED = dt.datetime(2026, 11, 18, 12, 15, tzinfo=dt.timezone.utc).timestamp()  # when the fixture was frozen  # ESPN snapshot past this (normal, game day) loses to the CFBD line
 
 
@@ -62,6 +72,8 @@ class Inputs:
     polls_path: Path | None = None
     market_db: Path | None = None
     live_path: Path | None = None
+    news_path: Path | None = None
+    wire_path: Path | None = None
     _ds: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -71,11 +83,16 @@ class Inputs:
         return cls(cfbd_db=cfbd.DB_PATH, slate_intel_path=HERE / "cache" / "slate_intel.json",
                    weather_path=HERE / "cache" / "weather.json", polls_path=polls.PATH,
                    market_db=market_snapshot.DB_PATH,
-                   live_path=Path(os.environ.get("PICKY_LIVE_CACHE", HERE / "cache" / "live_games.json")))
+                   live_path=Path(os.environ.get("PICKY_LIVE_CACHE", HERE / "cache" / "live_games.json")),
+                   news_path=Path(os.environ.get("PICKY_NEWS_CACHE", HERE / "cache" / "news.json")),
+                   wire_path=Path(os.environ.get("PICKY_INSIDER_WIRE",
+                                                 "/Users/Agent/cfb-pickem-private/insider_wire.json")))
 
     @classmethod
     def from_fixture(cls, d: Path, **kw) -> "Inputs":
         d = Path(d)
+        kw.setdefault("news_path", d / "news.json" if (d / "news.json").exists() else None)
+        kw.setdefault("wire_path", d / "insider_wire.json" if (d / "insider_wire.json").exists() else None)
         return cls(fixture_dir=d, slate_intel_path=d / "slate_intel.json", weather_path=d / "weather.json", **kw)
 
     def datasets(self) -> dict:
@@ -353,6 +370,138 @@ def _game_sheets(ds: dict, teams: dict, intel: dict, weather: dict, snaps: dict,
     return out
 
 
+# --- big picture (plan phase 5): coach careers, coach news, conference races ---------------------------------
+
+def _md(iso) -> str:
+    """'Nov 17' (Central time) for a dated item."""
+    d = _sd(iso)
+    if not d:
+        return ""
+    try:
+        from zoneinfo import ZoneInfo
+        d = d.astimezone(ZoneInfo("America/Chicago")) if d.tzinfo else d
+    except Exception:  # noqa: BLE001
+        pass
+    return f"{d:%b} {d.day}"
+
+
+def _wl(w, l_, t=0) -> str:
+    return f"{w}-{l_}" + (f"-{t}" if t else "")
+
+
+def _coach_careers(ds: dict, season: int, as_of: str) -> dict[str, dict]:
+    """{full name: career} for every head coach active this season or last: FBS stops (school, years, W-L) from
+    CFBD /coaches (every season since 1980 in coaches_all; this + last season otherwise). A season in progress
+    shows 0 games in CFBD, so its W-L stays out of the stop (the team sheet has this season's record)."""
+    src = ds.get("coaches_all") or (list(ds.get("coaches_prev") or []) + list(ds.get("coaches") or []))
+    seasons: dict[str, dict] = {}
+    for c in src:
+        name = f"{c.get('firstName') or ''} {c.get('lastName') or ''}".strip()
+        if not name:
+            continue
+        e = seasons.setdefault(name, {"first": c.get("firstName"), "last": c.get("lastName"), "hire": c.get("hireDate"),
+                                      "rows": {}})
+        e["hire"] = e["hire"] or c.get("hireDate")
+        for x in c.get("seasons") or []:
+            if x.get("year") and x.get("school"):
+                e["rows"][(x["year"], x["school"])] = x
+    out = {}
+    for name, e in seasons.items():
+        rows = sorted(e["rows"].values(), key=lambda x: x["year"])
+        if not rows or rows[-1]["year"] < season - 1:
+            continue
+        stops = []
+        for x in rows:
+            st = stops[-1] if stops else None
+            played = bool(x.get("games")) or bool((x.get("wins") or 0) + (x.get("losses") or 0))
+            if st and st["school"] == x["school"] and x["year"] == st["to"] + 1:
+                st["to"] = x["year"]
+            else:
+                st = {"school": x["school"], "from": x["year"], "to": x["year"], "w": 0, "l": 0, "t": 0, "seasons": 0,
+                      "in_progress": False}
+                stops.append(st)
+            if played:
+                st["w"] += x.get("wins") or 0
+                st["l"] += x.get("losses") or 0
+                st["t"] += x.get("ties") or 0
+                st["seasons"] += 1
+            elif x["year"] == season:
+                st["in_progress"] = True
+        current = rows[-1]["year"] == season
+        cw, cl, ct = (sum(s_[k] for s_ in stops) for k in ("w", "l", "t"))
+
+        def stop_txt(s_):
+            yrs = f"{s_['from']}" if s_["from"] == s_["to"] else f"{s_['from']}-{s_['to']}"
+            if s_["in_progress"] and not s_["seasons"]:
+                return f"{s_['school']} {yrs} (this season)"
+            wl = _wl(s_["w"], s_["l"], s_["t"])
+            return f"{s_['school']} {yrs} ({wl}" + (f" through {s_['to'] - 1})" if s_["in_progress"] else ")")
+        text = (f"{name}, FBS head coach: " + ", ".join(stop_txt(s_) for s_ in stops)
+                + (f"; {_wl(cw, cl, ct)} career" + (" before this season" if current else "") if cw + cl else ""))
+        out[name] = {"name": name, "first": e["first"], "last": e["last"], "hire_date": (e["hire"] or "")[:10],
+                     "school": rows[-1]["school"], "current": current, "stops": stops,
+                     "career": {"w": cw, "l": cl, "t": ct}, "text": text, "as_of": as_of}
+    return out
+
+
+def _coach_news(news: dict, wire: dict, now: float) -> list[dict]:
+    """Coach headlines (fired / hot seat / searches / hires / interim) from news.py's cache plus the code-made insider
+    wire's carousel items, newest first, deduped, last COACH_NEWS_D days."""
+    lo = now - COACH_NEWS_D * 86400
+    seen, out = set(), []
+    rows = [(it, "news") for it in (news.get("items") or {}).values()]
+    rows += [(it, "wire") for it in wire.get("items") or [] if "Coaching carousel" in (it.get("sections") or [])]
+    for it, frm in rows:
+        title = (it.get("title") or "").strip()
+        d = _sd(it.get("date"))
+        if not title or not d or not COACH_NEWS.search(title) or NOT_COACH_NEWS.search(title):
+            continue
+        ts = d.timestamp() if d.tzinfo else d.replace(tzinfo=dt.timezone.utc).timestamp()
+        if not lo <= ts <= now + 3600:
+            continue
+        key = re.sub(r"[^a-z0-9]+", "", title.lower())
+        story = it.get("story")
+        if key in seen or (story and story in seen):
+            continue
+        seen |= {key} | ({story} if story else set())
+        src = it.get("source") or it.get("outlet") or "news"
+        out.append({"title": title, "source": src, "date": d.isoformat(timespec="minutes"), "ts": ts,
+                    "teams": list(it.get("teams") or []), "url": it.get("link") or it.get("url"),
+                    "insider": it.get("insider"), "from": frm,
+                    "hot": bool(re.search(r"hot seat|on the seat|job security|fire|firing|buyout|parts? ways|parted",
+                                          title, re.I)),
+                    "fact": _fact("coach_news", (it.get("teams") or ["college football"])[0], key[:48], title,
+                                  f"{title} ({src}, {_md(d.isoformat())})", src, d.isoformat(timespec="minutes"))})
+    out.sort(key=lambda x: x["ts"], reverse=True)
+    return out[:60]
+
+
+def _conf_games(ds: dict) -> dict[str, list[dict]]:
+    """{conference: [{id, week, start, home, away, home_pts, away_pts}]}: this season's regular-season conference
+    games (CFBD schedule; scores from the daily lines pull, which is fresher than the weekly games pull)."""
+    scores = {str(g["id"]): (g.get("homeScore"), g.get("awayScore")) for g in ds.get("lines") or []}
+    out: dict[str, list[dict]] = {}
+    for g in ds.get("games") or []:
+        conf = g.get("homeConference")
+        if (not g.get("conferenceGame") or g.get("seasonType", "regular") != "regular" or not conf
+                or conf != g.get("awayConference") or conf == "FBS Independents"):
+            continue
+        hp, ap = scores.get(str(g["id"]), (None, None))
+        if hp is None or ap is None:
+            hp, ap = g.get("homePoints"), g.get("awayPoints")
+        out.setdefault(conf, []).append({"id": str(g["id"]), "week": g.get("week"), "start": g.get("startDate"),
+                                         "home": g["homeTeam"], "away": g["awayTeam"], "home_pts": hp, "away_pts": ap})
+    for v in out.values():
+        v.sort(key=lambda x: x["start"] or "")
+    return out
+
+
+def _conf_races(conf_games: dict, now: float, as_of: str) -> dict[str, dict]:
+    import title_race
+    t0 = dt.datetime.fromtimestamp(now, dt.timezone.utc)
+    return {c: title_race.race(c, gs, t0, as_of=as_of, source="CFBD games") for c, gs in conf_games.items()}
+
+
 def _hash(x) -> str:
     return hashlib.sha1(json.dumps(x, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -375,12 +524,31 @@ def build(inp: Inputs | None = None, now: float | None = None, out: Path | None 
                 "seasons": [{"school": s.get("school"), "year": s.get("year"), "wins": s.get("wins"),
                              "losses": s.get("losses")} for s in c.get("seasons") or []]}
                for c in ds.get("coaches") or []]
+    import cfp_rules
+    season = max((t.get("season") or 0 for t in teams.values()), default=0)
+    fetched = ds.get("_fetched") or {}
+    careers = _coach_careers(ds, season, _iso(fetched.get("coaches_all") or fetched.get("coaches")) or _iso(now))
+    for c in careers.values():
+        tm = teams.get(c["school"])
+        if c["current"] and tm is not None and tm.get("coach") == c["name"]:
+            tm["coach_career"] = c["name"]
+            tm["facts"].append(_fact("coach", tm["name"], "career", c["name"], c["text"], "CFBD coaches", c["as_of"]))
+    conf_games = _conf_games(ds)
+    try:
+        rules = cfp_rules.load()
+    except (OSError, ValueError):
+        rules = {}
     store = {"v": VERSION, "built_ts": now, "built_at": _iso(now),
              "sources": {"cfbd": (ds.get("_fetched") or {}).get("lines"), "slate_intel": intel.get("as_of"),
                          "polls": polls_d.get("_fetched_ts"), "weather": _json(inp.weather_path).get("fetched_at"),
                          "market": max((r[-1]["ts"] for r in snaps.values() if r), default=None)},
              "rankings": {k: polls_d[k] for k in ("CFP", "AP", "Coaches") if (polls_d.get(k) or {}).get("ok")},
-             "coaching": intel.get("coaching") or [], "coaches": coaches,
+             "coaching": intel.get("coaching") or [], "coaching_fetched": intel.get("fetched_at"), "coaches": coaches,
+             "coach_careers": careers,
+             "coach_news": _coach_news(_json(inp.news_path), _json(inp.wire_path), now),
+             "conf_games": conf_games,
+             "conf_races": _conf_races(conf_games, now, _iso(fetched.get("lines")) or _iso(now)),
+             "cfp_rules": rules if not cfp_rules.validate(rules) else {},
              "games": games, "teams": teams}
     store["build_ms"] = int((time.time() - t) * 1000)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -396,6 +564,9 @@ def build(inp: Inputs | None = None, now: float | None = None, out: Path | None 
     return {"games": len(games), "teams": len(teams), "ms": int((time.time() - t) * 1000), "pushed": pushed}
 
 
+META_PARTS = ("coach_careers", "coach_news", "conf_games", "conf_races")  # own meta rows: they change rarely
+
+
 def _push(store: dict, out: Path, pusher=None) -> int:
     """Mirror changed sheets to Supabase picky.sheet (hashes kept next to the local file)."""
     if pusher is None:
@@ -403,10 +574,11 @@ def _push(store: dict, out: Path, pusher=None) -> int:
         pusher = lambda rows: M.supabase_push("sheet", rows)  # noqa: E731
     hp = out.with_name(out.name + ".hashes")
     old = _json(hp)
-    meta = {k: v for k, v in store.items() if k not in ("games", "teams", "built_ts", "built_at", "build_ms")}
+    meta = {k: v for k, v in store.items() if k not in ("games", "teams", "built_ts", "built_at", "build_ms") + META_PARTS}
     rows, new = [], {}
     for kind, key, body in ([("game", k, v) for k, v in store["games"].items()]
-                            + [("team", k, v) for k, v in store["teams"].items()] + [("meta", "meta", meta)]):
+                            + [("team", k, v) for k, v in store["teams"].items()] + [("meta", "meta", meta)]
+                            + [("meta", k, store[k]) for k in META_PARTS if k in store]):
         h = _hash(body)
         new[f"{kind}:{key}"] = h
         if old.get(f"{kind}:{key}") != h:
@@ -469,7 +641,8 @@ def load(path: Path | None = None, puller=None) -> dict | None:
     meta = next((r["body"] for r in rows if r.get("kind") == "meta" and r.get("key") == "meta"), None)
     if not meta:
         return None
-    d = {**meta, "games": {r["key"]: r["body"] for r in rows if r.get("kind") == "game"},
+    parts = {r["key"]: r["body"] for r in rows if r.get("kind") == "meta" and r.get("key") in META_PARTS}
+    d = {**meta, **parts, "games": {r["key"]: r["body"] for r in rows if r.get("kind") == "game"},
          "teams": {r["key"]: r["body"] for r in rows if r.get("kind") == "team"}, "from": "supabase"}
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
@@ -678,30 +851,6 @@ def rec(rows: list[dict]) -> str:
     return f"{c}-{l_}" + (f"-{p}" if p else "")
 
 
-def conference_note(question: str) -> str:
-    """'Big 12 title race?': the conference table from team sheets (live finals included)."""
-    import slate_cards
-    q = (question or "").lower()
-    conf = next((v for k, v in sorted(slate_cards.CONFS.items(), key=lambda x: -len(x[0]))
-                 if re.search(rf"\b{re.escape(k)}\b", q)), None)
-    if not conf or not slate_cards._CONF_ASK.search(q):
-        return ""
-    st = load() or {}
-    rows = []
-    for name, t in (st.get("teams") or {}).items():
-        if t.get("conference") != conf:
-            continue
-        t = overlay_team(t, st)
-        cw, cl = map(int, t["conf_record"].split("-"))
-        rows.append(((cw / max(1, cw + cl)), cw, -cl, name, t["conf_record"], t["record"]))
-    if not rows:
-        return ""
-    rows.sort(reverse=True)
-    return (f"{conf.upper()} STANDINGS (conference record first, then overall; CFBD, through last week; the title game "
-            f"takes the top 2; tiebreakers not computed here, so say 'tiebreakers' rather than guessing one):\n"
-            + "\n".join(f"  {i}. {t} {c} ({o})" for i, (_, _, _, t, c, o) in enumerate(rows[:8], 1)))
-
-
 def rankings(poll: str = "CFP", path: Path | None = None) -> dict | None:
     """A poll that passed polls.sanity (ESPN primary), from the store; the polls cache if the store lacks it."""
     st = load(path) if path else load()
@@ -736,6 +885,70 @@ def news_lines(team_name: str, query: str, limit: int = 3) -> list[str]:
     """Breaking-news lines for a team (news.py's cache, the store's news feed)."""
     import news
     return news.breaking_for(query, teams=[team_name], limit=limit) or []
+
+
+
+# --- big picture gateway (plan phase 5) ---------------------------------------------------------------------
+
+def conference_named(q: str) -> str | None:
+    """The conference a text names ('big 12' -> 'Big 12'), CFBD's name."""
+    import slate_cards
+    t = (q or "").lower()
+    return next((v for k, v in sorted(slate_cards.CONFS.items(), key=lambda x: -len(x[0]))
+                 if re.search(rf"\b{re.escape(k)}\b", t)), None)
+
+
+def conf_race(conf: str) -> dict | None:
+    """A conference's title race (title_race.race) with today's finals from the live poller applied."""
+    import title_race
+    st = load() or {}
+    games = (st.get("conf_games") or {}).get(conf)
+    if not games:
+        return None
+    finals = {}
+    for g in ((_live().get("games")) or {}).values():
+        if g.get("state") == "post" and g.get("away_score") is not None and g.get("home_score") is not None:
+            finals[str(g.get("id"))] = g
+            finals[(cfbd.norm((g.get("away") or {}).get("name")), cfbd.norm((g.get("home") or {}).get("name")))] = g
+    out, changed = [], False
+    for g in games:
+        lg = None if g["home_pts"] is not None else (finals.get(g["id"]) or finals.get((cfbd.norm(g["away"]),
+                                                                                       cfbd.norm(g["home"]))))
+        if lg:
+            g = dict(g, home_pts=lg["home_score"], away_pts=lg["away_score"])
+            changed = True
+        out.append(g)
+    if not changed:
+        return (st.get("conf_races") or {}).get(conf)
+    now = _now()
+    return title_race.race(conf, out, dt.datetime.fromtimestamp(now, dt.timezone.utc), as_of=_iso(now),
+                           source="CFBD games + live finals")
+
+
+def coach_careers() -> dict[str, dict]:
+    """{full name: career} for every head coach active this season or last (CFBD /coaches, every season)."""
+    return (load() or {}).get("coach_careers") or {}
+
+
+def coaching_notes() -> list[dict]:
+    """slate_intel's sourced coaching notes (Opus-made), only while that file is fresh; each with its fact."""
+    st = load() or {}
+    f = _sd(st.get("coaching_fetched"))
+    if not f or _now() - f.timestamp() > COACHING_FRESH_D * 86400:
+        return []
+    return [dict(c, fact=_fact("coaching", c.get("school") or "", "change", c.get("text"), c.get("text"),
+                               c.get("source_name") or "slate_intel", c.get("date") or ""))
+            for c in st.get("coaching") or [] if c.get("text")]
+
+
+def coach_news() -> list[dict]:
+    """Coach headlines (news.py + the insider wire), newest first, each with its fact."""
+    return (load() or {}).get("coach_news") or []
+
+
+def cfp_rules() -> dict:
+    """The committed CFP format (cfp_rules.json, validated at build)."""
+    return (load() or {}).get("cfp_rules") or {}
 
 
 # =============================================================================================================

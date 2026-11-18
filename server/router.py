@@ -43,6 +43,7 @@ import playoff_race
 import why_lane
 import unit_lane  # 'can X run on Y': unit matchups in code (plan 2026-11-18 phase 6)
 import channel  # the channel lane (drill 11/17)
+import big_picture  # coach + CFP-picture lanes from the fact store (plan 2026-11-18 phase 5)
 import factstore  # the fact store: every football lane in STORE_LANES reads only this + ctx
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
@@ -956,34 +957,95 @@ CONF_RACE_ASK = re.compile(r"\b(big 12|big xii|big ten|big 10|sec|acc|mountain w
                            r"lead(s|ing|er)?|who'?s winning|championship|title)\b"
                            r"|\b(who|whos|who'?s) (leads?|leading|winning|on top of|first in) (the )?(big 12|big xii|big ten|big 10|"
                            r"sec|acc|mountain west|sun belt|aac|mac|conference usa|pac-?12)\b", re.I)
+# the real CFP's field / bracket / bubble 'if it ended today' (plan phase 5); the league's own playoff asks never
+# name the CFP, and news / expansion / opinion asks stay with the full brain
+CFP_NOW_ASK = re.compile(r"\b(college football playoff|cfp|12-team (playoff|field|bracket)|playoff committee)\b", re.I)
+CFP_NOW_WHAT = re.compile(r"\b(if (it|the season|things) ended|as it stands|right now|today|currently|projected|picture|field|"
+                          r"bracket|bubble|seeds?|seeding|byes?|who'?s in|who is in|who makes|who gets in|in or out|"
+                          r"last (team|teams|four|4|two|2) in|first (team|teams|four|4|two|2) out|get in|make it|make the|"
+                          r"chances?|in the hunt|where (does|do|is)|look like|looks like)\b", re.I)
+NOT_CFP_NOW = re.compile(r"\b(news|latest|lates|rumou?r\w*|expan\w*|format|bias\w*|fair|unfair|rigged|should|deserve\w*|"
+                         r"fight|money|revenue|24-team|16-team|14-team|my|our|league|pool)\b", re.I)
+# coaching carousel / hot seat / a coach's history or 'going back to X' (plan phase 5)
+COACH_ASK = re.compile(r"\b(coaching carousel|carousel|hot seat|hot-seat|on the (hot )?seat|coaching (news|changes?|moves?|"
+                       r"search(es)?|rumou?rs?|vacanc\w*|jobs?|openings?|history|career|record|resume|stops)|"
+                       r"(getting|gonna get|going to get|get|be|been|gets) (fired|canned|axed)|"
+                       r"fire (him|his coach|their coach|the coach)|head coach(ing)? (job|search|opening|vacanc\w*|history|"
+                       r"career|stops))\b", re.I)
+NOT_COACH = re.compile(r"\b(you|u|ya|picky|i|me)\b[^?.!]{0,15}\b(fired|canned|axed)\b", re.I)
 LOOKAHEAD_SLATE = re.compile(r"\b(any|which|what|best|biggest)\b[^?.!]{0,20}\b(look ?-?ahead|letdown|let down|trap|sandwich)\b"
                              r"|\b(look ?-?ahead|letdown|trap|sandwich) (spots?|games?|situations?)\b", re.I)
 
 
 def conf_race_text(ctx: dict, q: str) -> str | None:
-    """Conference standings by conference record (CFBD), top 2 = the title game, and this week's games for the
-    top 3. Tiebreakers aren't computed, so a tie says 'tiebreakers'."""
-    note = factstore.conference_note(q)
-    rows = re.findall(r"^\s+\d+\. (.+?) (\d+-\d+) \((\d+-\d+)\)$", note or "", re.M)
-    if not rows:
+    """The conference title race (title_race.race over CFBD games + today's finals, via the fact store): leader and
+    chasers, head-to-head tiebreaks (a tie head-to-head can't settle says the conference's further tiebreakers
+    apply), who controls it said outright, clinches-with-a-win / out-with-a-loss, games left, this week's games."""
+    conf = factstore.conference_named(q)
+    race = factstore.conf_race(conf) if conf else None
+    if not race or not race["standings"]:
         return None
-    conf = re.match(r"(.+?) STANDINGS", note).group(1).title().replace("Sec", "SEC").replace("Acc", "ACC").replace(
-        "Xii", "XII").replace("Aac", "AAC").replace("Mac", "MAC")
-    games = factstore.upcoming()
-    def this_week(team):
-        for g in games:
-            if team in (g["awayTeam"], g["homeTeam"]):
-                return f"at {g['homeTeam']}" if team == g["awayTeam"] else f"vs {g['awayTeam']}"
-        return None
-    top = rows[:3]
-    lead = top[0]
-    out = [f"{lead[0]} leads the {conf} at {lead[1]} ({lead[2]} overall)" +
-           (f", then {top[1][0]} {top[1][1]}" if len(top) > 1 else "") + (f" and {top[2][0]} {top[2][1]}" if len(top) > 2 else "") + "."]
-    out.append("The top two in conference record make the title game; ties go to the conference's tiebreakers.")
-    wk = [f"{t[0]} {this_week(t[0])}" for t in top if this_week(t[0])]
+    rows, used = race["standings"], list(race["facts"])
+    rows_wk = factstore.upcoming()
+    rec = lambda r: f"{r['w']}-{r['l']}"  # noqa: E731
+    lead, top = rows[0], rows[:3]
+    t = factstore.team(lead["team"]) or {}
+    if t.get("record"):
+        used.append({"id": f"record.{factstore.norm(lead['team'])}.overall.live", "kind": "record",
+                     "subject": lead["team"], "value": t["record"], "text": f"{lead['team']} is {t['record']} overall",
+                     "source": "CFBD records", "as_of": t.get("as_of") or ""})
+    out = [f"{lead['team']} leads the {conf} at {rec(lead)}" + (f" ({t['record']} overall)" if t.get("record") else "")
+           + (", then " + " and ".join(f"{r['team']} {rec(r)}" for r in top[1:]) if len(top) > 1 else "") + "."]
+    names = {r["team"] for r in top}
+    for tie in race["ties"]:
+        if names & set(tie["teams"]):
+            out.append(tie["note"][0].upper() + tie["note"][1:] + ".")
+    if race["divisional"]:
+        out.append(f"The {conf} sends its two division winners to the title game, and I don't split the divisions "
+                   f"here, so no clinch math from me.")
+    else:
+        clinched = [r["team"] for r in rows if r["status"] == "clinched"]
+        ctrl = [r["team"] for r in rows if r["controls"]]
+        bits = []
+        if clinched:
+            bits.append(f"{' and '.join(clinched)} {'has' if len(clinched) == 1 else 'have'} clinched a title-game spot")
+        if ctrl:
+            one = len(ctrl) == 1
+            bits.append(f"{' and '.join(ctrl)} control{'s its' if one else ' their'} own path: win out and "
+                        f"{'it' + chr(39) + 's' if one else 'they' + chr(39) + 're'} in")
+        if not bits:
+            bits.append("nobody controls it outright, so everyone left needs help")
+        elif len(clinched) + len(ctrl) < 2:
+            bits.append("the rest need help")
+        out.append("Who controls it: " + "; ".join(bits) + ".")
+        sc = []
+        for r in rows:
+            if r["status"] != "alive" or not r["next"]:
+                continue
+            where = f"{'vs' if r['next']['home'] else 'at'} {r['next']['opp']}"
+            if r["clinch_with_win"]:
+                sc.append(f"{r['team']} clinches with a win {where}")
+            elif r["clinch_with"]:
+                sc.append(f"{r['team']} clinches with a win {where} plus a {r['clinch_with'][0]} loss")
+            elif r["out_with_loss"] and r["team"] in names:
+                sc.append(f"{r['team']} is out with a loss {where}")
+        if sc:
+            out.append("Scenarios: " + "; ".join(sc[:3]) + ".")
+    left = [f"{r['team']} has " + ", ".join(f"{'vs' if g['home'] else 'at'} {g['opp']}" for g in r["rem_games"]) + " left"
+            for r in top[:2] if r["rem_games"]]
+    if left:
+        out.append("; ".join(left) + ".")
+    wk = []
+    for r in top:
+        g = next((x for x in rows_wk if r["team"] in (x["awayTeam"], x["homeTeam"])), None)
+        if g:
+            mf = factstore.facts(g, ("market",))[:1]
+            used += mf
+            fav = mf[0]["text"].split(": ", 1)[1] if mf and ": " in mf[0]["text"] else None
+            wk.append(f"{g['awayTeam']} at {g['homeTeam']}" + (f" ({fav})" if fav else ""))
     if wk:
         out.append("This week: " + ", ".join(wk) + ".")
-    return " ".join(out)
+    return factstore.answer(" ".join(out), used)
 
 
 def lookahead_slate_text(ctx: dict, q: str) -> str | None:
@@ -1247,6 +1309,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "picky_record", "PICKY_REC_ASK"  # 'how'd your picks do last week?' (fact exam: got this week's picks)
     if playoff_race.is_need_question(t) and not CFP_WORDS.search(t):
         return "playoff", "playoff_race.is_need_question"
+    if CFP_NOW_ASK.search(t) and CFP_NOW_WHAT.search(t) and not NOT_CFP_NOW.search(t):
+        return "cfp_now", "CFP_NOW_ASK"  # the real CFP field if it ended today: ESPN CFP + race leaders + cfp_rules
     if QB_STATUS_ASK.search(t) and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and qb_status_text({}, t):
         return "qb_status", "QB_STATUS_ASK"  # 'who's starting at QB for Tennessee': the sourced intel note, verbatim
     if CONF_RACE_ASK.search(t) and not re.search(r"\b(cfp|playoff|my|our|league)\b", t, re.I):
@@ -1258,6 +1322,9 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "interim", "INTERIM_ASK"  # 'Baylor's playing for an interim, does it matter?': the change + SU/ATS since
     if CAREER_ATS.search(t):
         return "career_ats", "CAREER_ATS"  # coach career ATS splits aren't in the data: say so + this season's team ATS
+    if (COACH_ASK.search(t) and not NOT_COACH.search(t)) or (
+            big_picture.RETURN_ASK.search(t) and big_picture.coach_named(t)):
+        return "coach", "COACH_ASK"  # hot seat / carousel / a coach's stops: big_picture.coach_text from the store
     if HYPO_VALUE.search(t):
         return "hypo_value", "HYPO_VALUE"  # 'league locks Duke -13.5, market goes to -15: value on Duke or Clemson?'
     if MOVE_WHY.search(t) and MOVE_EVIDENCE.search(t):
@@ -2845,7 +2912,8 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "interim": interim_text, "strategy": pick_strategy.answer,
               "picky_record": picky_record_text, "premise": premise_text, "lw_pick": lw_pick_text, "read": read_text, "pool_games": pool_games_text,
               "ghost_player": ghost_player_text, "recap": recap_text,
-              "ghost_school": ghost_school_text, "unit_matchup": unit_lane.answer}.get(kind)
+              "ghost_school": ghost_school_text, "unit_matchup": unit_lane.answer,
+              "coach": big_picture.coach_text, "cfp_now": big_picture.cfp_now_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
@@ -2861,7 +2929,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 
 # the football lanes that read only the fact store + the league ctx (test_factstore.py checks it statically)
 STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, interim_text,
-               career_ats_text, hypo_value_text, qb_status_text)
+               career_ats_text, hypo_value_text, qb_status_text, big_picture.coach_text, big_picture.cfp_now_text)
 
 # code lanes built from the POOL games' cards: a text about another game goes to the full brain + slate card
 POOL_GAME_KINDS = {"value", "qb", "line_move", "spread", "flip", "pick", "defend", "others", "short", "compare", "upset"}
