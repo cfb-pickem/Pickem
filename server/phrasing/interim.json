@@ -1,0 +1,89 @@
+{
+ "lane": "interim",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "change": [
+   "{text}",
+   "Here's the deal: {text}",
+   "Quick background: {text}",
+   "The coaching news: {text}",
+   "What happened: {text}",
+   "Here's the situation: {text}"
+  ],
+  "since": [
+   "Since then: {su} straight up, {ats} ATS ({games}).",
+   "Since the change they're {su} straight up and {ats} ATS ({games}).",
+   "Under the interim: {su} straight up, {ats} against the spread ({games}).",
+   "They've gone {su} straight up and {ats} ATS since ({games}).",
+   "Record since the change: {su}, {ats} ATS ({games}).",
+   "Since the switch, {su} straight up and {ats} ATS ({games})."
+  ],
+  "since_noats": [
+   "Since then: {su} straight up ({games}).",
+   "Since the change they're {su} straight up ({games}).",
+   "Under the interim: {su} straight up ({games}).",
+   "They've gone {su} straight up since ({games}).",
+   "Record since the change: {su} ({games}).",
+   "Since the switch, {su} straight up ({games})."
+  ],
+  "small": [
+   "Small sample, so it's a nudge, not a reason on its own.",
+   "Small sample, so a nudge at most.",
+   "It's a small sample, so it shouldn't carry much weight.",
+   "Tiny sample, so it's a nudge, not a reason.",
+   "Only a few games, so it's a nudge more than a reason.",
+   "Few games to go on, so treat it as a nudge."
+  ],
+  "season": [
+   "On the year {team} is {ats} ATS.",
+   "{team} is {ats} ATS on the season.",
+   "Season-long, {team} is {ats} against the spread.",
+   "For the season {team} sits at {ats} ATS.",
+   "{team}'s {ats} ATS this year.",
+   "Full season: {team} {ats} ATS."
+  ],
+  "week": [
+   "This week it's {team} {line} vs {opp}.",
+   "This week: {team} {line} vs {opp}.",
+   "And this week {team} is {line} against {opp}.",
+   "Current number: {team} {line} vs {opp}.",
+   "The line this week: {team} {line} vs {opp}.",
+   "Market has {team} {line} vs {opp} this week."
+  ],
+  "verdict_cover": [
+   "{team} has covered {ats} since the change, so I wouldn't fade them just for the coaching mess. Small sample, though.",
+   "{team} has played hard for the interim ({ats} ATS since), so no reason to fade them for it. Small sample.",
+   "With {team} {ats} ATS since the change, I wouldn't fade them just because of the coach. It's a small sample, so it's a nudge.",
+   "{ats} ATS since the switch says {team} hasn't quit. No reason to fade them for the coaching change alone.",
+   "I wouldn't fade {team} over the coaching change; they're {ats} ATS since. Small sample, but it's not pointing down.",
+   "No reason to fade {team} for the interim angle: {ats} ATS since. Small sample, so call it a nudge."
+  ],
+  "verdict_fade": [
+   "{team} is {ats} ATS since the change, so the fade has been real. Small sample, but it's pointing down.",
+   "{team} is {ats} ATS since the switch. The coaching fade has worked so far, small sample and all.",
+   "{ats} ATS since the change, so the fade on {team} has paid. Small sample, though.",
+   "The fade has been right: {team} {ats} ATS since. Small sample, but I'd lean that way.",
+   "{team} has gone {ats} ATS since the change, so I'd lean the fade. Small sample.",
+   "So far the fade works: {ats} ATS since for {team}. It's a small sample, so it's a lean, nothing more."
+  ],
+  "verdict_even": [
+   "Split since the change, so the coaching angle doesn't move the number for {team}.",
+   "Even since the switch. For {team}, the interim angle doesn't move the number.",
+   "It's been a coin flip since the change, so I wouldn't use the coaching angle on {team} either way.",
+   "No pattern since the switch, so it doesn't move the number for {team}.",
+   "Dead even since the change. The coaching story doesn't move the number for {team}.",
+   "Nothing either way since the change, so it doesn't move the number on {team}."
+  ]
+ },
+ "fixtures": [
+  {
+   "text": "Baylor fired Dave Aranda on Oct. 25 after a loss to Kansas, and defensive coordinator Joe Klanderman is interim head coach for the rest of the season.",
+   "su": "2-1",
+   "ats": "2-1",
+   "games": "beat UCF 41-9; beat Iowa State 42-31; lost to BYU 7-28",
+   "team": "Baylor",
+   "line": "+3.5",
+   "opp": "Texas Tech"
+  }
+ ]
+}

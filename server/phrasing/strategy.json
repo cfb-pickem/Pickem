@@ -1,0 +1,81 @@
+{
+ "lane": "strategy",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "head": [
+   "You're {rec}, {place}, {where}, with about {left} picks left.",
+   "You're {place} at {rec}, {where}, and there are about {left} picks left.",
+   "Where things stand: {rec}, {place}, {where}, about {left} picks to go.",
+   "At {rec} you're {place}, {where}, with roughly {left} picks left.",
+   "You sit {place} at {rec}, {where}. About {left} picks left.",
+   "Quick math: you're {rec}, {place}, {where}, and about {left} picks remain."
+  ],
+  "protect": [
+   "Protect it: side with the best numbers and the consensus, don't fade the field. Catching 1st only buys seeding, because points reset in the playoffs.",
+   "You're in protect mode. Best numbers, side with the crowd, no fading the field; 1st only buys seeding since points reset in the playoffs.",
+   "This is a protect spot. Ride the best numbers and the consensus and don't fade the field; 1st only gets seeding because the playoff points reset.",
+   "Protect mode: best numbers, consensus sides, no contrarian stuff. Points reset in the playoffs, so chasing 1st only buys seeding.",
+   "Protect the spot with low variance: numbers and consensus, no fading the field. Points reset in the playoffs, so 1st only buys seeding.",
+   "Keep it boring and protect it: best numbers, consensus sides, no contrarian picks. Catching 1st only buys seeding because points reset in the playoffs."
+  ],
+  "bubble": [
+   "No hail marys yet: take your real edges, and only go against the guys right around 4th where you've got one. Tiebreakers matter on the bubble, and the conference title game picks come first.",
+   "Bubble spot, so no hail marys: take the real edges, and only fade the guys around 4th when you've got one. Tiebreakers matter here, and the conference title game picks come first.",
+   "You're on the bubble. Play your real edges, and go against the guys near 4th only where you have one. Tiebreakers count, conference title game picks first.",
+   "Right on the bubble: real edges only, and be different from the guys around 4th only when there's a reason. Tiebreakers matter, starting with the conference title game picks.",
+   "It's a bubble spot. Take your edges, skip the hail marys, and only split from the guys near 4th where you've got one. Tiebreakers start with the conference title game picks.",
+   "Bubble math: no hail marys, just real edges, and fade the crowd around 4th only where there's one. The conference title game picks are the first tiebreaker."
+  ],
+  "chase": [
+   "You're alive, but it's a long shot. Max variance: fade the consensus every week, because you only gain ground when you're right and they're wrong.",
+   "Long shot, but alive. Go max variance and fade the consensus every week; you only gain ground when you're right and they're wrong.",
+   "Ground is what's needed, so fade the consensus every week. Max variance is the only way, since you gain when you're right and they're wrong.",
+   "Chase mode: max variance, fade the consensus every week. Ground only comes when you're right and they're wrong.",
+   "It's a long shot, so swing: fade the consensus every week. Picking with the crowd can't gain any ground.",
+   "This is a chase, so fade the consensus every week and live with the variance. You only gain when you're right and they're wrong."
+  ],
+  "out": [
+   "Even winning out doesn't get you to 4th, so play for pride: swing big and fade everybody.",
+   "Winning out still doesn't reach 4th, so it's pride time: swing big and fade everybody.",
+   "The math says 4th is out of reach even winning out. Play for pride, swing big, fade everybody.",
+   "4th is out of reach even with a perfect finish, so go for pride and fade everybody.",
+   "No path to 4th, even winning out. Swing big and fade everybody for pride.",
+   "Even a perfect run doesn't get to 4th. Pride picks only: swing big, fade everybody."
+  ],
+  "around_protect": [
+   "{team} is the closest one outside at {pts}, so that's who you're really playing.",
+   "The one to watch is {team} at {pts}, the first team outside.",
+   "{team} at {pts} is the first one out, so that's the real opponent.",
+   "Keep an eye on {team}: first one out at {pts}.",
+   "The real threat is {team}, sitting first outside the cut at {pts}.",
+   "{team} is first outside the cut at {pts}; that's who you're racing."
+  ],
+  "around_bubble": [
+   "The guys right around the cut: {teams}.",
+   "Who's right around the cut: {teams}.",
+   "The bubble crowd: {teams}.",
+   "The fight for those spots is with {teams}.",
+   "Around the cut line right now: {teams}.",
+   "The names near the cut: {teams}."
+  ],
+  "around_chase": [
+   "The cut line is {team} at {pts}: that's the target.",
+   "Target: {team}, at the cut with {pts}.",
+   "The number to chase is {pts}, where {team} sits at the cut.",
+   "{team} at {pts} is the cut line, so that's who to hunt.",
+   "To get in, catch {team} at {pts}.",
+   "The mark is {team} at {pts}, right on the cut."
+  ]
+ },
+ "fixtures": [
+  {
+   "rec": "28-20",
+   "place": "2nd",
+   "where": "in a playoff spot, 2 ahead of 5th place (26)",
+   "left": "16",
+   "team": "Lima",
+   "pts": "26",
+   "teams": "Bravo and Cobra (27), Lima (26)"
+  }
+ ]
+}

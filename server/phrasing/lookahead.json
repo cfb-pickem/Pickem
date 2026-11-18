@@ -1,0 +1,43 @@
+{
+ "lane": "lookahead",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "spots": [
+   "Spots on paper: {spots}.",
+   "Here's what I see on paper: {spots}.",
+   "The spots this week: {spots}.",
+   "On paper, these are the spots: {spots}.",
+   "Spots I've got flagged: {spots}.",
+   "Paper spots this week: {spots}."
+  ],
+  "none": [
+   "No real lookahead or letdown setups on paper this week.",
+   "I don't see a real lookahead or letdown spot on paper this week.",
+   "Nothing that qualifies as a real lookahead or letdown spot this week.",
+   "No real lookahead or letdown setups this week, at least on paper.",
+   "Clean week: no real lookahead or letdown setups on paper.",
+   "No lookahead or letdown spots worth flagging this week."
+  ],
+  "verdict_look": [
+   "On their own, lookahead spots have been close to a coin flip against the number, so I treat them as a tiebreaker, not a reason.",
+   "Worth knowing, but lookahead spots alone are about a coin flip against the spread. Tiebreaker, not a reason.",
+   "Honestly the lookahead angle by itself has been close to a coin flip, so it's a tiebreaker for me, not a reason.",
+   "Lookahead spots are a coin flip on their own, so they break a tie; they're not a reason to make a pick.",
+   "By themselves, lookahead spots are close to a coin flip. Tiebreaker material, not a reason.",
+   "I wouldn't pick off a lookahead spot alone; it's been about a coin flip. Good tiebreaker, not a reason."
+  ],
+  "verdict_let": [
+   "Spots on paper are close to a coin flip against the number; letdowns have held up a little better than lookaheads. Tiebreaker, not a reason.",
+   "Lookaheads alone are about a coin flip against the spread, letdowns a little better. Either way it's a tiebreaker, not a reason.",
+   "The letdown angle has held up a little better than lookaheads, but both are close to a coin flip. Tiebreaker, not a reason.",
+   "Of the two, letdowns have been a bit more reliable; lookaheads are about a coin flip. I'd use them as a tiebreaker, not a reason.",
+   "Letdown spots have done slightly better than lookaheads, and both are near a coin flip. Tiebreaker, not a reason.",
+   "Both are near a coin flip by themselves, with letdowns a touch better. Tiebreaker, not a reason."
+  ]
+ },
+ "fixtures": [
+  {
+   "spots": "LSU at Tennessee: lookahead spot for LSU (favored here, rivalry game vs Arkansas next); Indiana at Washington: letdown spot for Indiana (favored here after beating SP+ #21 USC)"
+  }
+ ]
+}

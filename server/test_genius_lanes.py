@@ -10,6 +10,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chat  # noqa: E402
 import router  # noqa: E402
 
+import contextlib  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+
+
+@contextlib.contextmanager
+def _phrasing_off():
+    os.environ["PICKY_PHRASING"] = "0"
+    try:
+        yield
+    finally:
+        os.environ.pop("PICKY_PHRASING", None)
+
 
 def test_h2h_routes():
     for q in ["What happened last time Clemson played Duke?", "What happened when Northwestern and Minnesota played last year?",
@@ -34,10 +47,16 @@ def test_conf_and_lookahead_routes():
 def test_hypo_value_and_career():
     q = "Say the league locks Duke -13.5 on Tuesday and by Saturday the market's Duke -15. Did I get value on Duke or Clemson?"
     assert router.classify(q).kind == "hypo_value"
-    out = router.hypo_value_text({}, q)
-    assert out.startswith("Value on Duke") and "1.5-point" in out and "14" in out
-    out = router.hypo_value_text({}, "if we get Illinois +8.5 locked and the market goes to Illinois +6.5, who has value?")
-    assert out.startswith("Value on Illinois") and "2-point" in out
+    q2 = "if we get Illinois +8.5 locked and the market goes to Illinois +6.5, who has value?"
+    with _phrasing_off():  # variant 0 = the pre-bank wording
+        out = router.hypo_value_text({}, q)
+        assert out.startswith("Value on Duke") and "1.5-point" in out and "14" in out
+        out = router.hypo_value_text({}, q2)
+        assert out.startswith("Value on Illinois") and "2-point" in out
+    out = router.hypo_value_text({}, q)  # the bank's wording: same facts
+    assert "Duke" in out and "-13.5" in out and "-15" in out and "1.5" in out and "14" in out, out
+    out = router.hypo_value_text({}, q2)
+    assert "Illinois" in out and "+8.5" in out and "+6.5" in out and re.search(r"\b2\b", out), out
     assert router.classify("What's Lane Kiffin's career ATS record as a road underdog?").kind == "career_ats"
     assert router.career_ats_text({}, "Nick Nobody career ATS").startswith("I don't have career ATS splits")
 
@@ -161,10 +180,16 @@ def test_h2h_text_format():
     try:
         router.slate_cards.find_game = lambda q, ctx, idx=None: ({"awayTeam": "Clemson", "homeTeam": "Duke"}, None)
         router.slate_cards.last_meeting = lambda g: "  Last meeting (2025): Duke won 46-45 at Clemson, line Clemson -4: Duke covered by 5"
-        out = router.h2h_text({}, "last time Clemson played Duke?")
+        with _phrasing_off():
+            out = router.h2h_text({}, "last time Clemson played Duke?")
         assert out == "Last time they played (2025), Duke won 46-45 at Clemson. Clemson -4 was the line, so Duke covered by 5."
+        out = router.h2h_text({}, "last time Clemson played Duke?")
+        assert all(f in out for f in ("2025", "Duke", "46-45", "Clemson -4", "5")), out
         router.slate_cards.last_meeting = lambda g: None
-        assert "don't have a 2025 meeting" in router.h2h_text({}, "last time Clemson played Duke?")
+        with _phrasing_off():
+            assert "don't have a 2025 meeting" in router.h2h_text({}, "last time Clemson played Duke?")
+        out = router.h2h_text({}, "last time Clemson played Duke?")
+        assert "2025" in out and re.search(r"no recent|nothing recent", out, re.I), out
     finally:
         router.slate_cards.find_game, router.slate_cards.last_meeting = orig_find, orig_lm
 

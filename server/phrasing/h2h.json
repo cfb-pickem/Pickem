@@ -1,0 +1,51 @@
+{
+ "lane": "h2h",
+ "note": "Phrasing bank (ontology plan Phase 1, 2026-11-18). Variant 0 = the pre-bank wording. Same placeholders in every variant of a slot. Check: python3 server/phrasing.py",
+ "slots": {
+  "met": [
+   "Last time they played ({yr}), {win} won {score} {where}.",
+   "They met in {yr} and {win} won {score} {where}.",
+   "In {yr}, {win} won it {score} {where}.",
+   "{yr} meeting: {win} won {score} {where}.",
+   "Last meeting was {yr}: {win} won {score} {where}.",
+   "{win} took the {yr} game {score} {where}."
+  ],
+  "line": [
+   "{line} was the line, so {cov} covered by {by}.",
+   "The line was {line}, so {cov} covered by {by}.",
+   "Against {line}, {cov} covered by {by}.",
+   "With {line} as the number, {cov} covered by {by}.",
+   "{cov} covered {line} by {by}.",
+   "Line was {line}; {cov} covered by {by}."
+  ],
+  "none": [
+   "I don't have a 2025 meeting between {away} and {home}, so no recent game to go on.",
+   "No 2025 meeting between {away} and {home} that I have, so no recent game to go on.",
+   "I've got no 2025 game between {away} and {home}, so nothing recent to lean on.",
+   "Nothing recent: I don't have a 2025 meeting between {away} and {home}.",
+   "No {away} vs {home} game in 2025 on my end, so no recent head-to-head.",
+   "I don't have {away} and {home} meeting in 2025, so there's no recent game to go on."
+  ],
+  "verdict": [
+   "One game from last year is a tiebreaker at most, not a reason.",
+   "Different rosters now, so I'd use that as a tiebreaker at most.",
+   "Fun fact, but one meeting doesn't move the number.",
+   "Last year's game is a tiebreaker for me, not a reason.",
+   "I wouldn't read much into one game a year ago; tiebreaker at most.",
+   "One old game doesn't move the number much. Tiebreaker, not a reason."
+  ]
+ },
+ "fixtures": [
+  {
+   "yr": "2025",
+   "win": "Duke",
+   "score": "46-45",
+   "where": "at Clemson",
+   "line": "Clemson -4",
+   "cov": "Duke",
+   "by": "5",
+   "away": "Clemson",
+   "home": "Duke"
+  }
+ ]
+}

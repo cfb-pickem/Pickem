@@ -86,18 +86,38 @@ def answer(ctx: dict, q: str) -> str | None:
     if not m:
         return None
     rec, place, where, left = m.group(2), m.group(3), m.group(5), m.group(6)
-    head = f"You're {rec}, {place}, {where}, with about {left} picks left."
     post = n.rsplit("Recommendation: ", 1)[-1].split(":", 1)[0]
-    body = {
-        "PROTECT": "Protect it: side with the best numbers and the consensus, don't fade the field. Catching 1st only "
-                   "buys seeding, because points reset in the playoffs.",
-        "BUBBLE": "No hail marys yet: take your real edges, and only go against the guys right around 4th where you've "
-                  "got one. Tiebreakers matter on the bubble, and the conference title game picks come first.",
-        "CHASE": "You're alive, but it's a long shot. Max variance: fade the consensus every week, because you only gain "
-                 "ground when you're right and they're wrong.",
-        "OUT": "Even winning out doesn't get you to 4th, so play for pride: swing big and fade everybody.",
-    }.get(post)
-    return f"{head} {body}" if body else None
+    if post not in ("PROTECT", "BUBBLE", "CHASE", "OUT"):
+        return None
+    import phrasing
+    sd = phrasing.seed_for(ctx, q)
+    parts = [(0, phrasing.say("strategy", "head", sd, rec=rec, place=place, where=where, left=left)),
+             (0, phrasing.say("strategy", post.lower(), sd))]
+    if phrasing.on():  # name who's around you (the one to hold off, the bubble crowd, the cut to catch)
+        me = (ctx.get("you") or {}).get("team_name")
+        st = [r for r in ctx.get("standings_ytd") or [] if r.get("team") != me]
+        pts = sorted((r["w"] for r in ctx.get("standings_ytd") or []), reverse=True)
+        cut, fifth = pts[PLAYOFF_SPOTS - 1], pts[PLAYOFF_SPOTS]
+        if post == "PROTECT":
+            who = [r["team"] for r in st if r["w"] == fifth]
+            if who:
+                parts.append((1, phrasing.say("strategy", "around_protect", sd, team=_and(who[:2]), pts=fifth)))
+        elif post == "BUBBLE":
+            near = sorted((r for r in st if abs(r["w"] - cut) <= 1), key=lambda r: -r["w"])[:4]
+            if near:
+                groups = []
+                for w in sorted({r["w"] for r in near}, reverse=True):
+                    groups.append(f"{_and([r['team'] for r in near if r['w'] == w])} ({w})")
+                parts.append((1, phrasing.say("strategy", "around_bubble", sd, teams=", ".join(groups))))
+        elif post == "CHASE":
+            who = [r["team"] for r in st if r["w"] == cut]
+            if who:
+                parts.append((1, phrasing.say("strategy", "around_chase", sd, team=_and(who[:2]), pts=cut)))
+    return phrasing.join(parts)
+
+
+def _and(xs: list[str]) -> str:
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
 
 
 def _ord(n) -> str:
