@@ -126,6 +126,9 @@ fi
 if [ -z "$PICKY_RELEASE_LOCKED" ] && [ $DRY = 0 ]; then
   PICKY_RELEASE_LOCKED=1 exec /usr/bin/lockf -t 0 $RLOCK $0 "${ORIG[@]}"
 fi
+if [ ! -d $LIVE/.git ] && [ ! -f $LIVE/.git ] && [ -z "$PICKY_RELEASE_BOOTSTRAP" ]; then
+  say "no live worktree at $LIVE yet (cutover not done): nothing shipped"; record no-live-tree; exit 1
+fi
 if ! /usr/bin/python3 -I $REPO/server/freeze.py check-freeze; then
   if [ "$PICKY_FREEZE_OVERRIDE" = 1 ]; then say "FREEZE OVERRIDE set: shipping anyway (logged)"; else record frozen; exit 3; fi
 fi
