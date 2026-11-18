@@ -366,6 +366,10 @@ def line_values(ctx: dict, cards: dict | None = None, corpus: str = "") -> dict[
                 vals.append(float(v))
         out.setdefault(home, set()).update(vals)
         out.setdefault(away, set()).update(-v for v in vals)
+    for g in (ctx.get("last_week") or {}).get("games") or []:  # last week's pool games: their league line
+        if g.get("line") is not None and g["home"] not in out and g["away"] not in out:
+            out.setdefault(g["home"], set()).add(float(g["line"]))
+            out.setdefault(g["away"], set()).add(-float(g["line"]))
     for team in list(out):
         for m in re.finditer(rf"{re.escape(team)}\s*\(?([+-]\d{{1,2}}(?:\.5)?)\b", corpus or "", re.I):
             out[team].add(float(m.group(1)))
@@ -380,10 +384,14 @@ def line_num_check(ctx: dict, cards: dict | None = None, corpus: str = "", log=N
 
     def ok(sent: str) -> bool:
         for team, true in vals.items():
-            for m in re.finditer(rf"(?<!\w){re.escape(team)}\s*\(?([+-]\d{{1,2}}(?:\.5)?)\b", sent, re.I):
-                if float(m.group(1)) not in true and not _NEG.search(sent):
+            for m in re.finditer(rf"(?<!\w){re.escape(team)}(?:\s*\(?|([^.;]{{0,40}}?)\bas an? )([+-]\d{{1,2}}(?:\.5)?)\b", sent, re.I):
+                ok_vals = true
+                if m.group(1) is not None:  # 'North Texas lost to UTSA 16-35 as a -2.5 favorite': any team named before it
+                    before = sent[:m.start(2)]
+                    ok_vals = set().union(*[v for o, v in vals.items() if re.search(rf"(?<!\w){re.escape(o)}(?!\w)", before, re.I)])
+                if float(m.group(2)) not in ok_vals and not _NEG.search(sent):
                     if log:
-                        log.info("line check dropped (%s %s, true %s): %r", team, m.group(1), sorted(true), sent[:100])
+                        log.info("line check dropped (%s %s, true %s): %r", team, m.group(2), sorted(true), sent[:100])
                     return False
         return True
     return ok

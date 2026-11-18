@@ -62,6 +62,22 @@ def test_live80_misroutes():
     assert router._scored_text({"live_rider_games": rg}, "did SMU score?", {"Away": "Wake Forest", "Home": "SMU"}) == "SMU hasn't scored."
 
 
+CTX = {"current_week": 12, "you": {"team_name": "Wedge"},
+       "standings_ytd": [{"rank": 1, "team": "Alpha", "w": 30, "l": 18}, {"rank": 2, "team": "Bravo", "w": 28, "l": 20},
+                         {"rank": 3, "team": "Wedge", "w": 25, "l": 23}],
+       "weekly_records": {"Wedge": {11: [2, 2]}}, "games_this_week": [], "last_week": {"week": 11, "games": []}}
+
+
+def test_fact_exam_router_fixes():
+    assert router.classify("how many points is Bravo behind first?").kind == "standings"
+    assert router.fact_answer("standings", CTX, "how many points is Bravo behind first?") == "Bravo is 2nd at 28-20, 2 points back of first."
+    assert router.fact_answer("standings", CTX, "where's Wedge in the standings?").startswith("You're 3rd at 25-23")
+    assert router.fact_answer("record", CTX, "what was my record in week 14?") == "Week 14 hasn't been played yet, so no record for it."
+    assert router.fact_answer("record", CTX, "what was my record in week 11?") == "You went 2-2 in week 11."
+    out = router.fact_answer("standings", CTX, "now that I'm in first, where am I")
+    assert out.startswith("Not quite: you're 3rd at 25-23"), out
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:

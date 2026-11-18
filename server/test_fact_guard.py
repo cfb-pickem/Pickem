@@ -85,6 +85,8 @@ def test_line_numbers():
     assert ok("You missed on LSU -5.5 two weeks ago.")  # printed in the prompt
     assert not ok("Iowa -6.0 is the number.")
     assert not ok("Grab Tennessee +4.5.")
+    assert not ok("North Texas lost to UTSA 16-35 as a -3 favorite.")  # last week's league line was -2.5
+    assert ok("North Texas lost to UTSA 16-35 as a -2.5 favorite.")
 
 
 def test_premises():

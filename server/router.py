@@ -713,6 +713,8 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
 
 
+GAP_FIRST_ASK = re.compile(r"\bhow (many|far)\b[^?.!]{0,30}\b(behind|back( of)?|out of|from|off)\s+(first|1st|the lead|the leader|the top)\b",
+                           re.I)
 CONF_RACE_ASK = re.compile(r"\b(big 12|big xii|big ten|big 10|sec|acc|mountain west|sun belt|aac|american athletic|mac|"
                            r"conference usa|c-?usa|pac-?12)\b[^?.!]{0,40}\b(race|title game|title picture|picture|standings|"
                            r"lead(s|ing|er)?|who'?s winning|championship|title)\b"
@@ -1013,6 +1015,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "pick", "PICK_ASK"
     if chat.slate_ask(t) and SLATE_READ.search(t):
         return "slate", "SLATE_READ"
+    if GAP_FIRST_ASK.search(t):  # 'how many points is Ackbar behind first?' (fact exam 2026-11-17: got the scoring rules)
+        return "standings", "GAP_FIRST_ASK"
     if chat.wants_rules(t) and rules_answer(t):
         return "rules", "league_rules.answer"
     if JACKPOT_HIT.search(t):
@@ -1527,7 +1531,8 @@ def standings_text(ctx: dict, q: str) -> str | None:
         return "Standings: " + ", ".join(f"{r['rank']}. {r['team']} {r['w']}-{r['l']}" for r in st) + "."
     if named:
         return " ".join(place(r, r["team"]) for r in named[:2])
-    if row and _SELF_ASK.search(q) and not re.search(r"\bwho\b", q, re.I):
+    self_named = bool(me and re.search(rf"(?<!\w){re.escape(me)}(?!\w)", q or "", re.I))  # 'where's Wedge Mulshine' from Wedge
+    if row and (_SELF_ASK.search(q) or self_named) and not re.search(r"\bwho\b", q, re.I):
         out = place(row, "You")
         above = [r for r in st if r["w"] > row["w"]]
         if row["rank"] == st[-1]["rank"] and above and re.search(r"\blast\b", q or "", re.I):  # 'im not last right'?
@@ -1572,6 +1577,16 @@ def record_text(ctx: dict, q: str) -> str | None:
     who = "You're" if r["team"] == me else f"{r['team']} is"
     cw = ctx.get("current_week")
     wk = ((ctx.get("weekly_records") or {}).get(r["team"]) or {})
+    wn = re.search(r"\bweek (\d{1,2})\b", q or "", re.I)
+    if wn and not _LAST_N_WEEKS.search(q or ""):  # 'what was my record in week 14?' (fact exam 2026-11-17: got the season)
+        n = int(wn.group(1))
+        rec = wk.get(n) if wk.get(n) is not None else wk.get(str(n))
+        subj = "You" if r["team"] == me else r["team"]
+        if rec is not None:
+            return f"{subj} went {rec[0]}-{rec[1]} in week {n}."
+        if cw is not None and n >= int(cw):
+            return f"Week {n} hasn't been played yet" + (", so no record for it." if n > int(cw) else ", so it's still open.")
+        return f"I don't have a week {n} record for {'you' if subj == 'You' else subj}."
     m = _LAST_N_WEEKS.search(q or "")
     if m and wk:  # 'whats my record last 3 weeks' / 'what was my record last week' (sparring k1-c29)
         n = 1 if not m.group(1) else int(m.group(1)) if m.group(1).isdigit() else _NUMW.get(m.group(1).lower(), 2)
@@ -2349,7 +2364,30 @@ def last_week_text(kind: str, ctx: dict, q: str) -> str | None:
 
 
 def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
-    """The complete answer in code for a fact intent, or None (no data / not this lane's question)."""
+    """The complete answer in code for a fact intent, or None (no data / not this lane's question). A false
+    premise in the text ('now that I'm in first ...') gets corrected in front of it (fact_guard)."""
+    out = _fact_answer(kind, ctx, q)
+    if out and ctx and not ctx.get("error"):
+        try:
+            import fact_guard
+            prem = fact_guard.premise_facts(ctx, q, chat.same_team)
+        except Exception:  # noqa: BLE001
+            prem = []
+        truth_vals = []
+        for p in prem:
+            tail = p.split("FALSE:", 1)[-1]
+            if p.startswith("they say they're in "):  # a place premise: the answer must state the real place
+                truth_vals += re.findall(r"\b\d{1,2}(?:st|nd|rd|th)\b", tail)
+            else:
+                truth_vals += re.findall(r"\b\d{1,2}-\d{1,2}\b|\btook [A-Z][\w&'. ]+?(?= \(|$)|\b[A-Z][\w&'. ]+? covered\b", tail)
+        if prem and not any(v in out for v in truth_vals):  # the code answer already says the truth: no double fix
+            fix = re.sub(r"^they say .*?FALSE: ", "", prem[0])
+            fix = fix.replace("their real", "your real").replace("they're", "you're").replace("they took", "you took")
+            out = f"Not quite: {fix}. {out}"
+    return out
+
+
+def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if not ctx or ctx.get("error"):
         return None
     try:

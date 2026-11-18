@@ -120,6 +120,10 @@ def fact_audit(ans: str, t: Truth, caller: str) -> tuple[str, bool, str]:
         if who and who in t.members:
             for m in _ORD_RE.finditer(s):
                 n = int(m.group(1)) if m.group(1) else next(k for k, v in ORD.items() if v == m.group(2).lower())
+                # 'back of first', 'up on second', 'ahead of 5th': another spot, not the subject's place
+                if re.search(r"\b(of|on|from|than|to|behind|over|for the|past)\s*$", s[:m.start()], re.I) and \
+                        not re.search(r"\btied for\s*$", s[:m.start()], re.I):
+                    continue
                 if re.search(r"\b(week|quarter|down|game|pick|half|time|string|seed)\b", s[m.end():m.end() + 12], re.I):
                     continue
                 if re.search(r"\b(week|the)\s*$", s[:m.start()], re.I) and not re.search(r"place|spot", s[m.end():m.end() + 8]):
@@ -281,7 +285,8 @@ def build(t: Truth) -> list[dict]:
         loser = g["home"] if cov and chat.same_team(cov, g["away"]) else g["away"]
         add(f"fx-premise-cover-{i}", "fx-premise", [f"{loser} covered last week right?"],
             lambda a, t, p, cov=cov, loser=loser: [
-                must("says_no", any_of(a[-1], r"\bno\b", r"\bnope\b", r"didn'?t", r"did not", r"\bwrong\b", r"\bmissed\b", r"\bnot\b"),
+                must("says_no", any_of(a[-1], r"\bno\b", r"\bnope\b", r"\bnah\b", r"didn'?t", r"did not", r"\bwrong\b", r"\bmissed\b",
+                                        r"\bnot\b", r"\bfell short\b", r"\bdidn'?t cover\b"),
                      f"{loser} did not cover"),
                 must("names_coverer", cov and has_team(a[-1], cov), f"{cov} covered")],
             skip=None if cov else "not graded")
