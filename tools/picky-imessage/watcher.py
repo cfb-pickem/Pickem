@@ -669,7 +669,7 @@ def send_canned(row: dict, rate: RateLimit, state: dict) -> None:
         time.sleep(wait)
     if send(row["chat_guid"], CANNED):
         rate.mark()
-    log.warning("gave up on rowid=%s after %d retries: canned line sent", row["ROWID"], len(RETRY_BACKOFF))
+    log.warning("gave up on rowid=%s: canned line sent", row["ROWID"])
 
 
 def handle_one(row: dict, secret: str, rate: RateLimit, db: sqlite3.Connection | None = None,
