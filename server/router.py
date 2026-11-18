@@ -722,6 +722,8 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     return out + (f" (per {src}, {hits[0].get('date')})" if src else "")
 
 
+MISS_MARGIN = re.compile(r"\bhow (bad|badly|close|much|far off) (did|was) (i|my)\b|\bby how much did (i|my)\b|"
+                         r"\bhow (bad|close) (was|is) (my|that)\b", re.I)
 PREMISE_ASK = re.compile(r"\bwhy did i (take|pick|go with|ride|back)\b|\b(covered|cover|won|lost|ended|finished|beat)\b[^?]{0,40}"
                          r"\b(right|correct|yeah|yea|yes|no)\s*\?|\bended \d{1,2}\s*-\s*\d{1,2}\b", re.I)
 
@@ -1075,6 +1077,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     t = (q or "").replace("’", "'")
     if why_lane.why_kind(t):  # 'why?' / 'how come' / 'why not Ohio State?' after a call: the next unused reason
         return "why", "WHY_ASK"
+    if MISS_MARGIN.search(t):
+        return "results", "MISS_MARGIN"  # 'how bad did I miss on Boise last week?' (fact exam real miss)
     if PREMISE_ASK.search(t):
         return "premise", "PREMISE_ASK"  # 'Hawai'i covered last week right?' / 'why did I take SMU?': code checks it
     if re.search(r"^\W*(and |what about |how about )?(the )?week before (that|last week|last)\W*$", t, re.I):
@@ -2003,6 +2007,17 @@ def unknown_member(ctx: dict, q: str) -> str | None:
     if not name or _NOT_A_NAME.match(name.strip()):
         return None
     low = name.lower().strip()
+    if re.match(r"(my|your|ur|our|his|their|the)\b", low) or re.search(r"\bpicks?\b", low):
+        return None  # 'how did my Boise pick do?' is the sender's pick, not a member called 'my Boise pick'
+    if fuzzy_members(name, ctx.get("standings_ytd") or [], None):
+        return None  # a typo of a real member ('ackbr')
+    try:
+        import fact_guard
+        idx = slate_cards.cfbd.load_index()
+        if idx and fact_guard._team_regex(idx)[0].search(name):
+            return None  # a school, not a member
+    except Exception:  # noqa: BLE001
+        pass
     known = [r["team"] for r in ctx.get("standings_ytd") or []] + list(chat.member_nicknames().values())
     known += [x for g in ctx.get("games_this_week") or [] for x in (g.get("away"), g.get("home")) if x]
     known += [(ctx.get("leader") or {}).get("team_name") or ""]
@@ -2674,6 +2689,8 @@ def voice_line_ok(line: str, answer: str, ctx: dict | None, leader: bool = False
     import no_repeat
     if not line or len(line.split()) > 14 or _FACTY.search(line) or PREACHY.search(line) or no_repeat.banned_tic(line):
         return False
+    if re.search(r"\byour (picks?|portfolio|week|weekend|bets?|money|wallet|ticket|slip|season|card)\b", line, re.I):
+        return False  # 'a total disaster for your portfolio' after a pick that covered (fact judge 2026-11-17)
     if leader:
         return bool(LEADER_TITLE.search(line)) and chat.sentence_ok(line, set())
     if _THIRD.search(line):

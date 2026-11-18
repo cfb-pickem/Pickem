@@ -419,11 +419,15 @@ def line_values(ctx: dict, cards: dict | None = None, corpus: str = "") -> dict[
                 vals.append(float(v))
         out.setdefault(home, set()).update(vals)
         out.setdefault(away, set()).update(-v for v in vals)
-    for g in (ctx.get("last_week") or {}).get("games") or []:  # last week's pool games: their league line
+    lw_only = set()
+    for g in (ctx.get("last_week") or {}).get("games") or []:  # last week's pool games: the league line only
         if g.get("line") is not None and g["home"] not in out and g["away"] not in out:
             out.setdefault(g["home"], set()).add(float(g["line"]))
             out.setdefault(g["away"], set()).add(-float(g["line"]))
+            lw_only |= {g["home"], g["away"]}
     for team in list(out):
+        if team in lw_only:
+            continue  # 'North Texas, a -3 favorite' when the pool had -2.5 (fact judge 2026-11-17): no market numbers
         for m in re.finditer(rf"{re.escape(team)}\s*\(?([+-]\d{{1,2}}(?:\.5)?)\b", corpus or "", re.I):
             out[team].add(float(m.group(1)))
     return out

@@ -101,6 +101,8 @@ def test_line_numbers():
     assert not ok("Grab Tennessee +4.5.")
     assert not ok("North Texas lost to UTSA 16-35 as a -3 favorite.")  # last week's league line was -2.5
     assert ok("North Texas lost to UTSA 16-35 as a -2.5 favorite.")
+    ok2 = fg.line_num_check(CTX, cards, corpus="ESPN closing: North Texas -3")
+    assert not ok2("North Texas lost as a -3 favorite.")  # last week's game: the league line only
 
 
 def test_premises():

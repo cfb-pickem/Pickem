@@ -100,17 +100,23 @@ def fact_audit(ans: str, t: Truth, caller: str) -> tuple[str, bool, str]:
     lines = _pool_lines(t)
     picky_known = {f"{a}-{b}" for a, b in [tuple(t.picky.get("season") or (0, 0)),
                                            tuple(t.picky.get("last_week") or (0, 0))]}
-    for s in sentences(ans):
+    last_who = None
+    for s in [c for x in sentences(ans) for c in re.split(r",\s+(?=and\b|but\b|while\b)|;\s*|\s+(?=while\b)", x) if c and c.strip()]:
         recs = [(m.group(0), f"{int(m.group(1))}-{int(m.group(2))}") for m in _REC.finditer(s)]
         names = _members_in(s, t)
         who = names[0] if len(names) == 1 else (caller if not names and _YOU.search(s) else None)
+        if who is None and not names and re.search(r"\b(he|she|they|he's|she's|they're)\b", s, re.I):
+            # 'Blinky is 27-21 for the season, and he went 3-1 last week'; 'he' is never the caller
+            who = last_who if last_who != caller else None
+        last_who = who or last_who
         if _SELF.search(s) and not names:
             for raw, r in recs:
                 if r not in picky_known and not _NEG.search(s) and not re.search(r"\b(ATS|units?)\b", s):
                     bad.append(f"Picky {r}")
             continue
         if (who or (caller and _YOU.search(s))) and recs and not re.search(r"\b(blackjack|chips?|the pit|slots?|hands?|in \w+ games|against|"
-                                         r"picking|vs\.?|as (a )?(dog|fav)|road|home)\b", s, re.I):
+                                         r"picking|vs\.?|as (a )?(dog|fav)|road|home|20\d\d|outright|lose to|lost to|"
+                                         r"beat|won|final)\b", s, re.I):
             # each W-L belongs to the member (or 'you' = the caller) named closest before it
             marks = [(mm.start(), n) for n in t.members for mm in re.finditer(rf"(?<!\w){re.escape(n)}(?!\w)", s, re.I)]
             marks += [(mm.start(), caller) for mm in re.finditer(r"\byou(r|'re)?\b", s, re.I)] if caller else []
@@ -134,8 +140,14 @@ def fact_audit(ans: str, t: Truth, caller: str) -> tuple[str, bool, str]:
                     ok = r in t.known_records(who) or r in t.neutral_scores()
                 if not ok and not _NEG.search(s):
                     bad.append(f"{who} {r}")
-        if who and who in t.members:
+        pmarks = [(mm.start(), n) for n in t.members for mm in re.finditer(rf"(?<!\w){re.escape(n)}(?!\w)", s, re.I)]
+        pmarks += [(mm.start(), caller) for mm in re.finditer(r"\byou(r|'re)?\b", s, re.I)] if caller else []
+        if pmarks or (who and who in t.members):
             for m in _ORD_RE.finditer(s):
+                prior = [x for x in pmarks if x[0] < m.start()]
+                who = max(prior)[1] if prior else who
+                if not who or who not in t.members:
+                    continue
                 n = int(m.group(1)) if m.group(1) else next(k for k, v in ORD.items() if v == m.group(2).lower())
                 # 'back of first', 'up on second', 'ahead of 5th': another spot, not the subject's place
                 if re.search(r"(\b(of|on|from|than|to|behind|over|for the|past)|\()\s*$", s[:m.start()], re.I) and \
@@ -364,7 +376,8 @@ def build(t: Truth) -> list[dict]:
         lambda a, t, p: [must("admits", ADMITS.search(a[-1]) or any_of(a[-1], r"not (on|in) (the|our)"), "no such game")])
     add("fx-ghost-player", "fx-unknown", ["how many TDs does Iowa QB Brock Vandermeer have this year?"],
         lambda a, t, p: [must("admits", bool(ADMITS.search(a[-1])), "no such player"),
-                         must("no_numbers", not re.search(r"\b\d+\s*(TDs?|touchdowns|yards)\b", a[-1], re.I), "gave stats")])
+                         must("no_ghost_stats", not re.search(r"Vandermeer[^.]{0,60}\b\d+\s*(TDs?|touchdowns|yards)\b", a[-1], re.I),
+                              "gave the made-up player stats")])
     add("fx-ghost-game", "fx-unknown", ["did Iowa cover against Alabama last week?"],
         lambda a, t, p: [must("no_such_game", any_of(a[-1], r"didn'?t play", r"not (play|a game)", r"no such", r"wasn'?t",
                                                      r"didn'?t face", r"never played", r"not in", r"no game"),
