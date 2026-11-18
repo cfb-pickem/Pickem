@@ -115,7 +115,9 @@ RESULTS_Q = re.compile(
     rf"|\bhow('?d| did) ({_T}) (do|go|end up)\b"
     r"|\bhow (am i|are my picks?) doing this week\b|\bhow('?s| is| are) my (picks?|week)( doing| going| looking)?\b"
     rf"|\bhow('?d| did) my ({_T}) pick (do|go)\b|\bhow (did|'?d) (my|his|their) picks? do\b", re.I)
-RECORD_Q = re.compile(rf"\b(what'?s|what is|whats) (my|({_T})'s) record\b|\bmy record\b"
+RECORD_Q = re.compile(rf"\b(what'?s|what is|whats) (my|({_T})'s|(?!(?:the|a|an|that|this|your|ur|his|her|their|best|worst|"
+                      rf"most|school|all|career|team|bowl|program)\b)({_T})) record\b|\bmy record\b"
+                      rf"|\bwhere'?s ({_T}) at\b|\bwhere is ({_T}) at\b"
                       r"|\b(what am i|where am i at) (on the season|this season|this week)\b", re.I)
 PAYOUT_ASK = re.compile(r"\b(payouts?|buy.?in|the pot|how much (does|do|is|will)|prize money|what does (first|second|"
                         r"third|1st|2nd|3rd)( place)? (get|win|pay)|(first|second|third|1st|2nd|3rd) place (get|gets|win|"
@@ -1075,6 +1077,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "why", "WHY_ASK"
     if PREMISE_ASK.search(t):
         return "premise", "PREMISE_ASK"  # 'Hawai'i covered last week right?' / 'why did I take SMU?': code checks it
+    if re.search(r"^\W*(and |what about |how about )?(the )?week before (that|last week|last)\W*$", t, re.I):
+        return "record", "WEEK_BEFORE"  # 'and the week before that?' after 'how'd I do last week?'
     if WEEK_N_REC.search(t) and not re.search(r"\b(your|ur|picky)\b", t, re.I):
         return "record", "WEEK_N_REC"  # 'what did Ackbar go in week 9?' (fact exam: got week 11's games)
     if PICKY_REC_ASK.search(t) and not re.search(r"\b(this week|who (do|would|should)|lean|like|take)\b", t, re.I):
@@ -1723,10 +1727,33 @@ def _done_weeks(ctx: dict, wk: dict) -> list[int]:
     return [w for w in out if w != cw or cw_done]
 
 
+def fuzzy_members(q: str, st: list[dict], me: str | None) -> list[dict]:
+    """Members a text names with a typo ('ackbr', 'chuckp', 'blinkstradams'): a word or word pair within
+    two edits of a team name (difflib ratio >= 0.8 on the squashed name), never the sender."""
+    import difflib
+    words = re.findall(r"[a-z0-9']+", (q or "").lower())
+    grams = set(words) | {a + b for a, b in zip(words, words[1:])} | {a + " " + b for a, b in zip(words, words[1:])}
+    out = []
+    for r in st:
+        if r["team"] == me:
+            continue
+        key = re.sub(r"[^a-z0-9]", "", r["team"].lower())
+        if len(key) < 3:
+            continue
+        if any(difflib.SequenceMatcher(None, key, re.sub(r"[^a-z0-9]", "", g)).ratio() >= 0.8 for g in grams
+               if len(re.sub(r"[^a-z0-9]", "", g)) >= 3):
+            out.append(r)
+    return out
+
+
 def record_text(ctx: dict, q: str) -> str | None:
     st = ctx.get("standings_ytd") or []
     me = (ctx.get("you") or {}).get("team_name")
     named = [r for r in st if r["team"] != me and re.search(rf"(?<!\w){re.escape(r['team'])}(?!\w)", q, re.I)]
+    if not named and not re.search(r"\b(my|me|i|i'?m|am i)\b", q or "", re.I):
+        named = fuzzy_members(q, st, me)[:1]
+    if re.search(r"\bweek before (that|last week|last)\b", q or "", re.I) and ctx.get("last_week", {}).get("week"):
+        q = f"{q} week {int(ctx['last_week']['week']) - 1}"  # 'and the week before that?' after a last-week answer
     if SELF_REC_CLAIM.search(q or ""):  # 'im 25-23 tied w Wedge right': his real record, then the other guy's
         mine = next((x for x in st if x["team"] == me), None)
         if mine:

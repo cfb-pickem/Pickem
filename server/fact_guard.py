@@ -890,3 +890,30 @@ def _cdrop(log, why: str, sent: str) -> bool:
     if log:
         log.info("casino check dropped (%s): %r", why, sent[:100])
     return False
+
+
+# ---- results claimed for games that haven't been played ----------------------------------------------------------
+
+
+def unplayed_result_check(ctx: dict, log=None):
+    """'You hit the Minnesota +2.5' when Northwestern-Minnesota kicks off Saturday (fact exam 2026-11-17, a
+    follow-up that pasted this week's games into week 9): a hit/miss/cover/win/loss for a pool team whose game
+    hasn't started is dropped. Teams that also played last week are left alone (that result is real)."""
+    lw_teams = {x for g in (ctx.get("last_week") or {}).get("games") or [] for x in (g["away"], g["home"])}
+    pending = [x for g in ctx.get("games_this_week") or [] if not g.get("winner") and not g.get("status")
+               for x in (g["away"], g["home"]) if x not in lw_teams]
+    if not pending:
+        return None
+    rx = re.compile(r"\b(hit|hits|missed|misses|covered|cashed|won|lost|beat|burned)\b[^.;]{0,25}?\b(" +
+                    "|".join(re.escape(t) for t in sorted(pending, key=len, reverse=True)) + r")\b"
+                    r"|\b(" + "|".join(re.escape(t) for t in sorted(pending, key=len, reverse=True)) +
+                    r")\b[^.;]{0,25}?\b(covered|cashed|hit|won|lost|missed)\b", re.I)
+
+    def ok(sent: str) -> bool:
+        m = rx.search(sent)
+        if m and not re.search(r"\b(if|would|will|could|needs?|to cover|gonna|going to|should|might|when)\b", sent, re.I):
+            if log:
+                log.info("unplayed result dropped (%s): %r", m.group(0), sent[:100])
+            return False
+        return True
+    return ok

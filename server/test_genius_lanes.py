@@ -117,6 +117,15 @@ def test_premise_lane():
         "You didn't take Boise State, you had Oregon State and it covered."
 
 
+def test_typos_and_followups():
+    st = CTX["standings_ytd"]
+    assert [r["team"] for r in router.fuzzy_members("whats bravvo record", st, "Wedge")] == ["Bravo"]
+    assert router.fuzzy_members("whats my record", st, "Wedge") == []
+    assert router.classify("whats ackbr record").kind == "record"
+    assert router.classify("and the week before that?").kind == "record"
+    assert router.classify("whats the record for most points").kind != "record"
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:

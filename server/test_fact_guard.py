@@ -189,6 +189,15 @@ def test_casino_claims():
     assert not ok("Zulu split tens at the blackjack table.")
 
 
+def test_unplayed_results():
+    ok = fg.unplayed_result_check(CTX)
+    assert not ok("You hit the Iowa -8.5 and missed LSU -1.5.")
+    assert not ok("Tennessee covered easily.")
+    assert ok("Iowa needs to win by 9 to cover.")
+    assert ok("If Tennessee covers you're golden.")
+    assert ok("UTSA covered by 21.5.")  # last week's game
+
+
 def test_coach_moves():
     ok = fg.coach_move_check("Coach note: UTEP fired Scotty Walden. Kyle Whittingham is Michigan's coach (no firing).")
     assert ok("UTEP fired Scotty Walden.")
