@@ -232,13 +232,35 @@ def intent(q: str, prev: str = "") -> str | None:
         pg = _named(prev, gs)
         if pg and pg[0].get("state") in ("in", "post"):
             return "gd_why"  # 'why?' right after a live cover/score ask: the margin vs the number, not a pick card
-    own = _intent(t, prev, gs)
+    own = _pre_game_ok(t, _intent(t, prev, gs), gs)
     if prev and (_FOLLOW.search(t) or re.match(r"^\W*(and|what about|how about|same for)\b", t, re.I)) \
             and len(t.split()) <= 6 and own in (None, "gd_score"):
         p = _intent(prev.replace("’", "'"), "", gs)  # 'and texas's' after 'lsu qb stats': the same ask, other team
         if p and p not in ("gd_upsets", "gd_whatif"):
             return p
     return own
+
+
+_PRE_SCORE = re.compile(r"\bthe score\b|\bscores?\W*$|\bscore of\b|\bwinning\b|\bwho won\b|\bfinal\b|\bwhat time\b|"
+                        r"\bstart time\b|\bwhen (is|does|do)\b|\bkick ?off\W*$|\bkicks? off\b", re.I)
+_PRE_WHATIF = re.compile(r"\bcfp\b|\bplayoffs?\b|\branked\b|\branking\b|\brank\b|\bpoll\b", re.I)
+
+
+def _pre_game_ok(t: str, k: str | None, gs: dict) -> str | None:
+    """Before kickoff a named game only takes the channel, an explicit score / kickoff ask ('iowa score' = 'hasn't
+    kicked off yet') or a CFP what-if; a football question about it ('can Navy stop the run?', 'why'd the line move?',
+    'who's starting at QB?') keeps the normal lanes (genius exam 2026-11-18: 48 of 75 pre-game asks were taken on a
+    MACtion Wednesday, since a trailing '?' reads as a score ask)."""
+    if not k or k in ("gd_tv", "gd_upsets", "gd_recap", "gd_ended", "gd_week", "gd_why"):
+        return k
+    named = _named(t, gs)
+    if not named or any(g.get("state") in ("in", "post") for g in named):
+        return k
+    if k == "gd_score" and (len(t.split()) <= 3 or (len(t.split()) <= 8 and _PRE_SCORE.search(t))):
+        return k
+    if k == "gd_whatif" and _PRE_WHATIF.search(t):
+        return k
+    return None
 
 
 def _intent(t: str, prev: str, gs: dict) -> str | None:

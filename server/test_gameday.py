@@ -181,6 +181,24 @@ def test_whatif_unranked_and_missing_cache():
         G.SLATE_INTEL = orig
 
 
+def test_pre_game_football_asks_keep_their_lanes():
+    """Genius exam 2026-11-18 (Wed with MAC games that night, so active()): 48 of 75 pre-game asks became game-day
+    answers ('Can Navy's option...?' -> 'hasn't kicked off yet'). Before kickoff only channel, an explicit score /
+    kickoff ask and a CFP what-if are game-day questions; the rest keep the normal lanes."""
+    setup()
+    for q in ("Can Iowa stop Purdue's run game?", "Purdue went from +7 to +10.5 at Iowa. Why'd it move?",
+              "Who's starting at QB for Iowa vs Purdue?", "Any injuries that matter for Purdue at Iowa?",
+              "Iowa or Purdue, who you got?", "Is the move already priced in or is there still value on Iowa?",
+              "Can Iowa score on Purdue?", "Who's rested in Purdue-Iowa?",
+              "How many time zones is Purdue crossing for Iowa, and what's kickoff on their body clock?"):
+        assert G.intent(q) is None, (q, G.intent(q))
+    assert G.intent("what channel is purdue iowa on") == "gd_tv"
+    assert G.intent("iowa score") == "gd_score"
+    assert G.intent("what time does Iowa kick off?") == "gd_score"
+    assert G.intent("if Iowa loses do they drop out of the cfp?") == "gd_whatif"
+    assert G.intent("Can Texas stop LSU's run game?") is not None  # a live game keeps the game-day lanes
+
+
 def test_not_a_game_day():
     setup()
     L._write({"v": 1, "updated_ts": NOW, "games": {"4": {**GAMES["4"], "start": ISO(NOW + 5 * 86400)}}},
