@@ -1346,15 +1346,29 @@ def _write_live(text: str) -> None:
     tmp.replace(p)
 
 
-def check(repo: Repo | None = None, use_live: bool = True, use_opus: bool = True,
+def _bare(text: str) -> str:
+    """A section without its 'RULES CHANGED, VERIFY' flag line, whitespace-normalized (for comparisons)."""
+    return re.sub(r"\s+", " ", "\n".join(ln for ln in (text or "").splitlines() if FLAG not in ln)).strip()
+
+
+def check(repo: Repo | None = None, use_live: bool = True, use_opus: bool | None = None,
           now: dt.datetime | None = None, verifier=None) -> dict:
     """Detect rules changes, regenerate, re-verify, write the live digest.
-    Returns a report dict (also saved in the state file)."""
+    Returns a report dict (also saved in the state file).
+
+    use_opus None = picky_claude.available(): never on the hourly schedule (zero maintenance, phase 8).
+    Without an Opus verdict, the code is the verifier: a changed section that extracted cleanly, passed the
+    deterministic checks and whose regenerated text CHANGED with the code is stated as regenerated; a change
+    the generator doesn't see (same text out) stays flagged so Picky hedges."""
+    if use_opus is None:
+        import picky_claude
+        use_opus = picky_claude.available()
     repo = repo or Repo()
     now = now or dt.datetime.now()
     stamp = now.strftime("%Y-%m-%d %H:%M")
     st = _load_state()
-    committed_facts, committed_fps = parse_md(MD.read_text()) if MD.exists() else ({}, {})
+    committed_text = MD.read_text() if MD.exists() else ""
+    committed_facts, committed_fps = parse_md(committed_text) if committed_text else ({}, {})
     verified: dict[str, str] = {**committed_fps, **st.get("verified", {})}
     sources = repo_sources(repo)
     live_defs = live_pols = None
@@ -1429,6 +1443,9 @@ def check(repo: Repo | None = None, use_live: bool = True, use_opus: bool = True
                 flags[s] = f"{stamp}: {errors[s]}"
             elif v.get("verdict") == "ok" and s not in errors:
                 pass
+            elif result is None and s in generated and s not in errors and \
+                    _bare(generated[s]) != _bare(st.get("stated", {}).get(s) or section(s, committed_text)):
+                pass  # code-verified: the rule text moved with the code it's generated from
             elif v.get("verdict") == "corrected" and (v.get("text") or "").strip():
                 txt = v["text"].strip()
                 head = section_text(s, []).splitlines()[0] if s != "TIEBREAKERS" else "TIEBREAKERS"
@@ -1459,6 +1476,9 @@ def check(repo: Repo | None = None, use_live: bool = True, use_opus: bool = True
     report = {"at": stamp, "changed": changed, "pending": sorted(pending), "errors": errors, "flagged": flags,
               "overrides": sorted(overrides), "live": live_errs, "opus": opus_note or ("ran" if to_verify and use_opus else ""),
               "opus_verdicts": verdicts}
+    for s_ in SECTIONS:  # the last text stated per section: the next code-only check compares against it
+        if s_ in generated and s_ not in flags:
+            st.setdefault("stated", {})[s_] = overrides.get(s_) or generated[s_]
     st.update({"verified": verified, "last": report})
     st["overrides"] = {s: o for s, o in (st.get("overrides") or {}).items() if s in overrides}
     _save_state(st)
@@ -1513,10 +1533,10 @@ def flagged_sections() -> list[str]:
     return [s for s in SECTIONS if re.search(rf"^{re.escape(s)}[^\n]*\n- {FLAG}", current_text(), re.M)]
 
 
-def section(name: str) -> str:
-    """One section of the current digest (header line included)."""
+def section(name: str, text: str | None = None) -> str:
+    """One section of the current digest (or of `text`), header line included."""
     blocks, cur = {}, None
-    for ln in current_text().splitlines():
+    for ln in (current_text() if text is None else text).splitlines():
         key = next((k for k in SECTIONS if ln.startswith(k)), None)
         if key:
             cur = key

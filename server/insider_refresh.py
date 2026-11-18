@@ -12,7 +12,8 @@ and a headline alone can't say what was reported. So:
     newest ones (headline only, dated, credited) on top of the notes between Opus refreshes.
   - notes (Opus): one `claude -p` research run rewrites the notes file, at most once a day:
     a tick runs it only when the notes are REFRESH_EVERY_DAYS+ old and the last attempt was
-    ATTEMPT_GAP+ ago (about twice a week), never with PICKY_NO_ANTHROPIC=1. `run` forces one.
+    ATTEMPT_GAP+ ago (about twice a week), only while picky_claude's booster gate is open
+    (Claude there, subscription, under the daily cap). `run` forces one.
 
 The notes file is private (cfb-pickem-private/insider_bank.md, PICKY_INSIDER overrides);
 chat.insider_note reads it on topic. This script never edits it in place:
@@ -237,12 +238,14 @@ def tick(now: dt.datetime | None = None, claude=run_claude, force: bool = False)
     if not (force or opus_due(now)):
         return 0
     if not enrich.available():
-        log("SKIP Opus refresh: PICKY_NO_ANTHROPIC set; kept the last good copy")
+        log(f"SKIP Opus refresh ({picky_claude.why_not()}); kept the last good copy")
         return 0
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps({"attempt_at": now.isoformat(timespec="seconds")}))
     log(f"START (model {picky_claude.MODEL})")
-    return 0 if refresh(now.date(), claude=claude) else 1
+    if not refresh(now.date(), claude=claude):
+        log("FALLBACK the Claude booster failed: the wire (code) and the last good notes stand")
+    return 0  # an optional booster failing is not a failed job (feed_monitor watches this exit code)
 
 
 def main(argv: list[str]) -> int:

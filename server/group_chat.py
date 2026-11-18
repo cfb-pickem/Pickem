@@ -1269,12 +1269,21 @@ async def group(req: Request):
     texts = [str(x) for x in body.get("texts") or [] if str(x or "").strip()] if dm else []
     prio = test_priority(req) if test else None  # a real text is live wherever live_flag marks it (never waits on its own flag)
     held = live_flag.held() if prio != "low" else contextlib.nullcontext()  # a member (or a live probe) raises the flag
-    with held, ollama_gate.priority(prio or ("low" if live_flag.is_side() else "live")):
-        if len(texts) > 1:  # several DMs landed at once (dead zone): one combined reply (watcher batches them)
-            out = await answer_clump(handle, texts, chat_id, bool(body.get("allowlisted")))
-        else:
-            out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
-                               recent=recent)
+    try:
+        with held, ollama_gate.priority(prio or ("low" if live_flag.is_side() else "live")):
+            if len(texts) > 1:  # several DMs landed at once (dead zone): one combined reply (watcher batches them)
+                out = await answer_clump(handle, texts, chat_id, bool(body.get("allowlisted")))
+            else:
+                out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
+                                   recent=recent)
+    except (httpx.HTTPError, HTTPException) as e:  # Supabase paused / unreachable: say so, never a 500
+        if isinstance(e, HTTPException) and e.status_code not in (502, 503, 504):
+            raise
+        m = load_members().get(norm_handle(handle)) or {}
+        if dm and not (m or body.get("allowlisted")):
+            return {"reply": None}
+        log.warning("league db unreachable, canned reply sender=%s: %s", handle[-4:] or "?", str(e)[:200])
+        return {"reply": db_down_reply(chat_id or handle), "lane": "db_down"}
     if out is None:
         log.info("dm skipped sender=%s: not a mapped member or allowlisted", handle[-4:] or "?")
         return {"reply": None}
@@ -1288,6 +1297,24 @@ async def group(req: Request):
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]),
              out.get("lane") or "-")
     return {"reply": out["reply"] or None, "image": out["image"], "lane": out.get("lane")}
+
+
+DB_DOWN_LINES = [
+    "Can't reach the league database right now, so no standings or picks from me for a minute. Try me again in a bit.",
+    "The league database isn't answering. Give it a few minutes and ask again; I'm not guessing at standings.",
+    "League data's offline right now. Ask me again shortly and I'll have the real numbers.",
+]
+
+
+def db_down_reply(key: str) -> str:
+    """Zero maintenance (phase 8): a paused / unreachable Supabase gets an honest line, not a crash. No numbers,
+    nothing that can be wrong. The keepalive (feed_monitor tick) keeps the free project from pausing."""
+    import keepalive
+    lines = DB_DOWN_LINES
+    if keepalive.state().get("paused"):
+        lines = ["The league database is paused (free plan nap). It needs a restore in Supabase before I can see "
+                 "standings or picks."]
+    return lines[sum(map(ord, key or "")) % len(lines)]
 
 
 CLUMP_MAX = 4  # most recent distinct questions answered from one stacked-up batch

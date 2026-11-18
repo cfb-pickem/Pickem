@@ -1123,6 +1123,13 @@ def refresh(force: bool = False, now: dt.datetime | None = None) -> dict | None:
     cache["fetched_at"] = now.isoformat(timespec="seconds")
     # keep the last good count per feed so one failed fetch doesn't hide a source
     feeds = cache.get("feeds") or {}
+    try:  # a feed that had items and now parses to nothing / errors: format change or outage (feed_health log;
+        import feed_health  # the merged cache keeps its items either way, no model involved)
+        for k, v in status.items():
+            if (v == 0 or isinstance(v, str)) and isinstance(feeds.get(k), int) and feeds[k] > 0:
+                feed_health.note(f"news:{k}", f"returned {v!r} (last good: {feeds[k]} items); kept the cached items")
+    except Exception:  # noqa: BLE001 - health logging never breaks a refresh
+        pass
     feeds.update({k: v for k, v in status.items() if isinstance(v, int) or not isinstance(feeds.get(k), int)})
     cache["feeds"] = feeds
     cache["last_run"] = status

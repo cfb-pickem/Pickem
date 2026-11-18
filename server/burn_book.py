@@ -20,8 +20,9 @@ bad number (never mock a good one). Charlie's taste log ("robotic" / "good")
 drops look-alikes of flagged lines and steers the next batch.
 
 Schedule: com.pickem.picky-burn-book.plist runs `tick` hourly: an Opus refresh when a slot is
-due (Sunday 9 PM CT after grading, Wednesday 10 AM CT, or the book is missing / 8+ days old),
-else a no-LLM recheck. Facts go stale: every tick recheck() rebuilds
+due (Sunday 9 PM CT after grading, Wednesday 10 AM CT, or the book is missing / 8+ days old) and the
+picky_claude booster gate is open (zero maintenance: Claude optional and capped), else a no-LLM
+recheck. Facts go stale: every tick recheck() rebuilds
 the fact sheet, and a line whose cited fact text is gone stops being offered.
 If an Opus refresh fails, the last batch stays (and the code pool still
 regenerates from fresh facts). Live replies never call Anthropic.
@@ -848,14 +849,21 @@ def revalidate(doc: dict, mat: dict, words: dict | None = None, filters=None) ->
 
 
 def tick() -> dict:
-    """For league_material's hourly run: refresh when a slot is due, else recheck. Never raises."""
-    try:
-        res = refresh()
-        if res.get("built"):
-            return res
-    except Exception as e:  # noqa: BLE001 - the last batch stays; retried after the backoff
-        log.warning("burn book refresh failed: %s", e)
-        res = {"ok": False, "error": str(e)[:200]}
+    """The hourly run: an Opus refresh when a slot is due AND the picky_claude booster gate is open (Claude
+    there, subscription, under the daily cap), then always the recheck (code pool rebuilt from fresh facts,
+    lines whose facts are gone stop being offered). Gate shut or the refresh failed: the last batch stays
+    (generic lines carry no numbers or names and stay good). Never raises."""
+    import picky_claude
+    if not picky_claude.available():
+        res = {"ok": True, "built": False, "skipped": f"Claude booster off ({picky_claude.why_not()}); last batch stays"}
+    else:
+        try:
+            res = refresh()
+            if res.get("built"):
+                return res
+        except Exception as e:  # noqa: BLE001 - the last batch stays; retried after the backoff
+            log.warning("burn book refresh failed: %s", e)
+            res = {"ok": False, "error": str(e)[:200]}
     try:
         return {**res, "recheck": recheck()}
     except Exception as e:  # noqa: BLE001

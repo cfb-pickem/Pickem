@@ -285,7 +285,11 @@ def refresh(force: bool = False, research=None, out: Path | None = None, now: dt
 
 
 def refresh_if_due() -> dict | None:
-    """For league_material's hourly run: never raises."""
+    """For league_material's hourly run: never raises. A Claude booster (picky_claude's capped gate): gate shut =
+    the last bank stays, and the burn book's generic lines and its code pool carry the banter."""
+    import picky_claude
+    if not picky_claude.available():
+        return {"ok": True, "built": False, "skipped": f"Claude booster off ({picky_claude.why_not()}); last bank stays"}
     try:
         return refresh()
     except Exception as e:  # noqa: BLE001 - the old bank stays; retried after the backoff

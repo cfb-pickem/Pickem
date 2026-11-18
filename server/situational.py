@@ -17,6 +17,7 @@ import datetime as dt
 import re
 from zoneinfo import ZoneInfo
 
+import season  # the season's year from the date (zero maintenance: no fixed 2026)
 import sitfacts
 
 CT = ZoneInfo("America/Chicago")
@@ -185,7 +186,7 @@ def _hire_date(c: dict) -> dt.date | None:
         return dt.date.fromisoformat(c["date"])
     except (KeyError, TypeError, ValueError):
         m = re.search(r"\b(Sep|Oct|Nov|Dec)\w*\.? (\d{1,2})", c.get("text") or "")
-        return dt.date(2026, MONTHS[m.group(1)], int(m.group(2))) if m else None
+        return season.date_in_season(MONTHS[m.group(1)], int(m.group(2)), dt.datetime.now(CT).date()) if m else None
 
 
 def _local_date(r: dict) -> dt.date | None:

@@ -9,8 +9,10 @@ anthropic."
   - Every refresh is pure code over the caches the other feeds already keep (ESPN, CFBD,
     news.json, pick_brief factors, standings). No model runs on the per-run path.
   - Opus (picky_claude: claude-opus-5-5, guard(), empty MCP config, no API key) is an
-    enrichment layer on top: at most weekly per artifact, or on demand (insider notes:
-    at most daily). Skipped, failed or PICKY_NO_ANTHROPIC=1 = the code output alone.
+    optional enrichment layer on top: at most weekly per artifact (insider notes: at most
+    daily), and only while picky_claude's booster gate is open (Claude there, subscription
+    auth, under the daily cap; phase 8, zero maintenance). Gate shut, failed or timed out =
+    the code output alone.
   - The last good enrichment is kept, and shown only while it's fresh (freshness source
     'opus_enrichment': 6 days, which also keeps any ranking text under a week old) and
     still true (every number it cites still appears in today's computed facts).
@@ -34,8 +36,8 @@ _NUM = re.compile(r"(?<![\w.])\d+(?:\.\d+)?")
 
 
 def available() -> bool:
-    """False when the kill switch is on: callers skip Opus without spawning anything."""
-    return not picky_claude.disabled()
+    """picky_claude's booster gate: False = callers skip Opus without spawning anything."""
+    return picky_claude.available()
 
 
 def fresh(generated_at, now: dt.datetime | float | None = None) -> bool:

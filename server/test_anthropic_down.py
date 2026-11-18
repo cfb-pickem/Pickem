@@ -86,7 +86,8 @@ fake.write_text("#!/bin/sh\necho \"$@\" > \"$(dirname \"$0\")/argv\"\n"
                 "echo \"key=${ANTHROPIC_API_KEY:-none}\" >> \"$(dirname \"$0\")/argv\"\ncat > /dev/null\n"
                 "echo '{\"structured_output\": {\"ok\": 1}}'\n")
 fake.chmod(0o755)
-with patch.dict(os.environ, {"PICKY_NO_ANTHROPIC": "0", "ANTHROPIC_API_KEY": "sk-test"}), \
+# (PICKY_OPUS_MANUAL=1: a hand run, so the booster gate skips the auth check and cap; see test_zero_maintenance)
+with patch.dict(os.environ, {"PICKY_NO_ANTHROPIC": "0", "PICKY_OPUS_MANUAL": "1", "ANTHROPIC_API_KEY": "sk-test"}), \
         patch.object(picky_claude, "CLAUDE", str(fake)), patch.object(subprocess, "run", _real_run):
     p = picky_claude.run("prompt", timeout=30, caller="unit", tools="", schema={"type": "object"})
 argv = (TMP / "argv").read_text()
@@ -117,7 +118,6 @@ import insider_refresh  # noqa: E402
 import feed_monitor  # noqa: E402
 
 for name, fn in (("dossier.run_claude", lambda: dossier.run_claude("x")),
-                 ("group_posts.run_writer", lambda: gp.run_writer("x")),
                  ("insider_refresh.run_claude", lambda: insider_refresh.run_claude("x", "", 5)),
                  ("feed_monitor.call_claude", lambda: feed_monitor.call_claude("x", TMP))):
     try:
@@ -194,7 +194,15 @@ class FakeLeague:
 
 lg = FakeLeague()
 CARD = {1: {"label": "Iowa -3.5", "why": "market", "made": True}, 2: {"label": "Texas +2.5", "why": "SP+", "made": False}}
-with patch.object(gp, "picky_card", lambda lg_, w: CARD), patch.object(gp, "stakes_facts", lambda lg_: [
+import local_llm  # noqa: E402  (the recap writer is local gemma now: down too here, so the template must go out)
+
+
+def _ollama_down(*a, **k):
+    raise local_llm.LocalLLMError("ollama down (test)")
+
+
+with patch.object(local_llm, "json_call", _ollama_down), \
+        patch.object(gp, "picky_card", lambda lg_, w: CARD), patch.object(gp, "stakes_facts", lambda lg_: [
         "Standings (points): 1st Charlie 30; 2nd Ackbar 28. Cut line for the top 4 playoff spots: 25 points."]), \
         patch.object(gp, "load_take", lambda w, gid: None), \
         patch.object(gp, "recap_facts", lambda lg_, w: ([

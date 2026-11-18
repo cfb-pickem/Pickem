@@ -43,13 +43,12 @@ dont need an opus call every time"): preview, saturday, reminders and pings are
 code templates over the computed facts (a few rotating wordings, picked by the
 post's key, skipping any opener a recent post used), so they never call a model.
 The film room's one-liner (the dossier's weekly analyst take) rides in the
-preview while it's fresh. Only the weekly recap gets an Opus writer: `claude -p`
-on Charlie's subscription (picky_claude via dossier.run_claude: no tools, zero
-MCP, ANTHROPIC_API_KEY stripped), offline, never live chat, at most one post
-(two drafts) a week. validate() rejects any number not in the facts, any member
+preview while it's fresh. Only the weekly recap gets a model writer: the box's
+local gemma (local_llm.py, behind the live-first Ollama gate; zero maintenance,
+phase 8: no Claude), offline, at most one post (two drafts) a week. validate() rejects any number not in the facts, any member
 not in the facts, repeated openers, and the known canon breakers; a rejected or
 failed recap falls back to plain_recap, so every post still goes out with
-Anthropic down (PICKY_NO_ANTHROPIC=1).
+Ollama down too.
 
 CLI:
   group_posts.py tick [--dry-run]
@@ -93,7 +92,6 @@ MATERIAL = ob.PRIVATE / "league_material.json"
 SUPABASE_URL = "https://vopdioszofwdkwnujtiq.supabase.co"
 ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary?event="
 PICKY_TEAM = "Picky"
-WRITE_TIMEOUT_S = 300
 BATCH_HOLD_S = 15 * 60       # hold a final up to 15 min when another pool game is in the 4th quarter
 
 
@@ -297,7 +295,7 @@ def ranks(rows: list[tuple[str, int, int]]) -> dict[str, int]:
 
 
 # -----------------------------------------------------------------------------
-# the writer (claude -p) + validator
+# the writer (local gemma) + validator
 # -----------------------------------------------------------------------------
 
 PERSONA = """You are Picky, a member of a 14-friend college football pick'em league, posting in the league's
@@ -327,8 +325,10 @@ _BODY = re.compile(r"\b(penis|dick|weiner|wiener|tits|boobs|fat|ugly|bald|mom|mo
 
 
 def run_writer(prompt: str) -> list[str]:
-    import dossier
-    out = dossier.run_claude(prompt, WRITE_TIMEOUT_S, SCHEMA, "", caller="group_posts")
+    """The recap writer: the box's local gemma (zero maintenance, phase 8: no Claude). validate() checks every
+    number and name; a failed or rejected draft posts plain_recap (the code template) instead."""
+    import local_llm
+    out = local_llm.json_call("", prompt, SCHEMA, caller="group_posts", temperature=0.6, num_predict=900)
     return [str(t) for t in out.get("texts") or []]
 
 

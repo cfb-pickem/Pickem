@@ -202,7 +202,44 @@ def _bad(why="cache stale"):
 OK = {"ok": True, "missing": False, "why": ""}
 
 
+class _Manual:
+    """The by-hand path (PICKY_OPUS_MANUAL=1 feed_monitor.py ...): Claude repairs possible. The schedule never
+    repairs (zero maintenance, phase 8; test_schedule_never_repairs)."""
+
+    def __enter__(self):
+        import picky_claude
+        self.pc, self.bin = picky_claude, picky_claude.CLAUDE
+        self.ks = os.environ.pop("PICKY_NO_ANTHROPIC", None)  # the suite runs with the kill switch on
+        os.environ["PICKY_OPUS_MANUAL"] = "1"
+        picky_claude.CLAUDE = sys.executable
+        return self
+
+    def __exit__(self, *a):
+        os.environ.pop("PICKY_OPUS_MANUAL", None)
+        if self.ks is not None:
+            os.environ["PICKY_NO_ANTHROPIC"] = self.ks
+        self.pc.CLAUDE = self.bin
+
+
+def test_schedule_never_repairs():
+    st, now, kinds, tells = {}, TUE, [], []
+    for _ in range(int(30 * H / 900)):
+        acts, st = FM.decide({"news": _bad()}, st, now)
+        kinds += [a[0] for a in acts]
+        if any(a[0] == "tell" for a in acts):
+            tells.append(now)
+            st["told"] = FM.ct_day(now)
+        now += 900
+    assert "repair" not in kinds and kinds.count("kick") >= 10, kinds  # kicked again every 2 h, never repaired
+    assert len(tells) == 1 and tells[0] - TUE >= FM.TELL_AFTER, tells  # still one heads-up after 24 h, no sooner
+
+
 def test_escalation_kick_then_repair():
+    with _Manual():
+        _escalation_kick_then_repair()
+
+
+def _escalation_kick_then_repair():
     st, now = {}, TUE
     plans = []
     for _ in range(5):
@@ -217,6 +254,11 @@ def test_escalation_kick_then_repair():
 
 
 def test_repair_caps_daily_and_per_outage():
+    with _Manual():
+        _repair_caps_daily_and_per_outage()
+
+
+def _repair_caps_daily_and_per_outage():
     st, now = {}, TUE
     repairs = []
     for _ in range(40):  # 10 h of checks, three feeds broken
@@ -258,6 +300,11 @@ def test_unrepairable_feed_only_kicks():
 
 
 def test_charlie_told_once_a_day_only_after_24h_and_cap():
+    with _Manual():
+        _charlie_told_once_a_day_only_after_24h_and_cap()
+
+
+def _charlie_told_once_a_day_only_after_24h_and_cap():
     st, now, tells = {}, TUE, []
     for i in range(int(30 * H / 900)):
         acts, st = FM.decide({"news": _bad()}, st, now)

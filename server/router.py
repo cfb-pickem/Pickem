@@ -41,6 +41,7 @@ import pick_strategy
 import situational
 import slate_cards
 import playoff_race
+import season  # date-derived season state: offseason answers (zero maintenance)
 import why_lane
 import unit_lane  # 'can X run on Y': unit matchups in code (plan 2026-11-18 phase 6)
 import channel  # the channel lane (drill 11/17)
@@ -2771,6 +2772,8 @@ def fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
     if not ctx or ctx.get("error"):
         return None
+    if (kind in season.WEEK_KINDS or kind.startswith("gd_")) and season.offseason(ctx, chat._now_ct_naive()):
+        return season.offseason_text(ctx)  # zero maintenance: no week to talk about, never last season's games
     if kind in ("lines_now", "spread", "value", "line_move", "qb", "score", "cover", "pick", "h2h", "keynum", "qb_status"):
         ghost = unknown_school((q or "").split(" ||| ")[0])
         if ghost:
