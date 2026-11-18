@@ -92,6 +92,7 @@ import chat  # noqa: E402
 import flag_flub  # noqa: E402
 import group_outbox  # noqa: E402
 import live_flag  # noqa: E402
+import ollama_gate  # noqa: E402
 import live_games  # noqa: E402
 import maintenance  # noqa: E402
 import fact_guard  # noqa: E402
@@ -1171,7 +1172,7 @@ async def health(deep: int = 0):
     """Cheap by default. ?deep=1 runs the pipeline on a code-lane question (Supabase session, context,
     router, fact lane, send-point checks) the way /group would for a test request, and checks Ollama answers.
     The watchdog and release.sh use deep."""
-    out = {"ok": True, "members_mapped": len(load_members())}
+    out = {"ok": True, "members_mapped": len(load_members()), "ollama_gate": ollama_gate.status()}
     if not deep:
         return out
     t0, tok, ctok = time.time(), TEST_REQ.set(True), picky_brain.CODE_ONLY.set(True)
@@ -1195,6 +1196,13 @@ async def health(deep: int = 0):
     if not out["ok"]:
         log.warning("deep health failed: %s", out)
     return JSONResponse(out, status_code=200 if out["ok"] else 503)
+
+
+def test_priority(req: Request) -> str:
+    """For an X-Picky-Test request: 'low' (yields to every member text in every process), or 'live' with
+    X-Picky-Priority: live (latency probes get a member's priority and raise the live flag; still test traffic:
+    nothing saved)."""
+    return "live" if (req.headers.get("x-picky-priority") or "").lower() == "live" else "low"
 
 
 @app.post("/group")
@@ -1230,7 +1238,9 @@ async def group(req: Request):
     REQ_T0.set(t0)
     recent = body.get("recent") if isinstance(body.get("recent"), list) else None
     callbacks.CHAT.set((chat_id, VIEWER.sender(handle).team, dm))  # for the exam rider (PICKY_CALLBACK_RIDER=1)
-    with contextlib.nullcontext() if test else live_flag.held():  # side sidecars/exams yield to a member
+    prio = test_priority(req) if test else None  # a real text is live wherever live_flag marks it (never waits on its own flag)
+    held = live_flag.held() if prio != "low" else contextlib.nullcontext()  # a member (or a live probe) raises the flag
+    with held, ollama_gate.priority(prio or ("low" if live_flag.is_side() else "live")):
         out = await answer(handle, text, chat_id=chat_id, dm=dm, allowlisted=bool(body.get("allowlisted")),
                            recent=recent)
     if out is None:
@@ -1285,8 +1295,10 @@ async def web(req: Request):
     text = str(msgs[-1].get("content") or "")[:2000]
     t0 = time.time()
     REQ_T0.set(t0)
-    held = contextlib.nullcontext() if body.get("test") else live_flag.held()
-    with held:
+    prio = (test_priority(req) if chat.is_test_request(req)
+            else "low" if body.get("test") else None)  # chat.py forwards its X-Picky-Test asks as test=true
+    held = contextlib.nullcontext() if prio == "low" else live_flag.held()
+    with held, ollama_gate.priority(prio or ("low" if live_flag.is_side() else "live")):
         out = await answer(s.handle, text, chat_id="web:" + uid, dm=True, allowlisted=True,
                            web={"sender": s, "jwt": jwt, "history": web_history(msgs[:-1])})
     out = out or {}
@@ -1544,4 +1556,5 @@ async def _start_keep_warm():
 if __name__ == "__main__":
     import uvicorn
 
+    ollama_gate.serve_live()  # the live sidecar (:8768): member texts are live priority; side sidecars stay low
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")

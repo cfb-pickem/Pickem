@@ -40,7 +40,7 @@ import burn_book
 import callbacks
 import chat
 import league_rules
-import live_flag
+import ollama_gate
 import member_memory
 import router
 
@@ -281,19 +281,21 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
         payload["think"] = chat.OLLAMA_THINK == "true"
     if CODE_ONLY.get():
         raise PrimeSlow("code only (test traffic)")
-    await live_flag.wait_clear()  # side sidecars yield to a live text
     if prime_wait is not None:
-        t = chat.start_prime(prefix)
+        t = chat.start_prime(prefix)  # gated inside (a test/exam prime yields to member texts)
         done, _ = await asyncio.wait({t}, timeout=prime_wait)
         if not done:
             log.info("prime still running after %.0fs (cold prefix): code fallback, prime continues", prime_wait)
             raise PrimeSlow("cold prefix")
-    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=timeout, write=10.0, pool=5.0)) as c:
-        if prime_wait is None:
-            await chat._prime(c, prefix)
-        r = await c.post(f"{chat.OLLAMA}/api/chat", json=payload)
-        r.raise_for_status()
-        d = r.json()
+
+    async def go() -> dict:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=timeout, write=10.0, pool=5.0)) as c:
+            if prime_wait is None:
+                await chat._prime(c, prefix)
+            r = await c.post(f"{chat.OLLAMA}/api/chat", json=payload)
+            r.raise_for_status()
+            return r.json()
+    d = await ollama_gate.call(go)  # live-first: tests/exams/batch wait for member texts, restart if one arrives
     log.info("brain call: prompt eval %.1fs (%s tokens), %s out, total %.1fs",
              (d.get("prompt_eval_duration") or 0) / 1e9, d.get("prompt_eval_count"), d.get("eval_count"),
              (d.get("total_duration") or 0) / 1e9)

@@ -47,6 +47,7 @@ import freshness
 import game_cards
 import league_rules
 import live_flag
+import ollama_gate
 import live_games
 import matchup_guard
 import news
@@ -636,6 +637,8 @@ GATE = Gate()
 
 
 async def _member_stream(hold: int, stream):
+    # a member ask is live priority wherever live_flag marks it in flight (a side copy of chat.py stays low)
+    ollama_gate.PRIORITY.set("low" if live_flag.is_side() else "live")
     try:
         await GATE.member_ready()
         async for chunk in stream:
@@ -691,8 +694,16 @@ async def _test_stream(make):
         GATE.test_out()
 
 
+async def _low(make):
+    """`make()`'s stream at low priority (ollama_gate): a test request in the live process yields to members
+    of every live process (the group sidecar's texts too), not just this one's."""
+    ollama_gate.PRIORITY.set("low")
+    async for x in make():
+        yield x
+
+
 def _gated(test: bool, hold: int | None, make):
-    return _test_stream(make) if test else _member_stream(hold, make())
+    return _test_stream(lambda: _low(make)) if test else _member_stream(hold, make())
 
 
 # -----------------------------------------------------------------------------
@@ -5542,7 +5553,7 @@ def start_prime(prefix: str) -> asyncio.Task:
     (picky_brain's fact/banter calls) moves on, and the prefill still finishes for the next text."""
     async def run():
         async with httpx.AsyncClient() as c:
-            await _prime(c, prefix)
+            await ollama_gate.call(lambda: _prime(c, prefix))  # a test/exam prime yields to member texts
     t = asyncio.create_task(run())
     _BG_PRIMES.add(t)
     t.add_done_callback(_BG_PRIMES.discard)
@@ -5550,7 +5561,13 @@ def start_prime(prefix: str) -> asyncio.Task:
 
 
 async def _ollama_stream(messages: list[dict], prefix: str | None = None):
-    """Yield SSE-framed assistant tokens from Ollama."""
+    """Yield SSE-framed assistant tokens from Ollama, through the live-first gate (ollama_gate): member texts
+    go straight through; tests/exams/batch calls wait for them and restart if one arrives before the first token."""
+    async for x in ollama_gate.stream(lambda: _ollama_stream_raw(messages, prefix)):
+        yield x
+
+
+async def _ollama_stream_raw(messages: list[dict], prefix: str | None = None):
     payload = {"model": MODEL, "messages": messages, "stream": True,
                "options": {**OLLAMA_OPTIONS, **(OPTIONS_OVERRIDE.get() or {})},
                "keep_alive": OLLAMA_KEEP_ALIVE}
@@ -5560,7 +5577,6 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     # client is kept alive by _keepalive pings meanwhile
     timeout = httpx.Timeout(connect=5.0, read=420.0, write=10.0, pool=5.0)
     text = ""
-    await live_flag.wait_clear()  # side sidecars/exams yield to a live text in another process
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
             if prefix:
@@ -7270,7 +7286,8 @@ async def _image_stream(prompt: str, user_id: str):
 @app.get("/health")
 async def health():
     return {"ok": True, "model": MODEL,
-            "gate": {"members_active": GATE.members(), "test_busy": GATE.test_busy, **GATE.stats}}
+            "gate": {"members_active": GATE.members(), "test_busy": GATE.test_busy, **GATE.stats},
+            "ollama_gate": ollama_gate.status()}
 
 
 async def league_ctx(client: httpx.AsyncClient, jwt: str, user_id: str, mode: str = "leaderboard",
@@ -7632,6 +7649,7 @@ async def _warm():
 if __name__ == "__main__":
     import uvicorn
 
+    ollama_gate.serve_live()  # com.pickem.chat: member asks are live priority (a PICKY_SIDE copy stays low)
     uvicorn.run(
         "chat:app",
         host="127.0.0.1",
