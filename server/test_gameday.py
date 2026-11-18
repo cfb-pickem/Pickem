@@ -106,7 +106,10 @@ def test_at_game_and_stats():
     k, a = ask("texas 3rd downs?")
     assert a.startswith("On 3rd down: Texas 3-of-9, LSU 5-of-5"), a
     k, a = ask("how many picks has arch thrown")
-    assert "1 INT" in a, a
+    assert a.startswith("Arch Manning has thrown 1 INT (9-of-19"), a
+    assert ask("how many yards does leavitt have")[1].startswith("Sam Leavitt has 168 passing yards")
+    k, a = ask("anything big happen")
+    assert k == "gd_recap" and a.startswith("Upset watch:"), a
     k, a = ask("whats the spread status here")
     assert k == "gd_spread" and "Texas +5.5 is covering by 1.5" in a, a
     k, a = ask("who scored last")
@@ -128,7 +131,7 @@ def test_why_after_cover_ask():
     assert G.intent("why?", prev[0]) == "gd_why"
     ctx = {"games_this_week": [{"id": "2", "away": "Florida", "home": "Kentucky", "line": -3.0}]}
     a = G.answer("gd_why", ctx, "why?")
-    assert a.startswith("Because of the league line: Florida +3 covering by 10") and "Florida 21" in a, a
+    assert a.startswith("Florida leads by 7 and the league line gives them +3, so they're covering by 10"), a
     prev = ("whats the spread status in texas lsu", "")
     G.PRIOR.set(prev)
     assert "Texas +5.5 is covering by 1.5" in G.answer("gd_why", {}, "why?")

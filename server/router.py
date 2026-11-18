@@ -2106,6 +2106,8 @@ def score_text(ctx: dict, q: str) -> str | None:
     out = [state(next(g for g in games if g["id"] == n["id"])) for n in named[:2]]
     if any(x is None for x in out):
         return None
+    if re.search(r"\bcover", q or "", re.I):  # 'is X covering': the cover status first, then the score (drill 11/18)
+        out = [re.sub(r"^(.*?)\s*(Covering right now: [^.]*(?:\.\d[^.]*)*\.)$", r"\2 \1", x) for x in out]
     sc = _scored_text(ctx, q, named[0]) if SCORED_ASK.search(q or "") else None
     if re.search(r"\bhow many (total )?points\b|\btotal points\b|\bcombined\b", q or "", re.I):
         g = by_id.get(named[0]["id"]) or {}

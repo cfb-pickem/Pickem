@@ -113,6 +113,8 @@ STATS = re.compile(r"\b(stats?|stat line|yards?|yds|passing|rushing|receiving|co
 DRIVE = re.compile(r"\b(that|the|last|this|their) drive\b|\bwhat (just )?happened\b|\bhow'?d (that|the) drive\b", re.I)
 TOTAL = re.compile(r"\b(the over|the under|over/under|o/u|the total|total points|over or under|hit the over|"
                    r"going over|under\?|over\?)", re.I)
+RECAP = re.compile(r"\banything (big|crazy|wild|good|new) happen\w*\b|\bwhat'?d i miss\b|\bwhat did i miss\b|"
+                   r"\bwhat happened today\b|\bany(thing)? big (news|results?)\b|\bcatch me up\b", re.I)
 SPREAD = re.compile(r"\bspread\b|\bcovering\b|\bcover\b|\bagainst the (line|number)\b|\bthe line\b", re.I)
 BALL = re.compile(r"\bwho('?s| has| got|s got)( got)? (the )?ball\b|\bwhose ball\b|\bpossession\b", re.I)
 LAST = re.compile(r"\bwho scored( last)?\b|\bhow('?d| did) (they|he|\w+) score\b|\blast score\b|\bwho just scored\b|"
@@ -243,6 +245,8 @@ def _intent(t: str, prev: str, gs: dict) -> str | None:
     named = _named(t, gs)
     if UPSETS.search(t) and not _UPSET_PICK.search(t):
         return "gd_upsets"
+    if RECAP.search(t) and not named:
+        return "gd_recap"
     if WHATIF.search(t) and (named or re.search(r"\bcfp\b|\bplayoff\b", t, re.I)) and not re.search(
             r"\b(my|our|league|pool|standings|i|me)\b", t, re.I):
         return "gd_whatif"
@@ -317,7 +321,7 @@ def score_line(g: dict, verb: bool = False) -> str:
         return f"Final: {_rk(lead)}{_nm(lead)} {hi}, {_rk(trail)}{_nm(trail)} {lo}."
     when = _qtr(g)
     if ap == hp:
-        s = f"{_nm(a)} and {_nm(h)} are " + ("scoreless" if ap == 0 else f"tied {ap}-{ap}") + f", {when}."
+        s = f"{_nm(a)} and {_nm(h)} are " + ("scoreless, 0-0" if ap == 0 else f"tied {ap}-{ap}") + f", {when}."
     else:
         s = f"{_rk(lead)}{_nm(lead)} {hi}, {_rk(trail)}{_nm(trail)} {lo}, {when}."
     return s
@@ -491,7 +495,8 @@ def ans_stats(q: str, gs: dict) -> str | None:
             return None
         labels = {cat: (g["box"]["players"][ab][cat]["labels"]) for gg, ab, cat, row in pl if gg["id"] == g["id"]}
         bits = [fmt_row(cat, labels[cat], row) for cat, row in rows[:2]]
-        return f"{who}: {'; '.join(bits)} ({_when(g)})."
+        lead = lead_stat(t, who, rows, labels)
+        return (f"{lead} ({bits[0]}, {_when(g)})." if lead else f"{who}: {'; '.join(bits)} ({_when(g)}).")
     # 'lsu qb stats' / 'who ran for the most for uga' / 'how's their qb doing'
     hits = _games_for(q, gs, need_live=True)
     if not hits:
@@ -518,6 +523,33 @@ def ans_stats(q: str, gs: dict) -> str | None:
     if cat == "passing" and len(c["rows"]) > 1:
         tail = f" Also: {c['rows'][1][0]} {fmt_row(cat, c['labels'], c['rows'][1])}."
     return f"{row[0]}: {fmt_row(cat, c['labels'], row)} ({_when(g)}).{tail}"
+
+
+def lead_stat(t: str, who: str, rows: list, labels: dict) -> str | None:
+    """'how many picks has Arch thrown' -> 'Arch Manning has thrown 1 INT'; 'how many yards does X have' -> the yards
+    first. None = no single number asked."""
+    d = {cat: dict(zip(labels[cat], row[1:])) for cat, row in rows}
+    if re.search(r"\b(picks?|ints?|interceptions?)\b", t, re.I) and "passing" in d:
+        n = d["passing"].get("INT", "0")
+        return f"{who} has thrown {n} INT{'' if n == '1' else 's'}"
+    if re.search(r"\b(tds?|touchdowns?)\b", t, re.I):
+        tot = sum(int(v.get("TD") or 0) for v in d.values() if str(v.get("TD") or "0").isdigit())
+        return f"{who} has {tot} TD{'' if tot == 1 else 's'}"
+    if re.search(r"\bhow many (yards|yds)\b|\byards\b|\byds\b", t, re.I):
+        cat = rows[0][0]
+        return f"{who} has {d[cat].get('YDS', '0')} {cat} yards"
+    return None
+
+
+def ans_recap(q: str, gs: dict) -> str | None:
+    """'anything big happen' / 'what'd I miss': upsets first, then QBs reported hurt."""
+    out = [ans_upsets(q, gs)]
+    qbs = [x for g in gs.values() if g.get("state") in ("in", "post") and _start(g) > _now() - 20 * 3600
+           for x in g.get("injuries") or [] if x.get("qb") and not x.get("returned")]
+    if qbs:
+        out.append("QBs reported hurt: " + "; ".join(f"{x.get('team') or ''} {x.get('full_name') or x['player']}".strip()
+                                                     for x in qbs[:3]) + ".")
+    return " ".join(out)
 
 
 def ans_drive(q: str, gs: dict) -> str | None:
@@ -592,9 +624,16 @@ def why_text(gs: dict, ctx: dict | None) -> str | None:
     g = hits[0]
     pool = {str(x.get("id")): x for x in (ctx or {}).get("games_this_week") or [] if x.get("line") is not None}
     p = pool.get(str(g["id"]))
-    if p:
-        cs = L.cover_status(p["away"], p["home"], p["line"], g.get("away_score"), g.get("home_score"))
-        return f"Because of the league line: {cs}. {score_line(g)}" if cs else None
+    if p and g.get("away_score") is not None:
+        ln, a, h = float(p["line"]), g["away_score"], g["home_score"]
+        m = h + ln - a
+        cov_home = m > 0
+        cov, spread = (p["home"], ln) if cov_home else (p["away"], -ln)
+        lead = (h - a) if cov_home else (a - h)
+        state = f"leads by {lead}" if lead > 0 else f"trails by {-lead}" if lead < 0 else "is tied"
+        sign = "+" if spread > 0 else ""
+        return (f"{cov} {state} and the league line gives them {sign}{L._num(spread)}, so they're covering by "
+                f"{L._num(abs(m))} ({_when(g)}).") if m else f"It's dead even on the number, which goes to {p['away']}."
     return ans_spread(pq, gs)
 
 
@@ -697,7 +736,8 @@ def ans_whatif(q: str, gs: dict) -> str | None:
             seat = ("inside the top 4 (first-round bye line)" if row["rank"] <= 4 else
                     "inside the 12-team field" if row["rank"] <= 12 else "outside the 12-team field")
             lose = (" A loss would knock them off the bye line and into the at-large crowd." if row["rank"] <= 4 else
-                    " A loss puts their at-large spot on the bubble." if row["rank"] <= 12 else "")
+                    " A loss puts their at-large spot on the bubble." if row["rank"] <= 12 else
+                    " So yes, a loss would all but end their at-large hopes.")
             if not re.search(r"\blos", t, re.I):
                 lose = ""
             out.append(f"{row['team']} is No. {row['rank']} in the CFP ({rel}{rec}), {seat}.{lose}{live}")
@@ -801,7 +841,7 @@ def answer(kind: str, ctx: dict | None, q: str) -> str | None:
         return why_text(gs, ctx)
     fn = {"gd_score": ans_score, "gd_upsets": ans_upsets, "gd_stats": ans_stats, "gd_drive": ans_drive,
           "gd_total": ans_total, "gd_ball": ans_ball, "gd_last": ans_last, "gd_hurt": ans_hurt, "gd_tv": ans_tv,
-          "gd_whatif": ans_whatif, "gd_spread": ans_spread}.get(kind)
+          "gd_whatif": ans_whatif, "gd_spread": ans_spread, "gd_recap": ans_recap}.get(kind)
     if not fn:
         return None
     ids = [g["id"] for g in _games_for(q, gs) if g.get("state") == "in"][:3]

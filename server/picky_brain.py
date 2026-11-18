@@ -652,7 +652,9 @@ def charlie_line(team: str | None, chat_id: str | None, avoid: str = "") -> str:
     return next(x for x in CHARLIE_LINES if x != avoid)
 
 
-_SCOLD = re.compile(r"^\W*(stop|quit|focus|go|try|maybe|get)\b|\byour own\b|\binstead of\b", re.I)
+_SCOLD = re.compile(r"^\W*(stop|quit|focus|go|try|maybe|get)\b|\byour own\b|\binstead of\b|\bnot (even )?in the pool\b"
+                    r"|\bi'?m not (your|checking|watching|tracking)\b|\bi am not\b|\btoo busy\b|\bshocked you\b|\bglasses\b"
+                    r"|\bnap\b|\bgarbage\b|\blike a fan\b|\bdon'?t get used\b", re.I)
 
 
 def charlie_caller(st: dict | None) -> bool:
