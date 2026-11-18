@@ -96,6 +96,15 @@ def test_fact_exam_round1_lanes():
     assert not router.voice_line_ok("Oregon State ruined your weekend.", "x", {})
 
 
+def test_move_why_routes():
+    for q in ["Georgia-South Carolina opened around Georgia -10.5 and it's -16.5 now. Why'd it move that much?",
+              "Clemson-Duke went from Duke -8.5 to -13.5. What happened?",
+              "Oklahoma went from -2.5 to -7.5 vs A&M. Who got hurt?",
+              "North Texas -6.5 at Tulane. Some books had it double digits early. What changed?"]:
+        assert router.classify(q).kind == "line_move", q
+    assert router.classify("why are you so bad at this").kind != "line_move"
+
+
 def test_h2h_text_format():
     orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
     try:

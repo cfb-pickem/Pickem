@@ -913,6 +913,9 @@ def hypo_value_text(ctx: dict, q: str) -> str | None:
             + (" across 3" if min(abs(lk), abs(mk)) < 3 < max(abs(lk), abs(mk)) else "") + ".")
 
 
+MOVE_WHY = re.compile(r"\bwhy('?d| did| is| has| was)?\b|\bwhat happened\b|\bwhat changed\b|\bwho got hurt\b|\bwhat'?s behind\b", re.I)
+MOVE_EVIDENCE = re.compile(r"\b(opened|opening|went from|moved?|moving|dropp(ed|ing)|jumped|double digits|early|from -?\d|to -?\d)\b",
+                           re.I)
 KEYNUM_ASK = re.compile(r"\bkey numbers?\b|\bwhere does the hook\b|\bon (a|the) (key )?number\b|\bthe hook matter", re.I)
 
 
@@ -947,6 +950,68 @@ def keynum_text(ctx: dict, q: str) -> str | None:
     if hook:
         out.append("Half a point off one: " + ", ".join(x for _, x in sorted(hook, key=lambda h: h[0])[:3]) + ".")
     out.append("3 and 7 are the most common final margins, so the half point around them is where pushes turn into wins or losses.")
+    return " ".join(out)
+
+
+def slate_move_text(ctx: dict, q: str) -> str | None:
+    """Why a non-pool game's line moved (genius exam 2026-11-17: the 12B blamed SP+ when the cause was a QB):
+    open vs now (CFBD DraftKings), the sourced availability notes for that game (slate_intel), or an honest
+    'no confirmed news', the key number, and the card's computed lean (conditional on a questionable starter)."""
+    idx = slate_cards.cfbd.load_index()
+    g, pg = slate_cards.find_game(q, ctx, idx)
+    if not g or pg:
+        return None
+    ln = slate_cards._line(g) or {}
+    now, opn = ln.get("spread"), ln.get("spreadOpen")
+    if now is None:
+        return None
+    away, home = g["awayTeam"], g["homeTeam"]
+
+    def fav(sp):
+        return (f"{home} {sp:g}" if sp < 0 else f"{away} {-sp:g}") if sp else "a pick'em"
+    out = []
+    if opn is not None and opn != now:
+        out.append(f"It opened {fav(opn)} and it's {fav(now)} now ({abs(now - opn):g} points"
+                   f" toward {home if now < opn else away}).")
+    else:
+        out.append(f"The market's {fav(now)}.")
+    try:
+        d = json.loads((Path(__file__).resolve().parent / "cache" / "slate_intel.json").read_text())
+    except (OSError, ValueError):
+        d = {}
+    gi = next((x for x in (d.get("games") or {}).values() if {x.get("away"), x.get("home")} == {away, home}), None)
+    facts = [f for f in (gi or {}).get("facts") or [] if f.get("kind") == "injury" or f.get("status")]
+    qb = [f for f in facts if re.search(r"\bQB\d?\b|quarterback", f.get("text") or "", re.I)]
+    pick = (qb or facts)[:2]
+    if pick:
+        out.append("The news: " + " ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))
+    else:
+        out.append(f"No confirmed injury or news in my sources explains it (as of {d.get('as_of') or 'this week'}), "
+                   "so the market may know something; I wouldn't fight a move that size.")
+    a = abs(now)
+    for k in (3, 7, 10, 14):
+        if a == k:
+            out.append(f"It's sitting right on {k}, a key number: a {k}-point win is a push in the market. League lines are "
+                       f"half points, so a pool line would be {k - 0.5:g} or {k + 0.5:g}.")
+    try:
+        ll = slate_cards.lean_lines(g, idx, None, ask=q)
+    except Exception:  # noqa: BLE001
+        ll = []
+    m = re.search(r"COMPUTED ATS LEAN \(vs the current market line\): (.+?) \((strong lean|lean|coin flip);", " ".join(ll))
+    why = next((re.sub(r"^\s*\+ for [^:]+: ", "", x) for x in ll if x.strip().startswith("+ for")), None)
+    if why:
+        why = re.sub(r"\s*\((?:[^()]|\([^)]*\))*\)?\s*$", "", why).strip()  # drop the trailing '(source text...)'
+    unexplained_big = not pick and opn is not None and abs(now - opn) >= 3
+    q_out = [f for f in qb if (f.get("status") or "").lower() in ("questionable", "doubtful", "game-time decision")]
+    if q_out and q_out[0].get("players"):
+        p = q_out[0]["players"][0]
+        out.append(f"If {p} plays, the move looks overdone; if he's out, it's earned. I'd wait on his status before locking.")
+    elif unexplained_big:
+        pass  # 'don't fight it' already said: no lean against a move nobody can explain
+    elif m and m.group(2) != "coin flip":
+        out.append(f"Lean: {m.group(1)}" + (f", mainly because {why.rstrip('.')}." if why else "."))
+    elif m:
+        out.append(f"At {m.group(1)} my numbers call it a coin flip, so the move looks priced in.")
     return " ".join(out)
 
 
@@ -993,6 +1058,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "career_ats", "CAREER_ATS"  # coach career ATS splits aren't in the data: say so + this season's team ATS
     if HYPO_VALUE.search(t):
         return "hypo_value", "HYPO_VALUE"  # 'league locks Duke -13.5, market goes to -15: value on Duke or Clemson?'
+    if MOVE_WHY.search(t) and MOVE_EVIDENCE.search(t):
+        return "line_move", "MOVE_WHY"  # 'went from Duke -8.5 to -13.5, what happened?' (genius exam line-move cluster)
     if KEYNUM_ASK.search(t):
         return "keynum", "KEYNUM_ASK"  # 'which lines are on a key number': computed from this week's market
     if H2H_ASK.search(t) and not re.search(r"\b(my|our|i|me|picky|you)\b", t, re.I):
@@ -2468,6 +2535,11 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
             lwt = last_week_text(kind, ctx, q)
             if lwt:
                 return lwt
+        if kind == "line_move" and slate_cards.covers(q, ctx) and not chat.games_named(
+                q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]):
+            sm = slate_move_text(ctx, q)  # a non-pool game's move, explained from the cache + sourced news
+            if sm:
+                return sm
         if kind in POOL_GAME_KINDS and slate_cards.covers(q, ctx) and not chat.games_named(
                 q, [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in ctx.get("games_this_week") or []]):
             return None  # names a non-pool game: the full brain answers from its GAME CARD (genius exam 2026-11-17)
