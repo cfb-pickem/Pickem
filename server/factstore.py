@@ -1374,17 +1374,14 @@ def conf_race(conf: str) -> dict | None:
         if g.get("state") == "post" and g.get("away_score") is not None and g.get("home_score") is not None:
             finals[str(g.get("id"))] = g
             finals[(cfbd.norm((g.get("away") or {}).get("name")), cfbd.norm((g.get("home") or {}).get("name")))] = g
-    out, changed = [], False
+    out = []
     for g in games:
         lg = None if g["home_pts"] is not None else (finals.get(g["id"]) or finals.get((cfbd.norm(g["away"]),
                                                                                        cfbd.norm(g["home"]))))
         if lg:
             g = dict(g, home_pts=lg["home_score"], away_pts=lg["away_score"])
-            changed = True
         out.append(g)
-    if not changed:
-        return (st.get("conf_races") or {}).get(conf)
-    now = _now()
+    now = _now()  # always recomputed (~5 ms): the stored race is only as new as the code that built the store
     return title_race.race(conf, out, dt.datetime.fromtimestamp(now, dt.timezone.utc), as_of=_iso(now),
                            source="CFBD games + live finals")
 

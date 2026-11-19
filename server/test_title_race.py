@@ -172,6 +172,32 @@ def test_facts_carry_every_record_printed():
     assert all(f["as_of"] and f["source"] for f in r["facts"]), r["facts"][:2]
 
 
+def _three_way_risk():
+    """A 7-0 (beat C), B 6-1 and C 5-2, two games left each. A and B never met, B and C never met. A losing out
+    (7-2) with B 7-2 and C 7-2 is a 3-way tie head-to-head can't settle, so A could still finish 3rd."""
+    f = [f"F{i}" for i in range(1, 10)]
+    games = [W("A", "C")] + [W("A", x) for x in f[:6]]
+    games += [W("B", x) for x in f[:6]] + [W(f[6], "B")]
+    games += [W("C", x) for x in f[:5]] + [W(f[7], "C")]
+    games += [W(f[i], f[5 + (i + j) % 4]) for i in range(5) for j in range(2)]  # fillers stay well below
+    games += [G("A", f[6], day=3), G("A", f[7], day=10), G("B", f[8], day=3), G("B", f[7], day=10),
+              G("C", f[8], day=10), G("C", f[6], day=11)]
+    return games
+
+
+def test_multi_team_tie_head_to_head_cant_settle_is_not_a_clinch():
+    r = tr.race("Big 12", _three_way_risk(), NOW)
+    a = row(r, "A")
+    assert (a["w"], a["l"]) == (7, 0), a
+    assert a["status"] == "alive", a
+
+
+def test_one_more_win_clinches_when_a_three_way_tie_is_the_only_risk():
+    r = tr.race("Big 12", _three_way_risk(), NOW)
+    a = row(r, "A")
+    assert a["clinch_with_win"] is True and a["controls"] is True, a
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

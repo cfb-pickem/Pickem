@@ -240,8 +240,32 @@ def test_conf_race_says_who_controls_it_and_this_weeks_games():
     out = _router_lane("conf_race_text", "Big 12 title race, who's in control?")
     check_answer(out)
     assert out.startswith("Utah leads the Big 12 at 7-0"), out
-    assert "controls" in out or "clinched" in out, out
+    assert "control" in out or "clinched" in out, out
     assert "This week:" in out, out
+
+
+def test_conf_race_gateway_recomputes_a_stale_stored_race():
+    """The stored race is whatever code built the store last; the lane recomputes from conf_games (cheap) so a
+    clinch-math fix shows the moment it ships, not on the builder's next restart."""
+    st = json.loads(store_at("main").read_text())
+    st["conf_races"]["Big 12"]["standings"] = st["conf_races"]["Big 12"]["standings"][:1]
+    st["conf_races"]["Big 12"]["standings"][0] = dict(st["conf_races"]["Big 12"]["standings"][0], status="stale")
+    p = TMP / "bp-stale-race.json"
+    p.write_text(json.dumps(st))
+    use(p)
+    try:
+        r = FS.conf_race("Big 12")
+        assert len(r["standings"]) > 1 and r["standings"][0]["status"] != "stale", r["standings"][:1]
+    finally:
+        FS.use(None, None)
+
+
+def test_conf_race_reads_like_a_text_not_a_report():
+    out = _router_lane("conf_race_text", "Big 12 title race, who's in control?")
+    check_answer(out)
+    for label in ("Who controls it:", "Scenarios:"):
+        assert label not in out, out
+    assert len(out) <= 600, (len(out), out)
 
 
 def test_conf_race_tie_never_guesses_a_tiebreaker():

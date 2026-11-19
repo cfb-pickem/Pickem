@@ -191,18 +191,57 @@ def _holds(b, x: str, y: str) -> bool:
     return b[(x, y)] > b[(y, x)]
 
 
-def _top2_locked(me: str, rec, beat, left, fixed) -> bool:
-    """me finishes top 2 in every world consistent with `fixed`."""
-    r, b = _apply(rec, beat, left, fixed, "me_loses", me)
+MAX_WORLDS_GAMES = 12  # exhaustive check over at most 2**12 outcomes; past that, no clinch/control claim at all
+
+
+def _threats(me: str, r, b, teams) -> int:
+    """Teams that can finish ahead of me: strictly better, or tied where head-to-head doesn't put me first
+    (a 2-way tie needs me's H2H win; a 3+-way tie needs me to have beaten every other team in it)."""
     mine = _pct(*r[me])
-    threats = 0
-    for t, (w, l) in r.items():
-        if t == me:
-            continue
-        p = _pct(w, l)
-        if p > mine or (p == mine and not _holds(b, me, t)):
-            threats += 1
-    return threats <= 1
+    above = [t for t in teams if t != me and _pct(*r[t]) > mine]
+    tied = [t for t in teams if t != me and _pct(*r[t]) == mine]
+    if not tied or all(_holds(b, me, t) for t in tied):
+        return len(above)
+    return len(above) + len(tied)
+
+
+def _top2_locked(me: str, rec, beat, left, fixed) -> bool:
+    """me finishes top 2 in every world consistent with `fixed`: every outcome of the remaining games that
+    involve me or a team that could still reach me's worst case (multi-team ties included)."""
+    import itertools
+    r0, b0 = {t: list(v) for t, v in rec.items()}, collections.Counter(beat)
+    open_ = []
+    for g in left:
+        if g["id"] in fixed:
+            w = fixed[g["id"]]
+            lo = g["away"] if w == g["home"] else g["home"]
+            r0[w][0] += 1
+            r0[lo][1] += 1
+            b0[(w, lo)] += 1
+        else:
+            open_.append(g)
+    mine = [g for g in open_ if me in (g["home"], g["away"])]
+    worst = _pct(r0[me][0], r0[me][1] + len(mine))
+    rem = collections.Counter(t for g in open_ for t in (g["home"], g["away"]))
+    rivals = [t for t in r0 if t != me and _pct(r0[t][0] + rem[t], r0[t][1]) >= worst]
+    games = [g for g in open_ if me in (g["home"], g["away"]) or g["home"] in rivals or g["away"] in rivals]
+    if len(games) > MAX_WORLDS_GAMES:
+        return False
+    teams = rivals + [me]
+    for outcome in itertools.product((0, 1), repeat=len(games)):
+        r = {t: list(r0[t]) for t in teams}
+        b = collections.Counter({k: v for k, v in b0.items() if me in k})
+        for g, o in zip(games, outcome):
+            w, lo = (g["home"], g["away"]) if o else (g["away"], g["home"])
+            if w in r:
+                r[w][0] += 1
+            if lo in r:
+                r[lo][1] += 1
+            if me in (w, lo):
+                b[(w, lo)] += 1
+        if _threats(me, r, b, teams) > 1:
+            return False
+    return True
 
 
 def _out(me: str, rec, beat, left, fixed) -> bool:
@@ -300,4 +339,5 @@ def race(conf: str, games: list[dict], now: dt.datetime | None = None, as_of: st
     return {"conf": conf, "divisional": divisional, "standings": rows, "ties": ties, "leader": leader,
             "chasers": [r["team"] for r in live if r["team"] != leader],
             "controls": [r["team"] for r in rows if r["controls"] or r["status"] == "clinched"],
+            "beat": {f"{w}>{lo}": n for (w, lo), n in beat.items()},
             "facts": facts, "as_of": as_of or now.isoformat(timespec="seconds")}

@@ -1467,37 +1467,39 @@ def conf_race_text(ctx: dict, q: str) -> str | None:
         out.append(f"The {conf} sends its two division winners to the title game, and I don't split the divisions "
                    f"here, so no clinch math from me.")
     else:
+        tied = {t for tie in race["ties"] for t in tie["teams"]}
+        h2h = []
+        for a in top:
+            for b in top:
+                if a is not b and race_beat(race, a["team"], b["team"]) and not {a["team"], b["team"]} <= tied:
+                    h2h.append(f"{a['team']} already owns the head-to-head over {b['team']}")
+        if h2h:
+            out.append(_cap("; ".join(h2h[:2])) + ".")
         clinched = [r["team"] for r in rows if r["status"] == "clinched"]
         ctrl = [r["team"] for r in rows if r["controls"]]
-        bits = []
         if clinched:
-            bits.append(f"{' and '.join(clinched)} {'has' if len(clinched) == 1 else 'have'} clinched a title-game spot")
-        if ctrl:
-            one = len(ctrl) == 1
-            bits.append(f"{' and '.join(ctrl)} control{'s its' if one else ' their'} own path: win out and "
-                        f"{'it' + chr(39) + 's' if one else 'they' + chr(39) + 're'} in")
-        if not bits:
-            bits.append("nobody controls it outright, so everyone left needs help")
-        elif len(clinched) + len(ctrl) < 2:
-            bits.append("the rest need help")
-        out.append("Who controls it: " + "; ".join(bits) + ".")
+            out.append(f"{' and '.join(clinched)} {'has' if len(clinched) == 1 else 'have'} clinched a title-game spot.")
+        if len(ctrl) >= 2:
+            out.append(f"{' and '.join(ctrl)} both control it: win out and they're in.")
+        elif ctrl:
+            out.append(f"{ctrl[0]} controls it: win out and it's in" + ("." if clinched else ", everybody else needs help."))
+        elif not clinched:
+            out.append("Nobody controls it outright, so everybody left needs help.")
         sc = []
         for r in rows:
             if r["status"] != "alive" or not r["next"]:
                 continue
             where = f"{'vs' if r['next']['home'] else 'at'} {r['next']['opp']}"
             if r["clinch_with_win"]:
-                sc.append(f"{r['team']} clinches with a win {where}")
+                sc.append(f"{r['team']} locks a spot with a win {where}")
             elif r["clinch_with"]:
-                sc.append(f"{r['team']} clinches with a win {where} plus a {r['clinch_with'][0]} loss")
+                sc.append(f"{r['team']} gets there with a win {where} plus a {r['clinch_with'][0]} loss")
             elif r["out_with_loss"] and r["team"] in names:
-                sc.append(f"{r['team']} is out with a loss {where}")
+                sc.append(f"{r['team']} is done with a loss {where}")
         if sc:
-            out.append("Scenarios: " + "; ".join(sc[:3]) + ".")
-    left = [f"{r['team']} has " + ", ".join(f"{'vs' if g['home'] else 'at'} {g['opp']}" for g in r["rem_games"]) + " left"
-            for r in top[:2] if r["rem_games"]]
-    if left:
-        out.append("; ".join(left) + ".")
+            out.append(_cap("; ".join(sc[:3])) + ".")
+    later = [f"{r['team']} " + ", ".join(f"{'vs' if g['home'] else 'at'} {g['opp']}" for g in r["rem_games"][1:])
+             for r in top[:2] if len(r["rem_games"]) > 1]
     wk = []
     for r in top:
         g = next((x for x in rows_wk if r["team"] in (x["awayTeam"], x["homeTeam"])), None)
@@ -1508,7 +1510,14 @@ def conf_race_text(ctx: dict, q: str) -> str | None:
             wk.append(f"{g['awayTeam']} at {g['homeTeam']}" + (f" ({fav})" if fav else ""))
     if wk:
         out.append("This week: " + ", ".join(wk) + ".")
+    if later:
+        out.append("After that: " + "; ".join(later) + ".")
     return factstore.answer(" ".join(out), used)
+
+
+def race_beat(race: dict, a: str, b: str) -> bool:
+    """a beat b head-to-head (more wins in their meetings), from the race's conference games."""
+    return (race.get("beat") or {}).get(f"{a}>{b}", 0) > (race.get("beat") or {}).get(f"{b}>{a}", 0)
 
 
 def conf_control(rows: list[tuple[str, str]], seed: str) -> str:
