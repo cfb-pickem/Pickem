@@ -424,21 +424,31 @@ def grade_item(T: Truth, it: dict, row: dict) -> dict:
 # run
 # ----------------------------------------------------------------------------
 
+FILL_LOCK = threading.Lock()  # restamp's read-modify-write vs a moment's fill: without it a restamp that read
+# moment N could write N back over the fresh N+1 fill, and a whole moment answered from the old board (final run
+# 2026-11-18: 16 of 86 stale, all 16 pass when rerun)
+
+
 def restamp(live: Path, stop: threading.Event) -> None:
     while not stop.wait(4):
-        try:
-            d = json.loads(live.read_text())
-            now = time.time()
-            for g in d["games"].values():
-                g["ts"] = g["sb_ts"] = now
-                if g.get("detail_ts"):
-                    g["detail_ts"] = now
-            d["updated_ts"] = now
-            tmp = live.with_suffix(".tmp")
-            tmp.write_text(json.dumps(d))
-            os.replace(tmp, live)
-        except (OSError, ValueError, KeyError):
-            pass
+        with FILL_LOCK:
+            _restamp_once(live)
+
+
+def _restamp_once(live: Path) -> None:
+    try:
+        d = json.loads(live.read_text())
+        now = time.time()
+        for g in d["games"].values():
+            g["ts"] = g["sb_ts"] = now
+            if g.get("detail_ts"):
+                g["detail_ts"] = now
+        d["updated_ts"] = now
+        tmp = live.with_suffix(".tmp")
+        tmp.write_text(json.dumps(d))
+        os.replace(tmp, live)
+    except (OSError, ValueError, KeyError):
+        pass
 
 
 def run(a) -> int:
@@ -517,8 +527,9 @@ def run(a) -> int:
             if it["at"] != cur:
                 cur = it["at"]
                 clock.set(T.t(cur))
-                clock_file.write_text(str(T.t(cur)))
-                T.F.fill(T.sb, T.games, T.t(cur), live, POOL.keys())
+                with FILL_LOCK:
+                    clock_file.write_text(str(T.t(cur)))
+                    T.F.fill(T.sb, T.games, T.t(cur), live, POOL.keys())
                 print(f"== {DAY} {cur} CT", flush=True)
             (rd / "hist.json").write_text("{}")  # each item starts a fresh thread
             prior = []
