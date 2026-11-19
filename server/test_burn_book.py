@@ -31,7 +31,8 @@ os.environ["PICKY_LEAGUE_CHAT_LINES"] = str(_TMP / "nope.txt")
     {"team": "Chuck P", "name": "Charlie"}, {"team": "TG", "name": "Tommy"}, {"team": "Brian", "name": "Brian"},
     {"team": "Clam", "name": "Clam"}]}))
 os.environ["PICKY_GROUP_MEMBERS"] = str(_TMP / "members.json")
-import burn_book as bb  # noqa: E402
+import burn_book as bb
+import picky_claude  # noqa: E402
 import no_repeat as nr  # noqa: E402
 
 CT = bb.CT
@@ -256,7 +257,7 @@ def test_refresh_keeps_last_good_and_writes_banter():
     assert res["built"] and res["members"] == 2, res
     doc = json.loads(out.read_text())
     assert oct(out.stat().st_mode & 0o777) == "0o600"
-    assert doc["by"].startswith("claude -p claude-opus") and len(doc["types"]["insult"]) == len(GENERIC)
+    assert doc["by"] == f"claude -p {picky_claude.model_for('burn_book')} (no tools)" and len(doc["types"]["insult"]) == len(GENERIC)
     b = json.loads(bank.read_text())
     assert b["trigger"] == "burn_book" and len(b["categories"]["suck"]) >= 4, b
     import banter

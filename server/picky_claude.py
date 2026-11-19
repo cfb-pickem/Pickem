@@ -19,12 +19,14 @@ Every caller has a code / local-gemma fallback that runs when the gate says no o
 (test_zero_maintenance.py: BOOSTERS).
 
 Every call goes through run() (or the `run` CLI below for shell scripts):
-  - model MODEL (claude-opus-5-5; PICKY_CLAUDE_MODEL overrides),
+  - model model_for(caller): CALLER_MODELS puts the lighter boosters on Haiku / Sonnet (Charlie 2026-11-19);
+    every other caller (flub loop, improve-nightly, exam judges) and anything run from server/eval stays on
+    MODEL (claude-opus-5-5); PICKY_CLAUDE_MODEL overrides every caller,
   - guard() raises AnthropicDisabled (with the reason) before anything spawns,
   - --strict-mcp-config + server/empty.mcp.json (zero MCP servers / channel plugins),
   - ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN stripped (subscription only, never a billed key),
   - one line per call in the daily usage log, USAGE_DIR/<YYYY-MM-DD>.jsonl (private dir;
-    PICKY_CLAUDE_USAGE_DIR overrides): caller, model, seconds, result, booster (counts toward the cap).
+    PICKY_CLAUDE_USAGE_DIR overrides): caller, model used, seconds, result, booster (counts toward the cap).
     A booster refused by the cap logs a "refused: daily cap" line too.
 
 CLI:
@@ -48,6 +50,15 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 MODEL = os.environ.get("PICKY_CLAUDE_MODEL", "claude-opus-5-5")
+HAIKU, SONNET = "claude-haiku-5-5", "claude-sonnet-5-5"
+# Lighter boosters off Opus (Charlie 2026-11-19), picked by a side-by-side vs Opus on the same inputs
+# (docs/picky-tried-ledger.md). Not listed = MODEL: flub_loop / flub_fix, improve-nightly, every exam judge.
+# slate_intel and insider_refresh stayed Opus: on Sonnet they missed QB statuses, firings and the newest CFP ranking.
+CALLER_MODELS = {
+    "league_rules": HAIKU,
+    "news_qa": SONNET, "banter": SONNET, "burn_book": SONNET, "game_cards": SONNET, "dossier-take": SONNET,
+    "dossier": SONNET, "hot-takes": SONNET, "feed_monitor-repair": SONNET,
+}
 CLAUDE = os.environ.get("PICKY_CLAUDE_BIN", "/opt/homebrew/bin/claude")
 EMPTY_MCP = Path(__file__).resolve().with_name("empty.mcp.json")
 USAGE_DIR = Path(os.environ.get("PICKY_CLAUDE_USAGE_DIR", "/Users/Agent/cfb-pickem-private/claude_usage"))
@@ -86,10 +97,26 @@ def live_entry(entry=None) -> bool:
     return p is not None and p.name in LIVE_ENTRIES
 
 
+def exam_entry(entry=None) -> bool:
+    """Exam tooling (server/eval/**)."""
+    p = entry_script(entry)
+    return bool(p and any(p.is_relative_to(HERE / d) for d in UNCAPPED_DIRS))
+
+
 def capped(entry=None) -> bool:
     """A scheduled booster: everything but exam tooling and hand runs."""
-    p = entry_script(entry)
-    return not manual() and not (p and any(p.is_relative_to(HERE / d) for d in UNCAPPED_DIRS))
+    return not manual() and not exam_entry(entry)
+
+
+def model_for(caller: str | None = None, entry=None) -> str:
+    """The model this caller runs on: PICKY_CLAUDE_MODEL for everyone if set, else MODEL from server/eval
+    (judge scores stay comparable), else CALLER_MODELS.get(caller, MODEL)."""
+    override = os.environ.get("PICKY_CLAUDE_MODEL")
+    if override:
+        return override
+    if caller is None or exam_entry(entry):
+        return MODEL
+    return CALLER_MODELS.get(caller, MODEL)
 
 
 def used_today(now: dt.datetime | None = None) -> tuple[int, float]:
@@ -177,7 +204,8 @@ def guard(caller: str | None = None) -> None:
     why = why_not()
     if why:
         if "daily cap" in why:
-            log_call(caller or Path(sys.argv[0] or "?").stem, 0.0, "refused: daily cap")
+            caller = caller or Path(sys.argv[0] or "?").stem
+            log_call(caller, 0.0, "refused: daily cap", model=model_for(caller))
         raise AnthropicDisabled(why)
 
 
@@ -189,9 +217,9 @@ def env() -> dict:
 
 
 def command(tools: str | None = "", output_format: str = "json", schema: dict | None = None,
-            extra: tuple | list = ()) -> list[str]:
-    """tools None = claude's default tool set (no --tools flag)."""
-    cmd = [CLAUDE, "-p", "--model", MODEL]
+            extra: tuple | list = (), model: str | None = None) -> list[str]:
+    """tools None = claude's default tool set (no --tools flag); model None = MODEL."""
+    cmd = [CLAUDE, "-p", "--model", model or MODEL]
     if tools is not None:
         cmd += ["--tools", tools]
     cmd += ["--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", str(EMPTY_MCP),
@@ -201,12 +229,12 @@ def command(tools: str | None = "", output_format: str = "json", schema: dict | 
     return cmd + list(extra)
 
 
-def log_call(caller: str, secs: float, result: str, booster: bool = False) -> None:
+def log_call(caller: str, secs: float, result: str, booster: bool = False, model: str | None = None) -> None:
     """Append one line to today's usage log. Never raises."""
     try:
         now = dt.datetime.now(CT)
         USAGE_DIR.mkdir(parents=True, exist_ok=True)
-        rec = {"ts": now.isoformat(timespec="seconds"), "caller": caller, "model": MODEL,
+        rec = {"ts": now.isoformat(timespec="seconds"), "caller": caller, "model": model or MODEL,
                "secs": round(secs, 1), "result": result}
         if booster:
             rec["booster"] = True
@@ -224,17 +252,18 @@ def run(prompt: str, *, timeout: float, caller: str | None = None, cwd=None, too
     caller = caller or Path(sys.argv[0] or "?").stem
     guard(caller)
     booster = capped()
+    model = model_for(caller)
     t0 = time.time()
     try:
-        p = subprocess.run(command(tools, output_format, schema, extra), input=prompt, capture_output=True,
+        p = subprocess.run(command(tools, output_format, schema, extra, model), input=prompt, capture_output=True,
                            text=True, timeout=timeout, cwd=cwd, env=env())
     except subprocess.TimeoutExpired:
-        log_call(caller, time.time() - t0, "timeout", booster)
+        log_call(caller, time.time() - t0, "timeout", booster, model)
         raise
     except OSError as e:
-        log_call(caller, time.time() - t0, f"error {type(e).__name__}", booster)
+        log_call(caller, time.time() - t0, f"error {type(e).__name__}", booster, model)
         raise
-    log_call(caller, time.time() - t0, "ok" if p.returncode == 0 else f"exit {p.returncode}", booster)
+    log_call(caller, time.time() - t0, "ok" if p.returncode == 0 else f"exit {p.returncode}", booster, model)
     if p.returncode != 0 and _AUTH_DOWN.search(f"{p.stdout or ''}\n{p.stderr or ''}"[-2000:]):
         mark_auth(False, f"auth: last run said {(p.stderr or p.stdout or '').strip()[-120:]}")
     return p

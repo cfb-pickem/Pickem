@@ -88,7 +88,7 @@ def run(repair: bool = True, opus=None, fixer=None, cache: dict | None = None) -
             rec.update(result="skipped", reason="hand-only (PICKY_OPUS_MANUAL=1): it feeds code repair, not one of "
                                                 "the capped boosters; news.py logs feed health")
             return _log(rec)
-        opus = lambda p: dossier.run_claude(p, TIMEOUT_S, SCHEMA, "")  # noqa: E731
+        opus = lambda p: dossier.run_claude(p, TIMEOUT_S, SCHEMA, "", caller="news_qa")  # noqa: E731
     try:
         errs = [e for e in (opus(prompt_for(rows)).get("errors") or []) if 0 <= e.get("id", -1) < len(rows)]
     except Exception as e:  # noqa: BLE001 - Anthropic down / kill switch: skip, the pipeline doesn't care

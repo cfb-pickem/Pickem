@@ -639,7 +639,7 @@ def build_one(client: httpx.Client, g: dict, season: int, week: int, trigger: st
             if n == 0 and prev_n:
                 raise RuntimeError(f"empty Opus result ({len(odrop)} dropped) but the previous layer had {prev_n}")
             layer = {"generated_at": now.isoformat(timespec="seconds"), "trigger": trigger,
-                     "researcher": f"claude -p {picky_claude.MODEL} (web search, free public sources)", **secs,
+                     "researcher": f"claude -p {picky_claude.model_for('dossier')} (web search, free public sources)", **secs,
                      "dropped": odrop, "searched": [str(x)[:120] for x in (raw.get("searched") or [])][:12],
                      "notes": str(raw.get("notes") or "")[:400]}
         except Exception as e:  # noqa: BLE001 - Anthropic down / timeout / bad run: code dossier stands

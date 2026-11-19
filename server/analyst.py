@@ -292,6 +292,6 @@ def build_take(g: dict, dossier: dict, season, week, now: dt.datetime, research,
     if not take:
         raise RuntimeError("take rejected: " + "; ".join(probs)[:400])
     import picky_claude
-    take.update({"generated_at": now.isoformat(timespec="seconds"), "by": f"claude -p {picky_claude.MODEL} (no tools)",
+    take.update({"generated_at": now.isoformat(timespec="seconds"), "by": f"claude -p {picky_claude.model_for('dossier-take')} (no tools)",
                  "brief": items, "dropped": probs})
     return take

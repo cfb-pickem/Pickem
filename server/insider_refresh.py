@@ -242,7 +242,7 @@ def tick(now: dt.datetime | None = None, claude=run_claude, force: bool = False)
         return 0
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps({"attempt_at": now.isoformat(timespec="seconds")}))
-    log(f"START (model {picky_claude.MODEL})")
+    log(f"START (model {picky_claude.model_for('insider_refresh')})")
     if not refresh(now.date(), claude=claude):
         log("FALLBACK the Claude booster failed: the wire (code) and the last good notes stand")
     return 0  # an optional booster failing is not a failed job (feed_monitor watches this exit code)

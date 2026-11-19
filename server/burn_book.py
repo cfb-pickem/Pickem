@@ -763,7 +763,7 @@ def refresh(force: bool = False, research=None, mat: dict | None = None, out: Pa
     t0 = time.time()
     mat = mat or load_material()
     taste = taste_read()
-    research = research or (lambda p: dossier.run_claude(p, TIMEOUT_S, schema(), ""))
+    research = research or (lambda p: dossier.run_claude(p, TIMEOUT_S, schema(), "", caller="burn_book"))
     try:
         raw = research(build_prompt(mat, now.strftime("%A %Y-%m-%d"), taste))
         if out == BOOK:  # the raw batch, private, so a rule change can re-validate it without Opus
@@ -785,7 +785,7 @@ def refresh(force: bool = False, research=None, mat: dict | None = None, out: Pa
             types[k] = old_types[k]
     doc = {"schema": 1, "season": mat["season"], "week": mat["week"],
            "generated_at": now.isoformat(timespec="seconds"), "trigger": reason,
-           "by": f"claude -p {picky_claude.MODEL} (no tools)", "secs": round(time.time() - t0),
+           "by": f"claude -p {picky_claude.model_for('burn_book')} (no tools)", "secs": round(time.time() - t0),
            "types": types, "members": members, "code": code_lines(mat),
            "facts_now": sorted(set(mat["facts"].values())), "standing": mat["standing"],
            "checked_at": now.isoformat(timespec="seconds"), "dropped": dropped,

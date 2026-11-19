@@ -275,7 +275,7 @@ def refresh(force: bool = False, research=None, out: Path | None = None, now: dt
         fail.touch()
         raise RuntimeError(f"only {fresh} categories got valid new lines; kept the previous bank")
     doc = {"schema": 1, "generated_at": now.isoformat(timespec="seconds"), "trigger": reason,
-           "by": f"claude -p {picky_claude.MODEL} (no tools)", "categories": cats, "dropped": dropped}
+           "by": f"claude -p {picky_claude.model_for('banter')} (no tools)", "categories": cats, "dropped": dropped}
     dossier.write_atomic(out, doc)
     os.chmod(out, 0o600)
     fail.unlink(missing_ok=True)
