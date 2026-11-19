@@ -25,6 +25,13 @@ is due (Central time):
   saturday  Saturday 09:30-13:00 when the week has a Saturday game: Picky's
             sides in today's games, one text. No sides to show = no post (it
             retries each tick, so a hidden card posts right after the lock).
+  HIDDEN SIDES (Charlie, 2026-11-19): Picky plays as an exhibition team, so no
+            pre-lock post shows his picks or leans (preview card, Saturday sides,
+            the film room's line, the breakdown's "Lean:" lines, a flipped lean)
+            until every active member has submitted or the week locks
+            (League.picky_revealed, picky_reveal.py). Posts still go out without
+            his sides; the Saturday post waits for the reveal (no sides = no post).
+            Recaps and pings are post-lock: unchanged.
   remind    Before the weekly lock only (regular season: every pick locks at
             the week's first kickoff, picks_open_for_game()). First game on a
             Saturday: 07:00 that Saturday. First game any other day: 07:00
@@ -89,6 +96,7 @@ import httpx
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import group_outbox as ob  # noqa: E402
+import picky_reveal  # noqa: E402
 import playoff_race as pr  # noqa: E402
 import rare_bits  # noqa: E402
 import straggler_nudges  # noqa: E402
@@ -216,6 +224,18 @@ class League:
     def submission(self, w: int) -> dict[str, bool]:
         rows = self.db.rpc("submission_status", {"p_season": self.season, "p_week": w})
         return {self.tid[r["team_id"]]: bool(r["submitted"]) for r in rows if r["team_id"] in self.tid}
+
+    def picky_revealed(self, w: int) -> bool:
+        """May the group see Picky's sides for week w? Locked, or every active member (exhibition
+        excluded: self.tid) has submitted (picky_reveal; Charlie 2026-11-19). No data = hidden."""
+        if self.locked(w):
+            return True
+        try:
+            sub = self.submission(w)
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
+            log.warning("submission status unavailable, Picky's sides stay hidden: %r", e)
+            return False
+        return picky_reveal.revealed(False, sub)
 
 
 # -----------------------------------------------------------------------------
@@ -627,8 +647,11 @@ def lg_now() -> dt.datetime:
 
 def picky_card(lg: League, w: int) -> dict[int, dict]:
     """{game_id: {"label", "why", "made"}}: Picky's submitted picks, else
-    what his own pick logic would take right now."""
+    what his own pick logic would take right now. Empty until the group may see
+    his sides (League.picky_revealed: everyone's in, or the week locked)."""
     out = {}
+    if not lg.picky_revealed(w):
+        return out
     games = lg.week_games(w)
     for p in lg.picky_picks():
         if p.get("week") == w and p.get("pick") and not p.get("tiebreaker"):
@@ -665,14 +688,16 @@ def stakes_facts(lg: League) -> list[str]:
 
 
 def make_preview(lg: League, w: int) -> list[str] | None:
-    """Thursday preview, code only: the slate and lock, Picky's card, the film room's best line, the stakes."""
+    """Thursday preview, code only: the slate and lock, Picky's card (once revealed), the film room's best
+    line (once revealed: it takes a side), the stakes."""
     games = lg.week_games(w)
     if not games:
         return None
     card = picky_card(lg, w)
     lock = lg.lock_time(w)
     texts = plain_preview(w, games, card, lock, stakes_facts(lg), key=f"preview:{lg.season}:{w}")
-    quote = next(((g, t["quotable"]) for g in games if (t := load_take(w, g["GameId"])) and t.get("quotable")), None)
+    quote = next(((g, t["quotable"]) for g in games if (t := load_take(w, g["GameId"])) and t.get("quotable")),
+                 None) if card else None
     if quote:
         texts.insert(2, f"Film room on {matchup(quote[0])}: {quote[1]}")
     return ob.clip(texts, ob.limits("preview")[0])  # one text: head, card, then the film room / stakes if room
@@ -720,6 +745,9 @@ def _short_kick(k: dt.datetime | None) -> str:
     return k.strftime("%a %-I:%M%p").replace(":00", "").lower().capitalize() if k else "TBD"
 
 
+HIDDEN_NOTE = "My sides show once everyone's in or at kickoff."
+
+
 def _card_line(g: dict, c: dict | None) -> str:
     """'Iowa -3.5 vs Utah (Sat 11am)': one short item per game (posts are one text)."""
     if not c:
@@ -735,7 +763,8 @@ def plain_preview(w: int, games: list[dict], card: dict, lock, stakes: list[str]
     head = variant([f"Week {w} slate is set. Picks lock at the first kickoff, {lk}.",
                     f"Week {w} is up. Every pick locks at the first kickoff, {lk}, so don't sleep on it.",
                     f"Slate's out for week {w}. First kickoff, {lk}, locks every pick."], key or f"preview:{w}")
-    out = [head, "My card: " + "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."]
+    lines = "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."
+    out = [head, ("My card: " + lines) if card else ("The card: " + lines + " " + HIDDEN_NOTE)]
     return out + stakes[:1]
 
 
@@ -1018,7 +1047,7 @@ def tick(dry_run: bool | None = None, now: dt.datetime | None = None, echo=print
         # preview: Thursday noon until the lock. With a breakdown on file it's a short refresh
         # (what changed since); nothing changed = no post.
         if now.weekday() == 3 and now.hour >= 12 and lock and now < lock and not ob.done(f"preview:{sea}:{ow}"):
-            texts = week_breakdown.refresh_texts(lg, ow, now)
+            texts = week_breakdown.refresh_texts(lg, ow, now, leans=lg.picky_revealed(ow))
             if texts == []:
                 ob.mark(f"preview:{sea}:{ow}", "nothing-new")
                 log.info("preview %s: nothing changed since the breakdown, skipped", ow)

@@ -128,8 +128,10 @@ def send(kind, texts, key, **kw):
 
 ob.save_config(group_guid="any;+;test", dry_run=False)
 prepared = []
-wb.prepare = lambda lg, w, games, lk, now, writer=None: (prepared.append(w), wb.save_state(
-    lg.season, w, wb.load_state(lg.season, w) | {"texts": ["intro", "game text"], "prepared": now.timestamp()}))[1] \
+prep_hide = []
+wb.prepare = lambda lg, w, games, lk, now, writer=None, hide=True: (prepared.append(w), prep_hide.append(hide), wb.save_state(
+    lg.season, w, wb.load_state(lg.season, w) | {"texts": ["intro", "game text"], "prepared": now.timestamp(),
+                                                 "hidden": hide}))[2] \
     or wb.load_state(lg.season, w)
 NOW = [dt.datetime(2026, 11, 17, 2, 0, tzinfo=CT)]
 check(wb.tick_picks_up(FakeLeague(3), 12, NOW[0], send, ready=lambda w, g: True) == "waiting-games" and not sent,
@@ -188,7 +190,9 @@ check(wb.refresh_texts(rl, 99, NOW[0]) is None, "no breakdown on file: fall back
 moved = dict(same, market_home=4.0, forecast={"temp": 31, "gust": 28, "precip": 70},
              news=["Away1 QB X is out (ESPN, 2026-11-19)", "old line (ESPN, 2026-11-16)"], lean={"label": "Home1 +2.5"})
 wb.facts_for = lambda games, week, now=None, notes=None, client=None: [moved]
-t = wb.refresh_texts(rl, 14, NOW[0])
+check("lean flipped" not in "\n".join(wb.refresh_texts(rl, 14, NOW[0]) or []),
+      "refresh before Picky's sides are revealed: no flipped-lean line (default hides)")
+t = wb.refresh_texts(rl, 14, NOW[0], leans=True)
 check(t and len(t) == 1, "refresh is one text", t)
 body = t[0] if t else ""
 check("market moved to Away1 -4 (was Away1 -2.5)" in body, "refresh: market move framed from the home line")
@@ -210,5 +214,45 @@ check(wb.angle_of("Hdr\n" + "x" * 200 + "\nLean: A\nshort one") == "short one" a
       "angle_of: first short non-lean line after the header")
 check(wb.angle_of("Hdr\nMarket sits on 3. " + "y" * 120 + "\nLean: A") == "Market sits on 3.",
       "angle_of: no short line -> the first sentence of a long one")
+
+# --- Picky's sides hidden from the group (Charlie, 2026-11-19): no lean in the breakdown before the reveal ---
+check(all(prep_hide), "tick_picks_up prepares the breakdown with leans hidden (no picky_revealed = hidden)")
+GFH = {"game_id": 1, "header": "Iowa -8.5 at Illinois", "lean": LEAN, "facts": FACTS + [
+    "Reason for the lean: Illinois gets the better number", "Best case against the lean: Iowa's run D is #2",
+    "Honesty check: plays like this went 20-23"]}
+prompts = []
+texts, rep = wb.compose([GFH], 12, "Sat 11 AM CT", writer=lambda p: prompts.append(p) or {
+    "intro": "Honest leans on all four.", "games": [{"game_id": 1, "text": good}]}, hide=True)
+body = "\n".join(texts)
+check("Lean" not in body and "lean" not in body, "hidden: a draft's 'Lean:' line is dropped, nothing leans")
+check(prompts and "Give NO lean" in prompts[0] and "THE LEAN" not in prompts[0] and "Reason for the lean" not in prompts[0]
+      and "(lean: Illinois" not in prompts[0], "hidden: the writer never sees the card's lean")
+texts, rep = wb.compose([GFH], 12, "Sat 11 AM CT", writer=boom, hide=True)
+check(rep[1] == "plain template" and "Lean" not in texts[-1] and "Why:" not in texts[-1],
+      "hidden + writer down: the plain template carries no lean")
+p = wb.verify("Iowa -8.5 at Illinois\nI like Illinois here.\nTake the points.", FACTS, None, hide=True)
+check(any("takes a side" in x for x in p), "hidden: 'I like Illinois' / 'take the points' is rejected")
+check(not [x for x in wb.verify("Iowa -8.5 at Illinois\nIowa's run D is #2.", FACTS, None, hide=True)
+           if "takes a side" in x], "hidden: plain analysis passes")
+
+
+class RevLeague(FakeLeague):
+    revealed = False
+
+    def picky_revealed(self, w):
+        return self.revealed
+
+
+sent.clear()
+prep_hide.clear()
+NOW[0] = dt.datetime(2026, 12, 1, 12, 0, tzinfo=CT)
+lock = dt.datetime(2026, 12, 5, 11, 0, tzinfo=CT)
+wb.save_state(2026, 15, {"texts": ["old text with Lean: Away1 -2.5"], "prepared": NOW[0].timestamp(),
+                         "first_seen": NOW[0].timestamp()})  # a draft made before the rule (no "hidden")
+wb.tick_picks_up(RevLeague(), 15, NOW[0], send, ready=lambda w, g: True)
+check(prep_hide == [True] and sent and "old text with Lean" not in sent[-1][2][0],
+      "a draft made with leans is re-prepared hidden before it posts")
+check("Lean" not in sent[-1][2][0], "the picks-up post carries no lean")
+
 print("\nall passed" if not fails else f"\n{fails} FAILED")
 sys.exit(1 if fails else 0)

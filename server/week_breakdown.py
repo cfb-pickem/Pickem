@@ -52,6 +52,8 @@ import httpx
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import picky_reveal  # noqa: E402
+
 log = logging.getLogger("week_breakdown")
 CT = zoneinfo.ZoneInfo("America/Chicago")
 UTC = dt.timezone.utc
@@ -397,8 +399,9 @@ def _nums(text: str) -> set[str]:
 
 
 def verify(text: str, facts: list[str], lean: dict | None, member_names: list[str] | None = None,
-           need_forecast: bool = False) -> list[str]:
-    """Problems with one game's text, [] = good. Every number / W-L / name has to be in the facts."""
+           need_forecast: bool = False, hide: bool = False) -> list[str]:
+    """Problems with one game's text, [] = good. Every number / W-L / name has to be in the facts.
+    hide: Picky's sides are hidden (picky_reveal), so any lean/side talk is a problem."""
     fact_text = "\n".join(facts)
     probs = []
     nums = _nums(fact_text)
@@ -430,6 +433,8 @@ def verify(text: str, facts: list[str], lean: dict | None, member_names: list[st
             probs.append(f"must end with the line 'Lean: {lean['label']}' (the card's lean, exactly)")
     if _SELF_PICK.search(text):
         probs.append("talks about Picky's own pick; his picks stay hidden until lock, use 'Lean:' only")
+    if hide and picky_reveal.LEAN_TALK.search(text):
+        probs.append("takes a side; Picky's leans stay hidden until everyone's picks are in, give no lean or side")
     if _BODY.search(text):
         probs.append("goes after bodies or family")
     for nm in member_names or []:
@@ -442,14 +447,24 @@ def verify(text: str, facts: list[str], lean: dict | None, member_names: list[st
     return probs
 
 
-def salvage(text: str, facts: list[str], lean: dict | None, member_names: list[str] | None = None) -> str | None:
+def salvage(text: str, facts: list[str], lean: dict | None, member_names: list[str] | None = None,
+            hide: bool = False) -> str | None:
     """Drop the lines that fail verify; keep the text only if the lean line and 3+ lines survive."""
     keep = [ln for ln in text.splitlines() if ln.strip() and not [
-        p for p in verify(ln, facts, None, member_names) if not p.startswith(("must end", "say 'forecast'"))]]
+        p for p in verify(ln, facts, None, member_names, hide=hide) if not p.startswith(("must end", "say 'forecast'"))]]
     out = "\n".join(keep)
-    if len(keep) < 3 or verify(out, facts, lean, member_names):
+    if len(keep) < 3 or verify(out, facts, lean, member_names, hide=hide):
         return None
     return out
+
+
+LEAN_FACTS = ("THE LEAN", "Reason for the lean", "Best case against", "Film room reason", "Honesty check")
+
+
+def hide_leans(gfs: list[dict]) -> list[dict]:
+    """Copies of the fact sheets with the card's lean and every lean-framed fact taken out (Picky's sides
+    stay hidden in the group until everyone's in or the week locks: picky_reveal)."""
+    return [gf | {"lean": None, "facts": [f for f in gf["facts"] if not f.startswith(LEAN_FACTS)]} for gf in gfs]
 
 
 def plain_text(gf: dict) -> str:
@@ -489,16 +504,26 @@ Don't name or roast any league member in this post. Never say what you picked or
 own picks stay hidden until the lock. Only give the lean."""
 
 
-def build_prompt(gfs: list[dict], week: int, lock_text: str, problems: dict | None = None) -> str:
+HIDDEN_TASK_END = """Last line: the sharpest angle from the facts. Give NO lean, NO side and NO pick (no "Lean:" line,
+no "I like", no "take the points", no "value on X"): Picky's sides stay hidden in the group until everyone's picks
+are in. The analysis is the angles, not a call."""
+
+
+def build_prompt(gfs: list[dict], week: int, lock_text: str, problems: dict | None = None,
+                 hide: bool = False) -> str:
     blocks = []
     for gf in gfs:
-        blocks.append(f"GAME {gf['game_id']}: {gf['header']}  (lean: {gf['lean']['label'] if gf['lean'] else 'none'})\n"
+        blocks.append(f"GAME {gf['game_id']}: {gf['header']}"
+                      + ("" if hide else f"  (lean: {gf['lean']['label'] if gf['lean'] else 'none'})") + "\n"
                       + "\n".join(f"  - {f}" for f in gf["facts"]))
     fix = ""
     if problems:
         fix = "\n\nYOUR LAST DRAFT WAS REJECTED BY THE FACT CHECKER. Fix every problem:\n" + "\n".join(
             f"- game {gid}: {'; '.join(p)}" for gid, p in problems.items())
-    return f"""{VOICE}
+    end = HIDDEN_TASK_END if hide else """Last line, exactly: "Lean: <the lean label from the GAME header>" plus a short reason after a dash
+from the facts (e.g. "Lean: Illinois +8.5 - ..."). Say how strong the lean is honestly (slight lean = slight)."""
+    voice = VOICE.replace("Only give the lean.", "Don't give a lean or a side either.") if hide else VOICE
+    return f"""{voice}
 
 TASK: the week {week} deep breakdown, posted right after "picks are up" (lock: {lock_text}). Charlie wants real
 analysis per game, the kind of line a sharp would text: "This game is cold weather and long travel. This defense
@@ -509,8 +534,7 @@ in the group text; nobody reads long posts). Then pick the sharpest angles from 
 cause if given), key numbers, the unit-vs-unit edges that actually matter (run game vs run D, passing vs pass D,
 pass rush vs protection, red zone, explosives, turnovers), ATS form, sourced QB/injury news, the Saturday forecast
 (call it a forecast and say it's from Open-Meteo pulled on the date given), travel/time zone/rest, lookahead or
-letdown spots. Last line, exactly: "Lean: <the lean label from the GAME header>" plus a short reason after a dash
-from the facts (e.g. "Lean: Illinois +8.5 - ..."). Say how strong the lean is honestly (slight lean = slight).
+letdown spots. {end}
 Also write a one-line "intro" for the whole post (no numbers needed, no member names).
 
 HARD RULES: every number, record, score and name you write must appear in that game's FACTS below (copy them
@@ -530,8 +554,11 @@ def run_writer(prompt: str) -> dict:
 
 
 def compose(gfs: list[dict], week: int, lock_text: str, member_names: list[str] | None = None,
-            writer=run_writer) -> tuple[list[str], dict]:
-    """texts (intro + one per game) and a report {game_id: how}. Never raises."""
+            writer=run_writer, hide: bool = False) -> tuple[list[str], dict]:
+    """texts (intro + one per game) and a report {game_id: how}. Never raises.
+    hide: no leans anywhere (the fact sheets lose them, the writer is told, verify rejects side talk)."""
+    if hide:
+        gfs = hide_leans(gfs)
     intro_facts = [f"week {week}", lock_text] + [gf["header"] for gf in gfs]
     texts: dict[int, str] = {}
     report: dict = {}
@@ -543,12 +570,12 @@ def compose(gfs: list[dict], week: int, lock_text: str, member_names: list[str] 
         if not todo:
             break
         try:
-            out = writer(build_prompt(todo, week, lock_text, problems or None))
+            out = writer(build_prompt(todo, week, lock_text, problems or None, hide=hide))
         except Exception as e:  # noqa: BLE001
             log.warning("writer failed (attempt %d): %r", attempt + 1, e)
             problems = {}
             continue
-        if intro is None and out.get("intro") and not verify(out["intro"], intro_facts, None, member_names):
+        if intro is None and out.get("intro") and not verify(out["intro"], intro_facts, None, member_names, hide=hide):
             intro = out["intro"].strip()
         got = {int(x.get("game_id", 0)): str(x.get("text") or "").strip() for x in out.get("games") or []}
         problems = {}
@@ -559,7 +586,8 @@ def compose(gfs: list[dict], week: int, lock_text: str, member_names: list[str] 
                 continue
             drafts[gf["game_id"]] = t
             need_fc = any(f.startswith("Forecast for kickoff") for f in gf["facts"])
-            p = verify(t, gf["facts"], gf["lean"], member_names, need_forecast=need_fc and "weather" in t.lower())
+            p = verify(t, gf["facts"], gf["lean"], member_names, need_forecast=need_fc and "weather" in t.lower(),
+                       hide=hide)
             if p:
                 problems[gf["game_id"]] = p
                 log.info("game %s draft %d rejected: %s", gf["game_id"], attempt + 1, "; ".join(p))
@@ -569,7 +597,7 @@ def compose(gfs: list[dict], week: int, lock_text: str, member_names: list[str] 
     for gf in gfs:
         if gf["game_id"] in texts:
             continue
-        s = salvage(drafts.get(gf["game_id"], ""), gf["facts"], gf["lean"], member_names)
+        s = salvage(drafts.get(gf["game_id"], ""), gf["facts"], gf["lean"], member_names, hide=hide)
         if s:
             texts[gf["game_id"]], report[gf["game_id"]] = s, "opus, failing lines dropped"
         else:
@@ -671,14 +699,16 @@ def cards_ready(week: int, games: list[dict]) -> bool:
     return all(int(g["GameId"]) in cards and lean_of(cards[int(g["GameId"])]) for g in games)
 
 
-def prepare(lg, week: int, games: list[dict], lock: dt.datetime, now: dt.datetime, writer=None) -> dict:
-    """Facts + local draft + verify, saved to the week's state file. Returns the state."""
+def prepare(lg, week: int, games: list[dict], lock: dt.datetime, now: dt.datetime, writer=None,
+            hide: bool = True) -> dict:
+    """Facts + local draft + verify, saved to the week's state file. Returns the state. The saved
+    "games" keep the card's lean (refresh_texts compares it); the texts carry it only when not hide."""
     import group_posts as gp
     gfs = facts_for(games, week, now=now)
     texts, rep = compose(gfs, week, gp.kick_text(lock), list(gp.all_names(lg.names)),
-                         **({"writer": writer} if writer else {}))
+                         **({"writer": writer} if writer else {}), hide=hide)
     st = load_state(lg.season, week)
-    st.update({"prepared": now.timestamp(), "texts": texts, "report": rep,
+    st.update({"prepared": now.timestamp(), "texts": texts, "report": rep, "hidden": hide,
                "games": {str(gf["game_id"]): {k: gf[k] for k in ("header", "lean", "market_home", "forecast", "news",
                                                                  "venue_city", "away", "home")} for gf in gfs},
                "facts": {str(gf["game_id"]): gf["facts"] for gf in gfs}})
@@ -711,14 +741,19 @@ def tick_picks_up(lg, week: int | None, now: dt.datetime, send, writer=None, rea
     # the announcement and the breakdown go out together as a single message. If the cards
     # aren't ready within MERGE_WAIT_S of the games landing, the announcement goes alone
     # (still one text) and that week has no breakdown post.
-    stale = not st.get("texts") or now.timestamp() - st.get("prepared", 0) > REPREPARE_S
+    # Picky's leans stay out of the group until everyone's in or the week locks (picky_reveal; a League
+    # without picky_revealed, e.g. a test double, counts as hidden). A draft made with leans is stale once hidden.
+    rv = getattr(lg, "picky_revealed", None)
+    hide = not (rv and rv(week))
+    stale = (not st.get("texts") or now.timestamp() - st.get("prepared", 0) > REPREPARE_S
+             or (hide and not st.get("hidden")))
     if stale and ready(week, games):
-        st = prepare(lg, week, games, lock, now, writer)
+        st = prepare(lg, week, games, lock, now, writer, hide=hide)
         did.append("prepared")
     if not ob.done(ann_key(sea, week)) and post_window(now):
         expires = int(max(600, (lock - now).total_seconds()))
         lim = ob.limits("announce")[0]
-        if st.get("texts"):
+        if st.get("texts") and (st.get("hidden") or not hide):
             send("announce", [picks_up_text(week, games, lock, st["texts"], lim)], ann_key(sea, week),
                  expires_s=expires)
             ob.mark(bd_key(sea, week), "merged")
@@ -733,9 +768,11 @@ def tick_picks_up(lg, week: int | None, now: dt.datetime, send, writer=None, rea
     return ",".join(did) or "waiting"
 
 
-def refresh_texts(lg, week: int, now: dt.datetime, notes: dict | None = None) -> list[str] | None:
+def refresh_texts(lg, week: int, now: dt.datetime, notes: dict | None = None,
+                  leans: bool = False) -> list[str] | None:
     """Thursday refresh: only what changed since the breakdown (market moves of 1+ point, new
-    availability lines, forecast swings, a flipped lean). None = no breakdown on file (use the
+    availability lines, forecast swings, a flipped lean only when `leans`: Picky's sides are
+    revealed to the group, picky_reveal). None = no breakdown on file (use the
     old preview); [] = nothing changed (skip the post)."""
     st = load_state(lg.season, week)
     if not st.get("games"):
@@ -766,7 +803,7 @@ def refresh_texts(lg, week: int, now: dt.datetime, notes: dict | None = None) ->
             bits.append(f"forecast now {fn['temp']}F, gusts to {fn['gust']} mph, {round(fn.get('precip') or 0)}% chance "
                         f"of precip (Tuesday's was {fo['temp']}F, gusts {fo['gust']}, {round(fo.get('precip') or 0)}%)")
         lo, ln = (old.get("lean") or {}).get("label"), (new.get("lean") or {}).get("label")
-        if lo and ln and lo != ln:
+        if leans and lo and ln and lo != ln:
             bits.append(f"lean flipped: now {ln} (was {lo})")
         if bits:
             lines.append(f"{new['header']}: " + "; ".join(bits))

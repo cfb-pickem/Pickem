@@ -197,7 +197,11 @@ RESULTS: dict[bool, dict] = {}
 
 def results(dm: bool) -> dict:
     if dm not in RESULTS:
-        RESULTS[dm] = run(ASKS, dm)
+        # a revealed week: the budgets measure the picks ask's prompt, not the group's pre-reveal dodge
+        # (picky_reveal; test_picky_reveal covers the dodge)
+        with patch.object(gc.picky_reveal, "group_status",
+                          lambda *a, **k: {"revealed": True, "week": 12, "pool_teams": set()}):
+            RESULTS[dm] = run(ASKS, dm)
     return RESULTS[dm]
 
 

@@ -104,6 +104,7 @@ import picky_brain  # noqa: E402
 import freeze  # noqa: E402
 import pictures  # noqa: E402
 import picky_zh  # noqa: E402
+import picky_reveal  # noqa: E402  (Picky's own sides stay hidden in the group till everyone's in or lock)
 import rare_bits  # noqa: E402
 import router  # noqa: E402
 import playoff_race  # noqa: E402
@@ -764,6 +765,38 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
 PRIVACY_NOTE = "Everybody's picks stay hidden till they lock at the week's first kickoff; after that they're all on the site."
 
 
+# Picky's own picks/leans in the GROUP (Charlie, 2026-11-19): hidden until every active member has submitted
+# or the week locks (picky_reveal). These lanes are about his graded past picks, never this week's sides.
+PAST_PICK_KINDS = {"picky_record", "lw_pick", "results", "record"}
+
+
+async def hidden_sides(mode: str, route) -> dict | None:
+    """The open week's status when Picky's sides are still hidden from this reply (group only), else None."""
+    if mode != "group" or getattr(route, "kind", "") in PAST_PICK_KINDS:
+        return None
+    st = await asyncio.to_thread(picky_reveal.group_status)
+    return None if st["revealed"] else st
+
+
+def other_teams(q: str) -> list[str]:
+    try:
+        import factstore
+        return factstore.teams_in(q)
+    except Exception:  # noqa: BLE001  unknown = treat the ask as a pool ask (hides more)
+        return []
+
+
+async def sides_guard(reply: str, q: str, mode: str, route, key: str) -> str:
+    """A group reply that takes a side in an open-week pool game before the reveal becomes a dodge."""
+    if mode != "group" or not reply or not picky_reveal.LEAN_TALK.search(reply):
+        return reply
+    st = await hidden_sides(mode, route)
+    if st and picky_reveal.says_lean(reply, st["pool_teams"], q):
+        log.info("picky sides hidden: reply took a side before the reveal, dodged")
+        return picky_reveal.dodge(f"{key}:{q}")
+    return reply
+
+
 def no_repeat_screen(reply: str, q: str, team: str | None, key: str | None, route=None, charlie: bool = False) -> str:
     """Checklist 7 at the send point: a banter/roast reply that repeats a line, angle, opener or
     stock phrase (no_repeat ledger) goes out as a fresh burn-book line instead; what's sent is
@@ -1089,6 +1122,12 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
             await save_turn(key, q_hist, reply, who, lane=route.label())
             return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
+        if mode == "group" and picky_reveal.PICK_ASK.search(q):  # 'who you got in Iowa?' before everyone's in
+            st = await hidden_sides(mode, route)
+            if st and picky_reveal.wants_pick(q, st["pool_teams"], other_teams(q)):
+                reply = picky_reveal.dodge(f"{key or chat_id}:{q}")
+                await save_turn(key, q_hist, reply, who, lane="pick_hidden")
+                return {"reply": reply, "image": None, "mode": mode, "lane": "pick_hidden"}
         if (playoff_race.is_need_question(q) or chat._RACE_ASK.search(q)) and not (
                 route.lane == "fact" and route.kind == "strategy"):  # 'any pick strategy that gets me in?': the plan
             exact = race_answer(q, s, await race_data())
@@ -1101,6 +1140,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             line = callbacks.callback_for(chat_id, s.team, dm, text=q) if s.team else None
             if line:
                 reply = line[:1].upper() + line[1:]
+                reply = await sides_guard(reply, q, mode, route, key or chat_id)
                 reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group", force=True)
                 await save_turn(key, q_hist, reply, who, lane=route.label())
                 return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
@@ -1152,6 +1192,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                                  force=route.lane == "fact")
             reply = memory_check(reply, s.team, q, mode != "group")  # a quoted receipt matches its grade
             reply = charlie_guard(reply, s.team, key or chat_id) if charlie else reply
+            reply = await sides_guard(reply, q, mode, route, key or chat_id)
         rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
         log.info("lane: %s", route.label())
         await save_turn(key, q_hist, reply, who, lane=route.label())
