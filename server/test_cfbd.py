@@ -308,5 +308,14 @@ for q in ("Roast my picks", "Roast TG", "How does the jackpot work?", "Should I 
           "What's Ohio State's ATS record?", "hi"):
     check(f"no guard note for {q!r}", G(q) == "", G(q))
 
+# -- launchd runs `python3 -I cfbd.py refresh`: -I keeps the script's folder off sys.path,
+# so the lazy sibling imports (feed_health, personnel, factstore) need cfbd to add it itself.
+import subprocess  # noqa: E402
+_r = subprocess.run([sys.executable, "-I", "-c",
+                     "import runpy, sys; runpy.run_path(sys.argv[1]); import feed_health, personnel, factstore",
+                     os.path.abspath(cfbd.__file__)], cwd=tempfile.gettempdir(), capture_output=True, text=True)
+check("under -I, cfbd puts its own folder on sys.path (feed_health/personnel/factstore import)",
+      _r.returncode == 0, _r.stderr[-300:])
+
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

@@ -37,6 +37,8 @@ import time
 import unicodedata
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # launchd runs `python3 -I`: siblings (feed_health...)
+
 log = logging.getLogger("picky.cfbd")
 
 API = "https://api.collegefootballdata.com"
