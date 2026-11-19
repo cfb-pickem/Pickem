@@ -144,6 +144,9 @@ CFP_WORDS = re.compile(r"\b(college football playoff|cfp|committee|selection com
 PICK_ASK = re.compile(r"\bwho covers\b(?=\s+\S)|\bwho (you|ya|u|do you|would you|d'?you) (got|like|taking|take|have|pick|picking)\b"
                       r"|\bwho sh?o?u?l?d\s*i\s*n?\s*(take|pick|go with|ride)\b|\b(your|ur) (pick|play|lean) (in|for|on)\b"
                       r"|\bwho'?s (your|ur) pick\b|\bwhat'?s the play (in|for|on)\b|\bwhich side (in|of|on)\b", re.I)
+# '<game>, who covers?': the game first, the ask last (genius pool-lsu-tenn-pick / wy-nw-minn). Counts only when the text
+# names a team; the full brain's free-form turn 1 here was the main pushback swing (Charlie OK 2026-11-19 15:40 CT)
+WHO_COVERS_TAIL = re.compile(r"\S.*\bwho covers\W*$", re.I)
 # 'gimme a read on this week's games': every open game, one call each
 SLATE_READ = re.compile(r"\b(read|reads|picks?|calls?|leans?|thoughts?|take|takes|breakdown|rundown|who do you like|"
                         r"slate|all (4|four)|games|board|plays?)\b", re.I)
@@ -2333,6 +2336,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "results", "EVERYONE_WEEK"
     if PICK_ASK.search(t):
         return "pick", "PICK_ASK"
+    if WHO_COVERS_TAIL.search(t) and factstore.teams_named(t):
+        return "pick", "WHO_COVERS_TAIL"
     if chat.slate_ask(t) and SLATE_READ.search(t):
         return "slate", "SLATE_READ"
     if GAP_FIRST_ASK.search(t):  # 'how many points is Ackbar behind first?' (fact exam 2026-11-17: got the scoring rules)
