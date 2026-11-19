@@ -2,8 +2,9 @@
 Unit matchup code lane (plan 2026-11-18, Phase 6): 'can X run on Y', 'who wins the trenches', 'is this a
 shootout', 'where does X have the edge on Y' answered in code from units.py, in the plan's section 3.1 shape:
 
-  [answer]   the asked direction, decided ("Not really, Y's run D wins that: #12 vs #120 ...")
-  [support]  the other direction (always), style (run rate, plays a game), SP+ unit ranks
+  [answer]   the asked direction, decided, with EPA/play + success-rate FBS ranks ("Not really: X's run game is #136
+             in rushing EPA/play and #131 in rush success rate, Y's run D #62 and #106, so Y's run D has the edge")
+  [support]  the other direction in one clause (no style / SP+ lines: judged a stat dump, 11-18); <= 350 chars
   [verdict]  one computed "so what" from the edges: a side lean with the number, over/under, or "doesn't move
              the number". Lean words only, never a lock.
 
@@ -11,7 +12,7 @@ gemma's one voice line goes after it (picky_brain.fact_reply), unchanged. A unit
 it can find, a long mixed text, a pick ask) stays on the full brain.
 
 Data comes through SOURCE: today CfbdSource (the CFBD cache through units.table, the cfbd index and
-slate_cards.find_game). Phase 2's fact store repoints the lane by swapping SOURCE for an object with the same three
+slate_cards.find_game). Phase 2's fact store repoints the lane by swapping SOURCE for an object with the same two
 methods. No model, no network.
 """
 
@@ -26,16 +27,11 @@ import units
 
 
 class CfbdSource:
-    """The lane's only data reads. units_table() -> units.table() shape; sp(team) -> {'off_rank', 'def_rank', ...};
+    """The lane's only data reads. units_table() -> units.table() shape;
     game(q, ctx) -> {'away', 'home', 'spread' (home line, - = home favored), 'total', 'league'} or None."""
 
     def units_table(self) -> dict:
         return units.table()
-
-    def sp(self, team: str) -> dict | None:
-        idx = cfbd.load_index()
-        t = cfbd.resolve_team(team, idx) if idx else None
-        return (t or {}).get("sp")
 
     def game(self, q: str, ctx: dict | None = None) -> dict | None:
         import factstore  # the shared entity resolver ('Virginia Tech ... Miami' is VT-Miami, not a 'Tech' game)
@@ -112,7 +108,7 @@ SHORT = {"rush": ("run game", "run D"), "pass": ("passing game", "pass D"), "pro
 TOPIC = {"rush": "on the ground", "pass": "through the air", "protect": "up front", "redzone": "in the red zone",
          "explosive": "on big plays", "eff": "overall", "turnovers": "in turnovers", "pace": "on pace"}
 MAIN = ("rush", "pass", "protect", "redzone", "explosive")
-LIMIT = 600  # + gemma's 14-word line stays under 700
+LIMIT = 350  # reads as a text; gemma's voice line goes after
 
 
 def _p(name: str) -> str:
@@ -120,12 +116,12 @@ def _p(name: str) -> str:
 
 
 def _decided(e: dict) -> str:
-    return f"edge {e['winner']}" if e.get("winner") else "no clear edge"
+    return f"edge {e['winner']}" if e.get("winner") else "even"
 
 
 def _compact(e: dict) -> str:
     ol, dl = SHORT[e["unit"]]
-    return f"{_p(e['off'])} {ol} #{e['ro']} vs {_p(e['def'])} {dl} #{e['rd']} ({_decided(e)})"
+    return f"{e['off']} {ol} #{e['ro']} vs {e['def']} {dl} #{e['rd']} ({_decided(e)})"
 
 
 _YESNO = re.compile(r"(^|[.!?:]\s+)\W*(can|could|will|would|does|do|did|is|are|should)\b|\b(can|will|could) (they|he|it)\W*$", re.I)
@@ -146,12 +142,19 @@ def _lead(e: dict, q: str, n: int, rng: random.Random) -> str:
     u, o, d, w = e["unit"], e["off"], e["def"], e.get("winner")
     ol, dl = SHORT[u]
     what = units.PAIRS[u][4]
-    if w == o:
-        core = f"{_p(o)} {ol} has the edge on {_p(d)} {dl}, #{e['ro']} vs #{e['rd']} in {what}"
-    elif w == d:
-        core = f"{_p(d)} {dl} has the edge on {_p(o)} {ol}, #{e['rd']} vs #{e['ro']} in {what}"
+    sw = units.SECOND[u][2] if u in units.SECOND and e.get("so") and e.get("sd") else ""
+    if u == "protect":
+        stats = f"{_p(d)} {dl} is #{e['rd']} in {what}, {_p(o)} {ol} #{e['ro']}"
+    elif sw:  # EPA/play and success rate, the two numbers sharp bettors lead with
+        stats = f"{_p(o)} {ol} is #{e['ro']} in {what} and #{e['so']} in {sw}, {_p(d)} {dl} #{e['rd']} and #{e['sd']}"
     else:
-        core = f"{_p(o)} {ol} is #{e['ro']} and {_p(d)} {dl} #{e['rd']} in {what}, no clear edge"
+        stats = f"{_p(o)} {ol} is #{e['ro']} in {what}, {_p(d)} {dl} #{e['rd']}"
+    if w == o:
+        core = f"{stats}, so {_p(o)} {ol} has the edge"
+    elif w == d:
+        core = f"{stats}, so {_p(d)} {dl} has the edge"
+    else:
+        core = f"{stats}, no clear edge"
     if not _YESNO.search(q or ""):
         return core[0].upper() + core[1:] + "."
     asked_def = subject(q, o, d) == d
@@ -192,31 +195,6 @@ def _turnover_sentence(a: str, h: str, tab: dict) -> tuple[str, dict | None]:
                     f"{int(s.get('turnovers') or 0)} giveaways (#{r['give_o_rank']} fewest)")
     tail = f"edge {e['winner']}" if e.get("winner") else "no clear turnover edge"
     return "; ".join(bits) + f": {tail}.", e
-
-
-def _style(first: str, second: str, tab: dict) -> str:
-    """Run rate and plays a game, both teams (the asked offense first)."""
-    bits = []
-    for i, t in enumerate((first, second)):
-        r = units._row(t, tab)
-        rate = units._get(r["raw"], "offense", "rushingPlays", "rate")
-        pace = r.get("pace")
-        if rate is None:
-            continue
-        b = (f"{t} runs it {units._pct(rate)} of the time" if i == 0 else f"{t} {units._pct(rate)}")
-        b += " (option)" if rate >= 0.72 else ""
-        if pace:
-            b += f" at {round(pace)}" + (" plays a game" if i == 0 else "")
-        bits.append(b)
-    return ("Style: " + ", ".join(bits) + ".") if len(bits) == 2 else ""
-
-
-def _sp(first: str, second: str, src) -> str:
-    s1, s2 = src.sp(first) or {}, src.sp(second) or {}
-    if not all(x.get(k) for x in (s1, s2) for k in ("off_rank", "def_rank")):
-        return ""
-    return (f"SP+ has {_p(first)} offense #{s1['off_rank']} vs {_p(second)} D #{s2['def_rank']}, and {_p(second)} "
-            f"O #{s2['off_rank']} vs {_p(first)} D #{s1['def_rank']}.")
 
 
 def _team_line(team: str, g: dict) -> str:
@@ -306,24 +284,17 @@ def build(q: str, ctx: dict | None = None, src=None, seed=None) -> dict | None:
     n = tab.get("_n") or 136
     rng = random.Random(seed if seed is not None else f"{q}|{dt.date.today().isoformat()}")
     us = _overview_units(a, h, tab) if p["units"] == ["all"] else p["units"][:2]
-    head, rest, edges, pace_kind = "", [], [], ""
+    parts = []  # (sentence, the edges it states, its pace kind): the verdict only reads parts that make the text
     for u in us:
         if u == "pace":
-            s, pace_kind = _pace_sentence(a, h, tab, n)
+            s, pk = _pace_sentence(a, h, tab, n)
             if s:
-                if head:
-                    rest.append(s)
-                else:
-                    head = s
+                parts.append((s, [], pk, u))
             continue
         if u == "turnovers":
             s, e = _turnover_sentence(a, h, tab)
             if e:
-                edges.append(e)
-                if head:
-                    rest.append(s)
-                else:
-                    head = s
+                parts.append((s, [e], "", u))
             continue
         es = units.edges(u, a, h, tab)
         if len(es) < 2:
@@ -332,29 +303,29 @@ def build(q: str, ctx: dict | None = None, src=None, seed=None) -> dict | None:
             es.sort(key=lambda e: 0 if e["off"] == off else 1)
         else:  # no direction asked ('who finishes drives'): the decided one first
             es.sort(key=lambda e: -(e["gap"] if e.get("winner") else -1))
-        edges += es
-        if not head:
-            head = _lead(es[0], q, n, rng)
-            rest.append(rng.choice(["Other way: ", "Flip it: ", "The other direction: "]) + _compact(es[1]) + ".")
+        if len(us) > 1:  # two units asked ('the trenches'): one compact sentence each, both directions
+            parts.append((f"{TOPIC[u][0].upper()}{TOPIC[u][1:]}: " + "; ".join(_compact(e) for e in es) + ".",
+                          es, "", u))
+        elif not parts:
+            parts.append((_lead(es[0], q, n, rng), [es[0]], "", u))
+            parts.append((rng.choice(["Other way: ", "Flip it: ", "The other direction: "]) + _compact(es[1]) + ".",
+                          [es[1]], "", u))
         else:
-            rest.append(f"And {TOPIC[u]}: " + "; ".join(_compact(e) for e in es) + ".")
-    if not head:
+            parts.append((f"And {TOPIC[u]}: " + "; ".join(_compact(e) for e in es) + ".", es, "", u))
+    if not parts:
         return None
-    v = verdict(edges, g, pace_kind)
-    first = off or a
-    second = h if first == a else a
-    style = _style(first, second, tab)
-    spl = _sp(first, second, src)
-    topic = _topic(us, edges)
-    vt = _verdict_text(v, g, topic, rng)
-    # reads more like a text (genius mid1/mid2: 'stat dump', voice 2): the style line only for a run / pace ask
-    style = style if set(us) & {"rush", "pace"} else ""
-    for extra in ([style, spl], [spl], []):  # drop style first, then SP+; never the other direction or the verdict
-        text = " ".join(x for x in [head, *rest, *extra, vt] if x)
-        if len(text) <= LIMIT:
+    # reads like a text, not a stat dump (genius 11-18: style + SP+ lines scored voice 2): the asked pairing's two
+    # ranked stats, the other way in one clause, the verdict; a later unit only if it fits
+    cap = LIMIT + (50 if len({p[3] for p in parts}) > 1 else 0)  # two units asked need one more clause
+    for keep in range(len(parts), 0, -1):
+        shown = parts[:keep]
+        edges = [e for p in shown for e in p[1]]
+        v = verdict(edges, g, next((p[2] for p in shown if p[2]), ""))
+        vt = _verdict_text(v, g, _topic(list(dict.fromkeys(p[3] for p in shown)), edges), rng)
+        text = " ".join([p[0] for p in shown] + [vt])
+        if len(text) <= cap:
             break
-    else:
-        text = " ".join(x for x in [head, rest[0] if rest else "", vt] if x)
+    us = list(dict.fromkeys(p[3] for p in shown))
     return {"text": text, "edges": edges, "verdict": v, "units": us}
 
 

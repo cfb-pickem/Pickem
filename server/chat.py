@@ -55,6 +55,7 @@ import news
 import rare_bits
 import pick_strategy
 import slate_cards
+import units
 
 CT = zoneinfo.ZoneInfo("America/Chicago")
 from fastapi import FastAPI, HTTPException, Request
@@ -1571,7 +1572,7 @@ def pick_verdict(notes: dict, away: str, home: str, line, pick, locked: bool = F
                f"Flipping to {_side_label(side, home, pool_home)} puts the price on your side."))
 
 
-def _team_line(name: str, t: dict, espn_stats: bool = True) -> str:
+def _team_line(name: str, t: dict, espn_stats: bool = True, yards: bool = False) -> str:
     bits = [f"#{t['ap_rank']} AP" if t.get("ap_rank") else "unranked"]
     if t.get("record"):
         bits.append(f"record {t['record']}")
@@ -1580,8 +1581,11 @@ def _team_line(name: str, t: dict, espn_stats: bool = True) -> str:
         out += ". Last 5 (oldest first): " + "; ".join(t["last5"])
     # skipped when CFBD has the team: its lines carry the same numbers with
     # ranks, and ESPN's "leaders" turn into in-game stats once a game starts
-    if espn_stats and t.get("stats"):
-        out += ". Season per game: " + ", ".join(t["stats"])
+    # ESPN only has raw per-game yards (no EPA / success rate): they go in only when someone asked for yards,
+    # or the 12B leads with them (genius run without the CFBD cache, 2026-11-18: "averages 92.8 rushing yards")
+    st = [x for x in t.get("stats") or [] if yards or not re.search(r"\byards?\b", x, re.I)]
+    if espn_stats and st:
+        out += ". Season per game: " + ", ".join(st)
     if espn_stats and t.get("leaders"):
         out += ". Season leaders: " + "; ".join(t["leaders"])
     return out
@@ -1615,8 +1619,16 @@ def cfbd_game_lines(away: str, home: str, idx: dict | None) -> list[str]:
     if fv and not fv.use:
         return ["  Season stats: not loaded right now (no SP+, ATS or team stats)."]
     out = []
+    try:
+        utab = units.table(idx)
+    except Exception as e:  # noqa: BLE001 - advanced rows are optional, the card isn't
+        log.warning("units table failed: %r", e)
+        utab = {}
     for t in (away, home):
         out.append(f"  Season (CFBD{', ' + fv.hedge if fv and fv.hedge else ''}): {cfbd.compact_team_summary(t, idx)}")
+        adv = units.profile(t, utab, short=True) if utab else ""
+        if adv:
+            out.append(f"  Advanced, {t}: {adv}")
         lead = cfbd.team_leaders(t, idx)
         if lead:
             out.append(f"  Season leaders, {t}: {lead}")
@@ -1862,10 +1874,11 @@ def render_context(ctx: dict) -> str:
             if lv:
                 L.append(f"  Line value: {lv}" + ("" if lv.startswith("pool line and ESPN") or lines_locked(ctx)
                                                   else PRE_LOCK_NOTE))
+            yds = bool(cfbd.YARDS_ASK.search(ctx.get("question") or ""))
             L.append(_team_line(away, notes.get("away") or {},
-                                not (cf and cfbd.resolve_team(away, cf))))
+                                not (cf and cfbd.resolve_team(away, cf)), yds))
             L.append(_team_line(home, notes.get("home") or {},
-                                not (cf and cfbd.resolve_team(home, cf))))
+                                not (cf and cfbd.resolve_team(home, cf)), yds))
             wp = notes.get("espn_win_prob") or {}
             if wp.get("away") is not None and wp.get("home") is not None:
                 L.append(f"  ESPN FPI matchup predictor (chance to WIN outright, NOT to cover): "

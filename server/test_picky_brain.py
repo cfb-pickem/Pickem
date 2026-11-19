@@ -116,6 +116,29 @@ def test_pipeline_default_one_draft_no_judge():
     assert calls == [0] and out.startswith("Cinnamon") and img is None
 
 
+def test_pipeline_swaps_raw_ypg_for_advanced_ranks():
+    """A full-brain draft that leads with raw yards per game gets the ranked EPA / success-rate line
+    (Charlie 2026-11-18), unless the question asked for yards."""
+    import units
+    tab = {"_n": 3}
+    for i, (nm, k) in enumerate((("Minnesota", 3), ("Northwestern", 1), ("Filler", 2))):
+        tab[nm.lower()] = {"name": nm, "raw": {}, "stats": {}, "rush_o_rank": k, "rush_d_rank": k,
+                           "rush_succ_o_rank": k, "rush_succ_d_rank": k}
+    draft_text = "Minnesota averages 92.8 rushing yards per game while Northwestern gives up 151.2. Good luck."
+
+    async def draft():
+        pb.STATE.get()["prefix"] = "PREFIX"
+        return (draft_text, 0, None)
+
+    async def fake_understand(*a, **k):
+        return pb.Brief()
+    with patch.object(pb, "understand", fake_understand), patch.object(units, "table", lambda *a, **k: tab):
+        out, _ = asyncio.run(pb.run(draft, q="can minnesota run the ball on northwestern?"))
+        asked, _ = asyncio.run(pb.run(draft, q="how many rushing yards does minnesota average?"))
+    assert "92.8" not in out and "rushing EPA/play" in out and out.endswith("Good luck."), out
+    assert asked == draft_text, asked
+
+
 @_with_judge
 def test_pipeline_drafts_screens_and_judges():
     texts = iter([("You're 1-3, Blinky.", 0, None), ("Cinnamon Toast Crunch, no contest.", 0, None),

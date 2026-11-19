@@ -31,12 +31,15 @@ def adv_row(team: str, ko: int, kd: int, run_rate: float = 0.5, plays: int = 700
     """A team whose offense ranks ko and defense ranks kd (1 = best of N) on every advanced metric."""
     go, gd = (N - ko) / N, (N - kd) / N  # 1 = best
     return {"team": team,
-            "offense": {"ppa": go, "explosiveness": go, "pointsPerOpportunity": 2 + 3 * go, "plays": plays,
-                        "havoc": {"total": 1 - go}, "rushingPlays": {"ppa": go, "rate": run_rate},
-                        "passingPlays": {"ppa": go}},
-            "defense": {"ppa": 1 - gd, "explosiveness": 1 - gd, "pointsPerOpportunity": 2 + 3 * (1 - gd),
-                        "stuffRate": 0.1 + 0.2 * gd, "havoc": {"total": gd, "frontSeven": gd},
-                        "rushingPlays": {"ppa": 1 - gd}, "passingPlays": {"ppa": 1 - gd}}}
+            "offense": {"ppa": go, "successRate": go, "explosiveness": go, "pointsPerOpportunity": 2 + 3 * go,
+                        "plays": plays, "havoc": {"total": 1 - go},
+                        "rushingPlays": {"ppa": go, "successRate": go, "rate": run_rate},
+                        "passingPlays": {"ppa": go, "successRate": go}},
+            "defense": {"ppa": 1 - gd, "successRate": 1 - gd, "explosiveness": 1 - gd,
+                        "pointsPerOpportunity": 2 + 3 * (1 - gd), "stuffRate": 0.1 + 0.2 * gd,
+                        "havoc": {"total": gd, "frontSeven": gd},
+                        "rushingPlays": {"ppa": 1 - gd, "successRate": 1 - gd},
+                        "passingPlays": {"ppa": 1 - gd, "successRate": 1 - gd}}}
 
 
 # filler teams: team i is i-th best on both sides; the named teams below take their ranks' places
@@ -200,7 +203,8 @@ def test_both_directions_always_present():
                 assert {(a, h), (h, a)} <= dirs, (q, e["unit"], dirs)
         # both teams' offense show up in the text, asked direction or not
         t = b["text"]
-        assert t.count(a) >= 2 and t.count(h) >= 2, (q, t)
+        k = 2 if p["units"][0] in units.PAIRS or p["units"][0] == "all" else 1  # pace / turnovers: one line, both teams
+        assert t.count(a) >= k and t.count(h) >= k, (q, t)
 
 
 def test_asked_direction_comes_first():
@@ -254,10 +258,20 @@ def test_plays_teams_run_is_pace_not_the_run_game():
     assert p["units"] == ["pace"], p["units"]
 
 
-def test_style_and_sp_unit_ranks_present():
+def test_short_shape_no_stat_dump():
+    """Advanced-stats rewrite (Charlie 11-18): the asked pairing's EPA/play + success-rate ranks, the other way in one
+    clause, the verdict. No style or SP+ lines (judged 'stat dump', voice 2)."""
     t = build("Can Marsh A&M run on Northwood?")["text"]
-    assert re.search(r"Marsh A&M runs? (it )?80%", t), t           # style: run rate, option flagged
-    assert "SP+" in t and "#21" in t and "#4" in t, t              # SP+ offense rank vs the defense's
+    assert "rushing EPA/play" in t and "success rate" in t, t
+    assert "SP+" not in t and "Style" not in t, t
+
+
+def test_asked_pairing_states_both_ranks():
+    b = build("Can Lakeview State run on Northwood?")
+    e = next(x for x in b["edges"] if x["off"] == "Lakeview State")
+    first = re.split(r"(?<=[.!?])\s", b["text"])[0]
+    for k in ("ro", "rd", "so", "sd"):
+        assert e.get(k) and f"#{e[k]}" in first, (k, e, first)
 
 
 def test_verdict_side_when_one_team_wins_both_ways():
@@ -317,12 +331,30 @@ def test_verdict_follows_from_edges_everywhere():
             assert es or v.get("why") == "pace", (q, v)
 
 
-def test_answers_fit_700_chars():
+def test_verdict_only_from_edges_in_the_text():
+    """A unit trimmed for length can't drive the verdict (no unsourced 'edge X in the trenches')."""
+    old = unit_lane.LIMIT
+    unit_lane.LIMIT = 220  # forces the trims real team names cause
+    try:
+        for spread, total in ((-3.0, 45.5), (-27.5, 71.5)):
+            src = FakeSource(spread, total)
+            for q, _, _ in SHAPES:
+                b = unit_lane.build(q, {}, src)
+                for e in b["edges"]:
+                    if e.get("off"):
+                        assert f"#{e['ro']}" in b["text"] and f"#{e['rd']}" in b["text"], (q, e["unit"], b["text"])
+    finally:
+        unit_lane.LIMIT = old
+
+
+def test_answers_fit_350_chars():
     for spread, total in ((-3.0, 45.5), (None, None), (-27.5, 71.5)):
         src = FakeSource(spread, total)
         for q, _, _ in SHAPES:
-            t = unit_lane.build(q, {}, src)["text"]
-            assert len(t) <= 600, (len(t), q, t)  # + a 14-word voice line stays under 700
+            b = unit_lane.build(q, {}, src)
+            t = b["text"]
+            cap = 350 if len(b["units"]) == 1 else 400  # two units asked ('the trenches') get one more clause
+            assert len(t) <= cap, (len(t), q, t)  # short enough to read as a text, voice line after
 
 
 def test_no_raw_floats_or_em_dashes():
@@ -392,7 +424,7 @@ def test_real_cache_smoke():
     for q in shapes:
         assert router.classify(q).label() == "fact:unit_matchup", (q, router.classify(q).label())
         t = unit_lane.answer({"games_this_week": []}, q)
-        assert t and len(t) <= 600 and a in t and h in t, (q, t)
+        assert t and len(t) <= 350 and a in t and h in t, (q, t)
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ import league_rules
 import ollama_gate
 import member_memory
 import router
+import units
 
 log = logging.getLogger("picky-brain")
 
@@ -1480,6 +1481,10 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
             if image:
                 return text, image
             text = chat.fix_last_week(text, st.get("ctx"))  # 'LSU last week' about week 10, the Monday after 11
+            try:  # raw yards per game -> the ranked EPA / success-rate line (Charlie 11-18: advanced stats first)
+                text = units.swap_raw_yards(text, q)
+            except Exception as e:  # noqa: BLE001 - a check, never fatal
+                log.warning("raw yards swap failed: %r", e)
             if route.lane == "fact":  # code answer + one voice line; facts must come through whole
                 ans = st.get("fact_answer") or ""
                 if ans and (drops or ans not in text):

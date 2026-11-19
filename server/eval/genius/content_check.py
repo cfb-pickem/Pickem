@@ -5,7 +5,8 @@ or answer key:
   line_move    names the fresh QB on the side the line moved against when the store has one; never 'hasn't kicked off'
   h2h          a year and a final score, never 'I don't have'
   ats_profile  an ATS record (W-L) and 'against the number' / 'ATS'
-  unit_matchup every team it names is one of the asked game's two teams (no wrong-game answers)
+  unit_matchup every team it names is one of the asked game's two teams (no wrong-game answers); a ranked advanced stat
+  every lane: no raw yards per game unless the question asked for yards (advanced stats lead, Charlie 11-18)
   pick         a named game's call names one of that game's teams, not the whole pool slate
   every code lane: no empty citation '(, Monday)', no pre-game 'hasn't kicked off' on a football ask
 
@@ -31,9 +32,15 @@ def _named_teams(text: str) -> set[str]:
     return {factstore.norm(t) for t in factstore.teams_named(text or "")}
 
 
+_RAW_YDS = re.compile(r"\b\d{2,3}(\.\d+)?\s*(\w+ )?(yards|yds)\s*(per|a|/)\s*game\b|\b\d{2,3}(\.\d+)?\s*ypg\b", re.I)
+_YDS_ASK = re.compile(r"\b(yards?|yds|ypg)\b", re.I)
+
+
 def check_turn(q: str, lane: str, a: str) -> list[str]:
     errs = []
     lane = lane or ""
+    if _RAW_YDS.search(a or "") and not _YDS_ASK.search(q or ""):  # every lane: advanced stats lead (Charlie 11-18)
+        errs.append("raw yards per game nobody asked for")
     if not lane.startswith("fact:"):
         return errs
     kind = lane.split(":", 1)[1]
@@ -65,6 +72,9 @@ def check_turn(q: str, lane: str, a: str) -> list[str]:
         pair = {factstore.norm(g["awayTeam"]), factstore.norm(g["homeTeam"])} if g else asked
         if said - pair:
             errs.append(f"unit answer names teams outside the game: {sorted(said - pair)}")
+        if not re.search(r"#\d+", a) or not re.search(r"EPA|success rate|sack rate|plays a game|takeaways|scoring chance|"
+                                                     r"big-play|red-zone|protection|pass rush", a):
+            errs.append("unit answer without a ranked EPA / success-rate stat")
     elif kind == "pick":
         asked = _named_teams(q)
         if asked and not (_named_teams(a) & asked):

@@ -65,6 +65,29 @@ METRICS = {
     "pace": (lambda a, s: _per(_get(a, "offense", "plays"), s.get("games")), True),
     "eff_o": (lambda a, s: _get(a, "offense", "ppa"), True),
     "eff_d": (lambda a, s: _get(a, "defense", "ppa"), False),
+    # success rate: overall, standard / passing downs, run / pass splits (CFBD names, checked vs the cache)
+    "succ_o": (lambda a, s: _get(a, "offense", "successRate"), True),
+    "succ_d": (lambda a, s: _get(a, "defense", "successRate"), False),
+    "sd_succ_o": (lambda a, s: _get(a, "offense", "standardDowns", "successRate"), True),
+    "sd_succ_d": (lambda a, s: _get(a, "defense", "standardDowns", "successRate"), False),
+    "pd_succ_o": (lambda a, s: _get(a, "offense", "passingDowns", "successRate"), True),
+    "pd_succ_d": (lambda a, s: _get(a, "defense", "passingDowns", "successRate"), False),
+    "rush_succ_o": (lambda a, s: _get(a, "offense", "rushingPlays", "successRate"), True),
+    "rush_succ_d": (lambda a, s: _get(a, "defense", "rushingPlays", "successRate"), False),
+    "pass_succ_o": (lambda a, s: _get(a, "offense", "passingPlays", "successRate"), True),
+    "pass_succ_d": (lambda a, s: _get(a, "defense", "passingPlays", "successRate"), False),
+    # run game vs run D: line yards, stuff rate, power success (CFBD has no opportunity rate)
+    "line_o": (lambda a, s: _get(a, "offense", "lineYards"), True),
+    "line_d": (lambda a, s: _get(a, "defense", "lineYards"), False),
+    "stuff_o": (lambda a, s: _get(a, "offense", "stuffRate"), False),
+    "stuff_d": (lambda a, s: _get(a, "defense", "stuffRate"), True),
+    "power_o": (lambda a, s: _get(a, "offense", "powerSuccess"), True),
+    "power_d": (lambda a, s: _get(a, "defense", "powerSuccess"), False),
+    "havoc_f7_d": (lambda a, s: _get(a, "defense", "havoc", "frontSeven"), True),
+    "havoc_db_d": (lambda a, s: _get(a, "defense", "havoc", "db"), True),
+    # field position: averageStart is yards to the goal (checked vs SP+ 11-18), so lower is better on offense
+    "fp_o": (lambda a, s: _get(a, "offense", "fieldPosition", "averageStart"), False),
+    "fp_d": (lambda a, s: _get(a, "defense", "fieldPosition", "averageStart"), True),
 }
 
 
@@ -151,6 +174,10 @@ PAIRS = {  # unit -> (offense metric, defense metric, offense label, defense lab
     "explosive": ("expl_o", "expl_d", "big-play offense", "big-play defense", "explosiveness"),
     "eff": ("eff_o", "eff_d", "offense", "defense", "EPA/play"),
 }
+# the second ranked stat a pairing states and decides on (with EPA/play): success rate
+SECOND = {"rush": ("rush_succ_o", "rush_succ_d", "rush success rate"),
+          "pass": ("pass_succ_o", "pass_succ_d", "pass success rate"),
+          "eff": ("succ_o", "succ_d", "success rate")}
 
 
 def pair_edge(unit: str, off: str, de: str, tab: dict | None = None) -> dict | None:
@@ -163,6 +190,12 @@ def pair_edge(unit: str, off: str, de: str, tab: dict | None = None) -> dict | N
     n = tab.get("_n") or 136
     ro, rd = o[om + "_rank"], d[dm + "_rank"]
     on, dn = o["name"], d["name"]
+    so = sd = None
+    if unit in SECOND:
+        sm, sdm, _ = SECOND[unit]
+        so, sd = o.get(sm + "_rank"), d.get(sdm + "_rank")
+    both = so is not None and sd is not None
+    ao, ad = ((ro + so) / 2, (rd + sd) / 2) if both else (ro, rd)  # decided on EPA and success rate together
     extra_o = extra_d = ""
     if unit == "rush":
         rate = _get(o["raw"], "offense", "rushingPlays", "rate")
@@ -177,25 +210,165 @@ def pair_edge(unit: str, off: str, de: str, tab: dict | None = None) -> dict | N
         f7 = _get(d["raw"], "defense", "havoc", "frontSeven")
         if f7 is not None and (tab.get("_f7") or {}).get(cfbd.norm(dn)):
             extra_d += f", front-seven havoc #{tab['_f7'][cfbd.norm(dn)]}"
-    gap = rd - ro  # > 0: the offense ranks better than the defense it faces
+    gap = ad - ao  # > 0: the offense ranks better than the defense it faces
     if gap >= GAP:
         winner, verdict = on, f"edge {_poss(on)} {ol}"
     elif gap <= -GAP:
         winner, verdict = dn, f"edge {_poss(dn)} {dl}"
-    elif ro <= 30 and rd <= 30:
+    elif ao <= 30 and ad <= 30:
         winner, verdict = None, "strength on strength, no clear edge"
-    elif ro >= n - 35 and rd >= n - 35:
+    elif ao >= n - 35 and ad >= n - 35:
         winner, verdict = None, "both weak, no clear edge"
     else:
         winner, verdict = None, "close, no clear edge"
+    to, td = tier(round(ao), n), tier(round(ad), n)
     if unit == "protect":
-        text = (f"{_poss(dn)} {dl} (#{rd} in sack rate, {tier(rd, n)}{extra_d}) vs {_poss(on)} {ol} "
-                f"(#{ro}, {tier(ro, n)}{extra_o}): {verdict}")
+        text = (f"{_poss(dn)} {dl} (#{rd} in sack rate, {td}{extra_d}) vs {_poss(on)} {ol} "
+                f"(#{ro}, {to}{extra_o}): {verdict}")
+    elif both:
+        sw = SECOND[unit][2]
+        text = (f"{_poss(on)} {ol} (#{ro} in {what}, #{so} in {sw}, {to}{extra_o}) vs {_poss(dn)} {dl} "
+                f"(#{rd}, #{sd}, {td}{extra_d}): {verdict}")
     else:
-        text = (f"{_poss(on)} {ol} (#{ro} in {what}, {tier(ro, n)}{extra_o}) vs {_poss(dn)} {dl} "
-                f"(#{rd}, {tier(rd, n)}{extra_d}): {verdict}")
-    return {"unit": unit, "off": on, "def": dn, "ro": ro, "rd": rd, "winner": winner, "gap": abs(gap),
-            "text": text}
+        text = (f"{_poss(on)} {ol} (#{ro} in {what}, {to}{extra_o}) vs {_poss(dn)} {dl} "
+                f"(#{rd}, {td}{extra_d}): {verdict}")
+    return {"unit": unit, "off": on, "def": dn, "ro": ro, "rd": rd, "so": so, "sd": sd, "winner": winner,
+            "gap": round(abs(gap)), "text": text}
+
+
+def profile(team: str, tab: dict | None = None, short: bool = False) -> str:
+    """One team's advanced stats with FBS ranks, the line the brain sees instead of raw yards per game.
+    short=True: the headline ranks only (every pool game's block sits in the cached prefix). '' when the team has
+    no advanced row."""
+    tab = tab if tab is not None else table()
+    r = _row(team, tab)
+    if not r:
+        return ""
+
+    def k(m):
+        return f" (#{r[m + '_rank']})" if r.get(m + "_rank") else ""
+
+    def epa(m):
+        return f"{r[m]:+.2f}".replace("-0.00", "0.00").replace("+0.00", "0.00") + k(m) if r.get(m) is not None else None
+
+    def pct(m):
+        return f"{_pct(r[m])}{k(m)}" if r.get(m) is not None else None
+
+    def num(m, f="{:.1f}"):
+        return f.format(r[m]) + k(m) if r.get(m) is not None else None
+
+    def own(m):
+        return f"own {round(100 - r[m])}{k(m)}" if r.get(m) is not None else None
+
+    def rk(m):  # secondary stats: the rank alone reads clearer in a text than another decimal
+        return f"#{r[m + '_rank']}" if r.get(m + "_rank") else None
+
+    if short:
+        o = [("EPA/play", rk("eff_o")), ("success", rk("succ_o")), ("rush EPA", rk("rush_o")),
+             ("pass EPA", rk("pass_o")), ("finishing drives", rk("ppo_o"))]
+        d = [("EPA/play", rk("eff_d")), ("success allowed", rk("succ_d")), ("rush D EPA", rk("rush_d")),
+             ("pass D EPA/play", epa("pass_d")), ("pass success allowed", pct("pass_succ_d")), ("havoc", rk("havoc_d"))]
+        ob = ", ".join(f"{lab} {v}" for lab, v in o if v)
+        db = ", ".join(f"{lab} {v}" for lab, v in d if v)
+        return f"FBS ranks, garbage time out, not opp-adjusted: O {ob} | D {db}" if ob or db else ""
+    o = [("EPA/play", epa("eff_o")), ("success", pct("succ_o")), ("standard downs", rk("sd_succ_o")),
+         ("passing downs", rk("pd_succ_o")), ("rush EPA/play", rk("rush_o")), ("rush success", rk("rush_succ_o")),
+         ("line yards", rk("line_o")), ("pass EPA/play", rk("pass_o")), ("pass success", rk("pass_succ_o")),
+         ("explosiveness", rk("expl_o")), ("pts per scoring chance", num("ppo_o")), ("avg start", own("fp_o"))]
+    d = [("EPA/play", epa("eff_d")), ("success allowed", pct("succ_d")), ("rush D EPA/play", rk("rush_d")),
+         ("rush success allowed", rk("rush_succ_d")), ("stuff rate", rk("stuff_d")),
+         ("pass D EPA/play", epa("pass_d")), ("pass success allowed", pct("pass_succ_d")),
+         ("havoc", pct("havoc_d")), ("front-seven havoc", rk("havoc_f7_d")), ("DB havoc", rk("havoc_db_d")),
+         ("pts per scoring chance allowed", num("ppo_d"))]
+    ob = ", ".join(f"{lab} {v}" for lab, v in o if v)
+    db = ", ".join(f"{lab} {v}" for lab, v in d if v)
+    if not ob and not db:
+        return ""
+    return (f"advanced (CFBD, garbage time out, not opponent-adjusted: SP+ adjusts; FBS ranks): "
+            f"offense {ob}; defense {db}")
+
+
+def short_edge(e: dict) -> str:
+    """A decided pairing as one plain sentence: the ranks and the verdict, no style extras."""
+    u = e["unit"]
+    _, _, ol, dl, what = PAIRS[u]
+    sw = SECOND[u][2] if u in SECOND and e.get("so") and e.get("sd") else ""
+    if u == "protect":
+        return (f"{_poss(e['def'])} {dl} is #{e['rd']} in {what} and {_poss(e['off'])} {ol} #{e['ro']}, "
+                f"so {_verdict_words(e)}.")
+    o = f"#{e['ro']} in {what}" + (f" and #{e['so']} in {sw}" if sw else "")
+    d = f"#{e['rd']}" + (f" and #{e['sd']}" if sw else "")
+    return f"{_poss(e['off'])} {ol} is {o}; {_poss(e['def'])} {dl} is {d}, so {_verdict_words(e)}."
+
+
+def _verdict_words(e: dict) -> str:
+    return e["text"].rsplit(": ", 1)[-1]
+
+
+YARDS_ASK = cfbd.YARDS_ASK
+_RAW_YARDS = re.compile(r"\b\d{2,3}(\.\d+)?\s*(total |rushing |rush |passing |pass |offensive )?(yards|yds)\s*(per|a|/)\s*game\b"
+                        r"|\b\d{2,3}(\.\d+)?\s*(ypg|yds/g)\b", re.I)
+_DEF_VERB = re.compile(r"\b(allow\w*|gives? up|giving up|gave up|surrender\w*|yield\w*|defen[cs]e)\b", re.I)
+_SENT = re.compile(r"(?<=[.!?])\s+")
+_PLAYER = re.compile(r"\b(qbs?|quarterbacks?|rbs?|running backs?|tailbacks?|receivers?|wrs?|tight ends?|freshman|"
+                     r"sophomore|junior|senior|he|his|him|backup|starter)\b", re.I)  # a player's yards, not a unit's
+
+
+def _named(sentence: str, tab: dict) -> list[str]:
+    """Teams in the units table named in a sentence, in order."""
+    qn = f" {cfbd.norm(re.sub(r"['’]s\b", "", sentence))} "
+    hits = []
+    for k, r in tab.items():
+        if k.startswith("_"):
+            continue
+        p = _pos(r["name"], qn)
+        if p >= 0:
+            hits.append((p, r["name"]))
+    hits.sort()
+    out = []
+    for p, nm in hits:  # 'Texas' inside 'Texas Tech': keep the longer name at a spot
+        if out and out[-1][0] == p:
+            if len(nm) > len(out[-1][1]):
+                out[-1] = (p, nm)
+            continue
+        out.append((p, nm))
+    return [nm for _, nm in out]
+
+
+def swap_raw_yards(text: str, q: str = "", tab: dict | None = None) -> str:
+    """A draft sentence that states raw yards per game is swapped for the ranked advanced line for that unit
+    (EPA/play + success rate, FBS ranks), unless the question asked for yards. Sentences about teams with no
+    advanced row are left alone."""
+    if not text or YARDS_ASK.search(q or "") or not _RAW_YARDS.search(text):
+        return text
+    tab = tab if tab is not None else table()
+    if not tab:
+        return text
+    out = []
+    for sent in _SENT.split(text.strip()):
+        if not _RAW_YARDS.search(sent) or _PLAYER.search(sent):
+            out.append(sent)
+            continue
+        unit = ("rush" if re.search(r"\b(rush\w*|run\w*|ground)\b", sent, re.I)
+                else "pass" if re.search(r"\b(pass\w*|air|throw\w*)\b", sent, re.I) else "eff")
+        names = _named(sent, tab)
+        new = None
+        if len(names) >= 2:
+            a, b = names[0], names[1]
+            off = ask_offense(sent, a, b) or a
+            e = pair_edge(unit, off, b if off == a else a, tab)
+            new = short_edge(e) if e else None
+        elif len(names) == 1:
+            r = _row(names[0], tab)
+            om, dm, ol, dl, what = PAIRS[unit]
+            side, m, lab = (("d", dm, dl) if _DEF_VERB.search(sent) else ("o", om, ol))
+            sm = SECOND.get(unit, (None, None, ""))[0 if side == "o" else 1]
+            if r.get(m + "_rank"):
+                new = (f"{_poss(r['name'])} {lab} is #{r[m + '_rank']} in {what}"
+                       + (f" and #{r[sm + '_rank']} in {SECOND[unit][2]}" if sm and r.get(sm + "_rank") else "")
+                       + f" ({tier(r[m + '_rank'], tab.get('_n') or 136)}).")
+        out.append(new or sent)
+    return " ".join(out)
 
 
 def turnovers_edge(away: str, home: str, tab: dict | None = None) -> dict | None:

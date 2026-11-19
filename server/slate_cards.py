@@ -92,12 +92,15 @@ def run_game_line(away: str, home: str) -> str | None:
             style = "an option offense" if rate >= 0.72 else "run-heavy"
             bits.append(f"{off} is {style} (runs {rate:.0%} of plays, rushing EPA #{orank}) vs {de}'s run defense "
                         f"(#{drank} in rushing EPA allowed{', weak' if drank and drank >= 80 else ', strong' if drank and drank <= 25 else ''})")
+    try:
+        tab = units.table()
+    except Exception:  # noqa: BLE001
+        tab = {}
     for team in (away, home):
-        o = adv.get(cfbd.norm(team))
-        ppo = ((o or {}).get("offense") or {}).get("pointsPerOpportunity")
-        dppo = ((o or {}).get("defense") or {}).get("pointsPerOpportunity")
-        if ppo and dppo:
-            bits.append(f"{team} scores {ppo:.1f} pts per scoring chance, allows {dppo:.1f}")
+        r = units._row(team, tab) if tab else None
+        if r and r.get("ppo_o") and r.get("ppo_d"):  # every number with its FBS rank
+            bits.append(f"{team} scores {r['ppo_o']:.1f} pts per scoring chance (#{r['ppo_o_rank']}), "
+                        f"allows {r['ppo_d']:.1f} (#{r['ppo_d_rank']})")
     return "  Run game / finishing drives: " + "; ".join(bits) if bits else None
 
 

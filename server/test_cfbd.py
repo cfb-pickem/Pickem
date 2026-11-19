@@ -94,7 +94,9 @@ check("ATS shows", "ATS 6-3, avg cover +7.3" in s, s)
 check("SP+ ranks show", "SP+ 3.8 (#56; off #37, def #78)" in s, s)
 b = cfbd.compact_team_summary("Boise State", idx)
 check("conf record + TO margin", "(5-0 conf)" in b and "TO margin +3" in b, b)
-check("defense yardage rank (Boise allows less -> #1)", "allows 377.2 ypg (#1)" in b, b)
+check("no raw yards per game unless asked (advanced stats lead: units.profile)", "ypg" not in b, b)
+check("defense yardage rank when asked (Boise allows less -> #1)",
+      "allows 377.2 ypg (#1)" in cfbd.compact_team_summary("Boise State", idx, raw=True))
 check("unknown team says so", "not in CFBD" in cfbd.compact_team_summary("Fake U", idx))
 check("short enough for a small model", len(b) < 300, len(b))
 
@@ -247,8 +249,12 @@ for q in ("How many yards does Andrew Bub have?", "Who's winning the pool?", "Ro
 r = rows("What's Oregon State's record against the spread?")
 check("'Oregon State' doesn't also match a team called Oregon", r == [], r)
 r = rows("What's Ohio State's ATS record?")
+adv_r = [x for x in r if x.startswith("  Advanced, ")]  # units.profile rides along when advanced rows exist
+r = [x for x in r if not x.startswith("  Advanced, ")]
 check("non-pool team stats on request", len(r) == 1 and r[0].startswith("Not a pool team")
       and "Ohio State" in r[0] and "ATS 5-4" in r[0], r)
+check("its advanced line (if any) is Ohio State's, ranked, no ypg",
+      all(x.startswith("  Advanced, Ohio State: ") and "(#" in x and "ypg" not in x for x in adv_r), adv_r)
 check("better defense worked out in code",
       cfbd.matchup_edges("Oregon State", "Boise State", idx) ==
       "better defense: Boise State (SP+ defense #64 vs #78); better offense: Boise State (SP+ offense #7 vs #37)",
@@ -264,6 +270,11 @@ sf = chat.stats_focus(CTX, "How many rushing yards does Maddux Madsen have?")
 check("stats_focus wraps the rows for the user turn", sf.startswith("PLAYER STATS") and "142 yds" in sf, sf)
 check("stats_focus empty for a non-stats question", chat.stats_focus(CTX, "Roast TG") == "")
 lines = chat.cfbd_game_lines("Oregon State", "Boise State", idx)
+adv_l = [x for x in lines if x.startswith("  Advanced, ")]
+check("advanced lines (if any) follow each team's season line, ranked, no ypg",
+      all("(#" in x and "ypg" not in x for x in adv_l)
+      and all(lines[lines.index(x) - 1].startswith("  Season (CFBD): " + x[12:].split(":")[0]) for x in adv_l), adv_l)
+lines = [x for x in lines if not x.startswith("  Advanced, ")]
 check("game block has both teams, their leaders + edges",
       len(lines) == 5 and "Season (CFBD): Oregon State" in lines[0]
       and lines[1] == "  Season leaders, Oregon State: QB Braden Atkinson 3,148 yds"

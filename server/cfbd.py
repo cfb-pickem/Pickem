@@ -428,7 +428,10 @@ def _ord(n) -> str:
     return f"#{n}" if n else ""
 
 
-def compact_team_summary(team: str, idx: dict | None = None) -> str:
+def compact_team_summary(team: str, idx: dict | None = None, raw: bool = False) -> str:
+    """Record, ATS, SP+ and points, short. Raw yards per game only with raw=True (someone asked for yards):
+    sharp bettors lead with EPA / success rate (units.profile, its own line), and a 12B quotes whatever number
+    it's handed (Charlie, 2026-11-18)."""
     idx = idx or load_index()
     if not idx:
         return f"{team}: no CFBD stats loaded."
@@ -448,7 +451,7 @@ def compact_team_summary(team: str, idx: dict | None = None) -> str:
         bits.append(f"SP+ {sp['rating']:.1f} ({_ord(sp['rank'])}; off {_ord(sp['off_rank'])}, def {_ord(sp['def_rank'])})")
     if t.get("ppg") is not None:
         bits.append(f"scores {t['ppg']} ppg ({_ord(t.get('ppg_rank'))}), allows {t['opp_ppg']} ({_ord(t.get('opp_ppg_rank'))})")
-    if t.get("ypg") is not None:
+    if raw and t.get("ypg") is not None:
         y = f"{t['ypg']} ypg"
         if t.get("pass_ypg") is not None and t.get("rush_ypg") is not None:
             y += f" ({t['pass_ypg']} pass/{t['rush_ypg']} rush)"
@@ -691,6 +694,7 @@ STAT_ASK = re.compile(
     r"\b(yards?|yds|touchdowns?|tds?|stats?|statistics|numbers|passing|rushing|receiving|sacks?|"
     r"tackles?|interceptions?|catches|receptions?|carries|completion|qbs?|quarterbacks?|rbs?|"
     r"running ?backs?|receivers?|wrs?|players?|leaders?|leading)\b", re.I)
+YARDS_ASK = re.compile(r"\b(yards?|yds|ypg)\b", re.I)  # the only time raw yards per game go to the brain
 _TEAM_ASK = re.compile(r"\b(ats|against the spread|cover(s|ed)? record|sp\+|rating|defen[cs]e|offen[cs]e|"
                        r"stats?|ppg|points (a|per) game|yards (a|per) game|turnovers?|sacks)\b", re.I)
 # Capitalized multi-word phrases that look like a person's name.
@@ -814,8 +818,17 @@ def question_rows(question: str, pool_games: list[tuple[str, str]], skip_names: 
                     out.append(f"{c.upper()} LEADERS, {scope} (season totals, most first):")
                     out += [f"  {r}" for r in rows]
     if _TEAM_ASK.search(q):
+        raw = bool(YARDS_ASK.search(q))
         for name in other_teams_named(q, pool_teams, idx):
-            out.append("Not a pool team, stats only: " + compact_team_summary(name, idx))
+            out.append("Not a pool team, stats only: " + compact_team_summary(name, idx, raw=raw))
+            try:
+                import units  # lazy: units imports cfbd
+                adv = units.profile(name, units.table(idx))
+            except Exception as e:  # noqa: BLE001
+                log.warning("advanced profile failed for %s: %r", name, e)
+                adv = ""
+            if adv:
+                out.append(f"  Advanced, {name}: {adv}")
         out = out[:limit + 6]
     return out
 

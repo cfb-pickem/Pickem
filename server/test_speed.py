@@ -258,7 +258,7 @@ def test_unit_ask_takes_the_code_lane_under_12s():
         kinds = [c["kind"] for c in calls]
         assert kinds == ["fact"], kinds
         ans = calls[0]["messages"][-1]["content"]
-        assert "THE ANSWER" in ans and "Iowa" in ans and "Illinois" in ans and "SP+" in ans, ans
+        assert "THE ANSWER" in ans and "Iowa" in ans and "Illinois" in ans and "EPA/play" in ans, ans
     import time
     t0 = time.time()
     run([("unit2", "Can Illinois stop Iowa's run game?")], True)
