@@ -1440,6 +1440,76 @@ LOOKAHEAD_SLATE = re.compile(r"\b(any|which|what|best|biggest)\b[^?.!]{0,20}\b(l
                              r"|\b(look ?-?ahead|letdown|trap|sandwich) (spots?|games?|situations?)\b", re.I)
 
 
+LOOKAHEAD_GAME = re.compile(r"\blook(s|ing)? ?-?ahead\b|\blookahead\b|\blook(s|ing)? past\b|\blet ?-?down\b|"
+                            r"\bsandwich\b|\btrap (game|spot)\b", re.I)
+_LA_LAST = re.compile(r"last (beat|lost to) (.+?)(?: \(SP\+ #\d+\))? (\d+)-(\d+)( as a [\d.]+-point underdog)?")
+_LA_NEXT = re.compile(r"next (vs|at) (.+?)(?: \(SP\+ #(\d+)\))?(?:, a rivalry game \((.+?)\))?$")
+
+
+def _la_side(bit: str) -> tuple[str, str]:
+    """(last-game words, next-game words) from one team's lookahead_line bit."""
+    last = nxt = ""
+    for part in bit.split("; "):
+        m = _LA_LAST.search(part)
+        if m:
+            a, b = int(m.group(3)), int(m.group(4))
+            last = (f"beat {m.group(2)} {a}-{b}" + (m.group(5) or "") if m.group(1) == "beat"
+                    else f"lost {b}-{a} to {m.group(2)}")
+        m = _LA_NEXT.search(part)
+        if m:
+            riv = m.group(4) or ""
+            nxt = f"{'hosts' if m.group(1) == 'vs' else 'goes to'} {m.group(2)}" + (
+                f" (SP+ #{m.group(3)})" if m.group(3) else "") + " next" + (
+                f", {riv if riv.lower().startswith('the ') else 'the ' + riv}" if riv else "")
+    return last, nxt
+
+
+def lookahead_game_text(ctx: dict, q: str) -> str | None:
+    """One game's lookahead / letdown read (slate_cards.lookahead_line via the store): the asked team's spot said
+    as yes or no with the game behind it, the other side's spot, and the honest weight (B12: a tiebreaker)."""
+    g, _pool = factstore.find_game(q, ctx)
+    if not g:
+        return None
+    ln = factstore.lookahead(g) or ""
+    m = re.search(r"Lookahead / letdown: (.+)\. Verdict: (.+?)\.$", ln.strip())
+    if not m:
+        return None
+    away, home = g["awayTeam"], g["homeTeam"]
+    body, verdict = m.group(1), m.group(2)
+    cut = body.find(f"; {home}: ")
+    bits = {away: body[len(away) + 2:cut] if body.startswith(f"{away}: ") and cut > 0 else "",
+            home: body[cut + len(home) + 4:] if cut > 0 else ""}
+    named = [t for t in factstore.teams_named(q) if factstore.norm(t) in (factstore.norm(away), factstore.norm(home))]
+    named.sort(key=lambda t: (q.lower().find(t.lower()) if t.lower() in q.lower() else 999))  # the subject: named first
+    me = (away if factstore.norm(named[0]) == factstore.norm(away) else home) if named else None
+    flags = [x.strip() for x in verdict.split(";")]
+    spot = lambda t, k: next((f for f in flags if f.startswith(f"{k} spot for {t} ")), None)  # noqa: E731
+    me = me or next((t for t in (away, home) if spot(t, "lookahead") or spot(t, "letdown")), away)
+    other = home if me == away else away
+    out, kinds = [], []
+    for t, lead in ((me, True), (other, False)):
+        last, nxt = _la_side(bits.get(t, ""))
+        la, ld = spot(t, "lookahead"), spot(t, "letdown")
+        if la:
+            kinds.append("lookahead")
+            out.append(f"{'Yeah, on paper' if lead else 'And'} it's a lookahead spot for {t}: favored here, and it "
+                       f"{nxt or 'has a bigger game next'}.")
+        elif ld:
+            kinds.append("letdown")
+            out.append(f"{'Yeah, ' if lead else ''}{t} is in a letdown spot: favored here after it {last or 'won big'}.")
+        elif lead:
+            under = next((f for f in flags if f.startswith(f"{t} has ")), None)
+            out.append(f"Not much of one for {t}: " + (f"it {nxt}, but it's the underdog here, so that matters less."
+                                                       if under and nxt else
+                                                       f"it {nxt}, nothing big enough to look past." if nxt else
+                                                       "no big game behind this one."))
+        else:
+            out.append(f"No spot on {t}'s side: it {last or 'is coming in'}" + (f" and {nxt}" if nxt else "") + ".")
+    out.append(spots_verdict(kinds, phrasing.seed_for(ctx, q)) if kinds else
+               "No spot either way, so it's about the matchup and the number.")
+    return " ".join(out)
+
+
 def conf_race_text(ctx: dict, q: str) -> str | None:
     """The conference title race (title_race.race over CFBD games + today's finals, via the fact store): leader and
     chasers, head-to-head tiebreaks (a tie head-to-head can't settle says the conference's further tiebreakers
@@ -2083,6 +2153,9 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if LOOKAHEAD_SLATE.search(t) and len(slate_cards.cfbd.other_teams_named(t, [], slate_cards.cfbd.load_index() or {"teams": {}})
                                          if slate_cards.cfbd.load_index() else []) == 0:
         return "lookahead_slate", "LOOKAHEAD_SLATE"  # 'any lookahead spots this week': every notable game's verdict
+    if LOOKAHEAD_GAME.search(t) and not re.search(r"\b(ats|against the (spread|number)|cover\w*)\b", t, re.I) \
+            and factstore.teams_named(t):
+        return "lookahead_game", "LOOKAHEAD_GAME"  # 'is Iowa looking ahead to Nebraska?': that game's verdict in code
     if INTERIM_ASK.search(t) and situational.interim_text({}, t):
         return "interim", "INTERIM_ASK"  # 'Baylor's playing for an interim, does it matter?': the change + SU/ATS since
     if situational.ASK.search(t) and situational.weather_alt_travel_text({}, t):
@@ -3729,6 +3802,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
               "backup_qb": backup_qb_text, "injury_impact": injury_impact_text,
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
+              "lookahead_game": lookahead_game_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text, "ats_profile": ats_profile_text,
               "interim": situational.interim_text, "weather_alt_travel": situational.weather_alt_travel_text,
               "strategy": pick_strategy.answer,
@@ -3753,7 +3827,8 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 
 
 # the football lanes that read only the fact store + the league ctx (test_factstore.py checks it statically)
-STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, situational.interim_text,
+STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, lookahead_game_text,
+               situational.interim_text,
                career_ats_text, hypo_value_text, qb_status_text, big_picture.coach_text, big_picture.cfp_now_text,
                backup_qb_text, injury_impact_text,
                ats_profile_text, other_side_text, change_mind_text)
