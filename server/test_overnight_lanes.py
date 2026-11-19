@@ -66,6 +66,21 @@ def test_lookahead_lane_steps_aside_without_a_game():
     assert _ans(router.lookahead_game_text, "Is Montana Tech looking ahead?") is None
 
 
+
+# --- rules: a whole-number line in a push ask --------------------------------------------------------
+
+def test_push_ask_with_a_whole_number_says_what_the_league_line_would_be():
+    """'If Ohio State -3 is the line and they win by exactly 3, do I get a push?': the league moves -3 half a
+    point, so the answer says both ways it can go (a 3-point win covers -2.5, misses -3.5)."""
+    import league_rules
+    out = league_rules.answer("If Ohio State -3 is the line and they win by exactly 3, do I get a push in our league?")
+    assert out and "no pushes" in out.lower(), out
+    assert "-2.5" in out and "-3.5" in out, out
+    assert "covers" in out.lower(), out
+    plain = league_rules.answer("What happens on a push?")
+    assert "-2.5" not in plain, plain
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

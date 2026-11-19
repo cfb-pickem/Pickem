@@ -1572,12 +1572,20 @@ def hedge(topic: str) -> str:
             f"Don't state that rule; say it may have just changed and to check {RULES_PAGE} or ask the commissioner.")
 
 
-def _a_push(f):
+def _a_push(f, q: str = ""):
     c = f["cover"]
     tail = (f" If a final ever landed exactly on the number, the grading gives it to the {c['else'].lower()} team."
             if c.get("else") in ("Away", "Home") else "")
-    return ("No pushes in this league: every line is a half point (the site moves whole numbers half a point), "
-            "so a game can't land on the number." + tail)
+    out = ("No pushes in this league: every line is a half point (the site moves whole numbers half a point), "
+           "so a game can't land on the number.")
+    m = re.search(r"(?<![\d.])[-+]?(\d{1,2})(?![\d.])(?=[^?]*\b(exactly|push|tie|by \d))", q or "")
+    hp = f.get("half_point") or {}
+    if m and int(m.group(1)) > 0 and hp.get("keeps_within") == 0.5:
+        n = int(m.group(1))
+        way = "either way at random" if hp.get("whole_moves_random") else "half a point"
+        return (out + f" A {n}-point line gets moved {way}: at -{n - 0.5:g} a {n}-point win covers, at -{n + 0.5:g} "
+                f"it doesn't, so check which number the league posted.")
+    return out + tail
 
 
 def _a_line_lock(f):
@@ -1697,7 +1705,7 @@ def answer(question: str, n_teams: int | None = None, facts: dict | None = None,
         if sec in fl:
             return hedge(topic)
         try:
-            out = (fn(f, q) if fn is _a_tiebreakers else fn(f, n_teams) if fn is _a_payouts else fn(f))
+            out = (fn(f, q) if fn in (_a_tiebreakers, _a_push) else fn(f, n_teams) if fn is _a_payouts else fn(f))
         except (KeyError, TypeError, IndexError):
             return None  # facts missing: the digest still rides along
         return out or None
