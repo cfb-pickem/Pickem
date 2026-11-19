@@ -228,6 +228,23 @@ def test_interim_record_counts_from_the_change_date_in_the_note():
     assert "2-1 straight up" in out and "UCF" in out and "Kansas" not in out.split("Since", 1)[1], out
 
 
+
+def test_pick_hook_note_not_repeated_when_a_reason_already_says_it():
+    import case_ledger
+    led = _led("Northwestern", "Minnesota", 2.5, "Northwestern")
+    led["rows"] = [{"side": "Northwestern", "tier": "factor", "raw": "line value", "facts_used": [],
+                    "text": "half a point of real value on Northwestern, and it's on the good side of the key number 3"}]
+    out = str(case_ledger.pick_answer(led))
+    assert out.count(" 3") <= 2 and "good side of 3" not in out, out
+
+
+def test_hot_seat_carousel_answer_fits_one_text():
+    import big_picture
+    out = _ans(big_picture.coach_text, "Any coaches on the hot seat this week, and does it matter for the picks?")
+    assert out and len(out) <= 700, (len(str(out)), out)
+    assert "hot-seat" in str(out).lower() or "hot seat" in str(out).lower(), out
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

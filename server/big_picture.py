@@ -226,7 +226,8 @@ def _carousel_answer(q: str, notes, heads, rows, pool: set | None = None) -> str
             s = stories[t][0]
             bit, mf = _line_bit(g)
             nxt = f"{_story_text(s)}; this week: {bit}"
-            if bits and len(" ".join(bits)) + len(nxt) > 520:
+            budget = 300 if re.search(r"hot.?seat|on the seat", q or "", re.I) else 520  # leave room for the hot-seat talk
+            if bits and len(" ".join(bits)) + len(nxt) > budget:
                 break
             used += mf + [s["fact"]]
             bits.append(nxt)
@@ -242,6 +243,8 @@ def _carousel_answer(q: str, notes, heads, rows, pool: set | None = None) -> str
         return None
     out.append("None of it moves a number by itself; a team playing for an interim is the one spot to watch, and "
                "that's a small-sample nudge, not a reason.")
+    while len(" ".join(out)) > 700 and len(out) > 2:  # one text: the hot-seat chatter goes before a game's story
+        out.pop(-2)
     return factstore.answer(" ".join(out), used)
 
 

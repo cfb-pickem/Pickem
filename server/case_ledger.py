@@ -287,7 +287,7 @@ def pick_answer(led: dict) -> factstore.Answer:
     used = [led["line_fact"]] + _facts(rs)
     out = f"I'd take {led['labels'][side]} ({led['word'] or 'lean'})" + (f": {why}" if why else "") + "."
     hk = hook_note(led, side)
-    if hk:
+    if hk and not re.search(r"key number|\bhook\b", why, re.I):  # a reason already said where it sits
         out += " " + hk
     qn = qb_note(led, side)
     if qn:
