@@ -1788,10 +1788,13 @@ def career_ats_text(ctx: dict, q: str) -> str | None:
 
 ATS_PROFILE_ASK = re.compile(
     r"\bATS\b|\bagainst the (number|spread|line)\b|\b(vs\.?|versus) the (number|spread)\b"
-    r"|\bcover(ing|ed|s)? (lately|this (year|season)|machine|streak)\b|\bbeen covering\b"
+    r"|\bcover(ing|ed|s)? (lately|this (year|season)|machine|streak|record)\b|\bbeen covering\b"
     r"|\bas an? (fav\w*|dog|underdog|road (fav\w*|dog)|home (fav\w*|dog))\b", re.I)
 ATS_NOT = re.compile(r"\b(my|our|i|i'?m|me|am i|you|u|ur|your|picky|career|last (week|wk)|week \d+|did|who covers?|"
                      r"who (do|would|should) (you|i|u)|take|pick|lean)\b", re.I)
+# 'can you tell me Michigan's ATS record': the ask wrapper isn't about Picky's or the asker's own ATS
+ATS_POLITE = re.compile(r"\b((can|could|would|will) (you|u) )?(tell|show|give|get) me\b|\b(do|does) (you|u) "
+                        r"(know|have)\b|\blet me know\b", re.I)
 _ATS_SPLITS = (("dog", r"\b(dog|underdog)s?\b", "as an underdog"), ("fav", r"\bfav\w*\b", "as a favorite"),
                ("home", r"\bhome\b", "at home"), ("road", r"\broad\b|\baway\b", "on the road"))
 _ATS_SAY = {k: say for k, _, say in _ATS_SPLITS}
@@ -1858,7 +1861,7 @@ def ats_profile_text(ctx: dict, q: str) -> str | None:
 
     def split(k: str) -> str:
         if not sum(p[k]):
-            return f"no games {_ATS_SAY[k]} yet"
+            return f"yet to play a game {_ATS_SAY[k]}"
         used.append(fx[k])
         return f"{factstore.wlp_text(p[k])} {_ATS_SAY[k]}"
     g, _ = factstore.find_game(name, ctx)
@@ -2277,7 +2280,7 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "weather_alt_travel", "situational.ASK"  # forecast as a forecast, both elevations, trip + body clock
     if CAREER_ATS.search(t):
         return "career_ats", "CAREER_ATS"  # coach career ATS splits aren't in the data: say so + this season's team ATS
-    if ATS_PROFILE_ASK.search(t) and not ATS_NOT.search(t) and factstore.teams_named(t):
+    if ATS_PROFILE_ASK.search(t) and not ATS_NOT.search(ATS_POLITE.sub(" ", t)) and factstore.teams_named(t):
         return "ats_profile", "ATS_PROFILE_ASK"  # 'how's Duke against the number': the team sheet's ATS profile
     if (COACH_ASK.search(t) and not NOT_COACH.search(t)) or (
             big_picture.RETURN_ASK.search(t) and big_picture.coach_named(t)):

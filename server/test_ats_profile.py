@@ -177,6 +177,71 @@ def test_router_leaves_other_ats_asks_alone():
         assert router.classify(q).label() != "fact:ats_profile", (q, router.classify(q).label())
 
 
+def test_router_sends_polite_and_cover_record_asks_to_the_lane():
+    import router
+    for q in ("can you tell me Michigan's ATS record", "do you know how Texas does against the spread",
+              "tell me Duke's record ATS", "Oregon cover record"):
+        assert router.classify(q).label() == "fact:ats_profile", (q, router.classify(q).label())
+    for q in ("can you tell me my ATS record", "tell me your record against the spread",
+              "what's my cover record"):
+        assert router.classify(q).label() != "fact:ats_profile", (q, router.classify(q).label())
+
+
+# --- the calculation from raw scores + lines (cover / push / underdog cover) ---------------------------------
+
+def _sheets(games):
+    """Team sheets from a tiny CFBD-shaped input: games = (home, away, home pts, away pts, home spread)."""
+    lines = [{"id": i, "startDate": f"2026-09-{i + 1:02d}T19:00:00Z", "seasonType": "regular",
+              "homeTeam": h, "awayTeam": a, "homeScore": hs, "awayScore": as_,
+              "lines": [{"provider": "Bovada", "spread": sp + 3}, {"provider": "DraftKings", "spread": sp}]}
+             for i, (h, a, hs, as_, sp) in enumerate(games)]
+    teams = sorted({g[0] for g in games} | {g[1] for g in games})
+    recs = [{"year": 2026, "team": t, "classification": "fbs"} for t in teams]
+    return FS._team_sheets({"lines": lines, "records": recs}, {}, TF.NOW)
+
+
+def test_calc_favorite_cover_push_and_underdog_cover():
+    s = _sheets([("Alpha", "Beta", 31, 10, -14.0),   # Alpha -14 wins by 21: Alpha covers by 7, Beta misses
+                 ("Alpha", "Gamma", 24, 17, -7.0),   # Alpha -7 wins by 7: push both ways
+                 ("Delta", "Alpha", 27, 24, -6.5)])  # Alpha +6.5 loses by 3: underdog covers by 3.5
+    a = s["Alpha"]
+    covers = [r["cover"] for r in a["results"]]
+    assert covers == [7.0, 0.0, 3.5], covers
+    p = a["ats_profile"]
+    assert p["overall"] == [2, 0, 1], p                       # W-L-P: the push is neither
+    assert p["fav"] == [1, 0, 1] and p["dog"] == [1, 0, 0], p  # underdog cover counted as a dog cover
+    assert p["home"] == [1, 0, 1] and p["road"] == [1, 0, 0], p
+    assert [r["cover"] for r in s["Beta"]["results"]] == [-7.0]
+    assert s["Beta"]["ats_profile"]["dog"] == [0, 1, 0]
+    assert s["Gamma"]["ats_profile"]["overall"] == [0, 0, 1]
+    assert s["Delta"]["ats_profile"]["fav"] == [0, 1, 0]      # won by 3 laying 6.5: no cover
+    ids = {f["id"]: f["value"] for f in a["facts"] if f["kind"] == "ats"}
+    assert ids["ats.alpha.calc_overall"] == "2-0-1" and ids["ats.alpha.dog"] == "1-0", ids
+
+
+def test_calc_uses_draftkings_line_and_skips_games_without_one():
+    s = _sheets([("Alpha", "Beta", 20, 17, -3.5)])
+    assert s["Alpha"]["results"][0]["spread"] == -3.5  # DraftKings, not the Bovada line listed first
+    lines = [{"id": 1, "startDate": "2026-09-01", "seasonType": "regular", "homeTeam": "Alpha", "awayTeam": "Beta",
+              "homeScore": 20, "awayScore": 17, "lines": []}]
+    s = FS._team_sheets({"lines": lines, "records": [{"year": 2026, "team": "Alpha", "classification": "fbs"}]},
+                        {}, TF.NOW)
+    assert s["Alpha"]["ats_profile"]["games"] == 0  # no line on record: no ATS game, no made-up number
+
+
+def test_lane_says_yet_to_play_for_an_empty_split():
+    import router
+    FS.use(TF.built()["path"], TF.inputs(), now=TF.NOW)
+    try:
+        st = FS.store()
+        name = next(n for n, t in st["teams"].items()
+                    if (t.get("ats_profile") or {}).get("games") and not sum(t["ats_profile"]["dog"]))
+        out = router.ats_profile_text({}, f"how is {name} as an underdog")
+    finally:
+        FS.use(None, None)
+    assert "yet to play a game as an underdog" in out and "no games" not in out, out
+
+
 def test_ats_profile_is_a_store_lane():
     import router
     assert router.ats_profile_text in router.STORE_LANES
