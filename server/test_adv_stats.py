@@ -390,6 +390,13 @@ def test_content_gate_flags_raw_ypg_and_unranked_unit_answers():
     assert not C.check_turn("how many yards per game does Minnesota average?", "full", "Minnesota: 299.4 yards per game.")
 
 
+def test_unit_lane_is_on_by_default():
+    """Re-enabled 11-19 after the advanced-stats rewrite: judged subset matchups 7/16 (main) -> 14/16 with the lane."""
+    import router
+    assert "unit_matchup" not in {x.strip() for x in router.LANES_OFF_DEFAULT.split(",")}
+    assert "pick_nonpool" in router.LANES_OFF_DEFAULT  # still held back
+
+
 # ---------------------------------------------------------------------------
 # ESPN fallback (no CFBD): yardage only when asked
 # ---------------------------------------------------------------------------

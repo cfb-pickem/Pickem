@@ -155,7 +155,8 @@ def _lead(e: dict, q: str, n: int, rng: random.Random) -> str:
         core = f"{stats}, so {_p(d)} {dl} has the edge"
     else:
         core = f"{stats}, no clear edge"
-    if not _YESNO.search(q or ""):
+    last = ([x for x in re.split(r"(?<=[.!?])\s+", q or "") if "?" in x] or [q or ""])[-1]
+    if not _YESNO.search(q or "") or re.search(r"\w \bor\b \w", last):  # 'finish drives or kick FGs?': a choice
         return core[0].upper() + core[1:] + "."
     asked_def = subject(q, o, d) == d
     good = d if asked_def else o
@@ -205,9 +206,20 @@ def _team_line(team: str, g: dict) -> str:
     return f"{team} {line:+g}" if line else f"{team} at a pick'em"
 
 
-def verdict(edges: list[dict], g: dict, pace_kind: str = "") -> dict:
+BIG_LINE = 14  # laying this many on unit edges alone is a slight lean at most
+
+
+def _line_for(team: str, g: dict) -> float | None:
+    sp = g.get("spread")
+    if sp is None:
+        return None
+    return sp if cfbd.norm(team) == cfbd.norm(g["home"]) else -sp
+
+
+def verdict(edges: list[dict], g: dict, pace_kind: str = "", tab: dict | None = None) -> dict:
     """One computed 'so what' from the decided edges (plus pace when asked):
-    {'kind': side|over|under|none, 'team'?, 'strength'?, 'why'?}."""
+    {'kind': side|over|under|none, 'team'?, 'strength'?, 'why'?, 'big'?}. With tab, a side lean that runs against
+    the overall EPA/play edges (both directions) is no lean ('epa')."""
     if pace_kind in ("fast", "slow"):
         return {"kind": "over" if pace_kind == "fast" else "under", "why": "pace"}
     won = [e for e in edges if e.get("winner")]
@@ -215,9 +227,16 @@ def verdict(edges: list[dict], g: dict, pace_kind: str = "") -> dict:
         return {"kind": "none", **({"why": "pace"} if pace_kind else {})}
     teams = {e["winner"] for e in won}
     if len(teams) == 1:
+        team = won[0]["winner"]
+        if tab is not None and not any(e["unit"] == "eff" for e in edges):
+            eff = [e for e in units.edges("eff", g["away"], g["home"], tab) if e.get("winner")]
+            if eff and all(e["winner"] != team for e in eff):
+                return {"kind": "none", "why": "epa", "team": team}
         gap = sum(e.get("gap") or 0 for e in won)
-        return {"kind": "side", "team": won[0]["winner"],
-                "strength": "lean" if len(won) >= 2 or gap >= 2 * units.GAP else "slight lean"}
+        strength = "lean" if len(won) >= 2 or gap >= 2 * units.GAP else "slight lean"
+        line = _line_for(team, g)
+        big = line is not None and line <= -BIG_LINE
+        return {"kind": "side", "team": team, "strength": "slight lean" if big else strength, **({"big": True} if big else {})}
     paired = [e for e in won if e["unit"] in units.PAIRS]
     if paired and len(paired) == len(won):
         offs = {e["off"] for e in paired if e["winner"] == e["off"]}
@@ -236,12 +255,15 @@ def _verdict_text(v: dict, g: dict, topic: str, rng: random.Random) -> str:
     if k == "side":
         t = v["team"]
         return (f"{so} it's {_p(t)} edge {topic}, {v['strength']} {_team_line(t, g)}"
-                + (" (our line)." if g.get("league") and g.get("spread") is not None else "."))
+                + (" (our line)" if g.get("league") and g.get("spread") is not None else "")
+                + (" (big number to lay)." if v.get("big") else "."))
     if k in ("over", "under"):
         if v.get("why") == "pace":
             return f"{so} pace alone tilts the {k}{tot}."
         why = "both offenses have the edge" if k == "over" else "both defenses win their matchups"
         return f"{so} {why}, which tilts the {k}{tot}."
+    if v.get("why") == "epa":
+        return f"{so} that edge runs against the overall EPA/play numbers: it doesn't move the number for me."
     if v.get("why") == "split":
         return f"{so} the edges cut both ways: a coin flip on the units, it doesn't move the number for me."
     if v.get("why") == "pace":
@@ -320,7 +342,7 @@ def build(q: str, ctx: dict | None = None, src=None, seed=None) -> dict | None:
     for keep in range(len(parts), 0, -1):
         shown = parts[:keep]
         edges = [e for p in shown for e in p[1]]
-        v = verdict(edges, g, next((p[2] for p in shown if p[2]), ""))
+        v = verdict(edges, g, next((p[2] for p in shown if p[2]), ""), tab)
         vt = _verdict_text(v, g, _topic(list(dict.fromkeys(p[3] for p in shown)), edges), rng)
         text = " ".join([p[0] for p in shown] + [vt])
         if len(text) <= cap:

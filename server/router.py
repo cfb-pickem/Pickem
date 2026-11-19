@@ -3786,8 +3786,9 @@ def last_week_text(kind: str, ctx: dict, q: str) -> str | None:
 
 # Code lanes held back after the integration genius rounds (2026-11-18): their answers were right but read as stat
 # dumps (voice 2, 0 of 4 and 0 of 2 in three judged rounds) where the full brain's text passed on main. The code
-# stays and is tested; PICKY_LANES_OFF="" turns them back on.
-LANES_OFF_DEFAULT = "unit_matchup,pick_nonpool"
+# stays and is tested; PICKY_LANES_OFF="" turns them back on. unit_matchup came back 11-19 after the advanced-stats
+# rewrite (two ranked stats + the verdict, <= 350 chars): judged matchups 7/16 on main -> 14/16 with it.
+LANES_OFF_DEFAULT = "pick_nonpool"
 
 
 def lanes_off() -> set[str]:

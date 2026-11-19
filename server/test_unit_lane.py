@@ -240,6 +240,38 @@ def test_no_doubled_which():
             assert not re.search(r"\bWhich\b[^.]*\bwhich\b", t), t
 
 
+def test_either_or_question_gets_no_yes_no():
+    """'Do they finish drives or kick field goals?' is a choice, not a yes/no (genius 11-18: 'I think so')."""
+    for sd in range(6):
+        t = unit_lane.build("Northwood -20.5 vs Granite. Do they finish drives or kick field goals?", {}, SRC, seed=sd)["text"]
+        assert not _YES.search(t) and not _NO.search(t) and not re.match(r"(It's close|Coin flip|Hard to say)", t), t
+
+
+def _swapped_table():
+    """Lakeview State: bad overall, but the better big-play team both ways."""
+    import copy
+    src = FakeSource()
+    src.tab = copy.deepcopy(src.tab)
+    lv, nw = src.tab[cfbd.norm("Lakeview State")], src.tab[cfbd.norm("Northwood")]
+    lv["expl_o_rank"], lv["expl_d_rank"], nw["expl_o_rank"], nw["expl_d_rank"] = 2, 1, 49, 50
+    return src
+
+
+def test_side_lean_never_against_overall_epa():
+    src = _swapped_table()
+    b = unit_lane.build("Can Lakeview State hit big plays on Northwood?", {}, src)
+    assert all(e["winner"] == "Lakeview State" for e in b["edges"] if e.get("winner")), b["edges"]
+    assert b["verdict"]["kind"] == "none" and b["verdict"].get("why") == "epa", b["verdict"]
+    assert "EPA" in b["text"] and "Lakeview State +" not in b["text"], b["text"]
+
+
+def test_big_favorite_on_unit_edges_is_a_slight_lean():
+    src = FakeSource(spread=20.5)  # away Northwood laying 20.5
+    b = unit_lane.build("Who finishes drives in Lakeview State-Northwood?", {}, src)
+    assert b["verdict"]["kind"] == "side" and b["verdict"]["strength"] == "slight lean", b["verdict"]
+    assert "slight lean Northwood -20.5 (big number to lay)" in b["text"], b["text"]
+
+
 def test_pace_clash_verdict_is_about_pace():
     t = build("Hill Tech-Granite: who plays faster? Is that a pace thing?")["text"]
     assert re.search(r"pace alone doesn'?t tilt the total", t), t
