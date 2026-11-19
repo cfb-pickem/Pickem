@@ -11,6 +11,7 @@ Run:  ./.venv/bin/python3 -I test_overnight_lanes.py
 
 from __future__ import annotations
 
+import re
 import sys
 
 sys.path.insert(0, ".")
@@ -79,6 +80,35 @@ def test_push_ask_with_a_whole_number_says_what_the_league_line_would_be():
     assert "covers" in out.lower(), out
     plain = league_rules.answer("What happens on a push?")
     assert "-2.5" not in plain, plain
+
+
+
+# --- qb_status reads like a friend texting, ties a shaky starter to the line --------------------------
+
+def _qb(q):
+    import test_personnel_store as TP
+    with TP.use(TP.built()["path"]):
+        out = router.qb_status_text({}, q)
+    TP.ok_facts(out)
+    return str(out)
+
+
+def test_team_qb_ask_with_the_starter_out_leads_with_who_plays():
+    """'Who's Clemson's QB Friday?': the answer is the man playing, said first, not the backup who's also out."""
+    out = _qb("Who's Clemson's QB Friday? Has he ever played?")
+    assert out.split(".")[0].count("Trent Pearman") == 1, out
+
+
+def test_status_quote_isnt_a_pasted_headline_that_repeats_the_name():
+    out = _qb("Who's starting at QB for Tennessee vs LSU?")
+    assert out.count("George MacIntyre") <= 1, out  # 'George MacIntyre (Tennessee) is ...: Tennessee QB George MacIntyre'
+    assert "per " in out, out
+
+
+def test_shaky_starter_is_tied_to_the_line():
+    """A questionable starter: what the market's done since it opened says which way it's leaning."""
+    out = _qb("Who's starting at QB for Tennessee vs LSU?")
+    assert re.search(r"\bline\b|\bmarket\b", out), out
 
 
 if __name__ == "__main__":

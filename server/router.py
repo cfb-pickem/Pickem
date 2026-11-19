@@ -1034,6 +1034,12 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
         used.append(factstore.status_fact(row))
         clip = _clip(row, said, others)  # no quote marks: the filters split them (genius: dangling ")
         said.add("src:" + (row.get("source_name") or ""))
+        m = re.search(re.escape(player), clip or "", re.I)
+        if m and m.group(0) != player:  # the report's spelling ('LaNorris'), not the roster's 'Lanorris'
+            player = m.group(0)
+        if clip:  # 'Tennessee QB George MacIntyre hurt ...' right after naming him reads like a pasted headline
+            clip = re.sub(rf"^(?:{re.escape(team)} )?(?:QB |quarterback )?{re.escape(player)}\b(?=( out| questionable| doubtful)?)",
+                          lambda m_: "he's" if m_.group(1) else "he", clip, flags=re.I)
         out.append(f"{player} ({team}) is {factstore.STATUS_PHRASE.get(st, st)}, per {row['source_name']} "
                    f"({row['when']})" + (f": {clip}" if clip else "."))
     else:
@@ -1047,6 +1053,8 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     replaced = bool(starter and me and starter is not me and starter.get("streak") and (me.get("starts") or 0) > 0
                     and factstore.norm(starter["name"]) not in outs)
     nxt = factstore.backup_for(room, player, set(outs))
+    if st in factstore.OUT_STATUSES and not hit and not replaced and nxt:
+        out.insert(0, f"Looks like it's {nxt['name'].rstrip('.')} for {team}.")  # 'who's Clemson's QB?': the man playing, first
     if st in factstore.OUT_STATUSES:
         if replaced:
             out.append(f"{starter['name']} has started the last {starter['streak']} since: {_qb_bio(starter, False)}. "
@@ -1062,12 +1070,23 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
         if me.get("starts") and (me is starter or not starter) and me.get("streak"):
             out.append(_streak(me))
         else:
-            out.append(f"{_qb_bio(me)}.")
+            out.append(f"He's {'a ' + me['cls'].lower() + ' with ' if me.get('cls') else 'got '}{_qb_bio(me, False)}.")
         if (st in ("questionable", "TBD") or _BACKUP_WANTED.search(q or "")) and nxt:
-            lead = "If he can't go" if st in ("questionable", "TBD") else "Behind him"
-            out.append(f"{lead}: {_qb_bio(nxt)}." + (" That'd be his first start this season." if not nxt.get("starts")
+            lead = "If he can't go, it's" if st in ("questionable", "TBD") else "Behind him:"
+            out.append(f"{lead} {_qb_bio(nxt)}." + (" That'd be his first start this season." if not nxt.get("starts")
                                                       else ""))
             used += _qb_used(team, nxt["name"])
+        if st in ("questionable", "TBD") and (me is starter or (me.get("starts") or 0) >= max(x.get("starts") or 0
+                                                                                           for x in room)):
+            against, toward, mf = _move_against(g, team)
+            used += mf
+            if against is not None and against >= 1.5:
+                out.append(f"The line's moved {against:g} toward {toward} since it opened, so the market's leaning toward "
+                           f"him sitting; if he plays, {team} is the side with the value.")
+            elif against is not None and against <= -1.5:
+                out.append(f"The line's moved {-against:g} toward {team} since it opened, so the market expects him to play.")
+            elif against is not None:
+                out.append("The line's barely moved, so the market's waiting on him too.")
     elif me and me.get("starts") and me is starter and me.get("streak"):
         out.append(_streak(me))
     return factstore.answer(" ".join(out), used)
