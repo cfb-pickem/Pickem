@@ -416,11 +416,12 @@ def value_text(ctx: dict, q: str) -> str | None:
     gl = [{"Away": g["away"], "Home": g["home"], "id": g["id"]} for g in games]
     named = chat.games_named(text, gl) or chat.games_named(last, gl)
     if not named:
-        gaps, why = [], []
+        gaps, why, cards = [], [], []
         for g in games:
             c = _card_for(ctx, g)
             if c and c.get("value"):
                 gaps.append(c["value"]["label"])
+                cards.append(c)
                 vt = game_cards.value_text(c, game_cards.is_locked(c))
                 if vt:
                     why.append(vt[0].upper() + vt[1:].split(". Not banked")[0].rstrip(".") + ".")
@@ -428,8 +429,17 @@ def value_text(ctx: dict, q: str) -> str | None:
             return "No gaps this week: every league line matches the books."
         locked = game_cards.is_locked(_card_for(ctx, games[0]) or {"league_line": {"locked": False, "lock_at": "2099-01-01T11:00:00"}})
         head = (f"Top spot: {gaps[0]}" if len(gaps) == 1 else f"The gaps: {_and(gaps)}")
-        tail = "" if locked else " It only counts if it holds through Tuesday's 11 AM lock."
-        return f"{head}. {why[0] if why else ''}{tail}".replace(" .", ".").strip()
+        foot = ""
+        try:  # half a point alone isn't a reason (genius lv-where-value): the side's best football reason too
+            led = case_ledger.from_card(cards[0], game_cards.is_locked(cards[0]))
+            rs = [r for r in case_ledger.reasons(led, cards[0]["value"]["side"], units=False)
+                  if not r["raw"].startswith(("line value:", "key number:"))]
+            if rs:
+                foot = f" Football-wise: {rs[0]['text'].rstrip('.')}."
+        except Exception:  # noqa: BLE001
+            foot = ""
+        tail = "" if locked or "lock" in (why[0] if why else "") else " It only counts if it holds through Tuesday's 11 AM lock."
+        return f"{head}. {why[0] if why else ''}{foot}{tail}".replace(" .", ".").strip()
     g = next(x for x in games if x["id"] == named[0]["id"])
     c = game_cards.load_card(ctx.get("current_week"), g["id"])
     if not c or float(c["league_line"]["home"]) != float(g.get("line") or 0):

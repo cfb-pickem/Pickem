@@ -245,6 +245,33 @@ def test_hot_seat_carousel_answer_fits_one_text():
     assert "hot-seat" in str(out).lower() or "hot seat" in str(out).lower(), out
 
 
+
+# --- value: 'top spot and why' gets a football reason, not just the half point ------------------------
+
+def test_top_value_spot_comes_with_a_football_reason():
+    import datetime as dt
+    from unittest.mock import patch
+    import chat
+    import game_cards
+    import test_router as TR
+    ctx = TR._wk11("TG")
+    for i, g in enumerate(ctx["games_this_week"]):
+        g.update(winner=None, status="scheduled", start=f"2099-11-21T{11 + i}:00:00")
+    cards = TR._cards(ctx, {g["id"]: (g["home"], f"{g['home']} {g['line']:+g}", "lean") for g in ctx["games_this_week"]})
+    g0 = ctx["games_this_week"][0]
+    c0 = cards[g0["id"]]
+    c0["value"] = {"side": g0["home"], "points": 0.5, "label": f"{g0['home']} {g0['line']:+g}", "key": ""}
+    c0["market"] = {"home_now": float(g0["line"]) - 0.5, "src": "DraftKings"}
+    c0["reasons"] = ["line value: gap", f"{g0['home']} is 5-1 ATS at home"]
+    for gid, c in cards.items():
+        if gid != g0["id"]:
+            c["value"] = None
+    with patch.object(game_cards, "load_card", lambda w, gid, base=None: cards.get(gid)), \
+            patch.object(chat, "_now_ct_naive", lambda: dt.datetime(2026, 11, 17, 9, 0)):
+        out = router.fact_answer("value", ctx, "Where's the value this week? Give me your top spot and why.")
+    assert out and "5-1 ATS at home" in out, out
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
