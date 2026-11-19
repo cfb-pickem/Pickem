@@ -75,5 +75,14 @@ check("LEAGUE LINE" in pc and "Ohio State -2.5" in pc and "better number" in pc 
       "a pool game's card compares the league line to the market (key number 3 between them)")
 check("COMPUTED ATS LEAN" not in pc, "a pool game's card leaves the lean to the pick brief (no second lean)")
 check("COMPUTED ATS LEAN" in asyncio.run(S.slate_note("Ohio State or Nebraska, who you got?", {})), "non-pool card carries the lean")
+
+# one team named: its soonest game's card only (genius pb-uga 11-19: 'Is 16.5 too many for Georgia?' on a Thursday got
+# Georgia Tech-Georgia next week next to Georgia-South Carolina, and the 12B answered about Georgia Tech)
+_g = lambda i, a, h, d: {"id": i, "awayTeam": a, "homeTeam": h, "startDate": d}  # noqa: E731
+_wk = [_g(1, "Georgia", "South Carolina", "2099-11-21T23:30:00Z"), _g(2, "Georgia Tech", "Georgia", "2099-11-28T17:00:00Z"),
+       _g(3, "Iowa", "Illinois", "2099-11-21T17:00:00Z"), _g(4, "Nebraska", "Iowa", "2099-11-28T17:00:00Z")]
+check([x["id"] for x in S.match_games(["Georgia"], _wk, set())] == [1], "one team: its soonest game only")
+check([x["id"] for x in S.match_games(["Georgia Tech", "Georgia"], _wk, set())] == [2], "both teams named: that game")
+check(S.match_games(["Iowa"], _wk, {3}) == [], "a team whose soonest game is a pool game never gets next week's card")
 print(f"\n{len(FAILS)} failed" if FAILS else "\nall ok")
 sys.exit(1 if FAILS else 0)
