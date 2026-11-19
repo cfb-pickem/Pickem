@@ -182,11 +182,17 @@ MONTHS = {"Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12}
 
 
 def _hire_date(c: dict) -> dt.date | None:
+    """The change date: the one the note's text states ('fired Dave Aranda on Oct 24-25') when it's earlier than
+    the day the note was written (c['date'], when the report came out), else the note's date."""
     try:
-        return dt.date.fromisoformat(c["date"])
+        noted = dt.date.fromisoformat(c["date"])
     except (KeyError, TypeError, ValueError):
-        m = re.search(r"\b(Sep|Oct|Nov|Dec)\w*\.? (\d{1,2})", c.get("text") or "")
-        return season.date_in_season(MONTHS[m.group(1)], int(m.group(2)), dt.datetime.now(CT).date()) if m else None
+        noted = None
+    m = re.search(r"\b(Sep|Oct|Nov|Dec)\w*\.? (\d{1,2})", c.get("text") or "")
+    said = season.date_in_season(MONTHS[m.group(1)], int(m.group(2)), noted or dt.datetime.now(CT).date()) if m else None
+    if said and (noted is None or said <= noted):
+        return said
+    return noted
 
 
 def _local_date(r: dict) -> dt.date | None:

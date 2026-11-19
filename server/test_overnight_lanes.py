@@ -205,6 +205,29 @@ def test_rest_answer_says_days_and_last_game_for_both_and_never_next_weeks_oppon
     assert FS.unsupported(out, out.facts_used) == [], FS.unsupported(out, out.facts_used)
 
 
+
+# --- interim: count from the change date in the note, not the day the note was written ---------------
+
+class _Facts:
+    def teams_named(self, q):
+        return ["Baylor"]
+
+    def coaching(self, team):
+        return {"text": "Baylor fired Dave Aranda on Oct 24-25, 2026; defensive coordinator Joe Klanderman is interim "
+                        "for the rest of the season.", "date": "2026-11-01", "source_name": "cfbeveryday.com"}
+
+    def results(self, team):
+        R = lambda d, o, a, b, c: {"date": d, "opp": o, "pts": (a, b), "cover": c}  # noqa: E731
+        return [R("2026-10-24", "Kansas", 24, 25, 0.5), R("2026-10-30", "UCF", 41, 9, 29.5),
+                R("2026-11-07", "Iowa State", 42, 31, 1), R("2026-11-15", "BYU", 7, 28, -12.5)]
+
+
+def test_interim_record_counts_from_the_change_date_in_the_note():
+    import situational
+    out = situational.interim_text({}, "Baylor's playing for an interim, does it matter?", facts=_Facts())
+    assert "2-1 straight up" in out and "UCF" in out and "Kansas" not in out.split("Since", 1)[1], out
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

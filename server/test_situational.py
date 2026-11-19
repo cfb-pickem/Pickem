@@ -226,7 +226,9 @@ def test_interim_names_source_and_keeps_sample_small():
 
 
 def test_interim_no_games_since_says_so():
-    f = dict(INTERIM_FACTS, coaching={"Baylor": {**INTERIM_FACTS["coaching"]["Baylor"], "date": "2026-11-16"}})
+    c = INTERIM_FACTS["coaching"]["Baylor"]
+    f = dict(INTERIM_FACTS, coaching={"Baylor": {**c, "date": "2026-11-16",
+                                                 "text": c["text"].replace("Oct. 25", "Nov. 16")}})
     out = sit.interim_text({}, "Baylor interim?", facts(**f))
     assert re.search(r"hasn'?t played|no games? (yet )?since", out, re.I), out
 
