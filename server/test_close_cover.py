@@ -288,7 +288,8 @@ def test_combined_post_and_quiet_hours():
     wait, eng = _run_tick(dt.datetime(2026, 11, 21, 14, 30, tzinfo=CT), {"9": "9", "10": "10"})
     assert wait == cc.TICK_HOT
     new = [r for r in _log()[n0:] if r["event"] == "dry-run"]
-    assert len(new) == 1 and new[0]["kind"] == "cover" and len(new[0]["texts"]) == 2, new  # ONE post, both games
+    assert len(new) == 1 and new[0]["kind"] == "cover" and len(new[0]["texts"]) == 1, new  # ONE text, both games
+    assert len(new[0]["texts"][0]) <= 280 and "Illinois +6.5" in new[0]["texts"][0] and "BYU +3" in new[0]["texts"][0], new
     assert "9#1" in new[0]["key"] and "10#1" in new[0]["key"]
     assert len(eng.state["9"]["posts"]) == 1 and len(eng.state["10"]["posts"]) == 1  # one post each
     # quiet hours: nothing even gets looked at
