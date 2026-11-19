@@ -254,7 +254,8 @@ def test_other_side_gives_their_top_two_never_ours():
     ours = [r["text"].rstrip(".") for r in CL.reasons(led, TT)]
     theirs = [r["text"].rstrip(".") for r in CL.top(led, BAY, 2, units=True)]
     assert out and "Baylor +3.5" in out and all(t in out for t in theirs), (out, theirs)
-    assert not any(t in out for t in ours), out
+    case = out.split("I'm still on", 1)[0]  # the hold tail says what keeps Picky on his side (one of ours)
+    assert not any(t in case for t in ours), out
     assert "Texas Tech -3.5" in out, "says where Picky still is"
     assert FS.unsupported(out, out.facts_used) == [], FS.unsupported(out, out.facts_used)
 

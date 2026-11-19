@@ -38,6 +38,7 @@ import httpx
 import banter
 import burn_book
 import callbacks
+import case_ledger
 import chat
 import league_rules
 import ollama_gate
@@ -1547,7 +1548,13 @@ async def run(draft, *, q: str, sender: str = "", team: str | None = None, recen
         log.info("picked draft %d of %d (%s, %d eligible) in %.0fs", pick.idx + 1, len(drafts), how, len(pool),
                  time.time() - t0)
         _trace(st, q, sender, route, drafts, [d.idx for d in pool], pick.idx, how, t0)
-        return undodge(st, pick.text, last_reply, prior_q), None
+        out = undodge(st, pick.text, last_reply, prior_q)
+        if full:  # a pick ask: no win probability, the shaky starting QB named (genius pushback 11-19)
+            try:
+                out = case_ledger.guard_full_pick(st.get("ctx") or {}, q, out)
+            except Exception as e:  # noqa: BLE001 - a check, never fatal
+                log.warning("full pick guard failed: %r", e)
+        return out, None
     finally:
         _FULL_INFLIGHT[0] -= full
         chat.REGEN_OK.reset(rtok)

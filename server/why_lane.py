@@ -272,7 +272,7 @@ def answer(ctx: dict | None, q: str) -> str | None:
     pick = nxt[:1]
     if len(nxt) > 1 and len(pick[0]["text"]) < 70:
         pick.append(nxt[1])
-    body = "; also, ".join(r["text"].rstrip(". ") for r in pick)
+    body = case_ledger.once_per_number("; also, ".join(r["text"].rstrip(". ") for r in pick))
     cited = line + [f for r in pick for f in r.get("facts") or []]
     if against:
         return factstore.answer(f"Not {other} because {body}" + (f", on top of {_and(said)}" if said else "")

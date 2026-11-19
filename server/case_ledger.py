@@ -232,9 +232,28 @@ def _facts(rows: list[dict]) -> list[dict]:
     return [f for r in rows for f in r["facts_used"]]
 
 
+_LINE_REF = re.compile(r", (?:well )?short of the (\d+(?:\.5)?)\b|, more than the (\d+(?:\.5)?)\b")
+MARKET_KINDS = ("line value", "line move", "betting splits")
+
+
+def once_per_number(text: str) -> str:
+    """'..., short of the 8.5' / '..., more than the 3.5' said once per number in one answer: two projections in a
+    row ('the EPA numbers only have Iowa by 4, well short of the 8.5; also, FPI only has Iowa by about 5, well short
+    of the 8.5') keep it on the first."""
+    seen: set[str] = set()
+
+    def f(m: re.Match) -> str:
+        k = m.group(1) or m.group(2)
+        if k in seen:
+            return ""
+        seen.add(k)
+        return m.group(0)
+    return _LINE_REF.sub(f, text or "")
+
+
 def _join(rows: list[dict]) -> str:
     ts = [r["text"].rstrip(". ") for r in rows]
-    return ts[0] if len(ts) == 1 else "; ".join(ts[:-1]) + "; and " + ts[-1]
+    return once_per_number(ts[0] if len(ts) == 1 else "; ".join(ts[:-1]) + "; and " + ts[-1])
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -260,11 +279,13 @@ def hook_note(led: dict, side: str) -> str | None:
 SHAKY = ("questionable", "doubtful", "TBD")
 
 
-def qb_note(led: dict, side: str) -> tuple[str, dict] | None:
-    """A starting QB in this game who's questionable/doubtful/TBD (fresh report): the call is conditional on him."""
+def shaky_qb(led: dict, side: str | None = None) -> tuple[str, dict] | None:
+    """(team, status row) for a starting QB in this game who's questionable/doubtful/TBD on a fresh report; our
+    side's QB first."""
     if not factstore.has_personnel():
         return None
     g = led["game"]
+    side = side or g["away"]
     other = g["home"] if factstore.norm(side) == factstore.norm(g["away"]) else g["away"]
     for team in (side, other):
         room = factstore.qb_room(team) or []
@@ -274,16 +295,69 @@ def qb_note(led: dict, side: str) -> tuple[str, dict] | None:
         r = next((r for r in factstore.player_status(team=team, player=top)
                   if r["status"] in SHAKY and r["age_days"] <= 10), None)
         if r:
-            then = "I'm off it." if team == side else "I like it even more."
-            return (f"That's with {r['player']} playing for {team} (he's {factstore.STATUS_PHRASE.get(r['status'], r['status'])}); "
-                    f"if he sits, {then}", factstore.status_fact(r))
+            return team, r
     return None
+
+
+def qb_note(led: dict, side: str) -> tuple[str, dict] | None:
+    """A starting QB in this game who's questionable/doubtful/TBD (fresh report): the call is conditional on him."""
+    got = shaky_qb(led, side)
+    if not got:
+        return None
+    team, r = got
+    then = "I'm off it." if team == side else "I like it even more."
+    return (f"That's with {r['player']} playing for {team} (he's {factstore.STATUS_PHRASE.get(r['status'], r['status'])}); "
+            f"if he sits, {then}", factstore.status_fact(r))
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# the full brain's pick answers (turn 1 of a pushback thread when no code lane took the ask)
+# ---------------------------------------------------------------------------------------------------------------
+
+PICKISH = re.compile(r"\bcovers?\b|\bwho (?:you|ya|u|do you|would you|d'?you)\b|\bside\b|\blay(?:ing)? (?:it|the|\d)"
+                     r"|\btak(?:e|ing)\b|\btoo (?:many|much)\b|\benough\b|\bpick\b|\blean\b|\bworth\b|\bbet\b", re.I)
+_WINPROB = re.compile(r",?\s*(?:\b(?:with|and|at|given)\s+)?(?:an?\s+)?\d{1,3}(?:\.\d+)?\s?%\s+(?:chance|shot|win "
+                      r"probability|to win|odds)\b[^.;!?]*", re.I)
+
+
+def guard_full_pick(ctx: dict, q: str, text: str) -> str:
+    """A full-brain answer to a pick ask, checked in code (genius pushback 11-19): an ATS call never quotes a win
+    probability ('78.1% chance to win outright', wy-nw-minn), and a game with a shaky starting QB names him: the
+    call goes conditional on him when the answer took a side, else he's named as the swing (pool-lsu-tenn-pick and
+    pb-uga never said MacIntyre / Sellers)."""
+    if not text or not PICKISH.search(q or ""):
+        return text
+    try:
+        row, pg = factstore.find_game(q, ctx or {})
+        led = for_game(ctx or {}, row, pg) if row else None
+    except Exception:  # noqa: BLE001 - a check, never fatal
+        led = None
+    if not led:
+        return text
+    import why_lane
+    out = _WINPROB.sub("", text)
+    out = re.sub(r"\s+([.,;!?])", r"\1", re.sub(r"[ \t]{2,}", " ", out)).strip()
+    away, home = led["game"]["away"], led["game"]["home"]
+    side = why_lane.side_taken(out, away, home)
+    got = shaky_qb(led, side)
+    if got:
+        team, r = got
+        last = r["player"].split()[-1]
+        if not re.search(rf"\b{re.escape(last)}\b", out, re.I):
+            phrase = factstore.STATUS_PHRASE.get(r["status"], r["status"])
+            if side:
+                then = "I'm off it." if factstore.norm(team) == factstore.norm(side) else "I like it even more."
+                note = f"That's with {r['player']} playing for {team} (he's {phrase}); if he sits, {then}"
+            else:
+                note = f"The swing here is {r['player']}: he's {phrase} for {team}."
+            out = f"{out} {note}"
+    return out
 
 
 def pick_answer(led: dict) -> factstore.Answer:
     side = led["lean"]
     rs = top(led, side, 2)
-    why = "; ".join(r["text"] for r in rs)
+    why = once_per_number("; ".join(r["text"] for r in rs))
     used = [led["line_fact"]] + _facts(rs)
     out = f"I'd take {led['labels'][side]} ({led['word'] or 'lean'})" + (f": {why}" if why else "") + "."
     hk = hook_note(led, side)
@@ -346,12 +420,21 @@ def other_side_answer(ctx: dict, q: str) -> factstore.Answer | None:
         return factstore.answer(f"Honestly there's no real case for {lab} in my numbers: everything I've got points to "
                                 f"{my_lab}.", [led["line_fact"]])
     body = _join(rows)
+    used = [led["line_fact"]] + _facts(rows)
     if target == ours:
         tail = " That's my side already, so that's the case I'm making."
     else:
         word = f" ({led['word']})" if led["lean"] == ours and led.get("word") else ""
-        tail = f" I'm still on {led['labels'][ours]}{word}, but that's the side if you want to fade me."
-    return factstore.answer(f"Best case for {lab}: {body[:1].upper() + body[1:]}.{tail}", [led["line_fact"]] + _facts(rows))
+        # what keeps me here (genius pb-uga 11-19: the case for the dog, then 'still on Georgia' with no reason
+        # read as a contradiction): our top reason, first clause only
+        keep = [r for r in reasons(led, ours, units=False) if r["kind"] not in MARKET_KINDS][:1]  # a football reason
+        because = f" because {keep[0]['text'].split('; ')[0].rstrip('. ')}" if keep else ""
+        tail = f" I'm still on {led['labels'][ours]}{word}{because}, but that's the side if you want to fade me."
+        if keep and len(body) + len(tail) + len(lab) + 20 <= 700:
+            used += keep[0]["facts_used"]
+        else:
+            tail = f" I'm still on {led['labels'][ours]}{word}, but that's the side if you want to fade me."
+    return factstore.answer(f"Best case for {lab}: {body[:1].upper() + body[1:]}.{tail}", used)
 
 
 # ---------------------------------------------------------------------------------------------------------------

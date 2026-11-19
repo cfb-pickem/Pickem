@@ -2008,6 +2008,13 @@ def keynum_text(ctx: dict, q: str) -> str | None:
         v = keynum_verdict(shown, sd)
         if v:
             parts.append((1, v))
+    try:  # our own lines (genius lv-key-numbers 11-19 missed it): all half points, so the hook decides every pool game
+        import league_rules
+        half = (league_rules.FACTS.get("half_point") or {}).get("keeps_within") == 0.5
+    except Exception:  # noqa: BLE001
+        half = False
+    if half:
+        parts.append((3, "In our league every line is a half point, so a pool game can't push: the hook always decides it."))
     return factstore.answer(phrasing.join(parts), used)
 
 
@@ -3276,10 +3283,20 @@ def say_reason(r: str, c: dict | None = None, locked: bool = False) -> str:
     """A card reason the way a person texts it (keeper k1: 'SP+ (ratings + 2.5 home field): projects Tennessee by 1.9,
     so Tennessee +1.5 covers by 3.4' read like a report). Same facts, fewer words; unknown shapes pass through."""
     r = (r or "").strip()
-    m = re.match(r"(SP\+|EPA|ESPN FPI|SRS)(?!\w)[^:]*: projects (.+?) by ([\d.]+)", r)
+    m = re.match(r"(SP\+|EPA|ESPN FPI|SRS)(?!\w)[^:]*: projects (.+?) by ([\d.]+)"
+                 r"(?:, so (.+?) ([+-]\d+(?:\.\d+)?) covers by [\d.]+)?", r)
     if m:
         who = {"SP+": "SP+ has", "EPA": "the EPA numbers have", "ESPN FPI": "FPI has", "SRS": "SRS has"}[m.group(1)]
-        return f"{who} {m.group(2)} by {_by(float(m.group(3)))}"
+        fav, n = m.group(2), float(m.group(3))
+        if m.group(4) and abs(float(m.group(5))) % 1 == 0.5:  # tie it to a half-point number (never crossed by _by)
+            side, a = m.group(4), abs(float(m.group(5)))
+            if factstore.norm(side) != factstore.norm(fav):  # the dog's case: the favorite projects to win by less than the number
+                only = who.replace(" has", " only has").replace(" have", " only have")
+                return f"{only} {fav} by {_by(n)}, {'well ' if a - n >= 3 else ''}short of the {a:g}"
+            if float(m.group(5)) > 0:  # a dog projected to win outright (genius wy-iowa-ill / pb-uga, 11-19)
+                return f"{who} {fav} winning outright, and they get {a:g}"
+            return f"{who} {fav} by {_by(n)}, more than the {a:g}"
+        return f"{who} {fav} by {_by(n)}"
     m = re.match(r"the league (?:line is locked at|has) (.+?) and the market's at (.+?) \(", r)
     if m:
         ours, theirs = m.group(1), m.group(2)

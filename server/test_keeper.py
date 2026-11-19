@@ -283,10 +283,11 @@ def test_whole_slate_phrasings_get_the_slate_lane():
 def test_card_reasons_read_like_a_person():
     S = router.say_reason
     assert S("SP+ (ratings + 2.5 home field): projects Tennessee by 1.9, so Tennessee +1.5 covers by 3.4") == \
-        "SP+ has Tennessee by about 2"
-    assert S("SP+ (ratings + 2.5 home field): projects Iowa by 8, so Illinois +8.5 covers by 0.5") == "SP+ has Iowa by 8"
+        "SP+ has Tennessee winning outright, and they get 1.5"
+    assert S("SP+ (ratings + 2.5 home field): projects Iowa by 8, so Illinois +8.5 covers by 0.5") == \
+        "SP+ only has Iowa by 8, short of the 8.5"
     assert S("EPA (season PPA per play): projects Northwestern by 5.6, so Northwestern -2.5 covers by 3.1") == \
-        "the EPA numbers have Northwestern by about 6"
+        "the EPA numbers have Northwestern by about 6, more than the 2.5"
     assert S("the league has Northwestern -2.5 and the market's at Northwestern -3 (DraftKings); if that holds") == \
         "we get -2.5 vs the books' -3, better number if it holds to the lock"
     assert S("line move: opened Iowa -5.5, now Iowa -8.5, the market moved 3 points toward Iowa") == \
@@ -444,7 +445,7 @@ def test_pushback_stands_by_the_call():
             patch.object(game_cards, "is_locked", lambda c, now=None: False):
         last = "I'd take Illinois +8.5. The only real concern is Houser."
         r = router.fact_answer("defend", ctx, "8.5 is a lot for a road team ||| " + last)
-        assert r == "Still Illinois +8.5. SP+ has Iowa by 8. FPI has Iowa by about 5.", r
+        assert r == "Still Illinois +8.5. SP+ has Iowa by 8. FPI only has Iowa by about 5, well short of the 8.5.", r
         assert router.fact_answer("defend", ctx, "bielema always plays iowa close ||| " + last).startswith("Still Illinois")
         assert router.fact_answer("defend", ctx, "ok what about nw ||| " + last) is None  # new game
         assert router.fact_answer("defend", ctx, "lol ok ||| " + last) is None  # not pushback
