@@ -743,8 +743,9 @@ def match_games(named: list[str], games: list[dict], pool_ids: set) -> list[dict
         return {cfbd.norm(g["homeTeam"]), cfbd.norm(g["awayTeam"])}
     if len(ns) >= 2:
         out = [g for g in games if len(teams_of(g) & set(ns)) >= 2]
-    else:
-        out = [g for g in games if set(ns) & teams_of(g)]
+    else:  # one team: its soonest game only. The 9-day horizon reaches next week by midweek, and 'Is 16.5 too many
+        # for Georgia?' got Georgia Tech-Georgia's card next to Georgia-South Carolina's (genius pb-uga 11-19)
+        out = sorted((g for g in games if set(ns) & teams_of(g)), key=lambda g: g.get("startDate") or "")[:1]
     return [g for g in out if g["id"] not in pool_ids]
 
 

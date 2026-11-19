@@ -162,6 +162,16 @@ def test_keynum_says_our_lines_never_push():
     assert FS.unsupported(out, out.facts_used) == [], FS.unsupported(out, out.facts_used)
 
 
+def test_one_team_named_gets_its_soonest_game_card_only():
+    import slate_cards
+    g = lambda i, a, h, d: {"id": i, "awayTeam": a, "homeTeam": h, "startDate": d}  # noqa: E731
+    games = [g(1, "Georgia", "South Carolina", "2099-11-21T23:30:00Z"), g(2, "Georgia Tech", "Georgia", "2099-11-28T17:00:00Z"),
+             g(3, "Iowa", "Illinois", "2099-11-21T17:00:00Z"), g(4, "Nebraska", "Iowa", "2099-11-28T17:00:00Z")]
+    assert [x["id"] for x in slate_cards.match_games(["Georgia"], games, set())] == [1]
+    assert [x["id"] for x in slate_cards.match_games(["Georgia Tech", "Georgia"], games, set())] == [2]  # both named
+    assert slate_cards.match_games(["Iowa"], games, {3}) == []  # its soonest is a pool game: never next week's card
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
