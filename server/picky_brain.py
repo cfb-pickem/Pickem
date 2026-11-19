@@ -43,6 +43,7 @@ import league_rules
 import ollama_gate
 import member_memory
 import router
+import think_lane
 import units
 
 log = logging.getLogger("picky-brain")
@@ -1108,6 +1109,7 @@ async def _text_stream(text: str):
 STATE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("picky_brain_state", default=None)
 
 _orig_ollama_stream = chat._ollama_stream
+_REAL_ORIG_STREAM = _orig_ollama_stream
 _orig_prompt_prefix = chat.prompt_prefix
 
 
@@ -1246,6 +1248,14 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     if st.get("shots") and messages and messages[0].get("role") == "system":
         messages = messages[:1] + st["shots"] + messages[1:]  # example exchanges as real turns, before the history
     st["gen_t0"] = time.time()  # for the results guard's regen budget (regen_ok)
+    # M10 retry: capped thinking on analysis asks, else as before. A faked draft stream (offline tests) = no model.
+    if i == 0 and _orig_ollama_stream is _REAL_ORIG_STREAM and think_lane.wanted(st, b.intent):
+        st["thought"] = True
+        text, st["think"] = await think_lane.draft(insert_rider(messages, rider, st["q"]), prefix, dict(st["options"]))
+        if text:
+            async for x in _text_stream(text):
+                yield x
+            return
     async for x in _orig_ollama_stream(insert_rider(messages, rider, st["q"]), prefix):
         yield x
 
@@ -1326,7 +1336,8 @@ def _trace(st: dict, q: str, sender: str, route, drafts: list, eligible_idx: lis
         f.write(json.dumps({"q": q, "sender": sender, "lane": route.label(), "route": route.as_dict(),
                             "ptype": st.get("ptype"), "brief": (st["brief"] or Brief()).__dict__,
                             "drafts": [d.__dict__ for d in drafts], "eligible": eligible_idx,
-                            "pick": pick, "how": how, "secs": round(time.time() - t0, 1)}) + "\n")
+                            "pick": pick, "how": how, "secs": round(time.time() - t0, 1),
+                            **({"think": st["think"]} if st.get("think") else {})}) + "\n")
 
 
 _BALL = re.compile(r"\b(line|spread|cover\w*|pick\w*|take|taking|lock\w*|qb|quarterback|defen[cs]e|offense|dog|favou?rite\w*|"
