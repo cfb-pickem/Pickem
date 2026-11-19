@@ -1,16 +1,17 @@
 """
-When Picky's own picks or leans may show up in the league GROUP (Charlie, 2026-11-19: "Picky's picks
-shouldn't get posted till everyone else's is. It shouldn't [be in the] group chat.").
+When Picky's own picks or leans may show up in the league GROUP.
 
-Picky plays as an exhibition team, so a member could copy him. In the group, his sides for the open
-week stay hidden until EVERY active non-exhibition member has submitted (the site's submission_status(),
-the same "Not yet" panel the reminders read) or the week has locked (first kickoff), whichever comes
-first. Before that, posts still go out without his sides, and a group ask for his pick gets a dodge.
+Charlie, 2026-11-19 15:41 CT: "picks are hidden till kickoff when they lock, not anything to do with all
+members." Picky plays as an exhibition team, so a member could copy him. In the group, his side in a pool
+game stays hidden until that game's picks LOCK, the site's own lock rule (picks_open_for_game(),
+picky_picks.lock_utc): regular season, the whole week locks at its first kickoff; playoffs lock per game.
+Who has or hasn't submitted plays no part. Before the lock, posts still go out without his sides, and a
+group ask for his pick gets a dodge.
 
 DMs are untouched: his entered picks already reach chat only through picky_player() (revealed at lock,
 the human reveal rule), and a DM is the asker's own conversation, like a member reading back their own picks.
 
-Fails closed: no submission data = not revealed.
+Fails closed: a lock that can't be determined = hidden.
 """
 
 from __future__ import annotations
@@ -22,11 +23,6 @@ import re
 import time
 
 log = logging.getLogger("picky_reveal")
-
-
-def revealed(locked: bool, submitted: dict | None) -> bool:
-    """True once the week has locked, or every active member (exhibition excluded by the caller) is in."""
-    return bool(locked) or (bool(submitted) and all(submitted.values()))
 
 
 # A reply taking a side: lean words, first-person picks, "take the points", the breakdown's "Lean:" line.
@@ -90,10 +86,10 @@ def wants_pick(q: str, pool_teams: set[str] | list[str] = (), other_teams: set[s
 
 
 DODGES = [
-    "Nice try. My picks stay in the vault till everybody's in or the first kickoff, whichever comes first.",
-    "Not in here. You'll see my sides once all of you have picked or it locks. Can't have anybody copying the homework.",
-    "My card stays face down in the group till everyone's picks are in or kickoff hits. Make your own calls first.",
-    "Ha, no. Everybody gets their picks in first, then I show mine. Or the lock does it for me.",
+    "Nice try. My picks stay in the vault till they lock at kickoff.",
+    "Not in here. You'll see my sides when picks lock at kickoff. Can't have anybody copying the homework.",
+    "My card stays face down in the group till kickoff. Make your own calls first.",
+    "Ha, no. My picks show when they lock at kickoff, same as yours.",
 ]
 
 
@@ -110,7 +106,8 @@ TTL_S = 60
 
 
 def group_status(now: dt.datetime | None = None, league_factory=None) -> dict:
-    """{"revealed": bool, "week": int|None, "pool_teams": set[str]} for the open week.
+    """{"revealed": bool, "week": int|None, "pool_teams": set[str]} for the open week. pool_teams = the
+    teams in its pool games that haven't locked yet (playoffs lock per game), revealed = none left.
     Any failure: not revealed, team lists empty (says_lean then treats any lean talk as a leak)."""
     t = time.monotonic()
     if _CACHE["val"] is not None and t - _CACHE["at"] < TTL_S and league_factory is None:
@@ -125,8 +122,9 @@ def group_status(now: dt.datetime | None = None, league_factory=None) -> dict:
         w = lg.open_week()
         val["week"] = w
         if w is not None:
-            val["pool_teams"] = {x for g in lg.week_games(w) for x in (g.get("Away"), g.get("Home")) if x}
-            val["revealed"] = lg.picky_revealed(w)
+            hidden = [g for g in lg.week_games(w) if not lg.game_locked(g, w)]
+            val["pool_teams"] = {x for g in hidden for x in (g.get("Away"), g.get("Home")) if x}
+            val["revealed"] = not hidden
         else:
             val["revealed"] = True  # no open week: nothing of his is pending
     except Exception as e:  # noqa: BLE001  fail closed

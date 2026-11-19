@@ -104,7 +104,7 @@ import picky_brain  # noqa: E402
 import freeze  # noqa: E402
 import pictures  # noqa: E402
 import picky_zh  # noqa: E402
-import picky_reveal  # noqa: E402  (Picky's own sides stay hidden in the group till everyone's in or lock)
+import picky_reveal  # noqa: E402  (Picky's own sides stay hidden in the group till the picks lock at kickoff)
 import rare_bits  # noqa: E402
 import router  # noqa: E402
 import playoff_race  # noqa: E402
@@ -765,8 +765,9 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
 PRIVACY_NOTE = "Everybody's picks stay hidden till they lock at the week's first kickoff; after that they're all on the site."
 
 
-# Picky's own picks/leans in the GROUP (Charlie, 2026-11-19): hidden until every active member has submitted
-# or the week locks (picky_reveal). These lanes are about his graded past picks, never this week's sides.
+# Picky's own picks/leans in the GROUP (Charlie, 2026-11-19 15:41): hidden until the picks lock at kickoff
+# (picky_reveal; regular season the week's first kickoff, playoffs per game), whoever has submitted.
+# These lanes are about his graded past picks, never this week's sides.
 PAST_PICK_KINDS = {"picky_record", "lw_pick", "results", "record"}
 
 
@@ -1122,7 +1123,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
             await save_turn(key, q_hist, reply, who, lane=route.label())
             return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
-        if mode == "group" and picky_reveal.PICK_ASK.search(q):  # 'who you got in Iowa?' before everyone's in
+        if mode == "group" and picky_reveal.PICK_ASK.search(q):  # 'who you got in Iowa?' before the lock
             st = await hidden_sides(mode, route)
             if st and picky_reveal.wants_pick(q, st["pool_teams"], other_teams(q)):
                 reply = picky_reveal.dodge(f"{key or chat_id}:{q}")

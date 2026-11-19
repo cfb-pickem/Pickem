@@ -22,16 +22,18 @@ is due (Central time):
             new dated injury/QB lines, forecast swings, a flipped lean), and no
             post at all when nothing changed. Without one (fallback): the
             slate, Picky's card and the film room's line.
-  saturday  Saturday 09:30-13:00 when the week has a Saturday game: Picky's
-            sides in today's games, one text. No sides to show = no post (it
-            retries each tick, so a hidden card posts right after the lock).
-  HIDDEN SIDES (Charlie, 2026-11-19): Picky plays as an exhibition team, so no
-            pre-lock post shows his picks or leans (preview card, Saturday sides,
-            the film room's line, the breakdown's "Lean:" lines, a flipped lean)
-            until every active member has submitted or the week locks
-            (League.picky_revealed, picky_reveal.py). Posts still go out without
-            his sides; the Saturday post waits for the reveal (no sides = no post).
-            Recaps and pings are post-lock: unchanged.
+  saturday  Saturday 09:30-13:00 when the week has a Saturday game: today's
+            pool games, one text, at the first tick from 09:30. Picky's sides
+            only for games already locked; before the lock it's the games and
+            lines with "my sides show at kickoff" (HIDDEN SIDES).
+  HIDDEN SIDES (Charlie, 2026-11-19 15:41: "picks are hidden till kickoff when
+            they lock, not anything to do with all members"): Picky plays as an
+            exhibition team, so no post shows his pick or lean in a game (preview
+            card, Saturday sides, the film room's line, the breakdown's "Lean:"
+            lines, a flipped lean) until that game's picks lock, the site's rule
+            (League.game_locked: regular season the week's first kickoff,
+            playoffs per game). Who has submitted plays no part. Posts still go
+            out without his sides. Recaps and pings are post-lock: unchanged.
   remind    Before the weekly lock only (regular season: every pick locks at
             the week's first kickoff, picks_open_for_game()). First game on a
             Saturday: 07:00 that Saturday. First game any other day: 07:00
@@ -96,7 +98,6 @@ import httpx
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import group_outbox as ob  # noqa: E402
-import picky_reveal  # noqa: E402
 import playoff_race as pr  # noqa: E402
 import rare_bits  # noqa: E402
 import straggler_nudges  # noqa: E402
@@ -225,17 +226,22 @@ class League:
         rows = self.db.rpc("submission_status", {"p_season": self.season, "p_week": w})
         return {self.tid[r["team_id"]]: bool(r["submitted"]) for r in rows if r["team_id"] in self.tid}
 
+    def game_lock(self, g: dict, w: int) -> dt.datetime | None:
+        """When members lose the ability to pick game g, the site's rule (picks_open_for_game(), mirrored
+        by picky_picks.lock_utc): regular season, the week's first kickoff; playoffs, g's own kickoff."""
+        return kick(g) if w > pr.LAST_REGULAR_WEEK else self.lock_time(w)
+
+    def game_locked(self, g: dict, w: int) -> bool:
+        """Has game g's pick locked? No known lock = not locked (Picky's side stays hidden: fail closed)."""
+        lk = self.game_lock(g, w)
+        return is_final(g) or (lk is not None and lk <= self.now)
+
     def picky_revealed(self, w: int) -> bool:
-        """May the group see Picky's sides for week w? Locked, or every active member (exhibition
-        excluded: self.tid) has submitted (picky_reveal; Charlie 2026-11-19). No data = hidden."""
-        if self.locked(w):
-            return True
-        try:
-            sub = self.submission(w)
-        except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
-            log.warning("submission status unavailable, Picky's sides stay hidden: %r", e)
-            return False
-        return picky_reveal.revealed(False, sub)
+        """May the group see Picky's sides for every pool game of week w? Only once each has locked
+        (Charlie 2026-11-19 15:41: "picks are hidden till kickoff when they lock, not anything to do with
+        all members"). Regular season: the whole week at its first kickoff; playoffs per game."""
+        games = self.week_games(w)
+        return bool(games) and all(self.game_locked(g, w) for g in games)
 
 
 # -----------------------------------------------------------------------------
@@ -647,12 +653,12 @@ def lg_now() -> dt.datetime:
 
 def picky_card(lg: League, w: int) -> dict[int, dict]:
     """{game_id: {"label", "why", "made"}}: Picky's submitted picks, else
-    what his own pick logic would take right now. Empty until the group may see
-    his sides (League.picky_revealed: everyone's in, or the week locked)."""
+    what his own pick logic would take right now, ONLY for games whose picks
+    have locked (League.game_locked); every other game is left out."""
     out = {}
-    if not lg.picky_revealed(w):
+    games = [g for g in lg.week_games(w) if lg.game_locked(g, w)]
+    if not games:
         return out
-    games = lg.week_games(w)
     for p in lg.picky_picks():
         if p.get("week") == w and p.get("pick") and not p.get("tiebreaker"):
             g = next((x for x in games if x["GameId"] == p["game_id"]), None)
@@ -688,31 +694,30 @@ def stakes_facts(lg: League) -> list[str]:
 
 
 def make_preview(lg: League, w: int) -> list[str] | None:
-    """Thursday preview, code only: the slate and lock, Picky's card (once revealed), the film room's best
-    line (once revealed: it takes a side), the stakes."""
+    """Thursday preview, code only: the slate and lock, Picky's card (once locked), the film room's best
+    line (once locked: it takes a side), the stakes."""
     games = lg.week_games(w)
     if not games:
         return None
     card = picky_card(lg, w)
     lock = lg.lock_time(w)
-    texts = plain_preview(w, games, card, lock, stakes_facts(lg), key=f"preview:{lg.season}:{w}")
-    quote = next(((g, t["quotable"]) for g in games if (t := load_take(w, g["GameId"])) and t.get("quotable")),
-                 None) if card else None
+    texts = plain_preview(w, games, card, lock, stakes_facts(lg), key=f"preview:{lg.season}:{w}",
+                          hidden=not all(lg.game_locked(g, w) for g in games))
+    quote = next(((g, t["quotable"]) for g in games if g["GameId"] in card  # locked games only: it takes a side
+                  and (t := load_take(w, g["GameId"])) and t.get("quotable")), None)
     if quote:
         texts.insert(2, f"Film room on {matchup(quote[0])}: {quote[1]}")
     return ob.clip(texts, ob.limits("preview")[0])  # one text: head, card, then the film room / stakes if room
 
 
 def make_saturday(lg: League, w: int) -> list[str] | None:
-    """Saturday morning post, code only: Picky's side in each of today's pool games."""
+    """Saturday morning post, code only: today's pool games; Picky's side in each once its pick has locked."""
     today = lg.now.date()
     games = [g for g in lg.week_games(w) if (k := kick(g)) and k.date() == today and k > lg.now - dt.timedelta(hours=1)]
     if not games:
         return None
-    card = picky_card(lg, w)
-    if not card:  # no sides to show (hidden till lock): the reminder already covered the lock, so no post yet
-        return None
-    return ob.clip(plain_saturday(games, card, key=f"sat:{lg.season}:{w}"), ob.limits("saturday")[0])
+    return ob.clip(plain_saturday(games, picky_card(lg, w), key=f"sat:{lg.season}:{w}",
+                                  hidden=not all(lg.game_locked(g, w) for g in games)), ob.limits("saturday")[0])
 
 
 # Code templates: the computed facts, lightly worded, nothing invented (preview / saturday always;
@@ -745,7 +750,7 @@ def _short_kick(k: dt.datetime | None) -> str:
     return k.strftime("%a %-I:%M%p").replace(":00", "").lower().capitalize() if k else "TBD"
 
 
-HIDDEN_NOTE = "My sides show once everyone's in or at kickoff."
+HIDDEN_NOTE = "My sides show at kickoff, when picks lock."
 
 
 def _card_line(g: dict, c: dict | None) -> str:
@@ -758,20 +763,27 @@ def _card_line(g: dict, c: dict | None) -> str:
     return f"{c['label']} vs {other} ({_short_kick(kick(g))}" + (")" if c["made"] else ", a lean)")
 
 
-def plain_preview(w: int, games: list[dict], card: dict, lock, stakes: list[str], key: str = "") -> list[str]:
+def plain_preview(w: int, games: list[dict], card: dict, lock, stakes: list[str], key: str = "",
+                  hidden: bool = False) -> list[str]:
+    """hidden: some game hasn't locked yet, so the card line is games and lines only (HIDDEN SIDES)."""
     lk = kick_text(lock)
     head = variant([f"Week {w} slate is set. Picks lock at the first kickoff, {lk}.",
                     f"Week {w} is up. Every pick locks at the first kickoff, {lk}, so don't sleep on it.",
                     f"Slate's out for week {w}. First kickoff, {lk}, locks every pick."], key or f"preview:{w}")
     lines = "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."
-    out = [head, ("My card: " + lines) if card else ("The card: " + lines + " " + HIDDEN_NOTE)]
+    out = [head, ("The card: " + lines + " " + HIDDEN_NOTE) if hidden or not card else ("My card: " + lines)]
     return out + stakes[:1]
 
 
-def plain_saturday(games: list[dict], card: dict, key: str = "") -> list[str]:
+def plain_saturday(games: list[dict], card: dict, key: str = "", hidden: bool = False) -> list[str]:
+    """hidden: one of today's games hasn't locked yet: games and lines only (HIDDEN SIDES)."""
     body = "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."
+    k = key or "sat:" + ",".join(str(g["GameId"]) for g in games)
+    if hidden or not card:
+        return [variant(["Pool games today: ", "Game day. On the board: ", "Saturday's pool games: "], k)
+                + body + " " + HIDDEN_NOTE]
     return [variant(["Pool games today, my sides: ", "Game day. Where I'm at: ", "Saturday's pool games, my side: "],
-                    key or "sat:" + ",".join(str(g["GameId"]) for g in games)) + body]
+                    k) + body]
 
 
 # -----------------------------------------------------------------------------

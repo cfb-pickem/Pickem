@@ -1,8 +1,9 @@
 """
-Picky's own sides stay out of the league GROUP until every active member has submitted or the week
-locks (Charlie, 2026-11-19: "Picky's picks shouldn't get posted till everyone else's is"). Covers the
-League rule (exhibition excluded, fail closed), the preview / Saturday posts without his sides, and the
-group chat: a pick ask gets a dodge, a reply that takes a side gets swapped, DMs are untouched.
+Picky's own sides stay out of the league GROUP until the picks LOCK, the site's lock rule (Charlie,
+2026-11-19 15:41 CT: "picks are hidden till kickoff when they lock, not anything to do with all members").
+Regular season: the whole week locks at its first kickoff; playoffs lock per game. Covers the League rule
+(no submission dependence, fail closed), the preview / Saturday posts without his sides, and the group chat:
+a pick ask gets a dodge, a reply that takes a side gets swapped, DMs are untouched.
 No network, no model, nothing sent.
 
 Run:  ./.venv/bin/python3 -I test_picky_reveal.py
@@ -35,39 +36,35 @@ def t(s: str) -> dt.datetime:
 
 
 class FakeDB:
-    """submission_status() as the site returns it: every team, Picky (exhibition) and inactive teams included."""
-
-    def __init__(self, rows, fail=False):
-        self.rows, self.fail = rows, fail
+    """No RPC may be consulted for the reveal: who has submitted plays no part (it raises if asked)."""
 
     def rpc(self, fn, body):
-        if self.fail:
-            raise ValueError("db down")
-        assert fn == "submission_status", fn
-        return self.rows
+        raise AssertionError(f"the reveal read {fn}: it must depend on the lock only")
 
 
 G1 = {"GameId": 1, "Away": "Utah", "Home": "Iowa", "line": -3.5, "week": 12, "Start (CT)": "2026-11-21T11:00:00",
       "picked": True}
 G2 = {"GameId": 2, "Away": "Illinois", "Home": "Northwestern", "line": 2.5, "week": 12,
       "Start (CT)": "2026-11-21T14:30:00", "picked": True}
+# league playoffs (week 16+): each game locks at its own kickoff
+P1 = {"GameId": 11, "Away": "Utah", "Home": "Iowa", "line": -3.5, "week": 16, "Start (CT)": "2026-12-19T11:00:00",
+      "picked": True}
+P2 = {"GameId": 12, "Away": "Illinois", "Home": "Northwestern", "line": 2.5, "week": 16,
+      "Start (CT)": "2026-12-19T18:30:00", "picked": True}
 
 
-def league(now: str, submitted: dict[int, bool], fail=False) -> gp.League:
-    """A real League (its locked / submission / picky_revealed / picky_card) over fake data.
-    team 99 = Picky (exhibition), team 7 = inactive: neither is in tid, so neither counts."""
+def league(now: str, games=(G1, G2)) -> gp.League:
+    """A real League (its lock_time / game_locked / picky_revealed / picky_card) over fake data."""
     lg = gp.League.__new__(gp.League)
     lg.now, lg.season, lg.names, lg._picks = t(now), 2026, {"Chuck P": "Charlie"}, {}
     lg.tid = {1: "Chuck P", 2: "Ackbar", 3: "TG"}
     lg.picky_id = 99
-    lg.games = [G1, G2]
-    lg.db = FakeDB([{"team_id": k, "team_name": str(k), "submitted": v} for k, v in submitted.items()], fail=fail)
+    lg.games = [dict(g) for g in games]
+    lg.db = FakeDB()
     lg.picky_picks = lambda: []  # picky_player(): nothing revealed by the RPC before lock
     return lg
 
 
-ALL_IN = {1: True, 2: True, 3: True, 99: False, 7: False}   # every member in; Picky + inactive not
-ONE_OUT = {1: True, 2: False, 3: True, 99: True, 7: True}   # Ackbar missing (Picky being in doesn't help)
 PRE, POST = "2026-11-20T12:00", "2026-11-21T11:05"
 
 
@@ -88,53 +85,104 @@ def leans_available():
         yield
 
 
-def test_rule():
-    assert pv.revealed(True, None) and pv.revealed(False, {"a": True, "b": True})
-    assert not pv.revealed(False, {"a": True, "b": False}) and not pv.revealed(False, {}) \
-        and not pv.revealed(False, None)
+def test_old_submission_reveal_is_gone():
+    assert not hasattr(pv, "revealed"), "the everyone-submitted reveal path is removed"
+    import inspect
+    for src in (inspect.getsource(pv), inspect.getsource(gp.League.picky_revealed),
+                inspect.getsource(gp.League.game_locked), inspect.getsource(gp.picky_card)):
+        assert "submission" not in src.replace("Who has or hasn't submitted plays no part", ""), src[:200]
 
 
-def test_league_before_and_after_everyone_submitted():
-    assert not league(PRE, ONE_OUT).picky_revealed(12), "one member missing: hidden"
-    assert league(PRE, ALL_IN).picky_revealed(12), "every active member in: revealed before lock"
+def test_hidden_before_lock_revealed_after():
+    assert not league(PRE).picky_revealed(12), "before the first kickoff: hidden"
+    assert not league("2026-11-21T10:59").picky_revealed(12), "a minute before kickoff: hidden"
+    assert league("2026-11-21T11:00").picky_revealed(12), "at the first kickoff the week locks: revealed"
+    assert league(POST).picky_revealed(12)
 
 
-def test_exhibition_and_inactive_excluded_from_everyone():
-    lg = league(PRE, ALL_IN)
-    assert set(lg.submission(12)) == {"Chuck P", "Ackbar", "TG"}, lg.submission(12)
-    # Picky (99) and the inactive team (7) haven't submitted, yet it's revealed: they don't count
+def test_regular_season_whole_week_locks_at_first_kickoff():
+    lg = league(POST)  # G1 kicked off, G2 (2:30) hasn't
+    assert lg.game_locked(G2, 12), "regular season: the later game locked with the week"
+    assert lg.game_lock(G2, 12) == t("2026-11-21T11:00")
+
+
+def test_no_submission_dependence():
+    # FakeDB raises on any RPC, so these pass only if nobody asks who has submitted
+    lg = league(PRE)
+    lg.submission = lambda w: {"Chuck P": True, "Ackbar": True, "TG": True}  # everyone in: still hidden
+    assert not lg.picky_revealed(12) and gp.picky_card(lg, 12) == {}
+    lg = league(POST)
+    lg.submission = lambda w: {"Chuck P": False, "Ackbar": False, "TG": False}  # nobody in: still revealed
     assert lg.picky_revealed(12)
-    # and Picky + the inactive team being in doesn't make up for a missing member
-    assert not league(PRE, ONE_OUT).picky_revealed(12)
 
 
-def test_lock_reveals_and_failure_hides():
-    assert league(POST, ONE_OUT).picky_revealed(12), "after the first kickoff: revealed"
-    assert not league(PRE, ALL_IN, fail=True).picky_revealed(12), "no submission data: hidden (fail closed)"
+def test_playoffs_lock_per_game():
+    lg = league("2026-12-19T12:00", games=(P1, P2))  # P1 kicked off at 11, P2 not till 6:30
+    assert lg.game_locked(P1, 16) and not lg.game_locked(P2, 16)
+    assert not lg.picky_revealed(16), "one playoff game still open: not fully revealed"
+    with leans_available():
+        card = gp.picky_card(lg, 16)
+    assert set(card) == {11}, f"only the locked playoff game shows his side: {card}"
+    assert league("2026-12-19T18:30", games=(P1, P2)).picky_revealed(16)
+    st = pv.group_status(league_factory=lambda: lg)
+    assert st == {"revealed": False, "week": 16, "pool_teams": {"Illinois", "Northwestern"}}, st
+
+
+def test_same_rule_as_picky_picks_lock_utc():
+    import picky_picks
+    for games, w, now in (((G1, G2), 12, POST), ((P1, P2), 16, "2026-12-19T12:00")):
+        lg = league(now, games=games)
+        for g in games:
+            assert lg.game_lock(g, w) == picky_picks.lock_utc(g, list(games)).astimezone(CT), g["GameId"]
+
+
+def test_unknown_lock_stays_hidden():
+    g = dict(P2, **{"Start (CT)": None})
+    lg = league("2026-12-25T12:00", games=(P1, g))
+    assert not lg.game_locked(g, 16) and not lg.picky_revealed(16), "no kickoff time: hidden (fail closed)"
+    lg = league(PRE, games=[dict(G1, **{"Start (CT)": None})])
+    assert not lg.picky_revealed(12)
+    assert league(PRE, games=[]).picky_revealed(12) is False
+
+    def boom():
+        raise RuntimeError("db down")
+    assert pv.group_status(league_factory=boom)["revealed"] is False
 
 
 def test_preview_and_saturday_without_his_sides():
     with leans_available(), patch.object(gp, "stakes_facts", lambda lg: []), \
             patch.object(gp, "load_take", lambda w, gid: {"quotable": "Iowa's defense eats this offense alive."}):
-        lg = league(PRE, ONE_OUT)
+        lg = league(PRE)
         assert gp.picky_card(lg, 12) == {}
         pre = gp.make_preview(lg, 12)
         body = "\n".join(pre)
         assert "I'm on" not in body and "lean" not in body.lower() and "My card" not in body, pre
         assert "Film room" not in body, "the film room's line takes a side: hidden too"
-        assert "Iowa -3.5 vs Utah" in body and gp.HIDDEN_NOTE in body, pre
-        lg = league("2026-11-21T09:35", ONE_OUT)
-        assert gp.make_saturday(lg, 12) is None, "Saturday post waits for the reveal (no sides = no post)"
-        sat = gp.make_saturday(league("2026-11-21T11:05", ONE_OUT), 12)
-        assert sat and "Iowa -3.5" in sat[0], f"after lock the Saturday post shows his sides: {sat}"
-        # everyone in: his sides show (pre-lock: a lean from his pick logic)
-        lg = league(PRE, ALL_IN)
-        pre = gp.make_preview(lg, 12)
-        body = "\n".join(pre)
-        assert "My card" in body and "Iowa -3.5 vs Utah" in body and gp.HIDDEN_NOTE not in body, pre
-        # after lock: shown
-        lg = league(POST, ONE_OUT)
-        assert gp.picky_card(lg, 12), "after lock his card shows"
+        assert "Iowa -3.5 vs Utah" in body and gp.HIDDEN_NOTE in body and "kickoff" in gp.HIDDEN_NOTE, pre
+        # Saturday post at its old time (09:30 window), before the 11am lock: games and lines, no sides
+        sat = gp.make_saturday(league("2026-11-21T09:35"), 12)
+        assert sat and len(sat) == 1 and gp.HIDDEN_NOTE in sat[0] and "my side" not in sat[0].replace(gp.HIDDEN_NOTE, "").lower() \
+            and "Where I'm at" not in sat[0] and "lean" not in sat[0].lower(), sat
+        assert "Iowa -3.5 vs Utah (Sat 11am)" in sat[0], sat  # the market favorite + line, not his side
+        # after lock: his sides (made picks or, for an unentered game, his lean)
+        sat = gp.make_saturday(league(POST), 12)
+        assert sat and gp.HIDDEN_NOTE not in sat[0] and "Iowa -3.5" in sat[0] and "Northwestern" in sat[0], sat
+        assert gp.picky_card(league(POST), 12), "after lock his card shows"
+
+
+def test_saturday_post_timing_is_the_old_window():
+    """No 'wait for the reveal' gate: the post goes at the first tick from 09:30 like before 354cc2f."""
+    import inspect
+    src = inspect.getsource(gp.tick)
+    assert '(now.hour, now.minute) >= (9, 30) and now.hour < 13' in src
+    assert "if not card" not in inspect.getsource(gp.make_saturday)
+
+
+def test_dodge_says_kickoff():
+    for d in pv.DODGES:
+        assert "kickoff" in d and "everyone" not in d.lower() and "everybody" not in d.lower() \
+            and "all of you" not in d, d
+    assert pv.dodge("k:q") in pv.DODGES and pv.dodge("k:q") == pv.dodge("k:q")
 
 
 def test_tick_refresh_gets_reveal_flag():

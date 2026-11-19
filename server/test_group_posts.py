@@ -317,6 +317,9 @@ class _League:
     def lock_time(self, w):
         return t("2026-11-21T11:00")
 
+    def game_locked(self, g, w):
+        return self.lock_time(w) <= self.now
+
     def submission(self, w):
         return {"Ackbar": False, "Chuck P": True, "TG": True}
 
@@ -340,6 +343,7 @@ def test_posts_are_code_only_but_the_recap():
     gp.load_take = lambda w, gid: {"quotable": "Iowa's defense eats this offense alive."}
     try:
         lg = _League()
+        lg.game_locked = lambda g, w: True  # the card above only exists once the picks lock (HIDDEN SIDES)
         pre = gp.make_preview(lg, 12)
         sat = gp.make_saturday(lg, 12)
         rem = gp.make_reminder(lg, 12)
@@ -507,12 +511,16 @@ def test_standings_move():
     assert gp.standings_move(rows, [(t, 0, 0) for t, _, _ in rows]) is None  # week 1: nothing to compare
 
 
-def test_saturday_post_waits_for_sides():
+def test_saturday_post_before_lock_has_no_sides():
+    """Before the lock the Saturday post still goes at its old time (09:30), games and lines only; his sides
+    stay hidden till kickoff (Charlie 2026-11-19 15:41: hidden till kickoff when they lock)."""
     fresh()
     saved = gp.picky_card
     gp.picky_card = lambda lg, w: {}
     try:
-        assert gp.make_saturday(_League(), 12) is None  # hidden card: no games-and-lines repeat of the reminder
+        sat = gp.make_saturday(_League(), 12)
+        assert sat and len(sat) == 1 and len(sat[0]) <= 280 and gp.HIDDEN_NOTE in sat[0] \
+            and "Iowa -3.5 vs Utah (Sat 11am)" in sat[0] and "Where I'm at" not in sat[0], sat
     finally:
         gp.picky_card = saved
 

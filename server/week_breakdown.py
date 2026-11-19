@@ -434,7 +434,7 @@ def verify(text: str, facts: list[str], lean: dict | None, member_names: list[st
     if _SELF_PICK.search(text):
         probs.append("talks about Picky's own pick; his picks stay hidden until lock, use 'Lean:' only")
     if hide and picky_reveal.LEAN_TALK.search(text):
-        probs.append("takes a side; Picky's leans stay hidden until everyone's picks are in, give no lean or side")
+        probs.append("takes a side; Picky's leans stay hidden until the picks lock at kickoff, give no lean or side")
     if _BODY.search(text):
         probs.append("goes after bodies or family")
     for nm in member_names or []:
@@ -463,7 +463,7 @@ LEAN_FACTS = ("THE LEAN", "Reason for the lean", "Best case against", "Film room
 
 def hide_leans(gfs: list[dict]) -> list[dict]:
     """Copies of the fact sheets with the card's lean and every lean-framed fact taken out (Picky's sides
-    stay hidden in the group until everyone's in or the week locks: picky_reveal)."""
+    stay hidden in the group until the picks lock at kickoff: picky_reveal)."""
     return [gf | {"lean": None, "facts": [f for f in gf["facts"] if not f.startswith(LEAN_FACTS)]} for gf in gfs]
 
 
@@ -505,8 +505,8 @@ own picks stay hidden until the lock. Only give the lean."""
 
 
 HIDDEN_TASK_END = """Last line: the sharpest angle from the facts. Give NO lean, NO side and NO pick (no "Lean:" line,
-no "I like", no "take the points", no "value on X"): Picky's sides stay hidden in the group until everyone's picks
-are in. The analysis is the angles, not a call."""
+no "I like", no "take the points", no "value on X"): Picky's sides stay hidden in the group until the picks lock
+at kickoff. The analysis is the angles, not a call."""
 
 
 def build_prompt(gfs: list[dict], week: int, lock_text: str, problems: dict | None = None,
@@ -741,7 +741,7 @@ def tick_picks_up(lg, week: int | None, now: dt.datetime, send, writer=None, rea
     # the announcement and the breakdown go out together as a single message. If the cards
     # aren't ready within MERGE_WAIT_S of the games landing, the announcement goes alone
     # (still one text) and that week has no breakdown post.
-    # Picky's leans stay out of the group until everyone's in or the week locks (picky_reveal; a League
+    # Picky's leans stay out of the group until the picks lock at kickoff (picky_reveal; a League
     # without picky_revealed, e.g. a test double, counts as hidden). A draft made with leans is stale once hidden.
     rv = getattr(lg, "picky_revealed", None)
     hide = not (rv and rv(week))
