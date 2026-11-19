@@ -719,12 +719,43 @@ JACKPOT_HIT = re.compile(r"\b(ever )?(hit|won|popped|cashed) (it|the jackpot|the
                          re.I)  # 'who won Texas LSU?' is a game (live-80 2026-11-17), not the jackpot
 
 
+# 'Is the slot jackpot about to hit', 'It's progressive right? What are the current odds it pops for me' (Brian,
+# 2026-11-18: got only the pull count, then "the chance is shown on the football", which it isn't)
+JACKPOT_ODDS = re.compile(
+    r"\b(it'?s|is it|is the (jackpot|football|slots?)) progressive\b|\bprogressive (jackpot|slots?)\b"
+    r"|\b(odds|chances?)\b[^?.!]{0,25}\b(it|the football|the jackpot|the slots?|the ball)\b[^?.!]{0,6}\b(pops?|hits?|goes)\b"
+    r"|\b(jackpot|the slots?)\b[^?.!]{0,30}\b(about to|gonna|going to|due|close to|soon|odds|chances?|how close)\b"
+    r"|\bhow close is the (jackpot|football)\b", re.I)
+
+
+def jackpot_odds_text(ctx: dict, q: str) -> str | None:
+    """How it works + where it stands. The exact odds stay secret: the site hides them on purpose (js/jackpot.js,
+    'Nobody is told how close it is'), so Picky says so instead of pointing at a number that isn't there."""
+    jp = ctx.get("jackpot")
+    if not isinstance(jp, dict):
+        return None
+    n = jp.get("pulls_since_pop")
+    if jp.get("last_pop_at"):  # slots_jackpot_odds_for: 0 for the rest of the regular season after a pop
+        return (f"{jp.get('last_pop_team') or 'Somebody'} popped it ({str(jp['last_pop_at'])[:10]}), and it only pops "
+                "once a regular season, so no more pops till the playoffs.")
+    where = f"It's at {n} pulls and hasn't popped yet." if n else "It hasn't popped yet."
+    secret = "the site keeps the exact odds secret on purpose, so I can't give you a number."
+    if re.search(r"\bprogressive\b", q, re.I):
+        mine = "Same odds on anybody's pull, and " if re.search(r"\b(for me|my|mine|i)\b", q, re.I) else "And "
+        return (f"Sort of: the prize never grows (a pop is always one AUTO WIN point), but the odds do, since every "
+                f"slots pull anybody makes puts more air in the one league football. {where} {mine}{secret}")
+    return (f"{where} The longer it goes without a pop, the better the next pull's chances, but {secret} "
+            "A pop on your pull makes that pick a win no matter who covers.")
+
+
 def jackpot_hit_text(ctx: dict, q: str) -> str | None:
     """Who's hit the jackpot this season, from the site's jackpot state (keeper k1: 'have i ever hit it' got an
     invented 'You've hit it plenty of times')."""
     jp = ctx.get("jackpot")
     if not isinstance(jp, dict):
         return None
+    if JACKPOT_ODDS.search(q or ""):
+        return jackpot_odds_text(ctx, q)
     if not jp.get("last_pop_at"):
         n = jp.get("pulls_since_pop")
         return "Nobody's hit it this season" + (f": {n} pulls since the football last popped." if n else ".")
@@ -2344,6 +2375,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "standings", "GAP_FIRST_ASK"
     if chat.wants_rules(t) and rules_answer(t):
         return "rules", "league_rules.answer"
+    if JACKPOT_ODDS.search(t):
+        return "jackpot_hit", "JACKPOT_ODDS"  # same lane: jackpot_hit_text answers the odds ask
     if JACKPOT_HIT.search(t):
         return "jackpot_hit", "JACKPOT_HIT"
     if RULES_EXTRA.search(t):

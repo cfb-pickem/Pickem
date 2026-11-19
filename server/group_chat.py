@@ -100,6 +100,7 @@ import gameday  # noqa: E402  (Saturday DM lanes: any game's score/stats/drives/
 import matchup_guard  # noqa: E402
 import member_memory  # noqa: E402  (forget handler, receipt check, Charlie rule)
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
+import answer_first  # noqa: E402  (helpful first: insist follow-ups, tone asks, honest data gaps)
 import picky_brain  # noqa: E402
 import freeze  # noqa: E402
 import pictures  # noqa: E402
@@ -1089,6 +1090,12 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
         key = ("web:" + s.user_id) if web else history_key(chat_id, handle, dm)
         who = s.handle if mode == "group" else None
         charlie = is_charlie(s)
+        prior = [str(m["content"]) for m in (web["history"] if web else load_history(key, sender=who))
+                 if m.get("role") == "user"]
+        again = answer_first.carry(q, prior, lambda p: router.classify(p).lane in ("banter", "ignore", "jailbreak"))
+        if again:  # 'I won't just give me the numbers' (Brian 11-18, got "Yep."): answer the question he asked
+            log.info("insist follow-up: re-asking %r", again[:80])
+            q = again
         if s.team and member_memory.is_forget(q):  # "forget what I said about X": code only, never the model
             out = member_memory.forget(s.team, q, dm=mode != "group")
             if out.get("reply"):
@@ -1128,6 +1135,15 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = nemesis.tail(reply, q, s.team, key or chat_id, group=mode == "group")
             await save_turn(key, q_hist, reply, who, lane=route.label())
             return {"reply": reply, "image": None, "mode": mode, "lane": route.label()}
+        if answer_first.tone_ask(q) and route.lane != "fact":  # 'are you coded to be nicer to me' (Brian 11-18)
+            try:
+                tone = member_memory.stance_hint(s.team, dm=mode != "group", caller=s.team)["stance"] if s.team else ""
+            except Exception as e:  # noqa: BLE001  memory never blocks a reply
+                log.warning("stance_hint failed: %s", e)
+                tone = ""
+            reply = answer_first.tone_answer(q, tone, charlie=charlie)
+            await save_turn(key, q_hist, reply, who, lane="banter:tone_q")
+            return {"reply": reply, "image": None, "mode": mode, "lane": "banter:tone_q"}
         if mode == "group" and picky_reveal.PICK_ASK.search(q):  # 'who you got in Iowa?' before the lock
             st = await hidden_sides(mode, route)
             if st and picky_reveal.wants_pick(q, st["pool_teams"], other_teams(q)):
@@ -1199,6 +1215,10 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             reply = memory_check(reply, s.team, q, mode != "group")  # a quoted receipt matches its grade
             reply = charlie_guard(reply, s.team, key or chat_id) if charlie else reply
             reply = await sides_guard(reply, q, mode, route, key or chat_id)
+            if route.lane == "full" and answer_first.no_answer(reply, q):
+                # a data ask he can't answer: say so and offer what he has, never a roast instead (Brian 11-18)
+                log.info("data ask, no data in the reply: honest gap line instead of %r", reply[:160])
+                reply = answer_first.gap_reply(q, group=mode == "group")
         rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
         log.info("lane: %s", route.label())
         await save_turn(key, q_hist, reply, who, lane=route.label())

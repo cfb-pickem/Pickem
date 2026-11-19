@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+import answer_first
 import banter
 import burn_book
 import callbacks
@@ -1186,6 +1187,11 @@ async def _ollama_stream(messages: list[dict], prefix: str | None = None):
             nr = router.from_brief(rt, st["brief"].intent, st["brief"].asking, st["q"])
             if nr is not rt and nr.lane == "banter" and football_thread(st):
                 log.info("route (from brief): kept full, a football follow-up (%r)", st["q"][:60])
+                nr = rt
+            elif nr is not rt and nr.lane == "banter" and answer_first.keep_full(st["q"]):
+                # a data ask or a question with no '?' ('I won't just give me the numbers', 'Are you coded to be
+                # nicer to me...', Brian 11-18: "Yep." / "Can't argue with that.")
+                log.info("route (from brief): kept full, a question or data ask (%r)", st["q"][:60])
                 nr = rt
             elif nr is not rt and nr.lane == "banter" and str(rt.why).startswith("fact miss"):
                 # a fact question the code lane couldn't answer is still a question ('how am I doing this

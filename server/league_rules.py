@@ -804,11 +804,14 @@ def render_sections(f: dict) -> dict[str, list[str]]:
         if j.get("coin_flip_side") else "- Instead of picking a side, you can choose \"Let the slots decide\".",
         "- Every slots pick is one pull on the league jackpot (the football); flipping a pick back and forth doesn't add pulls. "
         "If it pops on your pull, you get an AUTO WIN: a point for that game no matter who covers, scored when the game is graded.",
-        (f"- Regular season: the football pops at most once a season. Its odds rise as the season's slots picks run out "
-         f"(never above {_pct(j['regular_cap'])} a pull); once it has popped, no more regular-season pops."
+        # slots_jackpot_odds_for: max(min(1/pulls left, cap), the ramp), so the ramp can top the cap (Brian 11-18)
+        (f"- Regular season: the football pops at most once a season. Its odds climb the longer it goes without a pop "
+         f"and get a boost (up to {_pct(j['regular_cap'])} a pull) as the season's slots picks run out; once it has "
+         f"popped, no more regular-season pops."
          if j.get("one_pop_per_regular_season") else ""),
         f"- Playoffs: the odds start at {_pct(j['base'])} a pull and climb after {j['quiet_pulls']} pulls without a pop, up to {_pct(j['max'])}.",
-        "- The jackpot is rare; the current odds are shown on the football on the picks page.",
+        "- The jackpot is rare. The site keeps the exact odds secret on purpose: the football on the picks page shows "
+        "how many pulls since the last pop, not the odds.",
     ]
     po = f.get("playoffs") or {}
     S["STANDINGS AND PLAYOFFS"] = [

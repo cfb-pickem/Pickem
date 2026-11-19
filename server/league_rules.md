@@ -78,9 +78,9 @@ DEADLINE AND PRIVACY
 LET THE SLOTS DECIDE (the jackpot)
 - Instead of picking a side, you can choose "Let the slots decide". At lock, the site flips a coin and picks a side for you.
 - Every slots pick is one pull on the league jackpot (the football); flipping a pick back and forth doesn't add pulls. If it pops on your pull, you get an AUTO WIN: a point for that game no matter who covers, scored when the game is graded.
-- Regular season: the football pops at most once a season. Its odds rise as the season's slots picks run out (never above 5% a pull); once it has popped, no more regular-season pops.
+- Regular season: the football pops at most once a season. Its odds climb the longer it goes without a pop and get a boost (up to 5% a pull) as the season's slots picks run out; once it has popped, no more regular-season pops.
 - Playoffs: the odds start at 0.005% a pull and climb after 200 pulls without a pop, up to 10%.
-- The jackpot is rare; the current odds are shown on the football on the picks page.
+- The jackpot is rare. The site keeps the exact odds secret on purpose: the football on the picks page shows how many pulls since the last pop, not the odds.
 
 STANDINGS AND PLAYOFFS
 - Season standings = total points from weeks 0-15 (correct picks plus slots AUTO WINs). Tiebreaker games and playoff games never count toward them. The site lists no weekly prize.
