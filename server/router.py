@@ -1059,7 +1059,11 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     also = [r for k, r in outs.items() if k != factstore.norm(player) and not hit and r["age_days"] <= FRESH_D]
     for r in also[:2]:
         used.append(factstore.status_fact(r))
-        out.append(f"Also {factstore.STATUS_PHRASE.get(r['status'], r['status'])}: {r['player']}. {_per(r, said, others)}".rstrip())
+        per = _per(r, said, others)
+        if per and re.search(re.escape(r["player"].split()[-1]), per):  # the report names him and says it: once
+            out.append("Also: " + per)
+        else:
+            out.append(f"Also {factstore.STATUS_PHRASE.get(r['status'], r['status'])}: {r['player']}. {per}".rstrip())
     used += _qb_used(team, player)
     g, _ = factstore.find_game(team, ctx)
     replaced = bool(starter and me and starter is not me and starter.get("streak") and (me.get("starts") or 0) > 0
@@ -1073,7 +1077,11 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
                        f"He's already missed those games, so the line already has it.")
             used += _qb_used(team, starter["name"])
         elif nxt:
-            out.append(f"Next up: {_qb_bio(nxt)}." + (" It'd be his first start this season." if not nxt.get("starts")
+            led_with = out and out[0].startswith(f"Looks like it's {nxt['name'].rstrip('.')}")
+            who = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", nxt["name"]).split()[-1]
+            out.append((f"{who}'s {'a ' + nxt['cls'].lower() + ' with ' if nxt.get('cls') else 'got '}{_qb_bio(nxt, False)}."
+                        if led_with else f"Next up: {_qb_bio(nxt)}.")
+                       + (" It'd be his first start this season." if not nxt.get("starts")
                                                        else ""))
             used += _qb_used(team, nxt["name"])
             if me and me is starter:

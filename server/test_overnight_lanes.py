@@ -272,6 +272,15 @@ def test_top_value_spot_comes_with_a_football_reason():
     assert out and "5-1 ATS at home" in out, out
 
 
+
+def test_team_qb_answer_doesnt_say_things_twice():
+    """Clemson: 'Also out for the rest of the regular season: Tait Reynolds. Clemson freshman starting QB Tait
+    Reynolds is out for the season' and 'Looks like it's Trent Pearman ... Next up: Trent Pearman' (voice 2)."""
+    out = _qb("Who's Clemson's QB Friday? Has he ever played?")
+    assert out.count("Tait Reynolds") == 1, out
+    assert out.count("Trent Pearman") == 1, out
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

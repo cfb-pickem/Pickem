@@ -202,7 +202,7 @@ def test_qb_status_out_gives_backup_value_and_line_move():
     with use(built()["path"]):
         out = router.qb_status_text({}, "Who's starting at QB for North Texas?")
     assert "Tayven Jackson" in out and "out for the rest of the regular season" in out, out
-    assert "per " in out and "Next up:" in out and "first start" in out, out
+    assert "per " in out and ("Next up:" in out or out.startswith("Looks like it's")) and "first start" in out, out
     assert "worth about" in out and "line has moved" in out, out
     ok_facts(out)
 
