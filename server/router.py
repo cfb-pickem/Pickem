@@ -28,10 +28,12 @@ holds the per-chat thread state (pile-ons, spirals).
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import re
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 
 import burn_book
@@ -1529,6 +1531,45 @@ def lookahead_game_text(ctx: dict, q: str) -> str | None:
     return " ".join(out)
 
 
+_CT = ZoneInfo("America/Chicago")
+REST_ASK = re.compile(r"\brested\b|\brest (edge|advantage)\b|\bmore rest\b|\bdays? (of )?rest\b|\b(off|coming off) (a|the|their) bye\b|"
+                      r"\bshort week\b|\bextra (week|rest)\b|\bwho'?s (more )?fresh(er)?\b", re.I)
+
+
+def rest_game_text(ctx: dict, q: str) -> str | None:
+    """Rest for one game: calendar days (CT) since each team's last game, who that was against and the score,
+    off a bye (13+) / short week (<= 5); the edge said in lean words (a nudge, not a reason). This week's game only:
+    never next week's opponent."""
+    g, _pool = factstore.find_game(q, ctx)
+    if not g or not g.get("startDate"):
+        return None
+    kick = dt.datetime.fromisoformat(g["startDate"].replace("Z", "+00:00")).astimezone(_CT).date()
+    rows, used = [], []
+    for team in (g["awayTeam"], g["homeTeam"]):
+        rs = [r for r in (factstore.team(team) or {}).get("results") or [] if r.get("date") and r["date"] < kick.isoformat()]
+        if not rs:
+            return None
+        r = max(rs, key=lambda r: r["date"])
+        days = (kick - dt.date.fromisoformat(r["date"][:10])).days
+        won = (r.get("pts") or 0) > (r.get("opp_pts") or 0)
+        score = f"{max(r['pts'], r['opp_pts'])}-{min(r['pts'], r['opp_pts'])}" if r.get("pts") is not None else ""
+        last = f"{'beat' if won else 'lost to'} {r['opp']}" + (f" {score}" if score else "")
+        rows.append((team, days, last, r["date"]))
+        used.append({"id": f"rest.{factstore.norm(team)}", "kind": "rest", "subject": team, "value": days,
+                     "text": f"{team}: {days} days rest; last game {r['date']} vs {r['opp']} {score}", "source": "CFBD results",
+                     "as_of": (factstore.team(team) or {}).get("as_of") or ""})
+    tag = lambda d: " (off a bye)" if d >= 13 else " (short week)" if d <= 5 else ""  # noqa: E731
+    (a, da, la, _), (b, db, lb, _) = sorted(rows, key=lambda x: -x[1])
+    if da == db:
+        head = f"Even rest: both on {da} days. {a} {la}; {b} {lb}."
+        tail = "No rest edge either way."
+    else:
+        head = f"{a} has the rest edge: {da} days{tag(da)} since it {la}, vs {db} days{tag(db)} for {b}, which {lb}."
+        tail = ("A bye week is worth a little, about a point at most, so it's a nudge, not a reason."
+                if da - db >= 4 else "A day or two of rest doesn't move the number.")
+    return factstore.answer(f"{head} {tail}", used)
+
+
 def conf_race_text(ctx: dict, q: str) -> str | None:
     """The conference title race (title_race.race over CFBD games + today's finals, via the fact store): leader and
     chasers, head-to-head tiebreaks (a tie head-to-head can't settle says the conference's further tiebreakers
@@ -2175,6 +2216,9 @@ def fact_intent(q: str) -> tuple[str, str] | None:
     if LOOKAHEAD_GAME.search(t) and not re.search(r"\b(ats|against the (spread|number)|cover\w*)\b", t, re.I) \
             and factstore.teams_named(t):
         return "lookahead_game", "LOOKAHEAD_GAME"  # 'is Iowa looking ahead to Nebraska?': that game's verdict in code
+    if REST_ASK.search(t) and not re.search(r"\b(ats|against the (spread|number)|cover\w*)\b", t, re.I) \
+            and factstore.teams_named(t):
+        return "rest_game", "REST_ASK"  # 'who's rested in Memphis-Navy?': days since each team's last game, in code
     if INTERIM_ASK.search(t) and situational.interim_text({}, t):
         return "interim", "INTERIM_ASK"  # 'Baylor's playing for an interim, does it matter?': the change + SU/ATS since
     if situational.ASK.search(t) and situational.weather_alt_travel_text({}, t):
@@ -3821,7 +3865,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "h2h": h2h_text, "qb_status": qb_status_text, "keynum": keynum_text,
               "backup_qb": backup_qb_text, "injury_impact": injury_impact_text,
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
-              "lookahead_game": lookahead_game_text,
+              "lookahead_game": lookahead_game_text, "rest_game": rest_game_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text, "ats_profile": ats_profile_text,
               "interim": situational.interim_text, "weather_alt_travel": situational.weather_alt_travel_text,
               "strategy": pick_strategy.answer,

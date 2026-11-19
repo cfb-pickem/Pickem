@@ -185,6 +185,26 @@ def test_pick_with_a_questionable_starting_qb_is_conditional():
     assert "MacIntyre" in theirs and "more" in theirs, theirs
 
 
+
+# --- rest_game: 'who's rested in Memphis-Navy?' ------------------------------------------------------
+
+def test_rest_asks_route_to_the_rest_lane():
+    for q in ("Who's rested in Memphis-Navy?", "Is Navy coming off a bye?", "Does Memphis have a rest advantage over Navy?",
+              "Memphis on a short week vs Navy?"):
+        fi = router.fact_intent(q)
+        assert fi and fi[0] == "rest_game", (q, fi)
+
+
+def test_rest_answer_says_days_and_last_game_for_both_and_never_next_weeks_opponent():
+    out = _ans(router.rest_game_text, "Who's rested in Memphis-Navy?")
+    assert out, out
+    low = str(out).lower()
+    assert "navy" in low and "14 days" in low and "bye" in low and "temple" in low, out
+    assert "8 days" in low and "south florida" in low, out
+    assert "charlotte" not in low, out  # next week's opponent is not this week's game
+    assert FS.unsupported(out, out.facts_used) == [], FS.unsupported(out, out.facts_used)
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
