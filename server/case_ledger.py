@@ -241,12 +241,59 @@ def _join(rows: list[dict]) -> str:
 # turn 1
 # ---------------------------------------------------------------------------------------------------------------
 
+def hook_note(led: dict, side: str) -> str | None:
+    """Where our side sits around 3 / 7 (final margins pile up there): laying the hook, getting it, or neither."""
+    if led.get("line") is None:
+        return None
+    ln = float(led["line"]) if factstore.norm(side) == factstore.norm(led["game"]["home"]) else -float(led["line"])
+    a = abs(ln)
+    for k in (3, 7):
+        if a == k + 0.5:
+            return (f"Mind the hook: laying {a:g}, a {k}-point win loses." if ln < 0 else
+                    f"And the hook's mine: a {k}-point loss still covers.")
+        if a == k - 0.5:
+            return (f"{a:g} is the good side of {k}: a {k}-point win covers." if ln < 0 else
+                    f"The catch at +{a:g}: a {k}-point loss misses.")
+    return None
+
+
+SHAKY = ("questionable", "doubtful", "TBD")
+
+
+def qb_note(led: dict, side: str) -> tuple[str, dict] | None:
+    """A starting QB in this game who's questionable/doubtful/TBD (fresh report): the call is conditional on him."""
+    if not factstore.has_personnel():
+        return None
+    g = led["game"]
+    other = g["home"] if factstore.norm(side) == factstore.norm(g["away"]) else g["away"]
+    for team in (side, other):
+        room = factstore.qb_room(team) or []
+        top = max(room, key=lambda x: x.get("starts") or 0)["name"] if room else factstore.qb_starter(team)
+        if not top:
+            continue
+        r = next((r for r in factstore.player_status(team=team, player=top)
+                  if r["status"] in SHAKY and r["age_days"] <= 10), None)
+        if r:
+            then = "I'm off it." if team == side else "I like it even more."
+            return (f"That's with {r['player']} playing for {team} (he's {factstore.STATUS_PHRASE.get(r['status'], r['status'])}); "
+                    f"if he sits, {then}", factstore.status_fact(r))
+    return None
+
+
 def pick_answer(led: dict) -> factstore.Answer:
     side = led["lean"]
     rs = top(led, side, 2)
     why = "; ".join(r["text"] for r in rs)
-    return factstore.answer(f"I'd take {led['labels'][side]} ({led['word'] or 'lean'})" + (f": {why}" if why else "") + ".",
-                            [led["line_fact"]] + _facts(rs))
+    used = [led["line_fact"]] + _facts(rs)
+    out = f"I'd take {led['labels'][side]} ({led['word'] or 'lean'})" + (f": {why}" if why else "") + "."
+    hk = hook_note(led, side)
+    if hk:
+        out += " " + hk
+    qn = qb_note(led, side)
+    if qn:
+        out += " " + qn[0]
+        used.append(qn[1])
+    return factstore.answer(out, used)
 
 
 # ---------------------------------------------------------------------------------------------------------------

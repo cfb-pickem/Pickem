@@ -145,6 +145,46 @@ def test_change_mind_qb_trigger_reads_the_per_player_status_not_the_notes_label(
     assert not any("Leavitt" in t["text"] for t in trig), trig
 
 
+
+# --- pick answers: the hook and a shaky starting QB ---------------------------------------------------
+
+def _led(away, home, line, lean):
+    lbl = {away: f"{away} {-line:+g}", home: f"{home} {line:+g}"}
+    return {"game": {"id": 1, "away": away, "home": home}, "lean": lean, "labels": lbl, "word": "lean", "line": line,
+            "source": "league", "rows": [], "as_of": "",
+            "line_fact": {"id": "l", "kind": "line", "subject": home, "value": line, "text": f"{home} {line:+g}",
+                          "source": "x", "as_of": ""}}
+
+
+def test_pick_laying_the_hook_over_3_says_a_field_goal_win_loses():
+    import case_ledger
+    out = str(case_ledger.pick_answer(_led("Texas Tech", "Baylor", 3.5, "Texas Tech")))
+    assert "3-point win" in out and "hook" in out.lower(), out
+
+
+def test_pick_getting_the_hook_says_a_field_goal_loss_still_covers():
+    import case_ledger
+    out = str(case_ledger.pick_answer(_led("Texas Tech", "Baylor", 3.5, "Baylor")))
+    assert "3-point loss" in out, out
+
+
+def test_pick_off_a_key_number_says_nothing_about_hooks():
+    import case_ledger
+    out = str(case_ledger.pick_answer(_led("Texas Tech", "Baylor", 5.0, "Baylor")))
+    assert "hook" not in out.lower(), out
+
+
+def test_pick_with_a_questionable_starting_qb_is_conditional():
+    """LSU-Tennessee: MacIntyre questionable (fixture). Taking Tennessee: 'if he sits, I'm off it'."""
+    import case_ledger
+    import test_personnel_store as TP
+    with TP.use(TP.built()["path"]):
+        mine = str(case_ledger.pick_answer(_led("LSU", "Tennessee", -1.5, "Tennessee")))
+        theirs = str(case_ledger.pick_answer(_led("LSU", "Tennessee", -1.5, "LSU")))
+    assert "MacIntyre" in mine and "questionable" in mine and "off it" in mine, mine
+    assert "MacIntyre" in theirs and "more" in theirs, theirs
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
