@@ -8,8 +8,8 @@ minutes. A tick detects the group, exits if paused, and otherwise decides what
 is due (Central time):
 
   recap     Sunday 9:00 (until Mon 9:00), once per fully-final pool week:
-            worst pick, chalk of the week, best call,
-            Picky's own week, then the playoff math (deterministic text).
+            ONE text (max_chars_long): who won the week, the standings move,
+            one award, Picky's own week. No per-game rundown, no playoff math.
   picks up  When a new week's 4 pool games appear (before lock): the "Week N
             picks are up" announcement (code template: lock time, the 4 lines
             with the favorite framed from `line`, "@Picky me or DM me"), then
@@ -23,20 +23,31 @@ is due (Central time):
             post at all when nothing changed. Without one (fallback): the
             slate, Picky's card and the film room's line.
   saturday  Saturday 09:30-13:00 when the week has a Saturday game: Picky's
-            picks and a hype post.
+            sides in today's games, one text. No sides to show = no post (it
+            retries each tick, so a hidden card posts right after the lock).
   remind    Before the weekly lock only (regular season: every pick locks at
             the week's first kickoff, picks_open_for_game()). First game on a
             Saturday: 07:00 that Saturday. First game any other day: 07:00
-            that day AND 2 hours before kickoff; if kickoff is too early for
-            both (2 h before is before 08:00), the first moves to 19:00 the
-            evening before. Names whoever the site's submission_status() says
+            that day (and 2 hours before kickoff only with config
+            second_reminder: the straggler DMs cover it); if kickoff is too
+            early for both (2 h before is before 08:00), the first moves to
+            19:00 the evening before. Names whoever the site's submission_status() says
             hasn't submitted (config name_stragglers, default ON per Charlie);
             never anyone's picks. Skipped when everyone's in.
   nudges    straggler_nudges.py: DMs (not the group) ~2 h and ~30 min before the
             lock to members still showing "Not yet", after the 7:00 group reminder.
   pings     During game windows: when a pool game goes final (ESPN, keyless),
-            ONE short line on who it helped or hurt. One per game, games that
-            end close together are batched, quiet hours 23:30-08:00.
+            ONE short line on who it helped or hurt. Finals are held while
+            another pool game is still on (up to config ping_hold_min) so a
+            Saturday is one or two combined pings, quiet hours 23:30-08:00.
+
+LENGTH AND FREQUENCY (Charlie, 2026-11-19: "I just don't want the scheduled
+texts to be too chatty" / "make sure the posts aren't too long"): every post is
+ONE text of at most max_chars (280); the recap and the picks-up post at most
+max_chars_long (450). group_outbox.post() enforces it (clip) and the daily cap
+(default 4 per 24 h, recap / reminders / Saturday post first). The Thursday
+preview only goes out when the picks-up post didn't (or as the short "what
+changed" refresh). Knobs live in cfb-pickem-private/picky_group_config.json.
 
 Writing, code first (Charlie, 2026-11-16: "auto feed pipelines for him so you
 dont need an opus call every time"): preview, saturday, reminders and pings are
@@ -92,7 +103,6 @@ MATERIAL = ob.PRIVATE / "league_material.json"
 SUPABASE_URL = "https://vopdioszofwdkwnujtiq.supabase.co"
 ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary?event="
 PICKY_TEAM = "Picky"
-BATCH_HOLD_S = 15 * 60       # hold a final up to 15 min when another pool game is in the 4th quarter
 
 
 # -----------------------------------------------------------------------------
@@ -276,11 +286,12 @@ def material_fact(rx: str) -> str | None:
     return None
 
 
-def standings(lg: League) -> list[tuple[str, int, int]]:
-    """(team, points, misses) through every final week, like the leaderboard."""
+def standings(lg: League, before_week: int | None = None) -> list[tuple[str, int, int]]:
+    """(team, points, misses) through every final week (only weeks before `before_week` if given),
+    like the leaderboard."""
     rec = {t: [0, 0] for t in lg.tid.values()}
     for w in lg.final_weeks():
-        if w > pr.LAST_REGULAR_WEEK or not lg.locked(w):
+        if w > pr.LAST_REGULAR_WEEK or not lg.locked(w) or (before_week is not None and w >= before_week):
             continue
         gm = {g["GameId"]: g for g in lg.week_games(w)}
         for p in lg.picks(w):
@@ -524,6 +535,9 @@ def recap_facts(lg: League, w: int) -> tuple[list[str], dict]:
     rk = ranks(rows)
     pts = {t: w_ for t, w_, _ in rows}
     los = {t: l_ for t, _, l_ in rows}
+    mv = standings_move(rows, standings(lg, before_week=w), n)
+    if mv:
+        facts.append(mv)
     facts.append("Season standings: " + "; ".join(f"{_ord(rk[t])} {n(t)} {pts[t]}-{los[t]}" for t, _, _ in rows[:6])
                  + f" (of {len(rows)}).")
     b = "Blinkstradamus"
@@ -558,25 +572,36 @@ def _ord(k: int) -> str:
     return pr._ord(k)
 
 
-def race_text(lg: League) -> tuple[str, dict, dict]:
-    res, meta = pr.load(lg.db, lg.now)
-    return pr.summary_text(res, meta, lg.names), res, meta
+def standings_move(rows: list, before: list, n=lambda t: t) -> str | None:
+    """'STANDINGS MOVE: Charlie stays 1st (30-18); Blinky up from 6th to 3rd.' The leader plus the two
+    biggest moves in or around the top 4 (the playoff spots). None without an earlier week to compare."""
+    if not rows or not before or not any(w for _, w, _ in before):
+        return None
+    rk, rb = ranks(rows), ranks(before)
+    rec = {t: f"{w}-{l}" for t, w, l in rows}
+    lead = rows[0][0]
+    bits = [f"{n(lead)} {'stays' if rb.get(lead) == 1 else 'takes over'} {_ord(rk[lead])} ({rec[lead]})"]
+    moves = sorted((t for t in rk if t != lead and rk[t] != rb.get(t, rk[t]) and (rk[t] <= 4 or rb.get(t, 99) <= 4)),
+                   key=lambda t: (-abs(rk[t] - rb[t]), rk[t]))[:2]
+    for t in moves:
+        bits.append(f"{n(t)} {'up' if rk[t] < rb[t] else 'down'} from {_ord(rb[t])} to {_ord(rk[t])} ({rec[t]})")
+    return "STANDINGS MOVE: " + "; ".join(bits) + "."
 
 
 def make_recap(lg: League, w: int, writer=run_writer) -> list[str] | None:
+    """ONE text, at most max_chars_long: who won the week and the standings move first, one award, Picky's
+    own week. The writer gets one rewrite (too long counts); then plain_recap, the short code version."""
     facts, _ = recap_facts(lg, w)
-    task = (f"Sunday morning recap of week {w}, posted in the group. Hand out the awards with personality: worst pick, "
-            "chalk of the week, best call, and own your own week honestly "
-            "(brag if good, excuses if bad). A few short texts, conversational, not a report. Don't do playoff "
-            "math: that goes in a separate text after yours.")
-    texts, probs = write(task, facts, lg.names, writer=writer)
+    lim, _ = ob.limits("recap")
+    task = (f"Sunday morning recap of week {w}, posted in the group. Nobody reads long texts: ONE text, under "
+            f"{lim} characters. Lead with who won the week (best record), then the STANDINGS MOVE. Then at most "
+            "ONE award (the best call or the worst pick, whichever is better) and one quick clause on your own "
+            "week (brag if good, excuse if bad). No per-game rundown, no list of everybody's record, no playoff "
+            "math, one joke max. Conversational, not a report.")
+    texts, probs = write(task, facts, lg.names, n_texts="ONE", max_texts=1, max_chars=lim, writer=writer)
     if texts is None:
         log.warning("recap week %s writer fell back to the template: %s", w, "; ".join(probs))
-        texts = plain_recap(w, facts)
-    if w <= pr.LAST_REGULAR_WEEK:
-        rt, _, _ = race_text(lg)
-        if rt:
-            texts.append(rt)
+        texts = plain_recap(w, facts, lim)
     return texts
 
 
@@ -650,7 +675,7 @@ def make_preview(lg: League, w: int) -> list[str] | None:
     quote = next(((g, t["quotable"]) for g in games if (t := load_take(w, g["GameId"])) and t.get("quotable")), None)
     if quote:
         texts.insert(2, f"Film room on {matchup(quote[0])}: {quote[1]}")
-    return texts
+    return ob.clip(texts, ob.limits("preview")[0])  # one text: head, card, then the film room / stakes if room
 
 
 def make_saturday(lg: League, w: int) -> list[str] | None:
@@ -659,30 +684,50 @@ def make_saturday(lg: League, w: int) -> list[str] | None:
     games = [g for g in lg.week_games(w) if (k := kick(g)) and k.date() == today and k > lg.now - dt.timedelta(hours=1)]
     if not games:
         return None
-    return plain_saturday(games, picky_card(lg, w), key=f"sat:{lg.season}:{w}")
+    card = picky_card(lg, w)
+    if not card:  # no sides to show (hidden till lock): the reminder already covered the lock, so no post yet
+        return None
+    return ob.clip(plain_saturday(games, card, key=f"sat:{lg.season}:{w}"), ob.limits("saturday")[0])
 
 
 # Code templates: the computed facts, lightly worded, nothing invented (preview / saturday always;
 # the recap when the weekly writer is down or every draft fails validation).
 
-def plain_recap(w: int, facts: list[str]) -> list[str]:
+def plain_recap(w: int, facts: list[str], limit: int | None = None) -> list[str]:
+    """The short code recap, most important first (clip drops from the end): who won the week, the
+    standings move, one award, my week."""
     def find(prefix):
-        return next((f for f in facts if f.startswith(prefix)), None)
-    head = " ".join(x for x in (f"Week {w} is in the books.", find(f"Best week {w} record"),
-                                find(f"Worst week {w} record")) if x)
-    awards = [f.replace(a, b, 1) for a, b in (("WORST PICK:", "Worst pick:"), ("CHALK OF THE WEEK:", "Chalk of the week:"),
-                                              ("BEST CALL:", "Best call:")) if (f := find(a))]
+        return next((f for f in facts if f.startswith(prefix)), "")
+    head = f"Week {w} is in the books."
+    m = re.match(rf"Best week {w} record \((\d+-\d+)\): (.+)\.$", find(f"Best week {w} record"))
+    if m:
+        head += f" {m[2]} won it at {m[1]}."
+    move = find("STANDINGS MOVE:").replace("STANDINGS MOVE: ", "Standings: ")
+    award = ""
+    if (b := find("BEST CALL:")):
+        award = re.sub(r"; only (\d+) of (\d+) had it: .*$", r", only \1 of \2 had it.",
+                       re.sub(r" \([^)]* at [^)]*\)", "", b)).replace("BEST CALL:", "Best call:")
+    elif (b := find("WORST PICK:")):
+        award = re.sub(r" points; final .*$", ".", re.sub(r" \([^)]* at [^)]*\)", "", b)).replace("WORST PICK:", "Worst pick:")
     mine = find("YOUR OWN WEEK (Picky):")
-    if mine:
-        mine = (mine.replace("YOUR OWN WEEK (Picky): you made", "I made").replace("YOUR OWN WEEK (Picky): ", "Me: ")
-                .replace("Your season", "My season"))
-    return [t for t in (head, " ".join(awards), mine) if t]
+    me = re.search(r"(\d+-\d+) in week \d+", mine)
+    se = re.search(r"Your season: (\d+-\d+)", mine)
+    mine = (f"Me: {me[1]}" if me else "I sat this one out") + (f", {se[1]} on the year." if se else ".") if mine else ""
+    return ob.clip([" ".join(x for x in (head, move, award, mine) if x)], limit or ob.limits("recap")[0])
+
+
+def _short_kick(k: dt.datetime | None) -> str:
+    return k.strftime("%a %-I:%M%p").replace(":00", "").lower().capitalize() if k else "TBD"
 
 
 def _card_line(g: dict, c: dict | None) -> str:
-    return f"{matchup(g)} ({kick_text(kick(g))}): " + (
-        f"I'm on {c['label']}" + ("" if c["made"] else " (a lean, not locked in yet)") if c
-        else f"pool line {side_label(g, favorite(g))}")
+    """'Iowa -3.5 vs Utah (Sat 11am)': one short item per game (posts are one text)."""
+    if not c:
+        return f"{side_label(g, favorite(g))} vs {g['Home'] if pr.same(favorite(g), g['Away']) else g['Away']} " \
+               f"({_short_kick(kick(g))})"
+    side = c["label"].rsplit(" ", 1)[0]
+    other = g["Home"] if pr.same(side, g["Away"]) else g["Away"]
+    return f"{c['label']} vs {other} ({_short_kick(kick(g))}" + (")" if c["made"] else ", a lean)")
 
 
 def plain_preview(w: int, games: list[dict], card: dict, lock, stakes: list[str], key: str = "") -> list[str]:
@@ -696,7 +741,7 @@ def plain_preview(w: int, games: list[dict], card: dict, lock, stakes: list[str]
 
 def plain_saturday(games: list[dict], card: dict, key: str = "") -> list[str]:
     body = "; ".join(_card_line(g, card.get(g["GameId"])) for g in games) + "."
-    return [variant(["Pool games today. ", "Game day. Where I'm at: ", "Saturday's pool games, my side: "],
+    return [variant(["Pool games today, my sides: ", "Game day. Where I'm at: ", "Saturday's pool games, my side: "],
                     key or "sat:" + ",".join(str(g["GameId"]) for g in games)) + body]
 
 
@@ -725,6 +770,13 @@ def due_slot(lock: dt.datetime, now: dt.datetime, grace: dt.timedelta = dt.timed
         if at <= now < min(at + grace, lock):
             return name
     return None
+
+
+def group_slot(lock: dt.datetime, now: dt.datetime) -> str | None:
+    """due_slot, minus the 2-hours-before slot unless config second_reminder: one group reminder a week,
+    the straggler DMs handle the last 2 hours."""
+    slot = due_slot(lock, now)
+    return None if slot == "second" and not ob.config()["second_reminder"] else slot
 
 
 def remind_facts(lg: League, w: int) -> tuple[list[str], list[str], int]:
@@ -785,7 +837,9 @@ def espn_status(gid: int, client: httpx.Client) -> dict | None:
 
 def due_pings(lg: League, client: httpx.Client) -> list[tuple[dict, float, float]] | None:
     """Pool games that just went final and are ready to ping now (batched),
-    or None to wait. Marks nothing."""
+    or None to wait: finals are held while another pool game in the window is
+    still being played, up to config ping_hold_min, so a burst of finals is one
+    combined ping. Marks nothing."""
     st = ob.state().setdefault("pings", {})
     window = [g for g in lg.games if g.get("picked") and not g.get("tiebreaker") and (k := kick(g))
               and k <= lg.now <= k + dt.timedelta(hours=6) and not ob.done(f"ping:{g['GameId']}")]
@@ -798,7 +852,7 @@ def due_pings(lg: League, client: httpx.Client) -> list[tuple[dict, float, float
             continue
         if s["final"] and s["away"] is not None:
             finals.append((g, s["away"], s["home"]))
-        elif s["state"] == "in" and s["period"] >= 4:
+        elif s["state"] == "in":
             late = True
     if not finals:
         return []
@@ -808,8 +862,8 @@ def due_pings(lg: League, client: httpx.Client) -> list[tuple[dict, float, float
     s_all = ob.state()
     s_all["pings"] = {k: v for k, v in st.items() if lg.now.timestamp() - v < 86400}
     ob.save_state(s_all)
-    if late and lg.now.timestamp() - first_seen < BATCH_HOLD_S:
-        return None  # another pool game is close: send them together
+    if late and lg.now.timestamp() - first_seen < 60 * float(ob.config()["ping_hold_min"]):
+        return None  # another pool game is still on: send them together
     return finals
 
 
@@ -844,9 +898,15 @@ def make_ping(lg: League, finals: list[tuple[dict, float, float]]) -> list[str]:
         pk = mine.get(g["GameId"])
         if pk:
             hook += (", " if hook else "") + ("I had it" if pr.same(pk["pick"], cov) else "I missed it")
-        parts.append(f"{side_label(g, cov)} covers ({score_line(g, ap, hp)})" + (f", {hook}" if hook else ""))
+        parts.append((f"{side_label(g, cov)} covers", f" ({score_line(g, ap, hp)})", f", {hook}" if hook else ""))
     key = "ping:" + ",".join(str(g["GameId"]) for g, _, _ in finals)
-    return [variant(["Final:", "In the books:", "That's final:"], key) + " " + "; ".join(parts) + "."]
+    head = variant(["Final:", "In the books:", "That's final:"], key) + " "
+    lim = ob.limits("ping")[0]
+    for keep in ((0, 1, 2), (0, 2), (0,)):  # one text: drop scores, then hooks, before dropping a game
+        text = head + "; ".join("".join(p[i] for i in keep) for p in parts) + "."
+        if len(text) <= lim:
+            break
+    return ob.clip([text], lim)
 
 
 # -----------------------------------------------------------------------------
@@ -962,6 +1022,9 @@ def tick(dry_run: bool | None = None, now: dt.datetime | None = None, echo=print
             if texts == []:
                 ob.mark(f"preview:{sea}:{ow}", "nothing-new")
                 log.info("preview %s: nothing changed since the breakdown, skipped", ow)
+            elif texts is None and ob.done(week_breakdown.ann_key(sea, ow)):
+                ob.mark(f"preview:{sea}:{ow}", "skipped-announced")  # the picks-up post already gave the slate
+                log.info("preview %s: picks-up post already went out, skipped", ow)
             else:
                 send("preview", texts or make_preview(lg, ow), f"preview:{sea}:{ow}",
                      expires_s=int(max(600, (lock - now).total_seconds())))
@@ -971,7 +1034,7 @@ def tick(dry_run: bool | None = None, now: dt.datetime | None = None, echo=print
             send("saturday", make_saturday(lg, ow), f"sat:{sea}:{ow}", expires_s=3 * 3600)
         # reminders: before the weekly lock (regular season)
         if lock and ow <= pr.LAST_REGULAR_WEEK:
-            slot = due_slot(lock, now)
+            slot = group_slot(lock, now)
             key = f"remind:{sea}:{ow}:{slot}"
             if slot and not ob.done(key):
                 send("remind", make_reminder(lg, ow), key,

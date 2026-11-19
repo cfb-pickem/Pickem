@@ -17,7 +17,16 @@ Every proactive post has to get past, in order:
   3. dry run (config "dry_run", default true): print + log, never queue;
   4. once-only keys (a recap per week, a reminder per slot, a ping per game);
   5. quiet hours (23:30-08:00 CT) for posts that ask for them (score pings);
-  6. a daily cap.
+  6. a daily cap (default 4 per rolling 24 h). The recap, pick reminders and the
+     Saturday post (PRIORITY_KINDS) may use every slot; everything else stops one
+     short so there's always room for them. Over the cap = skipped, logged and
+     marked done (no late backlog).
+  7. a hard length cap (Charlie, 2026-11-19: "make sure the posts aren't too
+     long, I imagine no one is reading them"): one text of at most max_chars
+     (280); the recap and the picks-up breakdown (LONG_KINDS) at most
+     max_chars_long (450) over at most 2 texts. Writers aim under it and get one
+     rewrite, callers fall back to short code versions; anything still over is
+     cut here at line/sentence boundaries (logged "clipped"). Never the long one.
 Every attempt, skip, dry run, queue and delivery goes to the send log.
 
 Private files (never in the public repo), /Users/Agent/cfb-pickem-private/:
@@ -57,10 +66,17 @@ DEFAULTS = {
     "dry_run": True,                # print + log instead of queueing
     "name_stragglers": True,        # Charlie 2026-11-15: "call out by name" (never their picks)
     "min_member_handles": 6,        # a group needs this many mapped members to count as the league
-    "daily_cap": 12,                # proactive posts per rolling 24 h
+    "daily_cap": 4,                 # proactive posts per rolling 24 h (Charlie 2026-11-19: not too chatty)
+    "max_chars": 280,               # every scheduled post: ONE text, at most this many characters
+    "max_chars_long": 450,          # the weekly recap and the picks-up breakdown (LONG_KINDS)
+    "second_reminder": False,       # the 2nd group reminder 2 h before a non-Saturday lock (straggler DMs cover it)
+    "ping_hold_min": 120,           # hold a final-score ping while another pool game is still on, up to this long
     "quiet_start": "23:30",
     "quiet_end": "08:00",
 }
+LONG_KINDS = ("recap", "announce", "breakdown")    # max_chars_long, up to LONG_MAX_TEXTS texts
+LONG_MAX_TEXTS = 2
+PRIORITY_KINDS = ("recap", "remind", "saturday")   # may use the last slot under the daily cap
 
 
 # -----------------------------------------------------------------------------
@@ -274,16 +290,62 @@ def _posts_last_day() -> int:
     return n
 
 
+def limits(kind: str, cfg: dict | None = None) -> tuple[int, int]:
+    """(max characters over the whole post, max texts) for a post kind."""
+    cfg = cfg or config()
+    if kind in LONG_KINDS:
+        return int(cfg["max_chars_long"]), LONG_MAX_TEXTS
+    return int(cfg["max_chars"]), 1
+
+
+def fits(texts: list[str], max_chars: int, max_texts: int = 1) -> bool:
+    return 0 < len(texts) <= max_texts and sum(len(t) for t in texts) <= max_chars
+
+
+_ITEM = re.compile(r"(?<=[.!?;])\s+")
+
+
+def clip(texts: list[str], max_chars: int, max_texts: int = 1) -> list[str]:
+    """The post as-is if it fits, else ONE text: the texts joined by line breaks, then whole lines /
+    sentences / ';'-items kept in order while they fit (so put what matters first). A lead piece that's
+    too long on its own is cut at a word with an ellipsis. Never longer than max_chars."""
+    texts = [t.strip() for t in texts if t and t.strip()]
+    if not texts or fits(texts, max_chars, max_texts):
+        return texts
+    pieces = []  # (separator before it, piece)
+    for line in "\n".join(texts).splitlines():
+        for i, it in enumerate(x.strip() for x in _ITEM.split(line.strip()) if x.strip()):
+            pieces.append(("\n" if i == 0 else " ", it))
+    out = ""
+    for sep, it in pieces:
+        cand = out + sep + it if out else it
+        if len(cand) <= max_chars:
+            out = cand
+        elif not out:  # the lead piece alone is too long: cut it at a word
+            out = it[:max_chars - 1].rsplit(" ", 1)[0].rstrip(",;:- ") + "\u2026"
+            break
+        else:
+            break
+    return [re.sub(r"[;,:]$", ".", out)]
+
+
 def post(kind: str, texts: list[str], key: str, expires_s: int = 6 * 3600, quiet: bool = False,
          dry_run: bool | None = None, now: dt.datetime | None = None, echo=print) -> str:
-    """Queue one proactive post (a few short texts) for the group. Returns
-    what happened: paused | no-group | dup | quiet | capped | dry-run | queued."""
+    """Queue one proactive post (one short text; LONG_KINDS up to 2) for the group, cut to its
+    length limit if it's over. Returns what happened: paused | no-group | dup | quiet | capped | dry-run |
+    queued."""
     now = now or dt.datetime.now(CT)
     cfg = config()
     texts = [t.strip() for t in texts if t and t.strip()]
     if not texts:
         log_event("skipped", kind=kind, key=key, why="empty")
         return "empty"
+    lim, n_texts = limits(kind, cfg)
+    if not fits(texts, lim, n_texts):  # the last line of defense: never the long one
+        short = clip(texts, lim, n_texts)
+        log_event("clipped", kind=kind, key=key, before=sum(len(t) for t in texts), texts_before=len(texts),
+                  after=sum(len(t) for t in short))
+        texts = short
     dry = cfg["dry_run"] if dry_run is None else dry_run
     base = {"kind": kind, "key": key, "texts": texts}
     if paused() and not dry:
@@ -304,8 +366,10 @@ def post(kind: str, texts: list[str], key: str, expires_s: int = 6 * 3600, quiet
     if not cfg.get("group_guid"):
         log_event("skipped", why="no-group", **base)
         return "no-group"
-    if _posts_last_day() >= int(cfg["daily_cap"]):
+    room = int(cfg["daily_cap"]) - (0 if kind in PRIORITY_KINDS else 1)
+    if _posts_last_day() >= room:
         log_event("skipped", why="daily-cap", **base)
+        mark(key, "capped")  # skipped for good: no backlog posting it hours late
         return "capped"
     item = {"id": uuid.uuid4().hex[:12], "kind": kind, "key": key, "texts": texts,
             "created": now.timestamp(), "expires": now.timestamp() + expires_s}

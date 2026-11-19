@@ -26,9 +26,9 @@ CT = wb.CT
 fails = 0
 
 
-def check(cond, msg):
+def check(cond, msg, detail=None):
     global fails
-    print(("ok   " if cond else "FAIL ") + msg)
+    print(("ok   " if cond else "FAIL ") + msg + ("" if cond or detail is None else f": {detail!r}"))
     fails += not cond
 
 
@@ -143,9 +143,9 @@ NOW[0] = dt.datetime(2026, 11, 17, 9, 0, tzinfo=CT)
 wb.tick_picks_up(FakeLeague(), 12, NOW[0], send, ready=lambda w, g: True)
 check([s[0] for s in sent] == ["announce"] and len(sent[0][2]) == 1, "9:00: ONE text goes out")
 one = sent[0][2][0]
-check(one.startswith("Week 12 picks are up. Lock is Saturday 11am") and "Away1 -2.5 at Home1" in one
-      and "Away2 at Home2 -3.5" in one and "@Picky me here or DM me" in one and one.endswith("intro\n\ngame text"),
-      "the one text = announcement (lock, framed lines, @Picky) + the breakdown")
+check(one.startswith("Week 12 picks are up, lock is Saturday 11am.") and "Away1 -2.5 at Home1" in one
+      and "Away2 at Home2 -3.5" in one and "@Picky me or DM me" in one and len(one) <= 450,
+      "the one text = lock, framed lines, @Picky, under 450 characters", one)
 NOW[0] = dt.datetime(2026, 11, 17, 9, 10, tzinfo=CT)
 check(wb.tick_picks_up(FakeLeague(), 12, NOW[0], send, ready=lambda w, g: True) == "done" and len(sent) == 1,
       "dedupe: the next tick posts nothing")
@@ -189,10 +189,26 @@ moved = dict(same, market_home=4.0, forecast={"temp": 31, "gust": 28, "precip": 
              news=["Away1 QB X is out (ESPN, 2026-11-19)", "old line (ESPN, 2026-11-16)"], lean={"label": "Home1 +2.5"})
 wb.facts_for = lambda games, week, now=None, notes=None, client=None: [moved]
 t = wb.refresh_texts(rl, 14, NOW[0])
-body = t[1] if t else ""
+check(t and len(t) == 1, "refresh is one text", t)
+body = t[0] if t else ""
 check("market moved to Away1 -4 (was Away1 -2.5)" in body, "refresh: market move framed from the home line")
 check("QB X is out" in body and "old line" not in body, "refresh: only news dated after the breakdown")
 check("forecast now 31F" in body and "lean flipped: now Home1 +2.5" in body, "refresh: forecast swing + flipped lean")
 
+# --- length: the picks-up post is ONE text under the cap, angles only while they fit ---
+G4 = FakeLeague().games
+LONG = ["intro"] + [f"Away{i} at Home{i}\nShort angle for game {i}, run D is bad.\n" + "Filler line. " * 40
+                    + f"\nLean: Away{i}" for i in range(1, 5)]
+pu = wb.picks_up_text(12, G4, lock, LONG, 450)
+check(len(pu) <= 450 and pu.count("\n") == 5 and "Away1 -2.5 at Home1: Short angle for game 1" in pu
+      and "Filler" not in pu and "Lean" not in pu, "picks-up text: one short angle per game, no filler, no lean", pu)
+pu = wb.picks_up_text(12, G4, lock, LONG, 200)
+check(len(pu) <= 200 and "Week 12 picks are up" in pu and "Away4 at Home4" in pu,
+      "a tight cap drops angles before it drops a game line", pu)
+check(len(wb.picks_up_text(12, G4, lock, None, 280)) <= 280, "announcement alone fits one 280-character text")
+check(wb.angle_of("Hdr\n" + "x" * 200 + "\nLean: A\nshort one") == "short one" and wb.angle_of("Hdr\nLean: A") is None,
+      "angle_of: first short non-lean line after the header")
+check(wb.angle_of("Hdr\nMarket sits on 3. " + "y" * 120 + "\nLean: A") == "Market sits on 3.",
+      "angle_of: no short line -> the first sentence of a long one")
 print("\nall passed" if not fails else f"\n{fails} FAILED")
 sys.exit(1 if fails else 0)

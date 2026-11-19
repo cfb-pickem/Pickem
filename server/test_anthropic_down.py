@@ -211,20 +211,21 @@ with patch.object(local_llm, "json_call", _ollama_down), \
             "WORST PICK: Utah +3.5 (Utah at Iowa) missed the line by 3.5 points; final Utah 17, Iowa 24. Taken by Ackbar.",
             "BEST CALL: Iowa -3.5 (Utah at Iowa) covered by 3.5; only 1 of 3 had it: Charlie.",
             "YOUR OWN WEEK (Picky): 2-2 in week 11: Iowa -3.5 hit. Your season: 20-24."], {})), \
-        patch.object(gp, "race_text", lambda lg_: ("Playoff race: Charlie is in.", {}, {})), \
         patch.object(gp, "standings", lambda lg_: []):
     rem = gp.make_reminder(lg, 12)
     check("lock reminder still goes out (code line, stragglers named)",
           rem and "Sat 11 AM CT" in rem[0] and "Ackbar" in rem[0] and "TG" in rem[0] and "Charlie" not in rem[0], rem)
     rec = gp.make_recap(lg, 11)
-    check("recap still goes out (template + race)", rec and rec[0].startswith("Week 11 is in the books")
-          and any("Worst pick: Utah" in t for t in rec) and any(t.startswith("Me: 2-2") for t in rec)
-          and "My season: 20-24" in " ".join(rec) and rec[-1] == "Playoff race: Charlie is in.", rec)
+    check("recap still goes out (short template: one text, winner first)", rec and len(rec) == 1
+          and len(rec[0]) <= 450 and rec[0].startswith("Week 11 is in the books. Charlie won it at 3-1.")
+          and "Best call: Iowa -3.5 covered by 3.5, only 1 of 3 had it." in rec[0]
+          and rec[0].endswith("Me: 2-2, 20-24 on the year."), rec)
     pre = gp.make_preview(lg, 12)
-    check("preview still goes out (code template)", pre and "Sat 11 AM CT" in pre[0] and "first kickoff" in pre[0].lower()
-          and "I'm on Iowa -3.5" in pre[1] and "Texas +2.5 (a lean" in pre[1] and "Cut line" in pre[-1], pre)
+    check("preview still goes out (code template, one text)", pre and len(pre) == 1 and len(pre[0]) <= 280
+          and "Sat 11 AM CT" in pre[0] and "first kickoff" in pre[0].lower()
+          and "Iowa -3.5 vs Utah" in pre[0] and "a lean)" in pre[0], pre)
     sat = gp.make_saturday(lg, 12)
-    check("saturday post still goes out (code template)", sat and "I'm on Iowa -3.5" in sat[0], sat)
+    check("saturday post still goes out (code template)", sat and "Iowa -3.5 vs Utah" in sat[0], sat)
     ping = gp.make_ping(lg, [(G1, 17.0, 24.0)])
     check("final-score ping still goes out (code line)", ping and "Iowa -3.5 covers (Utah 17, Iowa 24), Charlie cashes"
           in ping[0], ping)

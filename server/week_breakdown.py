@@ -23,6 +23,10 @@ drafts; then lines with problems are dropped; if a game can't keep its lean
 line it gets the plain code template, so the post never carries a made-up
 number and still goes out with Anthropic down.
 
+The group only sees ONE short text (picks_up_text, Charlie 2026-11-19: "make sure the posts aren't too
+long"): lock time, the 4 lines, and each game's single sharpest verified line (the writer's second line,
+under ANGLE_MAX) for as many games as fit in max_chars_long. The full per-game texts stay in the state file.
+
 CLI:
   week_breakdown.py facts [--week N]      print the fact sheets
   week_breakdown.py draft [--week N]      facts + gemma + verify, print (no queue)
@@ -54,6 +58,7 @@ UTC = dt.timezone.utc
 CARD_DIR = HERE / "cache" / "game_cards"
 OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
 MAX_CHARS = 900
+ANGLE_MAX = 90                    # the one line per game that makes the group post
 
 # -----------------------------------------------------------------------------
 # facts
@@ -499,7 +504,8 @@ TASK: the week {week} deep breakdown, posted right after "picks are up" (lock: {
 analysis per game, the kind of line a sharp would text: "This game is cold weather and long travel. This defense
 has an edge...". For EACH game write ONE text of 4 to 7 short lines (separate lines with a newline, no bullets,
 no headers, no emoji strings), under {MAX_CHARS} characters. First line: the game with the league line, as given
-in the GAME header. Then pick the sharpest angles from its FACTS: league line vs the market and any move (with the
+in the GAME header. Second line: the single sharpest angle, under {ANGLE_MAX} characters (that one line is what goes
+in the group text; nobody reads long posts). Then pick the sharpest angles from its FACTS: league line vs the market and any move (with the
 cause if given), key numbers, the unit-vs-unit edges that actually matter (run game vs run D, passing vs pass D,
 pass rush vs protection, red zone, explosives, turnovers), ATS form, sourced QB/injury news, the Saturday forecast
 (call it a forecast and say it's from Open-Meteo pulled on the date given), travel/time zone/rest, lookahead or
@@ -623,13 +629,41 @@ def lock_text(lock: dt.datetime) -> str:
     return f"{lock.strftime('%A')} {t}"
 
 
-def announce_texts(week: int, games: list[dict], lock: dt.datetime) -> list[str]:
-    """The 'picks are up' post, code only (same shape as the week-12 one Charlie approved)."""
-    early = (lock - dt.timedelta(minutes=2)).astimezone(CT).strftime("%-I:%M")
-    return [f"Week {week} picks are up. Lock is {lock_text(lock)}, so don't be the guy texting me at {early}.",
-            "\n".join(favorite_text(g["Away"], g["Home"], g["line"]) for g in games),
-            "Ask me anything: lines, injuries, who's covering, how far back you are, who I like. "
-            "@Picky me here or DM me."]
+def angle_of(text: str) -> str | None:
+    """A verified game text's one short analysis line for the group post: the first line after the
+    header that isn't a lean and fits ANGLE_MAX, else the first such line's first sentence if that fits.
+    None if there isn't one."""
+    lines = [x.strip() for x in text.splitlines() if x.strip() and not x.strip().lower().startswith("lean")][1:]
+    for ln in lines:
+        if len(ln) <= ANGLE_MAX:
+            return ln
+    for ln in lines:
+        first = re.split(r"(?<=[.!?])\s+", ln, maxsplit=1)[0]
+        if len(first) <= ANGLE_MAX:
+            return first
+    return None
+
+
+def picks_up_text(week: int, games: list[dict], lock: dt.datetime, game_texts: list[str] | None,
+                  limit: int) -> str:
+    """The picks-up post as ONE text under `limit` (Charlie, 2026-11-19: "make sure the posts aren't too
+    long"): what's due when, the 4 lines, the @Picky line, then one short angle per game (from the verified
+    breakdown) for as many games as fit. Code-assembled, so it can't run long."""
+    import group_outbox as ob
+    head = f"Week {week} picks are up, lock is {lock_text(lock)}."
+    lines = [favorite_text(g["Away"], g["Home"], g["line"]) for g in games]
+    ask = "@Picky me or DM me for the rest."
+
+    def text(ls):
+        return "\n".join([head] + ls + [ask])
+    texts = list(game_texts or [])[-len(games):] if game_texts and len(game_texts) >= len(games) else []
+    for i, t in enumerate(texts):
+        a = angle_of(t)
+        if a:
+            cand = lines[:i] + [f"{lines[i]}: {a}"] + lines[i + 1:]
+            if len(text(cand)) <= limit:
+                lines = cand
+    return ob.clip([text(lines)], limit)[0]
 
 
 def cards_ready(week: int, games: list[dict]) -> bool:
@@ -683,13 +717,15 @@ def tick_picks_up(lg, week: int | None, now: dt.datetime, send, writer=None, rea
         did.append("prepared")
     if not ob.done(ann_key(sea, week)) and post_window(now):
         expires = int(max(600, (lock - now).total_seconds()))
+        lim = ob.limits("announce")[0]
         if st.get("texts"):
-            send("announce", ["\n\n".join(announce_texts(week, games, lock) + list(st["texts"]))],
-                 ann_key(sea, week), expires_s=expires)
+            send("announce", [picks_up_text(week, games, lock, st["texts"], lim)], ann_key(sea, week),
+                 expires_s=expires)
             ob.mark(bd_key(sea, week), "merged")
             did.append("announced+breakdown")
         elif now.timestamp() - st["first_seen"] >= MERGE_WAIT_S:
-            send("announce", ["\n\n".join(announce_texts(week, games, lock))], ann_key(sea, week), expires_s=expires)
+            send("announce", [picks_up_text(week, games, lock, None, int(ob.config()["max_chars"]))], ann_key(sea, week),
+                 expires_s=expires)
             ob.mark(bd_key(sea, week), "skipped-no-cards")
             did.append("announced-alone")
     elif ob.done(ann_key(sea, week)) and not ob.done(bd_key(sea, week)):
@@ -736,8 +772,7 @@ def refresh_texts(lg, week: int, now: dt.datetime, notes: dict | None = None) ->
             lines.append(f"{new['header']}: " + "; ".join(bits))
     if not lines:
         return []
-    return [f"What changed since the week {week} breakdown (forecasts from Open-Meteo, pulled "
-            f"{now.strftime('%a %b %-d')}):", "\n".join(lines)]
+    return [f"Week {week}, what's changed since the breakdown (Open-Meteo forecasts):\n" + "\n".join(lines)]
 
 
 # -----------------------------------------------------------------------------
