@@ -1446,8 +1446,8 @@ def unsupported(text: str, facts_used: list | None, extra=()) -> list[str]:
 # =============================================================================================================
 
 def refresh() -> dict:
-    """The tick: polls (1 h TTL, mirrored to picky.ranking), a couple of due ESPN rosters (weekly TTL, free), then
-    the store build."""
+    """The tick: polls (1 h TTL, mirrored to picky.ranking), a couple of due ESPN rosters (weekly TTL, free), team
+    looks for picture prompts (30-day TTL, free), then the store build."""
     import personnel
     import polls
     try:
@@ -1458,6 +1458,11 @@ def refresh() -> dict:
         personnel.tick()
     except Exception as e:  # noqa: BLE001 - rosters never block the store
         log.warning("factstore: roster tick failed: %r", e)
+    try:
+        import picture_prompt
+        picture_prompt.refresh()  # team mascot + colors for picture prompts (30-day TTL, free)
+    except Exception as e:  # noqa: BLE001
+        log.warning("factstore: team looks refresh failed: %r", e)
     return build()
 
 

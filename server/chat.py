@@ -7244,7 +7244,10 @@ IMAGE_READ_TIMEOUT = IMAGE_MAX_GEN_SECONDS + 30
 
 async def generate_image(prompt: str, user_id: str, on_wait=None) -> tuple[int, str | None]:
     """(HTTP status, base64 png | None). Unloads gemma first (16 GB box: both models swap). `on_wait`
-    (async, optional) is awaited every 10 s while the GPU works. 0 = image service unreachable."""
+    (async, optional) is awaited every 10 s while the GPU works. 0 = image service unreachable. The member's words
+    go through picture_prompt.expand first (teams -> mascot + colors, CFB scenes, a no-lettering style suffix)."""
+    import picture_prompt
+    prompt = picture_prompt.expand(prompt)
     timeout = httpx.Timeout(connect=5.0, read=IMAGE_READ_TIMEOUT, write=10.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as c:
         try:
@@ -7274,7 +7277,7 @@ async def generate_image(prompt: str, user_id: str, on_wait=None) -> tuple[int, 
 async def _image_stream(prompt: str, user_id: str):
     """SSE (site widget): a one-liner, keep-alive pings while the GPU works, then the image
     as a data: URL. Same policy as the text path (pictures.refusal: no game-window pictures, none while a
-    member text is pending, 5/hour). The prompt is only the user's own words."""
+    member text is pending, 5/hour). The prompt is only the user's own words plus public team data."""
     import pictures
     no = pictures.refusal(user_id)
     if no:

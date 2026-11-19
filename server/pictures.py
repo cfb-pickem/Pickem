@@ -7,7 +7,8 @@ A picture unloads gemma and holds the box for 3-7 minutes, so:
   - one at a time;
   - asynchronous on the text path: the reply is "drawing it" right away, the picture is generated in the
     background and delivered through the outbox (group_outbox.post_picture) to the chat that asked.
-The image prompt is only the member's own words; no league context goes to the image service.
+The image prompt is only the member's own words, expanded in code by picture_prompt.py with public team data
+(mascot, colors) and a no-lettering style suffix; no league context or member data goes to the image service.
 """
 
 from __future__ import annotations
