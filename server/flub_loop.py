@@ -91,6 +91,7 @@ ALLTESTS = str(HERE.parent / "tools" / "release" / "alltests.sh")
 RELEASE = str(HERE.parent / "tools" / "release" / "release.sh")
 LOCK = "/tmp/picky-exam.lock"
 FIX_PORT, BASE_PORT = 8805, 8806
+WT_ROOT = Path("/private/tmp")  # the fix round's throwaway worktrees (tests use their own temp dir)
 
 SLOW_S = 60.0
 PUSHBACK_WINDOW = 600.0
@@ -1028,7 +1029,7 @@ def promote_pending(dry: bool = False) -> dict:
         _sh(["git", "-C", str(REPO), "fetch", "-q", "--prune", "origin"], check=True)
         heads = _sh(["git", "-C", str(REPO), "for-each-ref", "--format=%(refname:strip=4)", "refs/remotes/origin/flub/"]).stdout.split()
         for b in sorted(heads):
-            wt = Path(f"/private/tmp/picky-flub-promote-{b.replace('/', '-')}")
+            wt = WT_ROOT / f"picky-flub-promote-{b.replace('/', '-')}"
             if wt.exists():
                 _sh(["git", "-C", str(REPO), "worktree", "remove", "--force", str(wt)])
             _sh(["git", "-C", str(REPO), "worktree", "add", "-q", "--detach", str(wt), f"origin/flub/{b}"], check=True)
@@ -1141,7 +1142,7 @@ def fix_round(date: str, dry: bool = False) -> dict:
 def _fix(date: str, flubs: list[dict]) -> dict:
     import picky_claude
     branch = f"flub-fix-{date}"
-    fix_wt, base_wt = Path(f"/private/tmp/picky-flub-fix-{date}"), Path(f"/private/tmp/picky-flub-base-{date}")
+    fix_wt, base_wt = WT_ROOT / f"picky-flub-fix-{date}", WT_ROOT / f"picky-flub-base-{date}"
     res = {"status": "rejected", "why": "", "branch": branch}
     keep = False  # a fix the gates couldn't judge (lock busy, deadline, error) waits as flub-ungated/<date>
     try:

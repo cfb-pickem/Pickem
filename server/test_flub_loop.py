@@ -393,7 +393,7 @@ gitenv = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME
 RELEASES = []
 common = dict(REPO=main_tree, alltests_fails=lambda wt: set(), run_exam_locked=lambda wt, port, tag: Path(tag),
               _release=lambda ref="main": RELEASES.append(1) or {"rc": 0, "tail": "LIVE"},
-              past_deadline=lambda now=None: False)
+              past_deadline=lambda now=None: False, WT_ROOT=TMP)  # never /private/tmp: suites may run side by side
 
 
 def fix_with(files, fix_det, frozen=False, **over):
@@ -418,10 +418,10 @@ r = fix_with({"server/bar.py": "Y = 1\n", "server/test_bar.py": "pass\n"}, 81, f
 check(r["status"] == "branched" and git("rev-parse", "main", cwd=bare) == shipped and RELEASES == [1]
       and git("rev-parse", "--verify", "refs/heads/flub/2099-02-01", cwd=bare),
       f"game-day freeze: the fix waits on flub/<date>, main and live untouched ({r['why']})")
-with patch.multiple(fl, REPO=main_tree, _release=lambda ref="main": RELEASES.append(2) or {"rc": 0, "tail": "LIVE"}), \
+with patch.multiple(fl, REPO=main_tree, WT_ROOT=TMP, _release=lambda ref="main": RELEASES.append(2) or {"rc": 0, "tail": "LIVE"}), \
         patch.dict(os.environ, gitenv), patch.object(fl.freeze, "frozen", lambda *a: True):
     check(fl.promote_pending()["promoted"] == [], "still frozen: nothing promoted")
-with patch.multiple(fl, REPO=main_tree, _release=lambda ref="main": RELEASES.append(2) or {"rc": 0, "tail": "LIVE"}), \
+with patch.multiple(fl, REPO=main_tree, WT_ROOT=TMP, _release=lambda ref="main": RELEASES.append(2) or {"rc": 0, "tail": "LIVE"}), \
         patch.dict(os.environ, gitenv), patch.object(fl.freeze, "frozen", lambda *a: False):
     pp = fl.promote_pending()
 check(pp["promoted"] == ["flub/2099-02-01"] and RELEASES == [1, 2] and git("rev-parse", "main", cwd=bare) != shipped
@@ -461,7 +461,7 @@ with patch.multiple(fl, **common, exam_summary=exams(81)), patch.dict(os.environ
 check(r["status"] == "failed" and "rc 1" in r["why"], f"an Opus run that fails is 'failed', not 'no fix' ({r})")
 with patch.object(fl.freeze, "no_exams", lambda *a: True):
     check(fl.fix_round(D)["status"] == "off", "Saturday game window: no fix round (no exams)")
-check(not Path("/private/tmp/picky-flub-fix-2099-02-01").exists() and
+check(not (TMP / "picky-flub-fix-2099-02-01").exists() and
       "flub-fix-2099-02-01" not in git("branch", "--list", cwd=main_tree), "worktrees and branch cleaned up")
 
 # exam_summary on a tiny results file
