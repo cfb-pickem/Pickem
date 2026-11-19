@@ -144,8 +144,64 @@ check(p.exists() and stat.S_IMODE(os.stat(p).st_mode) == 0o600 and p.with_suffix
 check("**FAIL** a" in p.with_suffix(".md").read_text(), "report: markdown lists each fixture's status")
 check(rr.previous_report("replay")["stamp"] == rep["stamp"], "report: previous_report finds the last replay")
 src = (HERE / "flub_loop.py").read_text()
-check("replay_after_fix(date, dry)" in src and src.index("fix_round(date, dry)\n    replay_after_fix") > 0,
-      "nightly hook: flub_loop.nightly runs the replay right after the fix round")
+body = src[src.index("def nightly("):]
+check(body.index("replay_nightly(date, dry)") < body.index("fix_round(date, dry)"),
+      "nightly hook: flub_loop.nightly replays the regression set on main BEFORE the fix round (repeats lead it)")
+
+# ---- never twice: flub fixtures ---------------------------------------------------------------------------
+fz = {"id": "rg-1", "src": "flub", "mode": "dm", "team": "Gamma Rays", "q": "ATS records?", "turns": ["ATS records?"],
+      "expect": {"not_lanes": ["banter:banter"], "not_exact": ["Yep."], "must_not": [r"distract\s+you"],
+                 "expected_fail": "rg-1"}}
+r = res(fz, "Yep", "banter:banter")
+check(not r["not_lane"][0] and not r["not_repeat"][0], "flub fixture: same lane + same reply again fails both")
+r = res(fz, "Yep, here they are: Iowa 6-4 ATS, Illinois 5-5.", "fact:ats_profile")
+check(r["not_lane"][0] and r["not_repeat"][0], "flub fixture: a real answer from another lane passes")
+check(res({"id": "n", "q": "x", "expect": {"not_lanes": ["banter"]}}, "ok", "banter:roast")["not_lane"][0] is False,
+      "not_lanes: a bare lane covers every kind of it")
+check(res({"id": "dm", "mode": "dm", "q": "x"}, "word " * 120, "full")["length"][0], "DM fixtures get the DM length cap")
+old = {**fz, "expect": {**fz["expect"], "answers": ["6-4"], "must_not": [r"Iowa -6\.5", "distract you"],
+                        "expires": "2026-11-21"}}
+check(rr.aged(old, "2026-11-22")["expect"].get("answers") is None
+      and rr.aged(old, "2026-11-22")["expect"]["must_not"] == ["distract you"]
+      and rr.aged(old, "2026-11-22")["expect"]["not_lanes"] == ["banter:banter"] and rr.aged(old, "2026-11-20") == old,
+      "past expires: this-week keys drop, never-again keys stay")
+rows_ = [{"id": "a", "status": "XPASS"}, {"id": "b", "status": "FAIL"}, {"id": "c", "status": "PASS"}, {"id": "d", "status": "FAIL"}]
+st = rr.settle(rows_, {"a": "XPASS", "b": "PASS", "d": "FAIL"})
+check(st == {"a": "XPASS", "b": "FLAKY", "c": "PASS", "d": "FAIL"}, f"settle: a verdict must repeat, else FLAKY {st}")
+flubs_fx = [{"id": "o1", "src": "flub", "q": "q1", "expect": {"expected_fail": "o1"}},
+            {"id": "f1", "src": "flub", "q": "q2", "expect": {"fixed_on": "2026-11-18"}},
+            {"id": "r1", "src": "flub", "q": "q3", "expect": {"fixed_on": "2026-11-17", "regressed_on": "2026-11-18"}},
+            {"id": "o2", "src": "flub", "q": "q4", "expect": {"expected_fail": "o2"}}]
+rr.write_private(rr.FLUB_FIXTURES, json.dumps(flubs_fx))
+m = rr.mark_flubs("2026-11-19", {"o1": "XPASS", "f1": "FAIL", "r1": "PASS", "o2": "FLAKY"})
+after = {f["id"]: f["expect"] for f in json.loads(rr.FLUB_FIXTURES.read_text())}
+check(m["fixed"] == ["o1"] and "expected_fail" not in after["o1"] and after["o1"]["fixed_on"] == "2026-11-19",
+      "open + passed twice -> fixed")
+check(m["repeats"] == ["f1"] and after["f1"]["regressed_on"] == "2026-11-19" and after["f1"]["broke"] == ["2026-11-19"],
+      "fixed + failed twice -> a repeat")
+check(m["restored"] == ["r1"] and "regressed_on" not in after["r1"] and after["o2"].get("expected_fail") == "o2",
+      "regressed + passing again -> fixed again; flaky changes nothing")
+check(stat.S_IMODE(os.stat(rr.FLUB_FIXTURES).st_mode) == 0o600, "flub fixtures stay 0600")
+fl_all = rr.load_fixtures()
+check({f["id"] for f in fl_all} >= {"o1", "f1"}, "load_fixtures picks up the flub fixtures with the day fixtures")
+sys.path.insert(0, str(HERE / "eval"))
+import lane_table as LT  # noqa: E402
+lab = LT.classify("who's in first?").label()
+r1 = LT.check_rows([{"q": "who's in first?", "ok": [], "not": [lab]}, {"q": "who's in first?", "ok": [], "not": ["zzz:none"]},
+                    {"q": "who's in first?", "ok": [], "not": [lab], "xfail": "rg-9"}])
+check([x["status"] for x in r1] == ["FAIL", "PASS", "XFAIL"], f"lane table: 'not' lanes (any 'ok' when empty) {r1}")
+fake_dir = TMP / "lt"
+fake_dir.mkdir()
+(fake_dir / "fixtures-flubs.json").write_text(json.dumps([
+    {"id": "o", "src": "flub", "q": "open ask", "turns": ["open ask"], "expect": {"not_lanes": ["banter:banter"], "expected_fail": "o"}},
+    {"id": "f", "src": "flub", "q": "fixed ask", "turns": ["fixed ask"], "expect": {"not_lanes": ["banter:banter"], "lane_det": True}},
+    {"id": "n", "src": "flub", "q": "context ask", "turns": ["context ask"], "expect": {"not_lanes": ["banter:x"], "lane_det": False}},
+    {"id": "m", "src": "flub", "q": "two", "turns": ["one", "two"], "expect": {"not_lanes": ["banter:x"], "expected_fail": "m"}}]))
+with __import__("unittest.mock").mock.patch.object(LT, "REPLAY_DIR", fake_dir):
+    hl = LT.hand_labels()
+check(hl["open ask"].get("xfail") == "o" and "xfail" not in hl["fixed ask"] and hl["fixed ask"]["not"] == ["banter:banter"]
+      and "context ask" not in hl and "two" not in hl,
+      "lane rows: open flubs xfail, fixed ones hard (release-blocking), router-only and single-turn only")
 
 print(f"\n{'all green' if not fails else 'FAILED: ' + str(len(fails))}")
 sys.exit(1 if fails else 0)

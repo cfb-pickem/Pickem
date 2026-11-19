@@ -1,7 +1,16 @@
 # Flub loop (nightly) + "bad picky"
 
 `server/flub_loop.py` runs every night at 23:00 CT (machine clock is CT) from LaunchAgent
-`com.pickem.flub-nightly`. Output (all private, 0600): `/Users/Agent/cfb-pickem-private/flubs/`
+`com.pickem.flub-nightly`. Each run covers every conversation since the previous run (cursor
+`flubs/cursor.json`): group, DMs and the site's web widget; test/side traffic is skipped and counted by reason.
+
+**Never twice (2026-11-19):** every confirmed flub becomes a permanent replay fixture in
+`cfb-pickem-private/eval/replay/fixtures-flubs.json` (open until the nightly replay sees it pass twice, then
+fixed). The replay runs on main every night BEFORE the fix round; a fixed item that fails twice is a repeat
+and leads the fix round (then tonight's flubs, then the open backlog). Single-turn lane checks of fixed items
+are rows in the private lane table, so `test_lane_table.py` (and with it release.sh's model-free suite)
+fails if one breaks. A fix the gates couldn't judge (exam lock busy, past the 02:30 CT exam deadline) is kept
+as `flub-ungated/<date>` and the next night starts from it. Output (all private, 0600): `/Users/Agent/cfb-pickem-private/flubs/`
 (`harvest-`, `facts-`, `classify-`, `added-`, `fix-<date>.json`, `report-<date>.md`). Every regression
 item is built from a real member's text, so every item is private: `cfb-pickem-private/flubs/items-private.json`
 (review R10, 2026-11-17: nothing is published to the public repo any more; the old public file

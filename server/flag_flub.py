@@ -64,8 +64,8 @@ def chat_hash(key: str) -> str:
 
 def recent_exchanges(now: float | None = None, chat: str = "", n: int = CONTEXT_N,
                      max_age: float = CONTEXT_AGE) -> list[dict]:
-    """The last n live exchanges from the last max_age seconds (test handles = team null and side
-    sidecars skipped). With `chat` (a chat_hash), only that chat's rows when rows carry one."""
+    """The last n live exchanges from the last max_age seconds (test handles = team null outside the web
+    widget, side sidecars and site test asks skipped). With `chat` (a chat_hash), only that chat's rows when rows carry one."""
     now = time.time() if now is None else now
     out = []
     try:
@@ -77,7 +77,8 @@ def recent_exchanges(now: float | None = None, chat: str = "", n: int = CONTEXT_
             r = json.loads(ln)
         except ValueError:
             continue
-        if not r.get("team") or r.get("side") or now - float(r.get("ts") or 0) > max_age:
+        if (not r.get("team") and r.get("mode") != "web") or r.get("side") or r.get("test") or \
+                now - float(r.get("ts") or 0) > max_age:
             continue
         if chat and r.get("chat") and r["chat"] != chat:
             continue

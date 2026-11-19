@@ -304,6 +304,7 @@ MODE: contextvars.ContextVar[str] = contextvars.ContextVar("picky_group_mode", d
 
 # True for a /web request (the site's chat box): mode "dm" with the caller's own site session
 WEB: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_group_web", default=False)
+WEB_TEST: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_group_web_test", default=False)
 
 
 # when the current /group request started (the exchange log's "secs")
@@ -741,6 +742,8 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
     try:
         handle = sender or (key.split(":", 1)[1] if key.startswith("dm:") else "")
         team = (load_members().get(norm_handle(handle)) or {}).get("team") if handle else None
+        if team is None and key.startswith("web:"):  # the site widget: the caller's team from their auth uid
+            team = getattr(SENDER.get(), "team", None)
         row = {"ts": round(now), "mode": key.split(":", 1)[0], "team": team, "q": question, "a": reply}
         if lane:  # which router exit answered (scorecard: fact / banter / full / jailbreak)
             row["lane"] = lane
@@ -750,6 +753,8 @@ def log_exchange(key: str, question: str, reply: str, sender: str | None, now: f
             row["secs"] = round(now - REQ_T0.get(), 1)
         if os.environ.get("PICKY_SIDE") or EXAM_CHATS or ":exam-" in key:
             row["side"] = 1
+        if key.startswith("web:") and WEB_TEST.get():  # chat.py's forwarded X-Picky-Test ask (test=true)
+            row["test"] = 1
         rows = EXCHANGE_LOG.read_text().splitlines() if EXCHANGE_LOG.exists() else []
         cut = now - EXCHANGE_DAYS * 86400
         rows = [r for r in rows if r.strip() and json.loads(r).get("ts", 0) >= cut] + [json.dumps(row)]
@@ -1423,6 +1428,7 @@ async def web(req: Request):
     REQ_T0.set(t0)
     prio = (test_priority(req) if chat.is_test_request(req)
             else "low" if body.get("test") else None)  # chat.py forwards its X-Picky-Test asks as test=true
+    WEB_TEST.set(bool(body.get("test")) or chat.is_test_request(req))  # the exchange log marks it (flub harvest skips)
     held = contextlib.nullcontext() if prio == "low" else live_flag.held()
     with held, ollama_gate.priority(prio or ("low" if live_flag.is_side() else "live")):
         out = await answer(s.handle, text, chat_id="web:" + uid, dm=True, allowlisted=True,

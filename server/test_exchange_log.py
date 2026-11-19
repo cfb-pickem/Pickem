@@ -26,7 +26,16 @@ with patch.object(gc, "EXCHANGE_LOG", tmp), patch.object(gc, "load_members", ret
     gc.log_exchange("group:g1", "who's first?", "Clam, by two.", "+15555550100", now)
     gc.log_exchange("dm:+15555550100", "my record?", "3-1, not bad.", None, now)
     gc.log_exchange("dm:+15555550199", "hi", "hey", None, now)
-rows = [json.loads(r) for r in tmp.read_text().splitlines()]
+    # the site widget (key web:<uid>, no handle): the team comes from the request's Sender; a forwarded
+    # X-Picky-Test ask (test=true) is marked so the nightly flub harvest skips it
+    tok = gc.SENDER.set(gc.Sender(handle="web:abcd1234", team="Ackbar", user_id="abcd1234-uid"))
+    gc.log_exchange("web:abcd1234-uid", "ATS records?", "Yep.", None, now)
+    ttok = gc.WEB_TEST.set(True)
+    gc.log_exchange("web:abcd1234-uid", "scripted", "x", None, now)
+    gc.WEB_TEST.reset(ttok)
+    gc.SENDER.reset(tok)
+web = [json.loads(r) for r in tmp.read_text().splitlines()][3:]
+rows = [json.loads(r) for r in tmp.read_text().splitlines()][:3]
 text = tmp.read_text()
 ok = [
     (len(rows) == 3, "14-day retention drops the old row"),
@@ -34,6 +43,9 @@ ok = [
     ([r["mode"] for r in rows] == ["group", "dm", "dm"], "mode recorded"),
     ("5555" not in text, "no handles or phone numbers stored"),
     (stat.S_IMODE(os.stat(tmp).st_mode) == 0o600, "file is 0600"),
+    ([(r["mode"], r["team"], r.get("test")) for r in web] == [("web", "Ackbar", None), ("web", "Ackbar", 1)],
+     "web widget rows carry the caller's team; site test asks are marked test"),
+    ("abcd1234" not in text, "no site uid stored"),
 ]
 for c, m in ok:
     print(("ok   " if c else "FAIL ") + m)

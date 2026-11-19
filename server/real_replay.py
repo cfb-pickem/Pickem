@@ -4,10 +4,17 @@ Real-traffic regression replay: the league's real group asks, replayed through a
 this file is code only.
 
   real_replay.py build  [--date YYYY-MM-DD] [--since HH:MM]   real group asks -> fixtures (labels kept)
-  real_replay.py run    [--ref HEAD] [--port 8807] [--ids f1,f2] [--original]
+  real_replay.py run    [--ref HEAD] [--port 8807] [--ids f1,f2] [--original] [--confirm] [--out x.json]
   real_replay.py nightly [--date YYYY-MM-DD]                   run + queue newly broken fixtures
   real_replay.py report [<report.json>]                        print a report's markdown
 
+flub fixtures  <private>/eval/replay/fixtures-flubs.json, written by flub_loop's items step: every confirmed
+         flub from any mode (group, DM, the web widget), permanent. {src: "flub", mode: group|dm, turns: [...],
+         expect: {answers, must_not, not_exact, not_lanes, expected_fail, expires, fixed_on, regressed_on, broke}}.
+         Open = expected_fail set. The nightly marks one FIXED when it passes twice (expected_fail dropped,
+         fixed_on set); a fixed one that fails twice is a REPEAT (regressed_on: the fix round's top priority,
+         cleared when it passes twice again). Past "expires" the this-week answer keys are dropped; the
+         never-again keys stay.
 build    reads picky_exchanges.jsonl (mode group, a mapped team, not side/exam traffic) and writes
          <private>/eval/replay/fixtures-<date>.json. Labels (`expect`) are added by hand and survive
          a rebuild. Fixture: {id, date, ts, team, q, original: {reply, lane, secs}, expect: {lanes,
@@ -16,9 +23,12 @@ run      inside the shared exam lock (/usr/bin/lockf /tmp/picky-exam.lock; re-ex
          from a throwaway detached worktree of <ref> (cache/.venv symlinked from the main tree) on a
          side sidecar (eval/genius/side.sh: every state file in a temp dir, PICKY_NO_ANTHROPIC=1,
          PICKY_GROUP_EXAM=1 so it yields to members via live_flag). Each ask goes to POST /group with
-         the group secret and X-Picky-Test, in its own fresh "exam-replay-*" chat. --original grades
-         the replies logged live instead (no model, no lock).
-checks   lane (expected lane set), privacy (eval/checks.check_privacy: no hidden pick or submission
+         the group secret and X-Picky-Test, in its own fresh "exam-replay-*" chat (DM fixtures: dm=true
+         as the fixture's member, DM history wiped per fixture; every turn in order, the last one graded).
+         --original grades the replies logged live instead (no model, no lock). --confirm re-runs the
+         failures once (a fail must repeat); --out writes {status_by_id, summary} (flub_loop's fix gate).
+checks   lane (expected lane set), not_lane (a lane a flubbed dodge took), not_repeat (the flubbed reply
+         word for word), privacy (eval/checks.check_privacy: no hidden pick or submission
          status before lock), answers (every sub-question regex matches), facts (record claims true
          per eval/truth + every quoted pool line matches the cache + must_not patterns), length (group
          <= group_chat.MAX_CHARS chars, optional max_words), no_error.
@@ -63,6 +73,7 @@ LOCK_ENV = "PICKY_REPLAY_LOCKED"
 GROUP_MAX_CHARS = 480  # group_chat.MAX_CHARS (not imported: group_chat pulls in the whole brain)
 DM_MAX_CHARS = 1500
 TRIGGER = re.compile(r"@picky\b", re.I)  # the sidecar wants a literal @Picky (the watcher adds it for mentions)
+FLUB_FIXTURES = REPLAY_DIR / "fixtures-flubs.json"
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -113,10 +124,27 @@ def build_fixtures(date: str, since: str = "00:00", rows: list[dict] | None = No
     return out
 
 
-def load_fixtures(paths: list[Path] | None = None) -> list[dict]:
+def _plain(s: str) -> str:
+    return " ".join((s or "").replace("\u2019", "'").replace("\u2018", "'").lower().split()).strip(" .!?")
+
+
+def aged(fx: dict, today: str) -> dict:
+    """Past its "expires" date a fixture's this-week truth (answer keys, never-again keys with a number in them)
+    is gone; lanes, not_lanes, not_exact and wordy must_not keys stay forever."""
+    exp = fx.get("expect") or {}
+    if not exp.get("expires") or str(exp["expires"]) >= today:
+        return fx
+    exp = {k: v for k, v in exp.items() if k != "answers"}
+    if exp.get("must_not"):
+        exp["must_not"] = [m for m in exp["must_not"] if not re.search(r"\d", m)]
+    return {**fx, "expect": exp}
+
+
+def load_fixtures(paths: list[Path] | None = None, today: str | None = None) -> list[dict]:
+    today = today or dt.datetime.now(CT).date().isoformat()
     out = []
     for p in paths or sorted(REPLAY_DIR.glob("fixtures-*.json")):
-        out += json.loads(p.read_text())
+        out += [aged(f, today) for f in json.loads(p.read_text())]
     return out
 
 
@@ -148,18 +176,25 @@ def line_claims(reply: str, games: list[dict]) -> list[str]:
     return sorted(set(bad))
 
 
-def grade(fx: dict, reply: str | None, lane: str | None, truth, dm: bool = False) -> list[tuple[str, bool, str]]:
+def grade(fx: dict, reply: str | None, lane: str | None, truth, dm: bool | None = None) -> list[tuple[str, bool, str]]:
     """[(check, ok, detail)] for one replayed (or logged) reply."""
     exp = fx.get("expect") or {}
+    dm = fx.get("mode") == "dm" if dm is None else dm
     reply = reply or ""
     out = []
     ok = bool(reply.strip()) and not reply.startswith("[ERROR") and not reply.startswith("[HTTP")
     out.append(("no_error", ok, "" if ok else (reply[:80] or "no reply")))
     lanes = exp.get("lanes") or []
+    got = lane or "-"
     if lanes:
-        got = lane or "-"
         hit = any(got == want or got.split(":")[0] == want for want in lanes)
         out.append(("lane", hit, "" if hit else f"got {got}, want {'|'.join(lanes)}"))
+    bad_lanes = [x for x in exp.get("not_lanes") or [] if got == x or (":" not in x and got.split(":")[0] == x)]
+    if exp.get("not_lanes"):
+        out.append(("not_lane", not bad_lanes, f"took {got} again" if bad_lanes else ""))
+    if exp.get("not_exact"):
+        again = [x for x in exp["not_exact"] if _plain(reply) and _plain(reply) == _plain(x)]
+        out.append(("not_repeat", not again, "the flubbed reply word for word" if again else ""))
     ck = _checks()
     _n, ok, d = ck.check_privacy(reply, truth, fx.get("team"))
     out.append(("privacy", ok, d))
@@ -244,7 +279,7 @@ def markdown(rep: dict) -> str:
             L.append("  - failed: " + _clip("; ".join(bad), 220))
         if r.get("expected_fail"):
             L.append(f"  - expected-fail: {r['expected_fail']}")
-    for k in ("flipped", "newly_broken", "queued"):
+    for k in ("flipped", "newly_broken", "queued", "fixed", "repeats", "regressed"):
         if rep.get(k):
             L.append(f"\n{k.replace('_', ' ')}: " + ", ".join(rep[k]))
     return "\n".join(L) + "\n"
@@ -302,25 +337,33 @@ def ask_text(q: str) -> str:
     return q if TRIGGER.search(q) else "@Picky " + q
 
 
-def ask_all(fixtures: list[dict], port: int, tag: str) -> dict[str, dict]:
-    """POST each fixture's ask to the side sidecar on `port`: {id: {reply, lane, secs}}."""
+def ask_all(fixtures: list[dict], port: int, tag: str, hist: Path | None = None) -> dict[str, dict]:
+    """POST each fixture's turns to the side sidecar on `port`: {id: {reply, lane, secs}} for the last turn.
+    DM fixtures ask as their member with dm=true (the web widget runs that same path); the side sidecar's DM
+    history (keyed by handle) is wiped first so fixtures never share a thread."""
     import httpx
     members = json.loads(MEMBERS_FILE.read_text())["members"]
     handle = {m["team"]: m["handles"][0] for m in members if m.get("handles")}
+    anyone = next(iter(handle.values()), "")
     hdr = {"X-Picky-Group-Secret": _keychain("CFB_PICKEM__PICKY_GROUP_SECRET"),
            "X-Picky-Test": _keychain("CFB_PICKEM__TEST_TOKEN")}
     out = {}
     with httpx.Client(timeout=httpx.Timeout(connect=10, read=600, write=10, pool=10)) as cl:
         for fx in fixtures:
-            q = ask_text(fx["q"])
-            t0 = time.time()
-            try:
-                j = cl.post(f"http://127.0.0.1:{port}/group", headers=hdr,
-                            json={"handle": handle.get(fx["team"], ""), "text": q, "dm": False,
-                                  "chat": f"exam-replay-{tag}-{fx['id']}"}).json()
-                reply, lane = j.get("reply"), j.get("lane")
-            except Exception as e:  # noqa: BLE001
-                reply, lane = f"[ERROR {e!r}]", None
+            dm = fx.get("mode") == "dm"
+            if dm and hist is not None:
+                hist.write_text("{}")
+            reply, lane, t0 = None, None, time.time()
+            for turn in fx.get("turns") or [fx["q"]]:
+                t0 = time.time()
+                try:
+                    j = cl.post(f"http://127.0.0.1:{port}/group", headers=hdr,
+                                json={"handle": handle.get(fx.get("team") or "", anyone if dm else ""),
+                                      "text": turn if dm else ask_text(turn), "dm": dm,
+                                      "chat": f"exam-replay-{tag}-{fx['id']}"}).json()
+                    reply, lane = j.get("reply"), j.get("lane")
+                except Exception as e:  # noqa: BLE001
+                    reply, lane = f"[ERROR {e!r}]", None
             out[fx["id"]] = {"reply": reply, "lane": lane, "secs": round(time.time() - t0, 1)}
             print(f"  {fx['id']} {out[fx['id']]['secs']:5.1f}s {lane or '-':<14} {_clip(reply, 90)}", flush=True)
     return out
@@ -349,7 +392,7 @@ def replay(fixtures: list[dict], ref: str = "HEAD", port: int = 8807) -> tuple[d
             time.sleep(2)
         else:
             raise RuntimeError("side sidecar never came up")
-        return ask_all(fixtures, port, str(os.getpid())), sha
+        return ask_all(fixtures, port, str(os.getpid()), run_dir / "hist.json"), sha
     finally:
         try:
             os.killpg(side.pid, signal.SIGTERM)
@@ -377,6 +420,37 @@ def grade_all(fixtures: list[dict], answers: dict[str, dict], truth, mode: str, 
     return {"stamp": stamp, "mode": mode, "sha": sha, "rows": rows, "summary": summarize(rows)}
 
 
+FAILING = ("FAIL", "XFAIL")
+PASSING = ("PASS", "XPASS")
+
+
+def rerun(fixtures: list[dict], ids, truth, ref: str, port: int) -> dict[str, str]:
+    """{id: status} of a second run of `ids` (a 12B model rolls dice: a verdict must repeat)."""
+    ids = sorted(set(ids))
+    if not ids:
+        return {}
+    by_id = {f["id"]: f for f in fixtures}
+    again, sha = replay([by_id[i] for i in ids], ref, port)
+    return {r["id"]: r["status"] for r in grade_all([by_id[i] for i in ids], again, truth, "replay", sha)["rows"]}
+
+
+def settle(rows: list[dict], second: dict[str, str]) -> dict[str, str]:
+    """Final status per fixture: a re-run that disagrees with the first run = FLAKY (neither pass nor fail)."""
+    out = {}
+    for r in rows:
+        st = r["status"]
+        if r["id"] in second and (st in PASSING) != (second[r["id"]] in PASSING):
+            st = "FLAKY"
+        out[r["id"]] = st
+    return out
+
+
+def failed_checks(rows: list[dict]) -> dict[str, str]:
+    return {r["id"]: _clip("; ".join(f"{n}: {d}" if d else n for n, ok, d in r["checks"] if not ok)
+                           + f" | reply: {r.get('reply') or ''}", 300)
+            for r in rows if r["status"] in FAILING + ("ERROR",)}
+
+
 def cmd_run(a, argv: list[str]) -> dict | None:
     fixtures = load_fixtures()
     if a.ids:
@@ -394,10 +468,64 @@ def cmd_run(a, argv: list[str]) -> dict | None:
             raise SystemExit(_relock(argv))
         answers, sha = replay(fixtures, a.ref, a.port)
         rep = grade_all(fixtures, answers, truth, "replay", sha)
+        if a.confirm:
+            second = rerun(fixtures, [r["id"] for r in rep["rows"] if r["status"] in FAILING], truth, a.ref, a.port)
+            rep["status_by_id"] = settle(rep["rows"], second)
     path = save_report(rep)
     print(markdown(rep))
     print(f"report: {path}")
+    if a.out:
+        write_private(Path(a.out), json.dumps({"status_by_id": rep.get("status_by_id") or
+                                               {r["id"]: r["status"] for r in rep["rows"]},
+                                               "summary": rep["summary"], "sha": rep.get("sha"),
+                                               "failed": failed_checks(rep["rows"])}, indent=1))
     return rep
+
+
+def lane_deterministic(fx: dict) -> bool:
+    """Does the router alone (model-free, what release.sh's suite runs via eval/lane_table.py) honor this
+    fixture's lane keys? Only then is its lane row a hard release check once it's fixed."""
+    exp = fx.get("expect") or {}
+    if len(fx.get("turns") or [fx.get("q")]) != 1 or not (exp.get("lanes") or exp.get("not_lanes")):
+        return False
+    try:
+        sys.path.insert(0, str(HERE / "eval"))
+        import lane_table  # noqa: E402
+        r = lane_table.check_rows([{"q": fx["q"], "ok": exp.get("lanes") or [], "not": exp.get("not_lanes") or []}])
+        return r[0]["status"] == "PASS"
+    except Exception:  # noqa: BLE001  (router import trouble: no hard row)
+        return False
+
+
+def mark_flubs(date: str, status: dict[str, str]) -> dict:
+    """Write tonight's settled verdicts back into fixtures-flubs.json: open + passed twice -> fixed (expected_fail
+    dropped); fixed + failed twice -> regressed (a repeat); regressed + passed twice -> fixed again."""
+    try:
+        rows = json.loads(FLUB_FIXTURES.read_text())
+    except (OSError, ValueError):
+        return {"fixed": [], "repeats": [], "regressed": [], "restored": []}
+    out = {"fixed": [], "repeats": [], "regressed": [], "restored": []}
+    for fx in rows:
+        exp = fx.setdefault("expect", {})
+        st = status.get(fx.get("id"))
+        if st == "XPASS" and exp.get("expected_fail"):
+            exp.pop("expected_fail")
+            exp["fixed_on"] = date
+            exp["lane_det"] = lane_deterministic(fx)
+            out["fixed"].append(fx["id"])
+        elif st == "FAIL" and not exp.get("expected_fail"):
+            if not exp.get("regressed_on"):
+                exp["regressed_on"] = date
+                exp.setdefault("broke", []).append(date)
+                out["repeats"].append(fx["id"])
+        elif st == "PASS" and exp.get("regressed_on"):
+            exp.pop("regressed_on")
+            out["restored"].append(fx["id"])
+        if exp.get("regressed_on"):
+            out["regressed"].append(fx["id"])
+    if out["fixed"] or out["repeats"] or out["restored"]:
+        write_private(FLUB_FIXTURES, json.dumps(rows, indent=1, ensure_ascii=False))
+    return out
 
 
 def queue_regression(row: dict, fx: dict) -> str:
@@ -439,20 +567,29 @@ def cmd_nightly(a, argv: list[str]) -> int:
         truth = asyncio.run(_truth())
         answers, sha = replay(fixtures, "HEAD", a.port)
         rep = grade_all(fixtures, answers, truth, "replay", sha)
-        broke = newly_broken(prev, rep)
-        if broke:  # a 12B model rolls dice: a regression must fail twice before it's queued
-            by_id = {f["id"]: f for f in fixtures}
-            again, _ = replay([by_id[r["id"]] for r in broke], "HEAD", a.port)
-            re_rows = grade_all([by_id[r["id"]] for r in broke], again, truth, "replay", sha)["rows"]
-            still = {r["id"] for r in re_rows if r["status"] in ("FAIL", "XFAIL")}
-            broke = [r for r in broke if r["id"] in still]
-        rep["newly_broken"] = [r["id"] for r in broke]
-        rep["flipped"] = [r["id"] for r in flipped(prev, rep)]
         by_id = {f["id"]: f for f in fixtures}
-        rep["queued"] = [queue_regression(r, by_id[r["id"]]) for r in broke if not already_queued(r["id"])]
+        broke = newly_broken(prev, rep)
+        recheck = {r["id"] for r in broke}
+        for r in rep["rows"]:  # flub fixtures whose state may change tonight: confirm first
+            exp = (by_id[r["id"]].get("expect") or {}) if by_id[r["id"]].get("src") == "flub" else None
+            if exp is not None and (r["status"] in ("XPASS", "FAIL") or (r["status"] == "PASS" and exp.get("regressed_on"))):
+                recheck.add(r["id"])
+        second = rerun(fixtures, recheck, truth, "HEAD", a.port)
+        status = settle(rep["rows"], second)
+        broke = [r for r in broke if status[r["id"]] in FAILING]
+        marks = mark_flubs(date, status)
+        rep["status_by_id"] = status
+        rep["newly_broken"] = [r["id"] for r in broke]
+        rep["flipped"] = [r["id"] for r in flipped(prev, rep) if status[r["id"]] == "XPASS"]
+        rep.update({k: marks[k] for k in ("fixed", "repeats", "regressed")})
+        # non-flub fixtures that broke go to the flag queue (the harvest turns them into flub items); flub
+        # fixtures are tracked in place (regressed_on) and go straight to the fix round's top tier
+        rep["queued"] = [queue_regression(r, by_id[r["id"]]) for r in broke
+                         if by_id[r["id"]].get("src") != "flub" and not already_queued(r["id"])]
         path = save_report(rep)
         summary.update({"report": str(path), "sha": sha, **rep["summary"], "newly_broken": rep["newly_broken"],
-                        "flipped": rep["flipped"], "queued": rep["queued"]})
+                        "flipped": rep["flipped"], "queued": rep["queued"], "status_by_id": status,
+                        "failed": failed_checks(rep["rows"]), **marks})
         print(markdown(rep))
         return 0
     except Exception as e:  # noqa: BLE001
@@ -474,6 +611,8 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8807)
     ap.add_argument("--ids", default="")
     ap.add_argument("--original", action="store_true")
+    ap.add_argument("--confirm", action="store_true", help="re-run failures once (FLAKY if they pass)")
+    ap.add_argument("--out", default="", help="write {status_by_id, summary} here")
     a = ap.parse_args(argv)
     if a.cmd in ("run", "nightly"):
         import freeze  # game day: no exams Sat 10:00-24:00 CT (review R9)

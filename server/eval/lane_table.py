@@ -14,8 +14,12 @@ Files:
   server/eval/lane_table_synthetic.json   public: hand-written asks only, never member text
   <private>/eval/lane_table.json          real member asks + exam items (0600)
 
-Row: {"q", "ok": [labels or lanes], "src": "real|genius|exam|synthetic", "xfail": "<flub id>"?, "why"?}.
-A row passes when classify(q).label() or its lane is in "ok". A row with "xfail" is expected to fail
+Row: {"q", "ok": [labels or lanes], "not": [labels or lanes]?, "src": "real|genius|exam|synthetic|flub",
+"xfail": "<flub id>"?, "why"?}. A row passes when classify(q).label() or its lane is in "ok" (an empty "ok" =
+any lane) and in no "not" entry (a "not" label is exact; a bare lane name covers every kind of it).
+Flub rows come from real_replay's permanent flub fixtures (fixtures-flubs.json: lanes / not_lanes), refreshed
+on every build: xfail while the flub is open, a hard row once it's fixed (so a fixed flub that breaks again
+fails this table, test_lane_table.py and release.sh's model-free suite). A row with "xfail" is expected to fail
 (a queued flub the nightly fix round owns): XFAIL while it still fails, XPASS once fixed (not an error).
 build() pins today's lane for new rows (a regression pin); hand-fixed rows keep their labels.
 """
@@ -68,7 +72,9 @@ def check_rows(rows: list[dict]) -> list[dict]:
             import gameday
             board = pre_board() if board is None else board
             rt = gameday.override(rt, TRIGGER.sub("", r["q"]).strip(), "", board)
-        ok = rt.label() in r["ok"] or rt.lane in r["ok"]
+        ok = not r["ok"] or rt.label() in r["ok"] or rt.lane in r["ok"]
+        if any(rt.label() == x or (":" not in x and rt.lane == x) for x in r.get("not") or []):
+            ok = False
         st = ("XPASS" if ok else "XFAIL") if r.get("xfail") else ("PASS" if ok else "FAIL")
         out.append({**r, "got": rt.label(), "why_rule": rt.why, "status": st})
     return out
@@ -138,6 +144,13 @@ def hand_labels() -> dict[str, dict]:
     for p in sorted(REPLAY_DIR.glob("fixtures-*.json")):
         for f in load(p):
             exp = f.get("expect") or {}
+            if f.get("src") == "flub":  # a permanent flub fixture: single-turn lane keys only
+                if (exp.get("lanes") or exp.get("not_lanes")) and len(f.get("turns") or [f["q"]]) == 1 and \
+                        (exp.get("expected_fail") or exp.get("lane_det")):
+                    out[norm(f["q"])] = {"q": f["q"], "ok": exp.get("lanes") or [], "not": exp.get("not_lanes") or [],
+                                         "flub": f["id"], **({"xfail": exp["expected_fail"]} if exp.get("expected_fail")
+                                                             else {}), "why": exp.get("why") or "flub fixture"}
+                continue
             if exp.get("lanes"):
                 out[norm(f["q"])] = {"ok": exp["lanes"], **({"xfail": exp["expected_fail"]} if exp.get("expected_fail")
                                                             else {}), "why": exp.get("why") or "replay fixture"}
@@ -154,16 +167,22 @@ def build() -> dict:
             if not k or k in seen:
                 continue
             seen.add(k)
-            if k in old and old[k].get("hand"):
+            if k in hand and hand[k].get("flub"):  # flub fixtures are the source of truth: always refreshed
+                rows.append({"src": src, "hand": True, **hand[k], "q": q})
+            elif k in old and old[k].get("hand") and not old[k].get("flub"):
                 rows.append(old[k])
             elif k in hand:
                 rows.append({"q": q, "src": src, "hand": True, **hand[k]})
-            elif k in old:
+            elif k in old and not old[k].get("flub"):
                 rows.append({**old[k], "src": src})
             else:
                 rows.append({"q": q, "src": src, "ok": [classify(q).label()], "why": "pinned (build)"})
+    for k, h in hand.items():  # a flub fixture's ask the exchange log no longer has (or reworded): still a row
+        if h.get("flub") and k not in seen:
+            seen.add(k)
+            rows.append({"src": "flub", "hand": True, **h})
     write_private(PRIVATE_TABLE, json.dumps(rows, indent=1) + "\n")
-    return {"rows": len(rows), "real": sum(r["src"] == "real" for r in rows),
+    return {"rows": len(rows), "flub": sum(bool(r.get("flub")) for r in rows), "real": sum(r["src"] == "real" for r in rows),
             "genius": sum(r["src"] == "genius" for r in rows), "exam": sum(r["src"] == "exam" for r in rows),
             "hand": sum(bool(r.get("hand")) for r in rows)}
 

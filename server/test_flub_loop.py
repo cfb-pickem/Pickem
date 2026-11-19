@@ -24,7 +24,8 @@ os.environ.update({"PICKY_EXCHANGE_LOG": str(FIX / "exchanges.jsonl"),
                    "PICKY_FLUB_ITEMS_PUBLIC": str(TMP / "flub_items.json"),
                    "PICKY_FLUB_ITEMS_PRIVATE": str(TMP / "flubs" / "items-private.json"),
                    "PICKY_FLUB_KILL_FILE": str(TMP / "FLUB_AUTOFIX_OFF"),
-                   "PICKY_GROUP_MEMBERS": str(TMP / "members.json"), "PICKY_CLAUDE_USAGE_DIR": str(TMP / "usage")})
+                   "PICKY_GROUP_MEMBERS": str(TMP / "members.json"), "PICKY_CLAUDE_USAGE_DIR": str(TMP / "usage"),
+                   "PICKY_REPLAY_DIR": str(TMP / "replay")})
 os.environ.pop("PICKY_NO_ANTHROPIC", None)
 os.environ.pop("PICKY_FLUB_AUTOFIX", None)
 sys.path.insert(0, str(HERE))
@@ -57,7 +58,12 @@ later = flag_flub.log_flub("next-day flag", source="dm", context=[], now=grp["ts
 h = fl.harvest(D, dry=True)
 c = {x["q"] + "|" + x["mode"]: x for x in h["candidates"]}
 check(h["seen"] == 4, f"4 live exchanges seen (got {h['seen']})")
-check(h["skipped"] == {"test_handle": 1, "side": 1, "unmatched": 1}, f"skips: test handle, side, old unmatched {h['skipped']}")
+check({k: v for k, v in h["skipped"].items() if v} == {"test_handle": 1, "side": 1, "unmatched": 1},
+      f"skips: test handle, side, old unmatched {h['skipped']}")
+check(h["window"] == "day" and h["by_mode"]["dm"] == 3 and h["by_mode"]["group"] == 1 and h["by_mode"]["web"] == 0,
+      f"a past --date = that CT day; counts by mode {h['by_mode']}")
+check(h["skipped_by_mode"] == {"dm": {"test_handle": 1}, "group": {"side": 1, "unmatched": 1}},
+      f"skips by mode {h['skipped_by_mode']}")
 check(h["candidates"][0].get("queue_id") == qid and h["candidates"][0]["priority"] == "queue",
       "the queued flag is candidate #1")
 check(h["candidates"][0]["q"] == grp["q"] and h["candidates"][0]["note"].startswith("he said"),
@@ -86,6 +92,67 @@ fl.harvest(D, dry=True)  # back to a harvest file with the flag for the rest (dr
 hh = json.loads((FL / f"harvest-{D}.json").read_text())
 hh["candidates"] = h["candidates"]
 fl.write_private(FL / f"harvest-{D}.json", json.dumps(hh))
+
+# ---- every mode, since the last run: web widget rows, test asks, late-night chats ---------------------------
+import datetime as _dt0  # noqa: E402
+def _t(day, hh, mm, ss=0):
+    return _dt0.datetime(2026, 11, day, hh, mm, ss, tzinfo=fl.CT).timestamp()
+W = TMP / "window"
+W.mkdir()
+ex = [{"ts": _t(18, 22, 50), "mode": "dm", "team": "Alpha", "q": "before the last run", "a": "x", "chat": "c1"},
+      {"ts": _t(18, 23, 28, 41), "mode": "web", "team": None, "q": "who should I pick", "a": "NW -2.5", "lane": "fact:pick",
+       "chat": "w1", "secs": 7.8},
+      {"ts": _t(18, 23, 34, 47), "mode": "web", "team": None, "q": "ATS records for all 8 teams?", "a": "Just make sure...",
+       "lane": "full", "chat": "w1", "secs": 46.1},
+      {"ts": _t(18, 23, 35, 26), "mode": "web", "team": None, "q": "just give me the numbers", "a": "Yep.",
+       "lane": "banter:banter", "chat": "w1", "secs": 14.0},
+      {"ts": _t(19, 11, 0, 25), "mode": "web", "team": None, "q": "scripted test ask", "a": "x", "lane": "full", "chat": "w2"},
+      {"ts": _t(19, 11, 5), "mode": "web", "team": "Alpha", "q": "new-style test row", "a": "x", "chat": "w3", "test": 1},
+      {"ts": _t(19, 12, 0, 10), "mode": "web", "team": None, "q": "no team account", "a": "x", "lane": "banter:greet", "chat": "w4"},
+      {"ts": _t(19, 13, 48, 36), "mode": "web", "team": "Beta", "q": "cake recipe", "a": "no", "lane": "full", "chat": "w5", "secs": 18.8},
+      {"ts": _t(19, 14, 0), "mode": "dm", "team": None, "q": "allowlisted non-member", "a": "x", "chat": "c9"},
+      {"ts": _t(19, 14, 11), "mode": "dm", "team": "Alpha", "q": "draw a game", "a": "On it.", "lane": "picture", "chat": "c1"},
+      {"ts": _t(19, 22, 59), "mode": "group", "team": "Beta", "q": "late group ask", "a": "y", "chat": "g1", "secs": 3.0}]
+(W / "ex.jsonl").write_text("\n".join(json.dumps(r) for r in ex) + "\n")
+(W / "err.log").write_text("\n".join([
+    "2026-11-18 23:28:40,650 INFO web reply mapped=True 7.8s chars=281 lane=fact:pick test=False",
+    "2026-11-18 23:34:40,000 INFO results guard: dropped ['x']",
+    "2026-11-18 23:34:46,795 INFO web reply mapped=True 46.1s chars=130 lane=full test=False",
+    "2026-11-18 23:35:26,399 INFO web reply mapped=True 14.0s chars=4 lane=banter:banter test=False",
+    "2026-11-19 11:00:25,320 INFO web reply mapped=True 114.1s chars=117 lane=full test=True",
+    "2026-11-19 12:00:10,000 INFO web reply mapped=False 3.0s chars=9 lane=banter:greet test=False",
+    "2026-11-19 13:48:35,527 INFO web reply mapped=True 18.8s chars=218 lane=full test=False",
+    "2026-11-19 14:11:39,000 INFO dm reply sender=0001 mapped=True 0.6s chars=40 image=False lane=picture",
+    "2026-11-19 22:59:00,100 INFO group reply sender=0002 mapped=True 3.0s chars=1 image=False lane=fact:x"]) + "\n")
+WD = W / "flubs"
+with patch.multiple(fl, EXCHANGES=W / "ex.jsonl", STDERR_LOG=W / "err.log", FLUB_DIR=WD, CURSOR=WD / "cursor.json"), \
+        patch.object(flag_flub, "queue_path", lambda: W / "q.jsonl"):
+    now = _t(19, 23, 0)
+    fl.write_private(WD / "cursor.json", json.dumps({"until": _t(18, 23, 0), "date": "2026-11-18"}))
+    hw = fl.harvest("2026-11-19", dry=True, now=now)
+    check(hw["window"] == "cursor" and hw["since"] == _t(18, 23, 0) and hw["until"] == now,
+          "tonight's run starts at the last run's cursor")
+    check(hw["by_mode"] == {"dm": 1, "group": 1, "web": 4},
+          f"web widget chats harvested, incl. last night's 23:28-23:35 after the 23:00 run {hw['by_mode']}")
+    check(hw["skipped"]["test_web"] == 2 and hw["skipped"]["unmapped_web"] == 1 and hw["skipped"]["test_handle"] == 1,
+          f"site test asks, team-less site accounts and test handles skipped, counted {hw['skipped']}")
+    qs = {c["q"]: c for c in hw["candidates"]}
+    check("before the last run" not in qs and "late group ask" in qs, "nothing from before the cursor; up to now")
+    check({x["type"] for x in qs["ATS records for all 8 teams?"]["signals"]} == {"results_guard"}
+          and qs["ATS records for all 8 teams?"]["secs"] == 46.1, "web rows get their reply line's signals")
+    hw2 = fl.harvest("2026-11-19", dry=True, since=fl.parse_when("2026-11-18"), until=now)
+    check(hw2["window"] == "override" and hw2["by_mode"]["dm"] == 2, "--since/--until override the cursor")
+    (WD / "cursor.json").unlink()
+    fl.write_private(WD / "harvest-2026-11-18.json", json.dumps({"until": _t(18, 23, 0)}))
+    os.utime(WD / "harvest-2026-11-18.json", (1, 1))  # older than tonight's dry file
+    check(fl.window("2026-11-19", now=now)[2] == "last harvest" and fl.window("2026-11-19", now=now)[0] == _t(18, 23, 0),
+          "no cursor: the newest real (not dry) harvest file's end")
+    for f in WD.glob("harvest-*.json"):
+        f.unlink()
+    check(fl.window("2026-11-19", now=now)[:3] == (_t(18, 0, 0), now, "yesterday"), "nothing at all: yesterday 00:00 CT")
+    fl.write_private(WD / "cursor.json", json.dumps({"until": now - 30 * 86400}))
+    check(fl.window("2026-11-19", now=now)[0] == now - fl.LOOKBACK_DAYS * 86400, "a stale cursor is capped at the lookback")
+check(fl.parse_when("2026-11-18T23:00") == _t(18, 23, 0) and fl.parse_when("1795064400") == 1795064400.0, "parse_when")
 
 # ---- classify with a fake Opus ---------------------------------------------------------------------
 FACTS = {"facts": "SEASON STANDINGS:\n  1. Alpha 30-18\n  2. Beta 29-19\nTHIS WEEK'S POOL GAMES:\n"
@@ -152,6 +219,48 @@ check(prv[2]["persona"] == "me" and prv[2]["must_include"] == ["30-18"], "record
 check(prv[2].get("expires") == "2026-11-22", f"a record key without expires ages out in 6 days {prv[2].get('expires')}")
 check(stat.S_IMODE(os.stat(FL / "items-private.json").st_mode) == 0o600, "private items file is 0600")
 check(prv[1]["expires"] == "2026-11-21", "expiry kept")
+# ---- never twice: every confirmed flub is a permanent replay fixture ---------------------------------------
+rg = json.loads((TMP / "replay" / "fixtures-flubs.json").read_text())
+check(stat.S_IMODE(os.stat(TMP / "replay" / "fixtures-flubs.json").st_mode) == 0o600, "regression set is 0600")
+check(len(rg) == 3 and a["regress"]["added"] == [f"rg-20261116-{i}" for i in (1, 2, 3)] and a["regress"]["dupes"] == 1,
+      f"every confirmed flub is a regression fixture; two flubs on one question = one fixture {a['regress']}")
+news = next(f for f in rg if f["q"] == "whats the latest news")
+check(news["expect"]["answers"] == ["Dellenger"] and news["expect"]["expected_fail"] == news["id"]
+      and news["expect"]["keys"] == "item" and news["mode"] == "group" and news["team"] == "Beta",
+      "an item's keys become the fixture's checks; open = expected_fail")
+import re as _re  # noqa: E402
+check(_re.search(news["expect"]["must_not"][0], "I don’t  have any info on it", _re.I) is not None,
+      "literal keys become tolerant regexes (curly quote, spacing)")
+c2 = next(c for c in h["candidates"] if c["cid"] == c_pick2)
+drop = fl.regress_fixture("rg-x-2", D, next(x for x in v["verdicts"] if x["cid"] == c_pick2), c2, None, FACTS)
+check(drop["expect"]["keys"] == "fallback" and drop["expect"]["not_exact"] == [
+    "My 4 calls: Northwestern -2.5, Illinois +8.5, Tennessee +1.5, Texas Tech -3.5."] and drop["mode"] == "dm",
+      f"an item that failed verification still lands with fallback checks {drop['expect']}")
+rec = next(f for f in rg if f["q"] == "whats my record")
+check(rec["team"] == "Alpha" and rec["expect"].get("expires") == "2026-11-22", "persona -> the member; expiry carried")
+again = fl.items(D)
+check(again["regress"]["added"] == [] and again["regress"]["dupes"] == 4, "rerun: no duplicate fixtures")
+check(not any(f["q"] == "give me the Iowa game line" for f in rg), "a dropped item's fixture asks the member's real text")
+dodge = fl.regress_fixture("rg-x-1", D, {"cid": "c9", "category": "dodge", "why": "w"},
+                           {"q": "ATS records for the 8 teams?", "a": "Yep.", "lane": "banter:banter", "mode": "web",
+                            "team": None}, None, FACTS)
+check(dodge["expect"]["not_lanes"] == ["banter:banter"] and dodge["expect"]["not_exact"] == ["Yep."]
+      and dodge["mode"] == "dm" and dodge["via"] == "web" and dodge["team"] == "Beta",
+      f"a web dodge from a code lane: never that lane again, never that reply again, replayed as a DM {dodge}")
+check("not_lanes" not in fl.regress_fixture("x", D, {"category": "dodge"}, {"q": "q", "a": "a", "lane": "full"},
+                                            None, FACTS)["expect"], "no lane pin on a full-brain reply")
+slow = fl.add_regressions(D, [], FACTS, dry=True)
+check(slow == {"would_add": [], "repeats": [], "dupes": 0}, "dry: nothing written")
+# a fixed fixture flubbed again live = a repeat (top priority)
+rg[0]["expect"].pop("expected_fail")
+rg[0]["expect"]["fixed_on"] = "2026-11-17"
+fl.save_regressions(rg)
+c0 = next(c for c in h["candidates"] if c["q"] == rg[0]["q"])
+rpt = fl.add_regressions("2026-11-18", [({"cid": "c1", "flub": True, "category": "didn't answer", "why": "again"},
+                                         c0, None)], FACTS)
+rg = fl.load_regressions()
+check(rpt["repeats"] == [rg[0]["id"]] and rg[0]["expect"]["regressed_on"] == "2026-11-18"
+      and rg[0]["expect"]["broke"] == ["2026-11-18"], f"a flub on a fixed question is a repeat {rpt}")
 check(not hasattr(fl, "publish") and not hasattr(fl, "PUBLISH"), "no publish path left")
 pub, prv = prv[:2], prv[2:]  # the loader tests below still cover a legacy public file
 again = fl.items(D)
@@ -222,6 +331,27 @@ calls = []
 with patch.object(fl, "_fix", side_effect=lambda d, f: calls.append(f) or {"status": "rejected", "why": "x"}):
     r = fl.fix_round(D)
 check(r["status"] == "rejected" and calls and all(f["category"] != "slow" for f in calls[0]), "fix gets the non-slow flubs")
+pri = [f["priority"] for f in calls[0]]
+check(pri[0] == "REGRESSION" and calls[0][0]["id"] == rg[0]["id"] and "NEW" in pri
+      and pri == sorted(pri, key=["REGRESSION", "NEW", "BACKLOG"].index),
+      f"fix list order: regressions first, then tonight's, then the backlog {pri}")
+check(r["todo"]["REGRESSION"] == 1, f"todo counts {r['todo']}")
+check(calls[0][0]["checks"].get("answers") == ["Dellenger"], "each entry carries its regression checks")
+fl.write_private(FL / f"replay-{D}.json", json.dumps({"status_by_id": {rg[1]["id"]: "XPASS"}, "failed": {}}))
+mark = fl.load_regressions()
+mark[1]["expect"].pop("expected_fail")  # tonight's replay saw it fixed
+fl.save_regressions(mark)
+with patch.object(fl, "MAX_FIX_ITEMS", 1):
+    lst = fl.fix_list(D)
+check(rg[1]["id"] not in [f["id"] for f in lst] and len(lst) == 1 and lst[0]["priority"] == "REGRESSION",
+      "a flub tonight's replay saw fixed isn't re-fixed; the cap never cuts regressions")
+check(fl.replay_breaks({"status_by_id": {"a": "PASS", "b": "XFAIL", "c": "XPASS", "d": "PASS"}},
+                       {"status_by_id": {"a": "FAIL", "b": "XFAIL", "c": "XFAIL", "d": "FLAKY"}}) == ["a", "c"],
+      "replay gate: a fix may not break what passes on main (flaky doesn't count)")
+import datetime as _dt  # noqa: E402
+check(fl.past_deadline(_dt.datetime(2026, 11, 20, 3, 5, tzinfo=fl.CT))
+      and not fl.past_deadline(_dt.datetime(2026, 11, 20, 2, 25, tzinfo=fl.CT))
+      and not fl.past_deadline(_dt.datetime(2026, 11, 19, 23, 30, tzinfo=fl.CT)), "02:30 CT exam deadline")
 
 # the fix round end to end against the temp remote (Opus, the suite, the exams and launchctl faked)
 import picky_claude  # noqa: E402
@@ -262,11 +392,12 @@ def exams(fix_det):
 gitenv = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 RELEASES = []
 common = dict(REPO=main_tree, alltests_fails=lambda wt: set(), run_exam_locked=lambda wt, port, tag: Path(tag),
-              _release=lambda ref="main": RELEASES.append(1) or {"rc": 0, "tail": "LIVE"})
+              _release=lambda ref="main": RELEASES.append(1) or {"rc": 0, "tail": "LIVE"},
+              past_deadline=lambda now=None: False)
 
 
-def fix_with(files, fix_det, frozen=False):
-    with patch.multiple(fl, **common, exam_summary=exams(fix_det)), patch.dict(os.environ, gitenv), \
+def fix_with(files, fix_det, frozen=False, **over):
+    with patch.multiple(fl, **{**common, **over}, exam_summary=exams(fix_det)), patch.dict(os.environ, gitenv), \
             patch.object(picky_claude, "run", fake_fix(files)), patch.object(fl.freeze, "frozen", lambda *a: frozen):
         return fl._fix("2099-02-01", flubs)
 
@@ -298,6 +429,31 @@ check(pp["promoted"] == ["flub/2099-02-01"] and RELEASES == [1, 2] and git("rev-
       and subprocess.run(["git", "rev-parse", "--verify", "refs/heads/flub/2099-02-01"], cwd=bare,
                          capture_output=True).returncode != 0,
       f"after the freeze: flub/<date> rebased onto main, shipped through release.sh, branch deleted {pp}")
+# a fix the gates can't judge tonight (deadline / exam lock busy) is kept and picked up the next night
+r = fix_with({"server/baz.py": "Z = 1\n", "server/test_baz.py": "pass\n"}, 81, past_deadline=lambda now=None: True)
+check(r["status"] == "waiting" and "flub-ungated/2099-02-01" in git("branch", "--list", "flub-ungated/*", cwd=main_tree),
+      f"past the deadline: the fix waits as flub-ungated/<date> ({r['why']})")
+def lock_busy(wt, port, tag):
+    raise RuntimeError("exam flub-base failed (rc 75): lockf: /tmp/picky-exam.lock: already locked")
+seen_carry = {}
+def fake_fix2(files):
+    inner = fake_fix(files)
+    def run(prompt, **kw):
+        seen_carry["p"] = prompt
+        seen_carry["has_baz"] = (Path(kw["cwd"]) / "server" / "baz.py").exists()
+        return inner(prompt, **kw)
+    return run
+with patch.multiple(fl, **{**common, "run_exam_locked": lock_busy}, exam_summary=exams(81)), patch.dict(os.environ, gitenv), \
+        patch.object(picky_claude, "run", fake_fix2({"server/qux.py": "Q = 1\n", "server/test_qux.py": "pass\n"})), \
+        patch.object(fl.freeze, "frozen", lambda *a: False):
+    r = fl._fix("2099-02-01", flubs)
+check(seen_carry.get("has_baz") and "earlier night's fix" in seen_carry.get("p", "") and r.get("carried") == "flub-ungated/2099-02-01",
+      f"the next night starts from the kept fix ({r.get('carried')})")
+check(r["status"] == "waiting" and "kept as flub-ungated" in r["why"], f"exam lock busy: kept again, not thrown away ({r['why']})")
+r = fix_with({"server/foo2.py": "X = 2\n", "server/test_foo2.py": "pass\n"}, 81)
+check(r["status"] == "shipped" and not git("branch", "--list", "flub-ungated/*", cwd=main_tree)
+      and "baz.py" in git("show", "--stat", "main~0", cwd=bare) + git("log", "--stat", "-3", "main", cwd=bare),
+      f"the carried fix ships with the next gated round; nothing left waiting ({r['why']})")
 with patch.object(fl.freeze, "no_exams", lambda *a: True):
     check(fl.fix_round(D)["status"] == "off", "Saturday game window: no fix round (no exams)")
 check(not Path("/private/tmp/picky-flub-fix-2099-02-01").exists() and
@@ -321,6 +477,9 @@ rep = fl.report(D)
 check("Exchanges seen: 4 live" in rep and "p95 75.2s" in rep, "report: exchanges + latency")
 check("wrong fact (3)" in rep and "Items: 0 public, 0 private, 3 dupes" in rep, "report: categories + item counts (last items run)")
 check("Fix round: rejected" in rep and "det. pass 80/100 vs 79/100" in rep, "report: fix result + exam numbers")
+check("Regression set (never twice): 3 items" in rep and "REPEATS (fixed before, broke again): rg-20261116-1" in rep
+      and "Skipped: 1 side/exam sidecar traffic; 1 unmapped handles (test handles)" in rep,
+      "report: regression set size, repeats, skip reasons")
 check((FL / f"report-{D}.md").exists() and stat.S_IMODE(os.stat(FL / f"report-{D}.md").st_mode) == 0o600,
       "report file written 0600")
 
