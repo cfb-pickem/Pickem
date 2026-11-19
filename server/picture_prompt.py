@@ -36,7 +36,7 @@ SNAPSHOT = HERE / "team_looks.json"
 CACHE_PATH = Path(os.environ.get("PICKY_TEAM_LOOKS", HERE / "cache" / "team_looks.json"))
 TEAMS_URL = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams?limit=1000"
 TTL_S = 30 * 86400
-MAX_CHARS = 900          # image.py takes 2000; the text encoder reads far less, keep the picture words up front
+MAX_CHARS = 1300         # image.py takes 2000; Z-Image reads 512 tokens: 1300 chars measured 250-300 (11-19), words up front
 MAX_TEAMS = 4
 
 SPORTS_STYLE = ("Photorealistic sports photography, dramatic stadium lighting, sharp focus. "
@@ -72,6 +72,15 @@ SCENES = [
     (re.compile(r"\bmascots?\b", re.I),
      "a costumed college football mascot character on the sideline"),
 ]
+# Charlie, 2026-11-19: every picture also has two hot blonde women in it, "spiciest PG-13": Hooters-style tight
+# tank tops + short shorts, glam, flirty. Never nude or posed sexy: it goes to the friends group chat and the site
+# widget. "Only the girls, you shouldn't change the whole scene": they are added INTO the member's scene, no bar or
+# new setting. The word "Hooters" printed the brand on their shirts (test 11-19), so the clause says "plain" and
+# never names it. Z-Image Turbo has no negative prompt (CFG off), so the clause itself says clothed. Added after the
+# member's words, never cut by the cap. Never mentioned in Picky's reply text.
+WOMEN = ("Also in the scene: two gorgeous adult blonde women in tight plain {top} tank tops and {bottom} "
+         "short shorts, glamorous makeup, flirty smiles, clothed, holding drinks, off to one side; "
+         "the rest of the scene unchanged")
 FOOTBALL = re.compile(r"\b(football|cfb|touchdown|quarterback|qb|stadium|helmet|jersey|end zone|kickoff|"
                       r"heisman|playoff|bowl game)\b", re.I)
 # "Generate an image of ...", "draw me ...", "@Picky make a picture of ..." -> the picture words only
@@ -240,6 +249,12 @@ def _names(team: str, t: dict) -> set[str]:
     return {x for x in out if x}
 
 
+def women(colors_: list[str] | None = None) -> str:
+    """The two-women clause: team colors when a team is in the picture, else a generic white + orange outfit."""
+    top, bottom = colors_ or ("white", "orange")
+    return WOMEN.format(top=top, bottom=bottom)
+
+
 def expand(q: str) -> str:
     text = REQUEST.sub("", (q or "").strip(), count=1).strip() or (q or "").strip()
     table = looks()
@@ -266,13 +281,14 @@ def expand(q: str) -> str:
     scenes = [s for rx, s in SCENES if rx.search(text)]
     sports = bool(found or scenes or FOOTBALL.search(text))
     style = SPORTS_STYLE if sports else PLAIN_STYLE
+    staff = women(colors(table[found[0]]) if found else None)
     for k, v in slots.items():
         text = text.replace(k, v)
     body = ". ".join([text.rstrip(" .")] + scenes)
-    room = MAX_CHARS - len(style) - 2
+    room = MAX_CHARS - len(staff) - len(style) - 4
     if len(body) > room:
         body = body[:room].rsplit(" ", 1)[0].rstrip(" ,.")
-    return f"{body}. {style}"
+    return f"{body}. {staff}. {style}"
 
 
 def main(argv: list[str]) -> int:

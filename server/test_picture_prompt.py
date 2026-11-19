@@ -83,6 +83,50 @@ def test_overlong_prompt_is_capped_under_image_service_limit():
     assert p.endswith(pp.SPORTS_STYLE), "the cap trims the member's words, never the style suffix"
 
 
+def test_every_picture_has_two_blonde_women_spicy_but_clothed():
+    """Charlie 2026-11-19: every Picky picture has two hot blonde women, spiciest PG-13 (Hooters-style), never nude:
+    it goes to the group chat and the site widget."""
+    asks = [ND, "draw me a golden retriever surfing a wave", "an alabama tailgate", "michigan losing",
+            "ohio state fans at a sports bar", "texas a&m beating texas", "x", "notre dame " + "very long words " * 600]
+    for q in asks:
+        lp = low(pp.expand(q))
+        assert lp.count("also in the scene: two gorgeous adult blonde women") == 1, (q, lp)
+        assert "tank tops and" in lp and "short shorts" in lp, (q, lp)
+        assert "hooters" not in lp, "the brand name printed its logo on their shirts"
+        assert "glamorous makeup, flirty smiles, clothed, holding drinks" in lp, (q, lp)
+        assert not re.search(r"\b(nude|naked|topless|lingerie|nsfw|sexual|see-through|cleavage|bikini)\b", lp), (q, lp)
+        assert lp.index("blonde women") < lp.index("no lettering"), "style suffix still last"
+    assert "tight plain navy blue tank tops and metallic gold short shorts" in low(pp.expand(ND)), "team colors"
+    assert "tight plain white tank tops and orange short shorts" in low(pp.expand("a golden retriever in a park"))
+
+
+def test_women_are_added_to_the_scene_never_a_new_setting():
+    """Charlie: "only the girls, you shouldn't change the whole scene." No bar / tiki / tent unless the member said so."""
+    for q in ["Ohio State quarterback throwing a touchdown in the snow", "draw me a golden retriever surfing a wave",
+              "a golden retriever in a park", ND, "michigan losing"]:
+        lp = low(pp.expand(q))
+        assert not re.search(r"\b(bars?|bartenders?|tiki|tents?|pub|tavern|counter)\b", lp), (q, lp)
+        assert "the rest of the scene unchanged" in lp
+    snow = low(pp.expand("Ohio State quarterback throwing a touchdown in the snow"))
+    assert "quarterback throwing a touchdown in the snow" in snow, "the member's scene words survive"
+    assert snow.index("in the snow") < snow.index("blonde women"), "member's words lead, the women ride after"
+    dog = low(pp.expand("draw me a golden retriever surfing a wave"))
+    assert dog.startswith("a golden retriever surfing a wave"), dog
+    assert "football" not in dog and "stadium" not in dog
+    bar = low(pp.expand("ohio state fans at a sports bar"))
+    assert "fans at a sports bar" in bar and bar.count(" bar") == 1, "the member's own bar stays; none added"
+
+
+def test_women_never_crowd_out_the_members_words():
+    words = "a quarterback " + "and a marching band " * 39  # ~790 chars, fit before the women were added
+    assert len(words) > 780
+    p = pp.expand(words)
+    assert words.strip() in p, "member words up to the old cap are not truncated"
+    assert p.endswith(pp.SPORTS_STYLE) and "blonde women" in p
+    # Z-Image's text encoder truncates at 512 tokens (mflux z_image max_length=512); 1300 chars is ~300 tokens
+    assert len(pp.expand("notre dame " + "very long words " * 600)) <= pp.MAX_CHARS <= 1300
+
+
 def test_color_names_from_hex():
     assert pp.color_name("062340") == "navy blue"
     assert pp.color_name("c99700") == "metallic gold"
