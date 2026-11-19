@@ -95,10 +95,22 @@ FIX_PORT, BASE_PORT = 8805, 8806
 SLOW_S = 60.0
 PUSHBACK_WINDOW = 600.0
 LOOKBACK_DAYS = 8  # a cursor older than this (box off for a week) starts here; the exchange log keeps ~that long
-CURSOR = FLUB_DIR / "cursor.json"
-# next to the flubs dir (= <private>/eval/replay; a test's temp PICKY_FLUB_DIR keeps it in the temp dir too)
-REPLAY_DIR = Path(os.environ.get("PICKY_REPLAY_DIR", FLUB_DIR.parent / "eval" / "replay"))
-REGRESS_FILE = REPLAY_DIR / "fixtures-flubs.json"
+
+
+def cursor_file() -> Path:
+    return FLUB_DIR / "cursor.json"
+
+
+def replay_dir() -> Path:
+    """<private>/eval/replay, next to the flubs dir (read at call time: a test that points FLUB_DIR at a temp
+    dir keeps the regression set there too)."""
+    return Path(os.environ.get("PICKY_REPLAY_DIR") or FLUB_DIR.parent / "eval" / "replay")
+
+
+def regress_file() -> Path:
+    return replay_dir() / "fixtures-flubs.json"
+
+
 MAX_FIX_ITEMS = 15
 FIX_DEADLINE = os.environ.get("PICKY_FLUB_FIX_DEADLINE", "02:30")  # CT: no exam starts after this
 DM_MODES = ("dm", "dm-public", "web")  # replayed as a DM (the web widget runs the mapped-member DM path)
@@ -159,7 +171,7 @@ def window(date: str, since: float | None = None, until: float | None = None,
         s, e = day_bounds(date)
         return s, e, "day"
     floor = now - LOOKBACK_DAYS * 86400
-    cur = read_json(CURSOR, {}) or {}
+    cur = read_json(cursor_file(), {}) or {}
     if cur.get("until"):
         return max(float(cur["until"]), floor), now, "cursor"
     files = sorted(FLUB_DIR.glob("harvest-*.json"), key=lambda p: p.stat().st_mtime)
@@ -765,12 +777,12 @@ def lit_rx(term: str) -> str:
 
 
 def load_regressions() -> list[dict]:
-    rows = read_json(REGRESS_FILE, []) if REGRESS_FILE.exists() else []
+    rows = read_json(regress_file(), []) if regress_file().exists() else []
     return [r for r in rows if isinstance(r, dict) and r.get("id")] if isinstance(rows, list) else []
 
 
 def save_regressions(rows: list[dict]) -> None:
-    write_private(REGRESS_FILE, json.dumps(rows, indent=1, ensure_ascii=False) + "\n")
+    write_private(regress_file(), json.dumps(rows, indent=1, ensure_ascii=False) + "\n")
 
 
 def fallback_keys(v: dict, cand: dict) -> dict:
@@ -1061,8 +1073,8 @@ def fix_list(date: str) -> list[dict]:
     regs = load_regressions()
     by_cid = {(r.get("date"), r.get("cid")): r for r in regs}
     other_fx = {}
-    for p in sorted(REPLAY_DIR.glob("fixtures-*.json")) if REPLAY_DIR.exists() else []:
-        if p != REGRESS_FILE:
+    for p in sorted(replay_dir().glob("fixtures-*.json")) if replay_dir().exists() else []:
+        if p != regress_file():
             other_fx.update({f["id"]: f for f in read_json(p, []) or [] if isinstance(f, dict) and f.get("id")})
     out, seen = [], set()
     for r in regs:
@@ -1173,7 +1185,8 @@ def _fix(date: str, flubs: list[dict]) -> dict:
         changed = _sh(["git", "diff", "--name-only", "origin/main...HEAD"], cwd=fix_wt).stdout.split()
         res["changed"] = changed
         if not changed:
-            return res | {"status": "no fix", "why": "Opus changed nothing"}
+            return res | ({"status": "no fix", "why": "Opus changed nothing"} if p.returncode == 0 else
+                          {"status": "failed", "why": f"Opus run failed (rc {p.returncode}), nothing changed"})
         outside = [f for f in changed if not re.fullmatch(r"server/[^/]+\.py", f)]
         if outside:
             return res | {"why": f"touched files outside server/*.py: {', '.join(outside[:5])}"}
@@ -1364,7 +1377,7 @@ def nightly(date: str, dry: bool = False, since: float | None = None, until: flo
         write_private(FLUB_DIR / f"promote-{date}.json", json.dumps(pend, indent=1))
     h = harvest(date, dry, since, until)
     if not dry:  # the next run starts where this one's harvest ended (late-night chats roll into it)
-        write_private(CURSOR, json.dumps({"until": h["until"], "date": date}))
+        write_private(cursor_file(), json.dumps({"until": h["until"], "date": date}))
     classify(date, dry)
     items(date, dry)
     steps = {"replay": replay_nightly(date, dry)}

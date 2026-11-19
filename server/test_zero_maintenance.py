@@ -325,7 +325,9 @@ def test_flub_loop_is_optional_and_skips_cleanly():
     import flub_loop
     (TMP / "flubs").mkdir(exist_ok=True)
     for kind in WORLDS:
-        with world(kind, "flub_loop.py"), patch.object(flub_loop, "FLUB_DIR", TMP / "flubs"):
+        with world(kind, "flub_loop.py"), patch.object(flub_loop, "FLUB_DIR", TMP / "flubs"), \
+                patch.object(flub_loop, "EXCHANGES", TMP / "flubs" / "no-exchanges.jsonl"), \
+                patch.object(flub_loop, "STDERR_LOG", TMP / "flubs" / "no-stderr.log"):
             c = flub_loop.classify("2026-11-18", facts={"x": 1})
             assert c.get("by") != "opus", (kind, c)
             if kind != "failing":

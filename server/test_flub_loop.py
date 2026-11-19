@@ -125,7 +125,7 @@ ex = [{"ts": _t(18, 22, 50), "mode": "dm", "team": "Alpha", "q": "before the las
     "2026-11-19 14:11:39,000 INFO dm reply sender=0001 mapped=True 0.6s chars=40 image=False lane=picture",
     "2026-11-19 22:59:00,100 INFO group reply sender=0002 mapped=True 3.0s chars=1 image=False lane=fact:x"]) + "\n")
 WD = W / "flubs"
-with patch.multiple(fl, EXCHANGES=W / "ex.jsonl", STDERR_LOG=W / "err.log", FLUB_DIR=WD, CURSOR=WD / "cursor.json"), \
+with patch.multiple(fl, EXCHANGES=W / "ex.jsonl", STDERR_LOG=W / "err.log", FLUB_DIR=WD), \
         patch.object(flag_flub, "queue_path", lambda: W / "q.jsonl"):
     now = _t(19, 23, 0)
     fl.write_private(WD / "cursor.json", json.dumps({"until": _t(18, 23, 0), "date": "2026-11-18"}))
@@ -454,6 +454,11 @@ r = fix_with({"server/foo2.py": "X = 2\n", "server/test_foo2.py": "pass\n"}, 81)
 check(r["status"] == "shipped" and not git("branch", "--list", "flub-ungated/*", cwd=main_tree)
       and "baz.py" in git("show", "--stat", "main~0", cwd=bare) + git("log", "--stat", "-3", "main", cwd=bare),
       f"the carried fix ships with the next gated round; nothing left waiting ({r['why']})")
+with patch.multiple(fl, **common, exam_summary=exams(81)), patch.dict(os.environ, gitenv), \
+        patch.object(picky_claude, "run", lambda prompt, **kw: subprocess.CompletedProcess([], 1, "", "529")), \
+        patch.object(fl.freeze, "frozen", lambda *a: False):
+    r = fl._fix("2099-02-01", flubs)
+check(r["status"] == "failed" and "rc 1" in r["why"], f"an Opus run that fails is 'failed', not 'no fix' ({r})")
 with patch.object(fl.freeze, "no_exams", lambda *a: True):
     check(fl.fix_round(D)["status"] == "off", "Saturday game window: no fix round (no exams)")
 check(not Path("/private/tmp/picky-flub-fix-2099-02-01").exists() and
