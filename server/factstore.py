@@ -1068,6 +1068,9 @@ def upcoming(now: float | None = None) -> list[dict]:
         k = _sd(s.get("start"))
         if k and t0 <= k <= t0 + dt.timedelta(days=HORIZON_D):
             rows.append(_row(s, now))
+    wks = [r["week"] for r in rows if isinstance(r.get("week"), int)]
+    if wks:  # the 9-day horizon reaches into next week by midweek: this week = the soonest week with games left
+        rows = [r for r in rows if r.get("week") in (None, min(wks))]
     return sorted(rows, key=lambda r: r["startDate"] or "")
 
 

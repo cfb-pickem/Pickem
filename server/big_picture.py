@@ -106,7 +106,8 @@ def coach_text(ctx: dict, q: str) -> str | None:
         return _coach_answer(cc, q, [], notes, heads, rows) if cc else None
     if not GENERIC_COACH.search(q or ""):
         return None  # a coach we don't have ('is Vince Lombardi getting fired?'): the full brain says so
-    return _carousel_answer(q, notes, heads, rows)
+    pool = {factstore.norm(x) for g in (ctx or {}).get("games_this_week") or [] for x in (g.get("away"), g.get("home")) if x}
+    return _carousel_answer(q, notes, heads, rows, pool)
 
 
 def _coach_answer(c: dict, q: str, named: list[str], notes, heads, rows) -> str | None:
@@ -193,7 +194,10 @@ def _weight(s: dict) -> tuple[int, str]:
     return (2 if CHANGE.search(s["title"]) else 1 if s["hot"] else 0), s["date"]
 
 
-def _carousel_answer(q: str, notes, heads, rows) -> str | None:
+def _carousel_answer(q: str, notes, heads, rows, pool: set | None = None) -> str | None:
+    """This week's games touched by a coaching story: the league's pool games first (that's what members are
+    picking), then the strongest story (sourced change note > change headline > hot seat), newest first."""
+    pool = pool or set()
     used, out = [], []
     stories: dict[str, list[dict]] = {}
     for n in notes:
@@ -210,14 +214,22 @@ def _carousel_answer(q: str, notes, heads, rows) -> str | None:
                      key=lambda t: _weight(stories[t][0]), reverse=True)
         if hit:
             games.append((g, hit[0]))
-    games.sort(key=lambda gt: _weight(stories[gt[1]][0]), reverse=True)
+    def rank(gt):
+        g, t = gt
+        w = _weight(stories[t][0])
+        teams = {factstore.norm(g["awayTeam"]), factstore.norm(g["homeTeam"])}
+        return (bool(teams & pool) and w[0] >= 2, w[0], w[1])
+    games.sort(key=rank, reverse=True)
     if games:
         bits = []
         for g, t in games[:3]:
             s = stories[t][0]
             bit, mf = _line_bit(g)
+            nxt = f"{_story_text(s)}; this week: {bit}"
+            if bits and len(" ".join(bits)) + len(nxt) > 520:
+                break
             used += mf + [s["fact"]]
-            bits.append(f"{_story_text(s)}; this week: {bit}")
+            bits.append(nxt)
         out.append("Coaching stories touching this week's games: " + ". ".join(bits) + ".")
     hot = sorted((x for x in heads if x["hot"] and x["fact"] not in used),
                  key=lambda x: (bool(re.search(r"hot.?seat|job security|on the seat", x["title"], re.I)), x["date"]),
@@ -318,6 +330,10 @@ def cfp_field() -> dict | None:
             "selection_day": rules["selection_day"], "notes": notes, "facts": facts}
 
 
+def _and_list(xs: list[str]) -> str:
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1] if xs else ""
+
+
 def cfp_now_text(ctx: dict, q: str) -> str | None:
     f = cfp_field()
     if not f:
@@ -333,28 +349,28 @@ def cfp_now_text(ctx: dict, q: str) -> str | None:
                                                          f" and in as the No. {sd[t]} seed") + ".")
         else:
             out.append(f"{t} is No. {r[t]} in the CFP and on the outside if it ended today.")
-    out.append(f"If it ended today (CFP rankings from {_md(f['date'])}): byes for "
-               + ", ".join(f"{sd[t]} {t}" for t in f["byes"]) + ". First round: "
+    out.append(f"If it ended today, off the {_md(f['date'])} CFP rankings: "
+               + ", ".join(t for t in f["byes"][:-1]) + f" and {f['byes'][-1]} get the byes. First round: "
                + ", ".join(f"{sd[b]} {b} at {sd[a]} {a}" for a, b in f["first_round"] if a and b) + ".")
-    auto = []
-    for t in f["auto"]:
-        w = f["why"][t]
-        auto.append(f"{t} ({w}" + (f", No. {r[t]}" if w == "top Group of Six team" and t in r else "") + ")")
-    out.append("Auto bids: " + ", ".join(auto) + "." + (" " + "; ".join(f["notes"]) + "." if f["notes"] else ""))
+    leaders = [t for t in f["auto"] if f["why"][t].endswith(" leader")]
+    extra = []
+    if f["g6"] in f["auto"]:
+        extra.append(f"{f['g6']} as the top Group of Six team" + (f" (No. {r[f['g6']]})" if f["g6"] in r else ""))
+    extra += [f"{t} on its top-12 spot" for t in f["auto"] if f["why"][t].startswith("top ") and t != f["g6"]]
+    out.append(f"{_and_list(leaders)} are in as conference leaders" + (", plus " + " and ".join(extra) if extra else "")
+               + "." + (" " + "; ".join(f["notes"]) + "." if f["notes"] else ""))
     bub = []
     if f["last_in"]:
-        bub.append(f"last at-larges in: {' and '.join(f['last_in'])}")
+        bub.append(f"Last in: {' and '.join(f['last_in'])}")
     if f["first_out"]:
-        bub.append("first out: " + ", ".join(f"{t} (No. {r[t]})" for t in f["first_out"][:2]))
+        bumped = {t for t in f["first_out"] if r.get(t, 99) <= 12}
+        bub.append("first out: " + " and ".join(f"{t} (No. {r[t]}" + (", bumped by the auto bids)" if t in bumped else ")")
+                                               for t in f["first_out"][:2]))
     if bub:
-        bumped = [t for t in f["first_out"] if r.get(t, 99) <= 12]
-        out.append("Bubble: " + "; ".join(bub) + "."
-                   + (f" {bumped[0]} is top 12 but gets bumped by the auto bids." if bumped else ""))
-    out.append("Who controls it: the four power-conference leaders, since winning the league is an automatic bid "
-               "whatever the ranking; the bubble teams need wins and help.")
+        out.append("; ".join(bub) + ".")
+    out.append("A power-conference title is an auto bid whatever the ranking; the bubble teams need wins and help.")
     if f["next_release"]:
-        out.append(f"Next ranking: {_wd(f['next_release'])}, {_md(f['next_release'])}; Selection Day is "
-                   f"{_wd(f['selection_day'])}, {_md(f['selection_day'])}.")
+        out.append(f"Next ranking {_wd(f['next_release'])}, {_md(f['next_release'])}.")
     else:
-        out.append(f"Selection Day: {_wd(f['selection_day'])}, {_md(f['selection_day'])}.")
+        out.append(f"Selection Day is {_wd(f['selection_day'])}, {_md(f['selection_day'])}.")
     return factstore.answer(" ".join(out), f["facts"])

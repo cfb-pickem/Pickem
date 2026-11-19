@@ -281,6 +281,23 @@ def test_conf_race_sun_belt_says_divisions():
         assert "division" in out.lower(), out
 
 
+def test_carousel_puts_the_pool_games_coaching_story_first():
+    """A carousel ask is about THIS week's picks: a pool game's coaching change (Baylor's interim vs Texas Tech)
+    leads, ahead of fresher firings at teams nobody in the league is picking."""
+    import big_picture
+    use(store_at("main"))
+    try:
+        ctx = {"games_this_week": [{"away": "Texas Tech", "home": "Baylor", "id": 1}]}
+        out = big_picture.coach_text(ctx, "Coaching carousel stuff that matters for this week's games?")
+    finally:
+        FS.use(None, None)
+    check_answer(out)
+    assert "Baylor" in out and "Klanderman" in out, out
+    assert out.index("Baylor") < min([out.index(t) for t in ("UTEP", "Arkansas State", "Florida State") if t in out]
+                                     or [len(out)]), out
+    assert len(out) <= 700, (len(out), out)
+
+
 # --- cfp_now lane --------------------------------------------------------------------------------------
 
 def _cfp(q):
@@ -299,6 +316,20 @@ def test_cfp_if_it_ended_today():
         assert t in out, (t, out)
     assert "Texas Tech" in out and "Oregon" in out, "first out / bubble"
     assert "Nov 24" in out, "next release"
+
+
+def test_cfp_answer_fits_a_text_and_drops_the_report_labels():
+    """A CFP answer is one text (<= 700 chars, the exam's and iMessage's cap), no 'Auto bids:' / 'Who controls it:'
+    report labels; a team-specific ask still leads with that team."""
+    out = _cfp("Who's in the College Football Playoff if it ended today?")
+    check_answer(out)
+    assert len(out) <= 700, (len(out), out)
+    for label in ("Auto bids:", "Who controls it:", "Bubble:"):
+        assert label not in out, (label, out)
+    out = _cfp("Is Texas Tech in the playoff if it ended today?")
+    check_answer(out)
+    assert out.startswith("Texas Tech"), out
+    assert len(out) <= 700, (len(out), out)
 
 
 def test_cfp_seeds_are_straight_by_ranking_with_byes():

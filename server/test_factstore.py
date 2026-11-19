@@ -374,6 +374,26 @@ def test_freshness_watches_the_store():
     assert not feed_monitor.repairable(s), "a stale store kicks the tick; no model repair path"
 
 
+
+def test_upcoming_is_this_weeks_games_only():
+    """'This week' = the soonest week with games left: the 9-day horizon must not pull next week's games in
+    (Wednesday night it carried week 13's Texas at Texas A&M into the key-number and carousel answers)."""
+    p = TMP / "fs-upcoming.json"
+    st = json.loads(built()["path"].read_text())
+    g0 = next(iter(st["games"].values()))
+    later = dict(g0, game_id="999999", week=(g0.get("week") or 12) + 1,
+                 start=(dt.datetime.fromtimestamp(NOW, dt.timezone.utc) + dt.timedelta(days=8)).isoformat())
+    st["games"]["999999"] = later
+    p.write_text(json.dumps(st))
+    FS.use(p, inputs(), now=NOW)
+    try:
+        rows = FS.upcoming()
+    finally:
+        FS.use(None, None)
+    assert rows and len({r["week"] for r in rows}) == 1, sorted({r["week"] for r in rows})
+    assert all(r["id"] != "999999" for r in rows)
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
