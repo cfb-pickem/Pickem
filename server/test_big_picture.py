@@ -298,6 +298,14 @@ def test_carousel_puts_the_pool_games_coaching_story_first():
     assert len(out) <= 700, (len(out), out)
 
 
+def test_a_quote_about_firing_is_not_a_coaching_change():
+    import big_picture
+    x = {"title": "Kirk Ferentz: Iowa coaches bringing up style points in CFP race 'could be grounds for firing'",
+         "hot": True, "date": "2026-11-18"}
+    assert big_picture._weight(x)[0] < 2, big_picture._weight(x)
+    assert big_picture._weight(dict(x, title="Arkansas State firing Butch Jones after six seasons"))[0] == 2
+
+
 # --- cfp_now lane --------------------------------------------------------------------------------------
 
 def _cfp(q):

@@ -183,7 +183,7 @@ def _coach_answer(c: dict, q: str, named: list[str], notes, heads, rows) -> str 
     return factstore.answer(" ".join(out), used)
 
 
-CHANGE = re.compile(r"\b(fires|fired|firing|interim|parts? ways|parted ways|steps? down|resign\w*|hires?|hired|"
+CHANGE = re.compile(r"\b(fires|fired|(?<!grounds for )(?<!be )firing|interim|parts? ways|parted ways|steps? down|resign\w*|hires?|hired|"
                     r"names? .{0,30}coach|coaching search)\b", re.I)
 
 
