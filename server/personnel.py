@@ -646,6 +646,11 @@ def report_when(reported_at, now: float) -> tuple[str, bool]:
     return (d.strftime("%A"), False)
 
 
+_PLAYING = re.compile(r"\b(remains|stays|is still|will remain) (the |his team's )?(starting )?(QB|quarterback|starter)\b|"
+                      r"\bwill start\b|\bis starting\b|\bexpected to (play|start)\b|\bcleared\b|\bgood to go\b|"
+                      r"\bfull participant\b", re.I)
+
+
 def _note_rows(note: dict, team: str | None, game_id, src: str) -> list[dict]:
     """One sourced note (slate_intel / dossier shape) -> a row per player it gives a status."""
     text = re.sub(r"\s+", " ", note.get("text") or "").strip()
@@ -663,6 +668,11 @@ def _note_rows(note: dict, team: str | None, game_id, src: str) -> list[dict]:
             if ss and (len(named) == 1 or len(ss) == 1):
                 st = ss[0]
                 break
+        own = [c for c in cl if _mentions(c, name)]
+        theirs = {x for c in cl for p in players if p != name and _mentions(c, p) and not _mentions(c, name)
+                  for x in statuses_in(c)}
+        if st is None and i == 0 and (any(_PLAYING.search(c) for c in own) or (len(players) > 1 and label in theirs)):
+            continue  # 'Leavitt remains the QB; DT Anderson will miss ...' (label out): the out is Anderson's
         if st is None and i == 0:
             st = label
             if label in ("probable", "available"):  # a hedge in the text beats a sure-sounding label

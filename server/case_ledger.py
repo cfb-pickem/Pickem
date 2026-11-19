@@ -347,6 +347,13 @@ def qb_triggers(notes: list[dict], ours: str, other: str) -> list[dict]:
         teams.add(factstore.norm(a["team"]))
         p, src = a["players"][0], a.get("source_name") or "the report"
         team = a["team"]
+        if factstore.has_personnel():  # the per-player list: a note's label can belong to another player in it
+            mine = factstore.player_status(team=team, player=p)
+            if mine:
+                st = str(mine[0]["status"]).lower()
+            elif len(a["players"]) > 1:  # his own clause gave him no status ('Leavitt remains the QB')
+                teams.discard(factstore.norm(team))
+                continue
         fact = {"id": f"availability.{_slug(p)}.{_slug(st or 'note')}", "kind": "availability", "subject": p,
                 "value": st, "text": a.get("text") or "", "source": src, "as_of": a.get("date") or ""}
         if factstore.norm(team) == factstore.norm(ours) and st in ("questionable", "doubtful", "game-time decision"):

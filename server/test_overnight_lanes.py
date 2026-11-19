@@ -111,6 +111,40 @@ def test_shaky_starter_is_tied_to_the_line():
     assert re.search(r"\bline\b|\bmarket\b", out), out
 
 
+
+# --- availability: a multi-player note's label belongs to the players its clauses give it to ----------
+
+LSU_NOTE = {"team": "LSU", "status": "out", "players": ["Sam Leavitt", "Richard Anderson", "Weston Davis"],
+            "text": "LSU's Lane Kiffin indicated Sam Leavitt remains the QB despite three INTs vs Texas; DT Richard "
+                    "Anderson will miss a fourth straight game, and RT Weston Davis played 73 snaps on a 'really bad' "
+                    "ankle.", "source_name": "The Advocate", "date": "2026-11-16"}
+
+
+def test_player_whose_clause_says_he_plays_doesnt_get_the_notes_out_label():
+    """'Sam Leavitt remains the QB ...; DT Richard Anderson will miss ...' (note label 'out'): the out is Anderson's.
+    Picky told a member 'LSU has Sam Leavitt out, per The Advocate' (genius pf-final, change_mind)."""
+    import personnel as PS
+    rows = {r["player"]: r["status"] for r in PS._note_rows(LSU_NOTE, "LSU", 1, "slate_intel")}
+    assert rows.get("Sam Leavitt") is None, rows
+    assert rows.get("Richard Anderson") == "out", rows
+
+
+def test_single_player_note_still_takes_its_label():
+    import personnel as PS
+    note = dict(LSU_NOTE, players=["Sam Leavitt"], text="LSU QB Sam Leavitt (ankle) is day to day.", status="out")
+    rows = {r["player"]: r["status"] for r in PS._note_rows(note, "LSU", 1, "slate_intel")}
+    assert rows.get("Sam Leavitt"), rows
+
+
+
+def test_change_mind_qb_trigger_reads_the_per_player_status_not_the_notes_label():
+    import case_ledger
+    import test_personnel_store as TP
+    with TP.use(TP.built()["path"]):
+        trig = case_ledger.qb_triggers([dict(LSU_NOTE, text="LSU QB " + LSU_NOTE["text"])], "Tennessee", "LSU")
+    assert not any("Leavitt" in t["text"] for t in trig), trig
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
