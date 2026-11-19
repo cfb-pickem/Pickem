@@ -613,8 +613,9 @@ def _conf_races(conf_games: dict, now: float, as_of: str) -> dict[str, dict]:
 FRESH_D = 10  # a report this new can explain a line move; older ones are in the number already
 
 
-def _qb_text(q: dict, team: str) -> tuple[str, str]:
-    """(starts fact text, season line fact text) for one QB."""
+def _qb_text(q: dict, team: str, thru: int | None = None) -> tuple[str, str]:
+    """(starts fact text, season line fact text) for one QB; the line says its window (CFBD box scores through
+    week N) so an answer can say where the number comes from."""
     if q["starts"]:
         st = (f"{q['name']} has {q['starts']} starts at QB for {team} this season ({q['su']} SU, {q['ats']} ATS as the "
               f"starter)" + (f"; he's started the last {q['streak']} straight" if q.get("streak") else ""))
@@ -623,8 +624,25 @@ def _qb_text(q: dict, team: str) -> tuple[str, str]:
     ln = q["line"]
     line = (f"{q['name']} this season: {ln['cmp']}-of-{ln['att']}, {ln['yds']} yards, {ln['td']} TD, {ln['int']} INT"
             + (f"; {ln['car']} rushes for {ln['rush_yds']} yards" if ln.get("car") else "")
-            + f" in {ln['games']} games") if ln.get("att") else f"{q['name']} hasn't thrown a pass this season"
+            + f" in {ln['games']} games" + (f" (CFBD box scores through week {thru})" if thru else "")) \
+        if ln.get("att") else f"{q['name']} hasn't thrown a pass this season"
     return st, line
+
+
+def _missed(sheet: dict, played: dict | None) -> tuple[int | None, str | None]:
+    """(team games in a row he's missed, newest first; None = never in a box score, e.g. a lineman) and the date
+    of the team's last game: an injury's recency is read against these, not against when a story repeated it."""
+    res = sorted((r for r in sheet.get("results") or [] if r.get("date")), key=lambda r: r["date"], reverse=True)
+    last = res[0]["date"][:10] if res else None
+    if not played or not played.get("games"):
+        return None, last
+    ids = {str(g) for g in played["games"]}
+    n = 0
+    for r in res:
+        if str(r.get("game_id")) in ids:
+            break
+        n += 1
+    return n, last
 
 
 def _key(name: str) -> str:
@@ -647,6 +665,7 @@ def _personnel(inp: Inputs, teams: dict, games: dict, intel: dict, now: float) -
         counts.setdefault(n, set()).add(t)
     name_team = {n: next(iter(ts)) for n, ts in counts.items() if len(ts) == 1}
     passers = {r["id"] for r in pg if r.get("att")}
+    thru = max((r.get("week") or 0 for r in pg), default=0) or None
     ledger = PS.qb_ledger([r for r in pg if r["id"] in passers], {t: s.get("results") or [] for t, s in teams.items()},
                           positions)
     # who played in each team's latest game (stat rows), and the team's yardage leaders (WR1 / RB1)
@@ -694,6 +713,7 @@ def _personnel(inp: Inputs, teams: dict, games: dict, intel: dict, now: float) -
                          "RB1" if lead_rush.get(r["team"], ("",))[0] == k[1] and r["pos"] in ("RB", "FB") else None)
         r["already_out"] = bool(k in season_rows and season_rows[k]["games"] and k not in played
                                 and r["team"] in last_gid)
+        r["missed"], r["last_game"] = _missed(teams[r["team"]], season_rows.get(k))
         r["value"] = PS.row_value(r, ledger.get(r["team"]) or [])
         if not r.get("game_id") or str(r["game_id"]) not in games:
             r["game_id"] = game_of.get(r["team"])
@@ -733,7 +753,8 @@ def _personnel(inp: Inputs, teams: dict, games: dict, intel: dict, now: float) -
             st = PS.starter(led)
             s["qb_starter"] = st["name"] if st else None
             for q in room:
-                a, b = _qb_text(q, t)
+                q["thru_week"] = thru
+                a, b = _qb_text(q, t, thru)
                 s["facts"].append(_fact("qb_start", q["name"], "starts", q["starts"], a, "CFBD box scores + lines", as_pg))
                 s["facts"].append(_fact("qb_line", q["name"], "season", q["line"].get("att"), b, "CFBD box scores", as_pg))
                 if q["cls"]:
@@ -1439,6 +1460,41 @@ def unsupported(text: str, facts_used: list | None, extra=()) -> list[str]:
         if k not in ok and k.lstrip("-") not in ok and k not in bad:
             bad.append(k)
     return bad
+
+
+_STAT = re.compile(r"\d+-of-\d+|\b\d[\d,]* (?:passing |rushing |receiving )?(?:yards?|yds|TDs?|INTs?|touchdowns?|"
+                   r"interceptions?|picks|sacks?|tackles?|carries|rushes|receptions?|catches|completions?)\b", re.I)
+_SENT = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
+
+def drop_unsourced_stats(a: "Answer") -> "Answer":
+    """A store answer minus every sentence that states a stat (X-of-Y, N yards / TD / INT / sacks ...) with a
+    number no fact in its facts_used carries: a stat goes out with its source or not at all."""
+    used = getattr(a, "facts_used", None) or []
+    keep = [x for x in _SENT.split(str(a)) if not (_STAT.search(x) and unsupported(x, used))]
+    out = " ".join(keep)
+    if out != str(a):
+        log.info("factstore: dropped unsourced stat sentence(s) from %r", str(a)[:120])
+    return Answer(out, used)
+
+
+def old_news(r: dict) -> bool:
+    """An availability row the market has had: he's missed 2+ games in a row, or the report came out before his
+    team's last game (that game and this week's opener both had it). Rows from a store without those fields fall
+    back to the report's age (FRESH_D) and the box-score 'already out' flag."""
+    if "last_game" not in r:
+        return r.get("age_days", 99) > FRESH_D or bool(r.get("already_out"))
+    if (r.get("missed") or 0) >= 2:
+        return True
+    rep, last = str(r.get("reported_at") or "")[:10], r.get("last_game")
+    if rep and last:
+        try:
+            import personnel as PS
+            day = dt.datetime.fromtimestamp(PS._ts(r["reported_at"]), PS.CT).date().isoformat()
+        except Exception:  # noqa: BLE001
+            day = rep
+        return day < last
+    return r.get("age_days", 99) > FRESH_D
 
 
 # =============================================================================================================

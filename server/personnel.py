@@ -518,7 +518,9 @@ _ST_RX = [
             r"\bwill miss\b|\b(?:expected|set|going) to miss\b|\bnot expected to play\b|\bsidelined\b"),
     ("benched", r"\bbench(?:ed|ing)\b|(?<!decision )\b(?:to|will) sit\b|\bdemoted\b|\blost (?:his|the) (?:starting )?job\b"),
     ("questionable", r"\bquestionable\b|\bgame[- ]time decision\b|\bday[- ]to[- ]day\b|\blimited in practice\b|"
-                     r"\buncertain\b|\bconcussion protocol\b"),
+                     r"\buncertain\b|\bconcussion protocol\b|\bworking (?:toward|towards|to get) (?:being )?(?:ready|back|"
+                     r"healthy|playing)\b|\bhop(?:es|eful|ing) to (?:play|return|go|be ready)\b|\btrying to (?:play|"
+                     r"return|get back)\b"),
     ("probable", r"\bprobable\b|\bexpected to play\b|\bshould play\b|\blikely to play\b"),
     ("available", r"\bcleared(?: to (?:play|return))?\b|\bgood to go\b|\bwill (?:play|start)\b|\bexpected to start\b|"
                   r"\breturn(?:s|ed)? to practice\b|\bback at practice\b|\bis available\b|\bfull go\b"),
@@ -663,6 +665,10 @@ def _note_rows(note: dict, team: str | None, game_id, src: str) -> list[dict]:
                 break
         if st is None and i == 0:
             st = label
+            if label in ("probable", "available"):  # a hedge in the text beats a sure-sounding label
+                hedge = [x for c in cl if not any(_mentions(c, p) for p in players if p != name)
+                         for x in statuses_in(c) if x in ("questionable", "TBD")]
+                st = hedge[0] if hedge else st
         if not st or not team:
             continue
         pos, role = text_position(text, name)

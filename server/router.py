@@ -823,27 +823,83 @@ def _q(s: str, cap: int = 240) -> str:
     return s if s.endswith((".", "!", "?", "'", '"')) else s + "."
 
 
-def _qb_line(x: dict) -> str:
+def _qb_line(x: dict, relief: bool = False) -> str:
+    """The season passing line with its source and window (a number nobody can trace reads as made up: genius
+    final-g3 personnel 0/7)."""
     ln = x.get("line") or {}
     if not ln.get("att"):
         return "hasn't thrown a pass this season"
-    return f"{ln['cmp']}-of-{ln['att']} for {ln['yds']} yards, {ln['td']} TD, {ln['int']} INT"
+    src = f" (CFBD box scores through week {x['thru_week']})" if x.get("thru_week") else " (CFBD box scores)"
+    return (f"{ln['cmp']}-of-{ln['att']} for {ln['yds']} yards, {ln['td']} TD, {ln['int']} INT "
+            f"{'in relief' if relief else 'this season'}{src}")
 
 
-def _qb_bio(x: dict, name: bool = True) -> str:
-    """'Luke Fahey (freshman): 3 starts (1-2 SU, 0-3 ATS as the starter), 80-of-133 for ...'."""
+def _qb_bio(x: dict, name: bool = True, line: bool = True) -> str:
+    """'Luke Fahey (freshman): 3 starts (1-2 SU, 0-3 ATS as the starter); 87-of-133 ... this season (CFBD box
+    scores through week 11)'. line=False: starts and record only (the QB a status ask is about)."""
     who = f"{x['name']}{' (' + x['cls'].lower() + ')' if x.get('cls') else ''}: " if name else ""
     if x.get("starts"):
         n = x["starts"]
-        return f"{who}{n} start{'s' if n != 1 else ''} ({x['su']} SU, {x['ats']} ATS as the starter), {_qb_line(x)}"
-    rel = _qb_line(x)
-    return f"{who}no starts this season, " + (rel + " in relief" if (x.get("line") or {}).get("att") else rel)
+        bio = f"{who}{n} start{'s' if n != 1 else ''} ({x['su']} SU, {x['ats']} ATS as the starter)"
+        return bio + (f"; {_qb_line(x)}" if line and (x.get("line") or {}).get("att") else "")
+    if not line:
+        return f"{who}no starts this season"
+    att = (x.get("line") or {}).get("att")
+    return f"{who}no starts this season" + (f"; {_qb_line(x, relief=True)}" if att else f", {_qb_line(x)}")
 
 
-def _per(r: dict) -> str:
-    """'<quote> (per Yahoo Sports, Monday).'"""
-    q = _q(r["quote"])
+_QMARK = re.compile(r"(?<![A-Za-z])['\"‘“]|['\"’”](?![A-Za-z])")
+_QSPLIT_: list = []
+
+
+def _qsplit(text: str) -> list[str]:
+    """personnel's clause split (keeps 'Jr.' / 'vs.' / 'No.' and splits ', and') plus a sentence ending in a quote."""
+    if not _QSPLIT_:
+        import personnel as PS
+        _QSPLIT_.append(re.compile(PS._SPLIT.pattern + r"|(?<=[.!?])['\"’”]\s+(?=[A-Z])"))
+    return [c.strip() for c in _QSPLIT_[0].split(text) if c and c.strip()]
+_HE = re.compile(r"\b(he|his|him|he's)\b", re.I)
+
+
+def _clip(r: dict, said: set, others: list[str] = ()) -> str:
+    """The clauses of a row's quote about that player (plus a he/his clause right after one), each said once per
+    answer, quote marks dropped (the filters split on them: dangling quotes in genius answers). '' if every clause
+    was already said."""
+    import personnel as PS
+    cl = _qsplit(re.sub(r"\s+", " ", r.get("quote") or ""))
+    pick, prev = [], False
+    for c in cl:
+        mine = PS._mentions(c, r["player"])
+        head = " ".join(c.split()[:6])  # a clause about someone else starts with him ('... Trent Pearman makes his')
+        cont = prev and _HE.search(c) and not any(PS._mentions(head, o) for o in others if o != r["player"])
+        prev = bool(mine or cont)
+        if prev:
+            pick.append(c)
+    pick = pick or cl
+    new = [c for c in pick if c.rstrip(" .") not in said]
+    said.update(c.rstrip(" .") for c in pick)
+    return _q(_QMARK.sub("", "; ".join(c.rstrip(" .;") for c in new))) if new else ""
+
+
+def _streak(x: dict, line: bool) -> str:
+    """'He's started the last 6 (5-1 SU, 4-2 ATS as the starter)', the season line after it when wanted."""
+    rec = f"{x['su']} SU, {x['ats']} ATS as the starter" if x["streak"] == x["starts"] else \
+        f"{x['starts']} starts, {x['su']} SU, {x['ats']} ATS as the starter"
+    ln = f"; {_qb_line(x)}" if line and (x.get("line") or {}).get("att") else ""
+    return f"He's started the last {x['streak']} ({rec}){ln}."
+
+
+def _per(r: dict, said: set | None = None, others: list[str] = ()) -> str:
+    """'<the clauses about him> (per Yahoo Sports, Monday).'"""
+    q = _clip(r, set() if said is None else said, others)
+    if not q:
+        return ""  # every clause of that report was already quoted (and cited) in this answer
     q = q[:-1] if q.endswith(".") and not q.endswith("...") else q
+    key = "src:" + (r.get("source_name") or "")
+    if said is not None and key in said:  # one citation per source (news.thin_citations would cut a second one)
+        return f"{q}{'' if q.endswith('...') else '.'}"
+    if said is not None:
+        said.add(key)
     return f"{q} (per {r['source_name']}, {r['when']})."
 
 
@@ -972,18 +1028,21 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     if not me and not rows:
         return None
     row = rows[0] if rows else None
-    used, out = [], []
+    used, out, said = [], [], set()
+    others = [x["name"] for x in room] + [r["player"] for r in factstore.player_status(team=team)]
     st = row["status"] if row else None
     if row:
         used.append(factstore.status_fact(row))
+        clip = _clip(row, said, others)  # no quote marks: the filters split them (genius: dangling ")
+        said.add("src:" + (row.get("source_name") or ""))
         out.append(f"{player} ({team}) is {factstore.STATUS_PHRASE.get(st, st)}, per {row['source_name']} "
-                   f"({row['when']}): {_q(row['quote'])}")  # no quote marks: the filters split them (genius: dangling ")
+                   f"({row['when']})" + (f": {clip}" if clip else "."))
     else:
         out.append(f"{player} ({team}): nothing in my sources (news, ESPN's injury listings) has him hurt or out.")
     also = [r for k, r in outs.items() if k != factstore.norm(player) and not hit and r["age_days"] <= FRESH_D]
     for r in also[:2]:
         used.append(factstore.status_fact(r))
-        out.append(f"Also {factstore.STATUS_PHRASE.get(r['status'], r['status'])}: {r['player']}. {_per(r)}")
+        out.append(f"Also {factstore.STATUS_PHRASE.get(r['status'], r['status'])}: {r['player']}. {_per(r, said, others)}".rstrip())
     used += _qb_used(team, player)
     g, _ = factstore.find_game(team, ctx)
     replaced = bool(starter and me and starter is not me and starter.get("streak") and (me.get("starts") or 0) > 0
@@ -1001,17 +1060,18 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
             if me and me is starter:
                 out.append(_value_line(team, factstore.qb_drop(team, player, nxt["name"]), g, used, f"losing {player}"))
     elif me and (st in ("questionable", "TBD") or _BACKUP_WANTED.search(q or "") or _EVER_PLAYED.search(q or "")):
+        wants = bool(_EVER_PLAYED.search(q or ""))  # his own season line only when the text asks what he's done
         if me.get("starts") and (me is starter or not starter) and me.get("streak"):
-            out.append(f"He's started the last {me['streak']} ({_qb_bio(me, False)}).")
+            out.append(_streak(me, wants))
         else:
-            out.append(f"{_qb_bio(me)}.")
+            out.append(f"{_qb_bio(me, line=wants or not me.get('starts'))}.")
         if (st in ("questionable", "TBD") or _BACKUP_WANTED.search(q or "")) and nxt:
             lead = "If he can't go" if st in ("questionable", "TBD") else "Behind him"
             out.append(f"{lead}: {_qb_bio(nxt)}." + (" That'd be his first start this season." if not nxt.get("starts")
                                                       else ""))
             used += _qb_used(team, nxt["name"])
     elif me and me.get("starts") and me is starter and me.get("streak"):
-        out.append(f"He's started the last {me['streak']} ({_qb_bio(me, False)}).")
+        out.append(_streak(me, False))
     return factstore.answer(" ".join(out), used)
 
 
@@ -1075,6 +1135,22 @@ def _group(pos: str) -> str:
     return {"LT": "OL", "WR1": "WR", "RB1": "RB", "CB1": "CB"}.get(c, c)
 
 
+def _old_list(rows: list[dict]) -> str:
+    """'Julian Sayin has missed the last 3 games and Joe Brunner was reported out before their last game': why each
+    is old news, in words the data backs (never 'out for weeks' for an injury that broke this week)."""
+    bits = []
+    for r in rows:
+        if (r.get("missed") or 0) >= 2:
+            bits.append(f"{r['player']} has missed the last {r['missed']} games")
+        elif r.get("last_game"):
+            bits.append(f"{r['player']} was reported {factstore.STATUS_PHRASE.get(r['status'], r['status'])} before "
+                        f"their last game")
+        else:
+            bits.append(f"{r['player']} was reported {factstore.STATUS_PHRASE.get(r['status'], r['status'])} "
+                        f"{r.get('when') or 'a while back'}")
+    return bits[0] if len(bits) == 1 else ", ".join(bits[:-1]) + " and " + bits[-1]
+
+
 def injury_impact_text(ctx: dict, q: str) -> str | None:
     """Who's out for a game (or the team a text names), what that's worth on the position table, the matching
     SP+ unit, and a verdict: 'matters at the margin, not a line-mover' or 'this is why it moved'."""
@@ -1095,7 +1171,7 @@ def injury_impact_text(ctx: dict, q: str) -> str | None:
     used, parts, best = [], [], (0.0, None, [])
     for t in focus:
         tr = [r for r in rows if factstore.norm(r["team"]) == factstore.norm(t)]
-        new = sorted([r for r in tr if r["age_days"] <= FRESH_D and not r.get("already_out")],
+        new = sorted([r for r in tr if not factstore.old_news(r)],  # this week's news: report date vs his last game
                      key=lambda r: -(r.get("value") or 0))
         old = [r for r in tr if r not in new]
         pts = round(2 * sum((r.get("value") or factstore.position_value(r.get("pos"), r.get("role")))
@@ -1110,8 +1186,7 @@ def injury_impact_text(ctx: dict, q: str) -> str | None:
                                   f"{factstore.STATUS_PHRASE.get(r['status'], r['status'])}, {r['when']})"
                                   for r in new[:4]) if new else "nothing new")
         if old:
-            s += ("; " if new else ", and ") + ", ".join(r["player"] for r in old[:3]) + \
-                 (" has" if len(old[:3]) == 1 else " have") + " been out for weeks, so that's in the stats and the number already"
+            s += ("; " if new else ", and ") + _old_list(old[:3]) + ", so that's in the number already"
         parts.append(s + ".")
         used += [factstore.status_fact(r) for r in new[:4] + old[:3]]
     pts, t, new = best
@@ -1136,7 +1211,7 @@ def injury_impact_text(ctx: dict, q: str) -> str | None:
             parts.append(f"That's about {pts:g} points on paper, line-mover size, but the number hasn't moved against "
                          f"{t}, so the market either had it or doesn't buy it.")
         else:
-            parts.append(f"Matters at the margin, not a line-mover (about {pts:g} points on my table).")
+            parts.append(f"Matters at the margin, not a line-mover (about {pts:g} point{"" if pts == 1 else "s"} on my table).")
     return factstore.answer(" ".join(parts), used)
 
 
@@ -3654,6 +3729,8 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
             out = fn(ctx, q)
             if out is None and kind == "results":
                 out = cover_text(ctx, q)
+            if isinstance(out, factstore.Answer):  # a stat goes out with its source (facts_used) or not at all
+                out = factstore.drop_unsourced_stats(out)
             return out
         if kind == "rules":
             return rules_answer(q, n_teams=len(ctx.get("teams") or []) or None)
@@ -3711,6 +3788,10 @@ _NO_DATA_CLAIM = re.compile(r"\b(don'?t|do not|haven'?t|have not|never|can'?t) (
                             r"|\bnothing else\b", re.I)
 
 
+_NUM_WORD = re.compile(r"\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen|twenty|thirty|forty|fifty|"
+                       r"hundred|thousand)\b", re.I)
+
+
 def voice_line_ok(line: str, answer: str, ctx: dict | None, leader: bool = False) -> bool:
     """The wrap may only add personality aimed at the texter: no number, no result/standing word, no team or
     member name or he/they that could restate, contradict or mock someone in the code-written answer, nothing
@@ -3718,6 +3799,8 @@ def voice_line_ok(line: str, answer: str, ctx: dict | None, leader: bool = False
     import no_repeat
     if not line or len(line.split()) > 14 or _FACTY.search(line) or PREACHY.search(line) or no_repeat.banned_tic(line):
         return False
+    if _NUM_WORD.search(line):
+        return False  # 'Woods throwing three picks is a public service' (genius final-g3): a stat in words
     if _NO_DATA_CLAIM.search(line):
         return False  # 'I don't have any data on a backup' after an answer that names him (genius 11-18: 3 code items)
     if re.search(r"\byour\b[^.!?]{0,25}\b(picks?|portfolio|week|weekend|bets?|money|wallet|ticket|slip|season|card|record|"
