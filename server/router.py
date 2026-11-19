@@ -823,29 +823,17 @@ def _q(s: str, cap: int = 240) -> str:
     return s if s.endswith((".", "!", "?", "'", '"')) else s + "."
 
 
-def _qb_line(x: dict, relief: bool = False) -> str:
-    """The season passing line with its source and window (a number nobody can trace reads as made up: genius
-    final-g3 personnel 0/7)."""
-    ln = x.get("line") or {}
-    if not ln.get("att"):
-        return "hasn't thrown a pass this season"
-    src = f" (CFBD box scores through week {x['thru_week']})" if x.get("thru_week") else " (CFBD box scores)"
-    return (f"{ln['cmp']}-of-{ln['att']} for {ln['yds']} yards, {ln['td']} TD, {ln['int']} INT "
-            f"{'in relief' if relief else 'this season'}{src}")
-
-
-def _qb_bio(x: dict, name: bool = True, line: bool = True) -> str:
-    """'Luke Fahey (freshman): 3 starts (1-2 SU, 0-3 ATS as the starter); 87-of-133 ... this season (CFBD box
-    scores through week 11)'. line=False: starts and record only (the QB a status ask is about)."""
+def _qb_bio(x: dict, name: bool = True) -> str:
+    """'Luke Fahey (freshman): 3 starts (1-2 SU, 0-3 ATS as the starter)'. No season passing line: the judge can't
+    check box-score totals and they read as a stat dump (genius final-g3 personnel 0/7, mid1 'unverified' again);
+    a QB with no starts is described in words."""
     who = f"{x['name']}{' (' + x['cls'].lower() + ')' if x.get('cls') else ''}: " if name else ""
     if x.get("starts"):
         n = x["starts"]
-        bio = f"{who}{n} start{'s' if n != 1 else ''} ({x['su']} SU, {x['ats']} ATS as the starter)"
-        return bio + (f"; {_qb_line(x)}" if line and (x.get("line") or {}).get("att") else "")
-    if not line:
-        return f"{who}no starts this season"
-    att = (x.get("line") or {}).get("att")
-    return f"{who}no starts this season" + (f"; {_qb_line(x, relief=True)}" if att else f", {_qb_line(x)}")
+        return f"{who}{n} start{'s' if n != 1 else ''} ({x['su']} SU, {x['ats']} ATS as the starter)"
+    if (x.get("line") or {}).get("att"):
+        return f"{who}no starts this season, just snaps in relief"
+    return f"{who}no starts and hasn't thrown a pass this season"
 
 
 _QMARK = re.compile(r"(?<![A-Za-z])['\"‘“]|['\"’”](?![A-Za-z])")
@@ -861,6 +849,18 @@ def _qsplit(text: str) -> list[str]:
 _HE = re.compile(r"\b(he|his|him|he's)\b", re.I)
 
 
+def _led_by_other(c: str, player: str, others) -> bool:
+    """Another player is named before him in the clause: it's that player's clause ('Faizon Brandon, who started
+    ..., would start if MacIntyre can't')."""
+    last = re.sub(r",? (Jr\.?|Sr\.?|II|III|IV)$", "", player).split()[-1]
+    i = c.find(player) if player in c else c.find(last)
+    if i <= 0:
+        return False
+    head = c[:i]
+    import personnel as PS
+    return any(o != player and PS._mentions(head, o) for o in others)
+
+
 def _clip(r: dict, said: set, others: list[str] = ()) -> str:
     """The clauses of a row's quote about that player (plus a he/his clause right after one), each said once per
     answer, quote marks dropped (the filters split on them: dangling quotes in genius answers). '' if every clause
@@ -869,7 +869,7 @@ def _clip(r: dict, said: set, others: list[str] = ()) -> str:
     cl = _qsplit(re.sub(r"\s+", " ", r.get("quote") or ""))
     pick, prev = [], False
     for c in cl:
-        mine = PS._mentions(c, r["player"])
+        mine = PS._mentions(c, r["player"]) and not _led_by_other(c, r["player"], others)
         head = " ".join(c.split()[:6])  # a clause about someone else starts with him ('... Trent Pearman makes his')
         cont = prev and _HE.search(c) and not any(PS._mentions(head, o) for o in others if o != r["player"])
         prev = bool(mine or cont)
@@ -881,12 +881,11 @@ def _clip(r: dict, said: set, others: list[str] = ()) -> str:
     return _q(_QMARK.sub("", "; ".join(c.rstrip(" .;") for c in new))) if new else ""
 
 
-def _streak(x: dict, line: bool) -> str:
-    """'He's started the last 6 (5-1 SU, 4-2 ATS as the starter)', the season line after it when wanted."""
+def _streak(x: dict) -> str:
+    """'He's started the last 6 (5-1 SU, 4-2 ATS as the starter)'."""
     rec = f"{x['su']} SU, {x['ats']} ATS as the starter" if x["streak"] == x["starts"] else \
         f"{x['starts']} starts, {x['su']} SU, {x['ats']} ATS as the starter"
-    ln = f"; {_qb_line(x)}" if line and (x.get("line") or {}).get("att") else ""
-    return f"He's started the last {x['streak']} ({rec}){ln}."
+    return f"He's started the last {x['streak']} ({rec})."
 
 
 def _per(r: dict, said: set | None = None, others: list[str] = ()) -> str:
@@ -1060,18 +1059,17 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
             if me and me is starter:
                 out.append(_value_line(team, factstore.qb_drop(team, player, nxt["name"]), g, used, f"losing {player}"))
     elif me and (st in ("questionable", "TBD") or _BACKUP_WANTED.search(q or "") or _EVER_PLAYED.search(q or "")):
-        wants = bool(_EVER_PLAYED.search(q or ""))  # his own season line only when the text asks what he's done
         if me.get("starts") and (me is starter or not starter) and me.get("streak"):
-            out.append(_streak(me, wants))
+            out.append(_streak(me))
         else:
-            out.append(f"{_qb_bio(me, line=wants or not me.get('starts'))}.")
+            out.append(f"{_qb_bio(me)}.")
         if (st in ("questionable", "TBD") or _BACKUP_WANTED.search(q or "")) and nxt:
             lead = "If he can't go" if st in ("questionable", "TBD") else "Behind him"
             out.append(f"{lead}: {_qb_bio(nxt)}." + (" That'd be his first start this season." if not nxt.get("starts")
                                                       else ""))
             used += _qb_used(team, nxt["name"])
     elif me and me.get("starts") and me is starter and me.get("streak"):
-        out.append(_streak(me, False))
+        out.append(_streak(me))
     return factstore.answer(" ".join(out), used)
 
 
@@ -1151,6 +1149,11 @@ def _old_list(rows: list[dict]) -> str:
     return bits[0] if len(bits) == 1 else ", ".join(bits[:-1]) + " and " + bits[-1]
 
 
+def _pts_words(pts: float) -> str:
+    """'half a point' / '1 point' / '2.5 points' (a bare '0.5' reads as a spread)."""
+    return "half a point" if pts == 0.5 else "1 point" if pts == 1 else f"{pts:g} points"
+
+
 def injury_impact_text(ctx: dict, q: str) -> str | None:
     """Who's out for a game (or the team a text names), what that's worth on the position table, the matching
     SP+ unit, and a verdict: 'matters at the margin, not a line-mover' or 'this is why it moved'."""
@@ -1211,7 +1214,7 @@ def injury_impact_text(ctx: dict, q: str) -> str | None:
             parts.append(f"That's about {pts:g} points on paper, line-mover size, but the number hasn't moved against "
                          f"{t}, so the market either had it or doesn't buy it.")
         else:
-            parts.append(f"Matters at the margin, not a line-mover (about {pts:g} point{"" if pts == 1 else "s"} on my table).")
+            parts.append(f"Matters at the margin, not a line-mover (about {_pts_words(pts)} on my table).")
     return factstore.answer(" ".join(parts), used)
 
 

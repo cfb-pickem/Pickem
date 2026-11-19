@@ -753,7 +753,6 @@ def _personnel(inp: Inputs, teams: dict, games: dict, intel: dict, now: float) -
             st = PS.starter(led)
             s["qb_starter"] = st["name"] if st else None
             for q in room:
-                q["thru_week"] = thru
                 a, b = _qb_text(q, t, thru)
                 s["facts"].append(_fact("qb_start", q["name"], "starts", q["starts"], a, "CFBD box scores + lines", as_pg))
                 s["facts"].append(_fact("qb_line", q["name"], "season", q["line"].get("att"), b, "CFBD box scores", as_pg))
