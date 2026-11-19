@@ -182,6 +182,9 @@ class FakeLeague:
     def lock_time(self, w):
         return dt.datetime(2026, 11, 21, 11, 0, tzinfo=gp.CT)
 
+    def game_locked(self, g, w):
+        return True  # CARD below (patched picky_card) only exists once the picks lock (group_posts HIDDEN SIDES)
+
     def submission(self, w):
         return {"Ackbar": False, "Chuck P": True, "TG": False}
 
