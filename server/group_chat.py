@@ -197,6 +197,17 @@ class Sender:
     name: str | None = None
 
 
+def is_guest(handle: str) -> bool:
+    """A non-member Charlie OKs to DM Picky (public mode, no team): the members file's "guests" list
+    [{"name", "handles"}], re-read live, so no watcher config or restart (Charlie 11-19, Pepto)."""
+    h = norm_handle(handle)
+    try:
+        data = json.loads(MEMBERS_FILE.read_text())
+    except (OSError, ValueError):
+        return False
+    return bool(h) and any(norm_handle(x) == h for g in data.get("guests") or [] for x in g.get("handles") or [])
+
+
 _members_cache: tuple[float, dict] = (0.0, {})
 
 
@@ -979,6 +990,7 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     text (or 'reply in Chinese') is answered in English by the normal pipeline,
     every filter and guard included, and the checked reply is translated
     (picky_zh; numbers verified in code). English texts are untouched."""
+    allowlisted = allowlisted or (dm and is_guest(handle))
     q0 = strip_trigger(text)
     zh = picky_zh.mode(q0)
     if not zh:
