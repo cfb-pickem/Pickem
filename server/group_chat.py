@@ -984,6 +984,66 @@ def history_key(chat_id: str, handle: str, dm: bool) -> str | None:
     return "group:" + chat_id if chat_id else None
 
 
+# ---- raw Opus mode (Charlie 2026-11-19 ~8:17 PM: "turn off the picky code and just let picky be a normal
+# opus for people to text for the next 2 hrs, just like talking to you"). Switch file key "raw": true (plus
+# "on"). No router, lanes or guards: Opus with Picky's persona + the league facts bundle (standings, this
+# week's pool games and lines, game cards, lore), with every member pick line stripped so unlocked picks can't
+# leak. Pictures and the site widget keep the normal path; any failure falls through to it.
+_RAW_FACTS = {"at": 0.0, "text": ""}
+_RAW_TTL = 600
+_RAW_DROP = re.compile(r"^\s*(picks in games|PICKY \(the bot's own)", re.I)
+RAW_SYSTEM = """You are Picky, the AI member of a college football pick'em league's iMessage group. The league
+picks 4 games a week against the spread (1 point per cover). You're a sharp, funny CFB buddy: helpful first,
+then witty; roasts are fine, never mean-spirited about anything outside football. This is iMessage: reply like
+a text, usually 1-3 sentences, no markdown, no lists unless asked. Talk about anything people bring up, like a
+normal smart assistant, but you know this league cold. Use the facts below for anything about the league,
+standings, this week's games and lines; never invent league numbers. You don't know anyone's picks for games
+that haven't kicked off: never guess or claim them. You can't send pictures in this mode unless asked with the
+word picture or image. Today is {today} (US Central).
+
+LEAGUE FACTS:
+{facts}"""
+
+
+def picky_claude_raw() -> bool:
+    import picky_claude
+    return bool(picky_claude.live_config().get("raw")) and picky_claude.live_on()
+
+
+async def _raw_facts() -> str:
+    if _RAW_FACTS["text"] and time.time() - _RAW_FACTS["at"] < _RAW_TTL:
+        return _RAW_FACTS["text"]
+    try:
+        import flub_loop
+        f = (await asyncio.to_thread(flub_loop.build_facts))["facts"]
+        f = "\n".join(l for l in f.splitlines() if not _RAW_DROP.match(l))
+        _RAW_FACTS.update(at=time.time(), text=f)
+    except Exception as e:  # noqa: BLE001
+        log.warning("raw facts failed: %s", e)
+    return _RAW_FACTS["text"]
+
+
+async def _raw_answer(handle: str, q: str, dm: bool, recent: list | None) -> dict | None:
+    import datetime as _dt
+    import picky_claude
+    facts = await _raw_facts()
+    if not facts or not q.strip():
+        return None
+    who = load_members().get(norm_handle(handle)) or {}
+    name = who.get("name") or who.get("team") or "a guest (not a league member)"
+    ctx = recent_block(recent) if not dm else ""
+    msg = (f"{ctx}\n\n" if ctx else "") + f"[{'DM' if dm else 'group'} text from {name}"
+    msg += f" (team: {who['team']})" if who.get("team") else ""
+    msg += f"]\n{q}"
+    sysmsg = RAW_SYSTEM.format(today=_dt.datetime.now().strftime("%a %b %-d, %Y %-I:%M %p"), facts=facts)
+    out = await picky_claude.live_reply([{"role": "system", "content": sysmsg}, {"role": "user", "content": msg}],
+                                        kind="raw", timeout=60)
+    out = (out or "").strip()
+    if not out:
+        return None
+    return {"reply": out, "image": None, "mode": "dm" if dm else "group"}
+
+
 async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                  allowlisted: bool = False, recent: list | None = None, web: dict | None = None) -> dict | None:
     """{"reply", "image"}, or None when a DM sender isn't allowed. A Chinese
@@ -991,6 +1051,11 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     every filter and guard included, and the checked reply is translated
     (picky_zh; numbers verified in code). English texts are untouched."""
     allowlisted = allowlisted or (dm and is_guest(handle))
+    if picky_claude_raw() and not (web or chat.wants_image(strip_trigger(text))):
+        if not (dm and not allowlisted and not load_members().get(norm_handle(handle))):
+            out = await _raw_answer(handle, strip_trigger(text), dm, recent)
+            if out:
+                return out
     q0 = strip_trigger(text)
     zh = picky_zh.mode(q0)
     if not zh:
