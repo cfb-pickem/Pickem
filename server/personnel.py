@@ -529,10 +529,12 @@ _ST_RX = [
                      r"\buncertain\b|\bconcussion protocol\b|\b(?:has|suffered|sustained) a concussion\b|\bworking (?:toward|towards|to get) (?:being )?(?:ready|back|"
                      r"healthy|playing)\b|\bhop(?:es|eful|ing) to (?:play|return|go|be ready)\b|\btrying to (?:play|"
                      r"return|get back)\b"),
-    ("probable", r"\bprobable\b|\bexpected to play\b|\bshould play\b|\blikely to play\b"),
+    # not on a conference availability report = no designation: expected to play, never 'confirmed in'
+    ("probable", r"\bprobable\b|\bexpected to play\b|\bshould play\b|\blikely to play\b|"
+                 r"\bnot (?:listed|on) (?:on )?(?:the |\w+['\u2019]?s? )*availability report\b"),
     ("available", r"\bcleared(?: to (?:play|return))?\b|\bgood to go\b|\bwill (?:play|start)\b|\bexpected to start\b|"
                   r"\breturn(?:s|ed)? to practice\b|\bback at practice\b|\bis available\b|\bfull go\b|"
-                  r"\bnot (?:listed|on) (?:on )?(?:the |\w+'?s? )*availability report\b|" + _STARTING_RX),
+                  + _STARTING_RX),
 ]
 _ST = [(s, re.compile(rx, re.I)) for s, rx in _ST_RX]
 _LABEL = {"out": "out", "season": "season", "doubtful": "doubtful", "questionable": "questionable",

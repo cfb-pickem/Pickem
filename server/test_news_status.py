@@ -4,7 +4,7 @@ news + ESPN alone, and the news reader missed real reports in the cache. Genius 
 lines 8 -> 4/12, every miss a player the news had: Sayin out ("won't have Julian Sayin back this weekend", "He
 remains ... listed as out"), Vizzina out ("is also out with a concussion"), Brunner out for the season (the tagger
 left `players` empty), Jimerson starting for North Texas ("takes over", "first career start") while Picky named
-another QB, Sellers not on the SEC availability report (= expected to play).
+another QB, Sellers not on the SEC availability report (= expected to play, said as probable, never 'confirmed in').
 
 Run:  ./.venv/bin/python3 -I test_news_status.py
 """
@@ -104,7 +104,7 @@ def test_not_on_the_availability_report_means_expected_to_play():
               "South Carolina QB LaNorris Sellers was not listed on Wednesday's availability report released by the "
               "SEC.", ["LaNorris Sellers"], ["South Carolina"], "2026-11-18T23:00:00+00:00")
     r = _by(P.normalize(news_items=[it], now=NOW))
-    assert r["LaNorris Sellers"]["status"] == "available", r
+    assert r["LaNorris Sellers"]["status"] == "probable", r
 
 
 def test_old_phrasings_unchanged():
