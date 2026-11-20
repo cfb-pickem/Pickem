@@ -257,6 +257,7 @@ def women(colors_: list[str] | None = None) -> str:
 
 def expand(q: str) -> str:
     text = REQUEST.sub("", (q or "").strip(), count=1).strip() or (q or "").strip()
+    said = text
     table = looks()
     found = _teams(text, table)[:MAX_TEAMS] if table else []
     slots: dict[str, str] = {}
@@ -274,6 +275,8 @@ def expand(q: str) -> str:
             return key
 
         text, n = _pattern(_names(team, t)).subn(sub, text)
+        if not n and _pattern(_names(team, t)).search(said):
+            continue  # only inside a longer team's name ('Ohio' in 'Ohio State'): not a second team
         if not n:  # resolved but not found as written: say it up front
             key = f"\x00{len(slots)}\x00"
             slots[key] = first

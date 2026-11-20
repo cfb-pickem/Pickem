@@ -253,6 +253,15 @@ def test_fact_store_tick_refreshes_team_looks_and_a_failure_never_blocks_the_bui
         polls.refresh, personnel.tick, factstore.build, pp.refresh = keep
 
 
+def test_ohio_state_not_ohio():
+    """'Ohio State' is one team; 'Ohio' inside it must not add the Ohio Bobcats (Charlie 11-19)."""
+    import picture_prompt as pp
+    out = pp.expand("Ohio State quarterback throwing a touchdown")
+    assert "Bobcats" not in out and "Buckeyes" in out, out
+    both = pp.expand("Ohio vs Ohio State")
+    assert "Bobcats" in both and "Buckeyes" in both, both
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
