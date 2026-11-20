@@ -1204,9 +1204,12 @@ def qb_starter(name: str) -> str | None:
     return (team(name) or {}).get("qb_starter")
 
 
-def backup_for(room: list[dict], player: str, exclude=frozenset()) -> dict | None:
+def backup_for(room: list[dict], player: str, exclude=frozenset(), team: str | None = None) -> dict | None:
+    """The next QB up; with `team`, a QB a fresh (<= 7 days) report names as the new starter comes first."""
     import personnel as PS
-    return PS.backup_for(room, player, {cfbd.norm(x) for x in exclude})
+    starting = {PS._norm(r["player"]) for r in player_status(team=team)
+                if r.get("detail") == "starting" and r["age_days"] <= 7} if team else set()
+    return PS.backup_for(room, player, {cfbd.norm(x) for x in exclude}, starting)
 
 
 def qb_drop(name: str, starter: str, backup: str | None = None) -> float:

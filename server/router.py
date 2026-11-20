@@ -1086,6 +1086,7 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
         if clip:  # 'Tennessee QB George MacIntyre hurt ...' right after naming him reads like a pasted headline
             clip = re.sub(rf"^(?:{re.escape(team)} )?(?:QB |quarterback )?{re.escape(player)}\b(?=( out| questionable| doubtful)?)",
                           lambda m_: "he's" if m_.group(1) else "he", clip, flags=re.I)
+            clip = re.sub(r"^he (?=not\b)", "he's ", clip)  # '... Sellers not listed on ...' -> "he's not listed"
         out.append(f"{player} ({team}) is {factstore.STATUS_PHRASE.get(st, st)}, per {row['source_name']} "
                    f"({row['when']})" + (f": {clip}" if clip else "."))
     else:
@@ -1102,7 +1103,7 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     g, _ = factstore.find_game(team, ctx)
     replaced = bool(starter and me and starter is not me and starter.get("streak") and (me.get("starts") or 0) > 0
                     and factstore.norm(starter["name"]) not in outs)
-    nxt = factstore.backup_for(room, player, set(outs))
+    nxt = factstore.backup_for(room, player, set(outs), team)
     if st in factstore.OUT_STATUSES and not hit and not replaced and nxt:
         out.insert(0, f"Looks like it's {nxt['name'].rstrip('.')} for {team}.")  # 'who's Clemson's QB?': the man playing, first
     if st in factstore.OUT_STATUSES:
@@ -1176,7 +1177,7 @@ def backup_qb_text(ctx: dict, q: str) -> str | None:
     elif main is not cur and factstore.norm(main["name"]) in outs:
         out.append(f"{gone(main)}, so the backup already took over: {_qb_bio(cur)}.")
         lead = "Behind him: "
-    b = factstore.backup_for(room, cur["name"], set(outs))
+    b = factstore.backup_for(room, cur["name"], set(outs), team)
     if not b:
         return factstore.answer(" ".join(out), used) if out else None
     used += _qb_used(team, b["name"])
@@ -2153,7 +2154,7 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         out_qb = next((r for r in prs if r.get("pos") == "QB" and r["status"] in factstore.OUT_STATUSES), None)
         if out_qb and hit_team:  # who plays instead is the real story (Clemson: Pearman; North Texas: Jimerson)
             outs_n = {factstore.norm(r["player"]) for r in rows if r["status"] in factstore.OUT_STATUSES}
-            nx = factstore.backup_for(factstore.qb_room(hit_team), out_qb["player"], outs_n)
+            nx = factstore.backup_for(factstore.qb_room(hit_team), out_qb["player"], outs_n, hit_team)
             if nx:  # starts and his record as the starter only: a stat line the judge can't check reads as made up
                 parts.append((1, f"Next up: {nx['name']}" + (f" ({nx['cls'].lower()})" if nx.get("cls") else "")
                                  + (f", {nx['starts']} starts ({nx['su']} SU, {nx['ats']} ATS)" if nx.get("starts")

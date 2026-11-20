@@ -502,6 +502,12 @@ def starter(ledger: list[dict]) -> dict | None:
 # availability normalization
 # =============================================================================================================
 
+# a named new starter ('Chris Jimerson Jr. takes over', 'will make first career start'): status available,
+# detail 'starting', so backup_for names him next up over a backup with more snaps
+_STARTING_RX = (r"\btakes? over(?:\s+(?:as|at) (?:the )?(?:starter|starting|QB|quarterback)\b|\s*\.?$)|"
+                r"\b(?:will |to )?(?:make|makes|get|gets|earn|earns) (?:his )?(?:first )?(?:career )?start\b|"
+                r"\bnamed (?:the )?starter\b|\bwill start\b|\bexpected to start\b")
+_STARTING = re.compile(_STARTING_RX, re.I)
 _ST_RX = [
     ("TBD", r"\bhas(?:n'?t| not) (?:yet )?(?:named|announced|decided on|decided|picked)(?: on)? (?:a |his |the |a new )?"
             r"(?:starter|starting)|\bno starter (?:has been )?named|\btbd\b|\bto be determined\b|"
@@ -514,16 +520,19 @@ _ST_RX = [
                r"\b(?:rest|remainder) of (?:the )?(?:regular )?(?:season|year)\b"),
     ("doubtful", r"\bdoubtful\b|\bunlikely to (?:play|go)\b|\blikely (?:won'?t|will not|not) (?:play|go)\b|"
                  r"\bdon'?t think (?:it|he) will be (?:this week|ready)"),
-    ("out", r"\bruled out\b|\b(?:won'?t|will not|isn'?t going to) play\b|\bis out\b|\bout (?:vs\.?|against|for) |"
+    ("out", r"\bruled out\b|\b(?:won'?t|will not|isn'?t going to) play\b|\b(?:is|are) (?:also |still )?out\b|"
+            r"\bout (?:vs\.?|against|for) |\blisted (?:as )?out\b|\b(?:won['’]?t|will not) have\b[^.;]{0,40}?\bback\b|"
+            r"\bwill be without\b|"
             r"\bwill miss\b|\b(?:expected|set|going) to miss\b|\bnot expected to play\b|\bsidelined\b"),
     ("benched", r"\bbench(?:ed|ing)\b|(?<!decision )\b(?:to|will) sit\b|\bdemoted\b|\blost (?:his|the) (?:starting )?job\b"),
     ("questionable", r"\bquestionable\b|\bgame[- ]time decision\b|\bday[- ]to[- ]day\b|\blimited in practice\b|"
-                     r"\buncertain\b|\bconcussion protocol\b|\bworking (?:toward|towards|to get) (?:being )?(?:ready|back|"
+                     r"\buncertain\b|\bconcussion protocol\b|\b(?:has|suffered|sustained) a concussion\b|\bworking (?:toward|towards|to get) (?:being )?(?:ready|back|"
                      r"healthy|playing)\b|\bhop(?:es|eful|ing) to (?:play|return|go|be ready)\b|\btrying to (?:play|"
                      r"return|get back)\b"),
     ("probable", r"\bprobable\b|\bexpected to play\b|\bshould play\b|\blikely to play\b"),
     ("available", r"\bcleared(?: to (?:play|return))?\b|\bgood to go\b|\bwill (?:play|start)\b|\bexpected to start\b|"
-                  r"\breturn(?:s|ed)? to practice\b|\bback at practice\b|\bis available\b|\bfull go\b"),
+                  r"\breturn(?:s|ed)? to practice\b|\bback at practice\b|\bis available\b|\bfull go\b|"
+                  r"\bnot (?:listed|on) (?:on )?(?:the |\w+'?s? )*availability report\b|" + _STARTING_RX),
 ]
 _ST = [(s, re.compile(rx, re.I)) for s, rx in _ST_RX]
 _LABEL = {"out": "out", "season": "season", "doubtful": "doubtful", "questionable": "questionable",
@@ -688,26 +697,53 @@ def _note_rows(note: dict, team: str | None, game_id, src: str) -> list[dict]:
     return out
 
 
+_NAME = r"([A-Z][a-z'\u2019-]+(?: [A-Z][a-z'\u2019.-]+){1,2})"
+_NAME_AFTER_POS = [re.compile(rf"\b(?:{'|'.join(t for t in _POS_TOK.split('|') if len(t) > 1)})\s+{_NAME}"),
+                   re.compile(rf"\b(?:{'|'.join(w for w, _ in _POS_WORDS)})\s+(?-i:{_NAME})", re.I)]
+_PRONOUN = re.compile(r"^(?:He|He's|He is)\b")
+
+
+def _untagged_names(text: str) -> list[str]:
+    """Players an injury story names after a position word ('starting guard Joe Brunner') when the tagger found none."""
+    out = []
+    for rx in _NAME_AFTER_POS:
+        for m in rx.finditer(text):
+            n = re.sub(r"[\u2019']s$", "", m.group(1))
+            if n not in out:
+                out.append(n)
+    return out
+
+
 def _news_rows(it: dict, name_team: dict) -> list[dict]:
     text = re.sub(r"\s+", " ", f"{it.get('title') or ''}. {it.get('summary') or ''}").strip(" .")
     cl = clauses(text)
     teams = it.get("teams") or []
+    players = list(it.get("players") or [])
+    if not players and it.get("kind") == "injury" and len(teams) == 1:
+        players = _untagged_names(text)
+    solo = [p for p in players if _mentions(text, p)]
     out = []
-    for name in it.get("players") or []:
+    for name in players:
         team = name_team.get(_norm(name)) or (teams[0] if len(teams) == 1 else None)
         if not team:
             continue
+        seen = False
         for c in cl:
-            if not _mentions(c, name):
+            # 'He remains listed as out' right after the only player the story names is about him
+            hit = _mentions(c, name) or (seen and len(solo) == 1 and bool(_PRONOUN.match(c)))
+            seen = seen or _mentions(c, name)
+            if not hit:
                 continue
             ss = statuses_in(c)
-            named = [p for p in it.get("players") or [] if _mentions(c, p)]
-            if ss and (len(named) == 1 or len(ss) == 1):
+            named = [p for p in players if _mentions(c, p)]
+            if ss and (len(named) <= 1 or len(ss) == 1):
                 pos, role = text_position(text, name)
                 conf = it.get("label") == "confirmed"
+                detail = "starting" if ss[0] == "available" and _STARTING.search(c) else ""
                 out.append(_row(name, team, ss[0], c.rstrip(".") + ".", it.get("source") or "news",
                                 it.get("link") or "", it.get("date") or it.get("first_seen") or "",
-                                "medium" if conf else "low", "news_confirmed" if conf else "news", pos=pos, role=role))
+                                "medium" if conf else "low", "news_confirmed" if conf else "news", detail=detail,
+                                pos=pos, role=role))
                 break
     return out
 
@@ -837,9 +873,14 @@ def player_value(pos: str, role: str | None = None) -> float:
     return d["positions"].get(p, d["positions"]["ATH"])
 
 
-def backup_for(room: list[dict], player: str, exclude: set | frozenset = frozenset()) -> dict | None:
-    """The best other QB in a room (most starts, then most attempts), skipping `exclude` (normalized names)."""
+def backup_for(room: list[dict], player: str, exclude: set | frozenset = frozenset(),
+               starting: set | frozenset = frozenset()) -> dict | None:
+    """The best other QB in a room (most starts, then most attempts), skipping `exclude` (normalized names). A QB a
+    fresh report names as the new starter (`starting`, normalized names) comes first."""
     others = [q for q in room or [] if _norm(q["name"]) != _norm(player) and _norm(q["name"]) not in exclude]
+    named = [q for q in others if _norm(q["name"]) in starting]
+    if named:
+        return named[0]
     return max(others, key=lambda q: (q.get("starts") or 0, (q.get("line") or {}).get("att") or 0)) if others else None
 
 
