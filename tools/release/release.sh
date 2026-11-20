@@ -85,6 +85,9 @@ switch_live() {  # switch_live <ref>
     [ $DRY = 0 ] && print -r -- "{\"ts\": $(date +%s), \"mode\": \"dirty-live\", \"files\": \"${dirty//$'\n'/; }\"}" >> $LOG
   fi
   run git -C $LIVE checkout -q -f --detach $1
+  for x in .venv .venv-flux cache logs; do  # untracked shared links (mkwt.sh); a checkout can drop one
+    [ $DRY = 0 ] && [ -e $REPO/server/$x ] && [ ! -e $LIVE/server/$x ] && ln -sfn $REPO/server/$x $LIVE/server/$x
+  done
 }
 
 deploy_services() {  # deploy_services <from> <to>

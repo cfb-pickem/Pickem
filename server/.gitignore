@@ -5,3 +5,4 @@ __pycache__/
 .venv-flux/
 cache/
 .venv
+/logs
