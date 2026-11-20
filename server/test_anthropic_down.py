@@ -108,6 +108,28 @@ for f in sorted(list(HERE.glob("*.py")) + list(HERE.glob("eval/*.py")) + list((H
         if SPAWN_RX.search(line):
             offenders.append(f"{f.name}:{i}: {line.strip()[:120]}")
 check("no claude -p outside picky_claude.py", not offenders, offenders)
+# the ONE live exception (temporary, Charlie 2026-11-19): picky_claude.live_reply, gated by live_on() + member
+# priority on the same line; no other picky_claude use in a live reply module (test_live_claude.py: behavior)
+LIVE_MODS = ("chat.py", "group_chat.py", "picky_brain.py", "router.py", "answer_first.py", "picky_zh.py", "canary.py")
+gate_bad = []
+for name in LIVE_MODS:
+    for i, line in enumerate((HERE / name).read_text().splitlines(), 1):
+        for use in re.findall(r"picky_claude\.(\w+)", line):
+            if use not in ("live_on", "live_reply", "py"):  # "py": a comment naming the file
+                gate_bad.append(f"{name}:{i}: picky_claude.{use}")
+        if "picky_claude.live_on()" in line and "not ollama_gate.is_low()" not in line:
+            gate_bad.append(f"{name}:{i}: live_on without the member-priority check")
+    src = (HERE / name).read_text()
+    if src.count("picky_claude.live_reply(") > src.count("picky_claude.live_on()"):
+        gate_bad.append(f"{name}: a live_reply without its live_on gate")
+check("live modules touch Claude only through the switch-gated live_reply", not gate_bad, gate_bad)
+_sw = TMP / "live_switch.json"
+_sw.write_text(json.dumps({"on": True, "model": "opus"}))
+with patch.object(picky_claude, "LIVE_SWITCH", _sw):
+    picky_claude._live["mtime"] = None
+    check("kill switch beats the live-Claude switch", picky_claude.live_why_not() == "PICKY_NO_ANTHROPIC set"
+          and asyncio.run(picky_claude.live_reply([{"role": "user", "content": "hi"}])) is None and not SPAWNS)
+picky_claude._live["mtime"] = None
 check("the news digest has no Anthropic dependency",
       not re.search(r"picky_claude|run_claude|anthropic", (HERE / "news.py").read_text(), re.I))
 

@@ -49,6 +49,7 @@ import league_rules
 import live_flag
 import ollama_gate
 import live_games
+import picky_claude  # live replies: ONLY the switch-gated live_reply (temporary, see LIVE_SWITCH in picky_claude.py)
 import season  # offseason rider in _system_tail (zero maintenance)
 import matchup_guard
 import news
@@ -5602,7 +5603,15 @@ def start_prime(prefix: str) -> asyncio.Task:
 
 async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     """Yield SSE-framed assistant tokens from Ollama, through the live-first gate (ollama_gate): member texts
-    go straight through; tests/exams/batch calls wait for them and restart if one arrives before the first token."""
+    go straight through; tests/exams/batch calls wait for them and restart if one arrives before the first token.
+    With the live-Claude switch on (LIVE_SWITCH in picky_claude.py, temporary), a member text's generation goes to
+    Claude instead; any failure falls through to Ollama for this reply."""
+    if not ollama_gate.is_low() and picky_claude.live_on():
+        text = await picky_claude.live_reply(messages, "draft")
+        if text is not None:
+            yield _sse({"content": text})
+            yield "data: [DONE]\n\n"
+            return
     async for x in ollama_gate.stream(lambda: _ollama_stream_raw(messages, prefix)):
         yield x
 

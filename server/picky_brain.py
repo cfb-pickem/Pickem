@@ -43,6 +43,7 @@ import chat
 import league_rules
 import ollama_gate
 import member_memory
+import picky_claude  # live replies: ONLY the switch-gated live_reply (temporary)
 import router
 import units
 
@@ -293,6 +294,12 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
         payload["think"] = chat.OLLAMA_THINK == "true"
     if CODE_ONLY.get():
         raise PrimeSlow("code only (test traffic)")
+    if not ollama_gate.is_low() and picky_claude.live_on():  # live-Claude switch (temporary): gemma if it fails
+        kind = {UNDERSTAND_TAIL: "understand", JUDGE_TAIL: "judge", router.BANTER_TAIL: "banter",
+                router.FACT_TAIL: "fact"}.get(tail, "json")
+        raw = await picky_claude.live_reply(payload["messages"], kind, schema=schema)
+        if raw is not None:
+            return raw
     if prime_wait is not None and BUSY_FAST and _FULL_INFLIGHT[0] > 0:  # a code lane: never queue behind a full text
         log.info("code lane skips the model queue: %d full-lane text(s) in flight", _FULL_INFLIGHT[0])
         raise PrimeSlow("busy: full-lane text in flight")

@@ -31,6 +31,7 @@ Every call goes through run() (or the `run` CLI below for shell scripts):
 
 CLI:
   picky_claude.py usage [--days N]       calls and minutes per day and caller
+  picky_claude.py live on|off|status [--model opus|sonnet] [--until ISO]   the live-reply switch (below)
   picky_claude.py run --caller NAME --timeout S [--tools T | --all-tools] [--format text|json]
                   [--cwd DIR] [-- extra claude args]
       prompt on stdin, claude's stdout/stderr passed through, exit = claude's
@@ -39,6 +40,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import datetime as dt
 import json
 import os
@@ -229,7 +231,8 @@ def command(tools: str | None = "", output_format: str = "json", schema: dict | 
     return cmd + list(extra)
 
 
-def log_call(caller: str, secs: float, result: str, booster: bool = False, model: str | None = None) -> None:
+def log_call(caller: str, secs: float, result: str, booster: bool = False, model: str | None = None,
+             live: bool = False) -> None:
     """Append one line to today's usage log. Never raises."""
     try:
         now = dt.datetime.now(CT)
@@ -238,6 +241,8 @@ def log_call(caller: str, secs: float, result: str, booster: bool = False, model
                "secs": round(secs, 1), "result": result}
         if booster:
             rec["booster"] = True
+        if live:
+            rec["live"] = True
         with open(USAGE_DIR / f"{now.date().isoformat()}.jsonl", "a") as f:
             f.write(json.dumps(rec) + "\n")
     except OSError:
@@ -267,6 +272,190 @@ def run(prompt: str, *, timeout: float, caller: str | None = None, cwd=None, too
     if p.returncode != 0 and _AUTH_DOWN.search(f"{p.stdout or ''}\n{p.stderr or ''}"[-2000:]):
         mark_auth(False, f"auth: last run said {(p.stderr or p.stdout or '').strip()[-120:]}")
     return p
+
+
+# -----------------------------------------------------------------------------------------------------------
+# LIVE REPLIES ON CLAUDE: a TEMPORARY, switch-gated exception to ledger RULEs M1/M15 (Charlie by iMessage
+# 2026-11-19 ~7:51 PM CT, "Do it now": live replies on his Claude subscription, Opus, "just for right now").
+# Off unless LIVE_SWITCH says {"on": true} (re-read on every call, mtime-cached: flip it without a restart);
+# "until" (ISO time) turns it off by itself. When on, chat._ollama_stream and picky_brain._json_call (member
+# texts only: ollama_gate not low) send the same system prompt + messages here instead of gemma; every
+# guard / filter / fact check still runs on the output. Any failure (error, LIVE_TIMEOUT, empty, cap) = None,
+# and the caller falls back to gemma for that reply. A usage-limit / login message or LIVE_MAX_FAILS failures
+# in a row flips the switch off (off_reason in the file). Off by hand: `picky_claude.py live off`.
+# -----------------------------------------------------------------------------------------------------------
+LIVE_SWITCH = Path(os.environ.get("PICKY_LIVE_CLAUDE", "/Users/Agent/cfb-pickem-private/picky_live_claude.json"))
+LIVE_TIMEOUT = 45.0
+LIVE_DAILY_CALLS = 600      # live calls per CT day (a full-lane reply is ~2: brief + draft); over it = gemma
+LIVE_MAX_FAILS = 3          # failures in a row that flip the switch off
+LIVE_MODELS = {"opus": MODEL, "sonnet": SONNET, "haiku": HAIKU}
+LIVE_CWD = Path(os.environ.get("TMPDIR", "/tmp")) / "picky-live-claude"   # empty dir: no project CLAUDE.md
+_LIMIT = re.compile(r"(?i)usage limit|limit reached|hit your limit|out of (extra )?usage|rate.?limit|"
+                    r"/login|not logged in|log ?in again|invalid api key|credit balance|unauthori[sz]ed")
+_live = {"mtime": None, "cfg": {}, "fails": 0}
+
+
+def live_config() -> dict:
+    """The switch file, re-read when its mtime changes. {} when missing / unreadable."""
+    try:
+        m = LIVE_SWITCH.stat().st_mtime_ns
+    except OSError:
+        _live.update(mtime=None, cfg={})
+        return {}
+    if m != _live["mtime"]:
+        try:
+            cfg = json.loads(LIVE_SWITCH.read_text())
+            _live.update(mtime=m, cfg=cfg if isinstance(cfg, dict) else {})
+        except (OSError, ValueError):
+            _live.update(mtime=m, cfg={})
+    return _live["cfg"]
+
+
+def live_count(now: dt.datetime | None = None) -> int:
+    day = (now or dt.datetime.now(CT)).date().isoformat()
+    try:
+        return sum('"live": true' in line for line in (USAGE_DIR / f"{day}.jsonl").read_text().splitlines())
+    except OSError:
+        return 0
+
+
+def live_why_not(now: dt.datetime | None = None) -> str:
+    """'' when a live reply may go to Claude now, else why not (switch off = 'off')."""
+    cfg = live_config()
+    if not cfg.get("on"):
+        return "off"
+    if disabled():
+        return "PICKY_NO_ANTHROPIC set"
+    until = cfg.get("until")
+    if until:
+        try:
+            u = dt.datetime.fromisoformat(str(until))
+            if (now or dt.datetime.now(CT)) >= (u if u.tzinfo else u.replace(tzinfo=CT)):
+                return f"expired ({until})"
+        except ValueError:
+            return f"bad until {until!r}"
+    if not os.access(CLAUDE, os.X_OK):
+        return f"claude binary missing at {CLAUDE}"
+    if live_count(now) >= LIVE_DAILY_CALLS:
+        return f"live daily cap hit ({LIVE_DAILY_CALLS} calls)"
+    return ""
+
+
+def live_on() -> bool:
+    return not live_why_not()
+
+
+def live_set(on: bool, why: str = "", model: str | None = None, until: str | None = None) -> dict:
+    """Write the switch (keeps model / until unless given)."""
+    cfg = dict(live_config())
+    cfg["on"] = bool(on)
+    if model:
+        cfg["model"] = model
+    if until is not None:
+        cfg["until"] = until or None
+    cfg.setdefault("model", "opus")
+    cfg.setdefault("until", None)
+    cfg["changed_at"] = dt.datetime.now(CT).isoformat(timespec="seconds")
+    cfg["why"] = why
+    try:
+        LIVE_SWITCH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = LIVE_SWITCH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cfg, indent=1) + "\n")
+        tmp.replace(LIVE_SWITCH)
+    except OSError:
+        pass
+    _live["fails"] = 0
+    return cfg
+
+
+def live_prompt(messages: list[dict]) -> tuple[str, str]:
+    """(system prompt, prompt) from an Ollama-style message list: system turns -> --system-prompt, the rest
+    as a transcript ending with the latest user turn."""
+    system = "\n\n".join(str(m.get("content") or "") for m in messages if m.get("role") == "system")
+    turns = [m for m in messages if m.get("role") != "system"]
+    if len(turns) == 1:
+        return system, str(turns[0].get("content") or "")
+    body = "\n\n".join(f'<turn role="{m.get("role")}">\n{m.get("content") or ""}\n</turn>' for m in turns)
+    return system, (body + "\n\nYou are the assistant. Write only your reply to the last user turn: the text "
+                    "itself, no tags, no preamble.")
+
+
+def live_command(system: str, model: str, effort: str, schema: dict | None = None) -> list[str]:
+    cmd = [CLAUDE, "-p", "--model", model, "--tools", "", "--strict-mcp-config", "--mcp-config", str(EMPTY_MCP),
+           "--setting-sources", "", "--no-session-persistence", "--system-prompt", system]
+    if effort:
+        cmd += ["--effort", effort]
+    if schema is not None:
+        return cmd + ["--output-format", "json", "--json-schema", json.dumps(schema)]
+    return cmd + ["--output-format", "text"]
+
+
+def _live_fail(kind: str, why: str, model: str, secs: float, limit: bool = False) -> None:
+    log_call(f"live-{kind}", secs, why[:120], model=model, live=True)
+    _live["fails"] += 1
+    if limit:
+        live_set(False, f"auto-off: usage limit / login ({why[:160]})")
+    elif _live["fails"] >= LIVE_MAX_FAILS:
+        live_set(False, f"auto-off: {LIVE_MAX_FAILS} failures in a row (last: {why[:160]})")
+    print(f"picky_claude live {kind}: {why[:200]} -> gemma", file=sys.stderr)
+
+
+async def live_reply(messages: list[dict], kind: str = "reply", schema: dict | None = None,
+                     timeout: float | None = None) -> str | None:
+    """The reply text (schema: the structured output as a JSON string) from Claude, or None: the switch is
+    off, or the call failed (logged, counted toward auto-off) and the caller uses gemma. Never raises."""
+    if live_why_not():
+        return None
+    cfg = live_config()
+    model = LIVE_MODELS.get(str(cfg.get("model") or "opus"), str(cfg.get("model") or MODEL))
+    system, prompt = live_prompt(messages)
+    t0 = time.time()
+    try:
+        LIVE_CWD.mkdir(parents=True, exist_ok=True)
+        proc = await asyncio.create_subprocess_exec(
+            *live_command(system, model, str(cfg.get("effort", "low") or ""), schema),
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=str(LIVE_CWD), env=env())
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(prompt.encode()), timeout or LIVE_TIMEOUT)
+        except (asyncio.TimeoutError, asyncio.CancelledError) as e:
+            proc.kill()
+            await proc.wait()
+            if isinstance(e, asyncio.CancelledError):
+                log_call(f"live-{kind}", time.time() - t0, "cancelled", model=model, live=True)
+                raise
+            _live_fail(kind, f"timeout {timeout or LIVE_TIMEOUT:g}s", model, time.time() - t0)
+            return None
+    except OSError as e:
+        _live_fail(kind, f"error {type(e).__name__}: {e}", model, time.time() - t0)
+        return None
+    secs = time.time() - t0
+    text, errs = out.decode(errors="replace").strip(), err.decode(errors="replace").strip()
+    if proc.returncode != 0:
+        tail = (text + "\n" + errs)[-400:]
+        _live_fail(kind, f"exit {proc.returncode}: {tail.strip()}", model, secs, limit=bool(_LIMIT.search(tail)))
+        return None
+    if schema is not None:
+        try:
+            d = json.loads(text)
+            res = d.get("structured_output")
+            if d.get("is_error") or res is None:
+                why = str(d.get("result") or d.get("subtype") or "no structured_output")
+                _live_fail(kind, why, model, secs, limit=bool(_LIMIT.search(why)))
+                return None
+            text = json.dumps(res)
+        except (ValueError, AttributeError) as e:
+            _live_fail(kind, f"bad json ({type(e).__name__})", model, secs)
+            return None
+    elif len(text) < 200 and _LIMIT.search(text):
+        _live_fail(kind, text, model, secs, limit=True)
+        return None
+    if not text:
+        _live_fail(kind, "empty output", model, secs)
+        return None
+    _live["fails"] = 0
+    log_call(f"live-{kind}", secs, "ok", model=model, live=True)
+    return text
 
 
 def usage(days: int = 7, base: Path | None = None) -> list[dict]:
@@ -318,7 +507,19 @@ def main(argv=None) -> int:
     r.add_argument("--format", default="text", choices=("text", "json"))
     r.add_argument("--cwd", default=None)
     r.add_argument("extra", nargs="*")
+    lv = sub.add_parser("live", help="the live-reply Claude switch (temporary, see LIVE_SWITCH)")
+    lv.add_argument("action", choices=("on", "off", "status"))
+    lv.add_argument("--model", default=None, help="opus | sonnet | haiku")
+    lv.add_argument("--until", default=None, help="ISO time it turns itself off ('' = never)")
     a = ap.parse_args(argv)
+    if a.cmd == "live":
+        if a.action != "status":
+            live_set(a.action == "on", f"by hand ({a.action})", a.model, a.until)
+        cfg, why = live_config(), live_why_not()
+        print(json.dumps(cfg))
+        print(f"live replies on Claude: {'ON (' + str(cfg.get('model')) + ')' if not why else 'off: ' + why}; "
+              f"{live_count()} live calls today")
+        return 0
     if a.cmd == "usage":
         for d in usage(a.days):
             print(usage_line(d))
