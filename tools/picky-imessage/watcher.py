@@ -727,24 +727,25 @@ def handle_one(row: dict, secret: str, rate: RateLimit, db: sqlite3.Connection |
         log.info("replied rowid=%s preview=%r latency arrival_to_send=%.1fs bot=%.1fs tries=%d lane=%s",
                  row["ROWID"], preview(reply), e2e, rt.get("bot", 0.0), rt.get("tries", 0) + 1, out.get("lane") or "-")
         rt["out"] = {**out, "reply": None}  # sent: a retry for the image never re-sends the text
-    if image:
-        send_image(row, image)
+    if image and not send_image(row, image) and out.get("image_alt"):
+        send(row["chat_guid"], out["image_alt"])  # a meme that didn't attach goes as its quote + link
     return "sent"
 
 
 def send_image(row: dict, b64: str) -> bool:
     import base64
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUT_DIR / f"picky-{row['ROWID']}.png"
     try:
-        path.write_bytes(base64.b64decode(b64))
+        data = base64.b64decode(b64)
+        path = OUT_DIR / f"picky-{row['ROWID']}.{'gif' if data[:6] in (b'GIF87a', b'GIF89a') else 'png'}"
+        path.write_bytes(data)
     except (ValueError, OSError) as e:
         log.error("image write failed rowid=%s: %s", row["ROWID"], e)
         return False
     ok = send(row["chat_guid"], str(path), SEND_FILE_SCRIPT)
     if ok:
         log.info("sent image rowid=%s", row["ROWID"])
-    for old in sorted(OUT_DIR.glob("picky-*.png"), key=lambda p: p.stat().st_mtime)[:-20]:  # keep the last 20
+    for old in sorted(OUT_DIR.glob("picky-*.*"), key=lambda p: p.stat().st_mtime)[:-20]:  # keep the last 20
         old.unlink(missing_ok=True)
     return ok
 

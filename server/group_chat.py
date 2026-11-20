@@ -101,6 +101,7 @@ import matchup_guard  # noqa: E402
 import member_memory  # noqa: E402  (forget handler, receipt check, Charlie rule)
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
 import answer_first  # noqa: E402  (helpful first: insist follow-ups, tone asks, honest data gaps)
+import dm_memes  # noqa: E402  (per-member meme GIF on 1-on-1 DM replies only, never the group or the site)
 import picky_brain  # noqa: E402
 import freeze  # noqa: E402
 import pictures  # noqa: E402
@@ -1427,13 +1428,18 @@ async def group(req: Request):
     if dm and len(texts) <= 1 and out.get("reply") and not out.get("image") \
             and gameday.short_for(VIEWER.sender(handle).team):  # at a game on a weak signal: ONE short text, answer first
         out["reply"] = gameday.shorten(out["reply"], text)
+    if dm:  # a flagged member's DM gets a meme after the answer (dm_memes.py); the group and /web never get here
+        out = dm_memes.attach(out, VIEWER.sender(handle).team_id, dm, test=test)
     if out.get("reply") and not test:
         callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text), out.get("reply_en") or out["reply"],
                        is_dm=dm)
     log.info("%s reply sender=%s mapped=%s %.1fs chars=%d image=%s lane=%s", out["mode"], handle[-4:] or "?",
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]),
              out.get("lane") or "-")
-    return {"reply": out["reply"] or None, "image": out["image"], "lane": out.get("lane")}
+    res = {"reply": out["reply"] or None, "image": out["image"], "lane": out.get("lane")}
+    if out.get("image_alt"):  # the watcher sends this text if the attachment fails
+        res["image_alt"] = out["image_alt"]
+    return res
 
 
 DB_DOWN_LINES = [
