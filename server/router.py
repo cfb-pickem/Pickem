@@ -150,6 +150,10 @@ WHO_COVERS_TAIL = re.compile(r"\S.*\bwho covers\W*$", re.I)
 # 'gimme a read on this week's games': every open game, one call each
 SLATE_READ = re.compile(r"\b(read|reads|picks?|calls?|leans?|thoughts?|take|takes|breakdown|rundown|who do you like|"
                         r"slate|all (4|four)|games|board|plays?)\b", re.I)
+# 'Which games should I pick' / 'What picks should I make' (flubs rg-20261119-4/5/11/12: the full brain named one or
+# two games and called them the only value): the slate lane gives every open game's call
+SLATE_WHICH = re.compile(r"\b(which|what) (games?|picks?|sides?|teams?|ones?|plays?) (should|do|would|could) (i|we) "
+                         r"(pick|take|make|play|go with|ride|back)\b", re.I)
 # who a member-question is about: 'Big Tuna Tony's record', 'how'd X do', 'where does X rank'
 _NAME_ASK = re.compile(rf"\b(?:what'?s|what is|whats|how'?s|how is)\s+({_T})'s (?:record|season|week)\b"
                        rf"|\bhow(?:'d| did| is| was|'s)\s+({_T})\s+(?:do|doing|done|go|going|look|looking)\b"
@@ -725,7 +729,11 @@ JACKPOT_ODDS = re.compile(
     r"\b(it'?s|is it|is the (jackpot|football|slots?)) progressive\b|\bprogressive (jackpot|slots?)\b"
     r"|\b(odds|chances?)\b[^?.!]{0,25}\b(it|the football|the jackpot|the slots?|the ball)\b[^?.!]{0,6}\b(pops?|hits?|goes)\b"
     r"|\b(jackpot|the slots?)\b[^?.!]{0,30}\b(about to|gonna|going to|due|close to|soon|odds|chances?|how close)\b"
-    r"|\bhow close is the (jackpot|football)\b", re.I)
+    r"|\bhow close is the (jackpot|football)\b"
+    r"|\bhow many (slots?|pulls?|spins?)\b[^?.!]{0,40}\b(ensure|guarantee|make sure|lock in|to (hit|pop|trigger|win))\b"
+    r"|\b(guarantee|ensure)\b[^?.!]{0,30}\b(jackpot|football|slots?)\b", re.I)
+# 'how many slots should I pull to ensure the jackpot triggers?' (flub rg-20261117-6): no count does
+JACKPOT_SURE = re.compile(r"\b(ensure|guarantee\w*|make sure|lock in|for sure)\b", re.I)
 
 
 def jackpot_odds_text(ctx: dict, q: str) -> str | None:
@@ -735,8 +743,10 @@ def jackpot_odds_text(ctx: dict, q: str) -> str | None:
     if not isinstance(jp, dict):
         return None
     n = jp.get("pulls_since_pop")
+    sure = ("No number of pulls guarantees it: every pull is its own random shot, and some seasons the football "
+            "never pops. " if JACKPOT_SURE.search(q or "") else "")
     if jp.get("last_pop_at"):  # slots_jackpot_odds_for: 0 for the rest of the regular season after a pop
-        return (f"{jp.get('last_pop_team') or 'Somebody'} popped it ({str(jp['last_pop_at'])[:10]}), and it only pops "
+        return sure + (f"{jp.get('last_pop_team') or 'Somebody'} popped it ({str(jp['last_pop_at'])[:10]}), and it only pops "
                 "once a regular season, so no more pops till the playoffs.")
     where = f"It's at {n} pulls and hasn't popped yet." if n else "It hasn't popped yet."
     secret = "the site keeps the exact odds secret on purpose, so I can't give you a number."
@@ -744,7 +754,7 @@ def jackpot_odds_text(ctx: dict, q: str) -> str | None:
         mine = "Same odds on anybody's pull, and " if re.search(r"\b(for me|my|mine|i)\b", q, re.I) else "And "
         return (f"Sort of: the prize never grows (a pop is always one AUTO WIN point), but the odds do, since every "
                 f"slots pull anybody makes puts more air in the one league football. {where} {mine}{secret}")
-    return (f"{where} The longer it goes without a pop, the better the next pull's chances, but {secret} "
+    return sure + (f"{where} The longer it goes without a pop, the better the next pull's chances, but {secret} "
             "A pop on your pull makes that pick a win no matter who covers.")
 
 
@@ -761,6 +771,54 @@ def jackpot_hit_text(ctx: dict, q: str) -> str | None:
         return "Nobody's hit it this season" + (f": {n} pulls since the football last popped." if n else ".")
     when = str(jp["last_pop_at"])[:10]
     return f"{jp.get('last_pop_team') or 'Somebody'} hit it ({when}). It only pops once a regular season."
+
+
+# 'The dealer has a 6 and I have a soft 17, what should I do' (flub rg-20261119-8: got the pick'em strategy lane).
+# Basic strategy for The Pit's rules (js/blackjack.js): dealer stands on every 17, double on the first two cards,
+# no splits.
+_BJ_CARD = r"(\d{1,2}|ace|an? ace|two|three|four|five|six|seven|eight|nine|ten|jack|queen|king|face card|face)"
+BJ_UP = re.compile(r"\bdealer(?:'?s)?\s+(?:has|shows?|showing|is showing|got|up ?card(?: is)?|is on)?\s*(?:an?\s+)?"
+                   + _BJ_CARD + r"\b(?!\s*(?:cards|points|picks|games))", re.I)
+BJ_ME = re.compile(r"\b(?:i(?:'ve| have)?(?: got)?|i'?m(?: on| holding| sitting on)?|i am(?: on)?|holding|my hand is|me on|"
+                   r"with)\s+(?:an?\s+)?(soft|hard)?\s*(\d{1,2})\b|\b(soft|hard)\s+(\d{1,2})\b", re.I)
+_BJ_WORDS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+             "jack": 10, "queen": 10, "king": 10, "face": 10, "face card": 10, "ace": 11}
+
+
+def _bj_hand(q: str) -> tuple[int, bool, int] | None:
+    """(player total, soft, dealer up card 2-11) from a blackjack hand ask, else None."""
+    t = (q or "").replace("’", "'")
+    up, me = BJ_UP.search(t), BJ_ME.search(t)
+    if not up or not me:
+        return None
+    w = re.sub(r"^an?\s+", "", up.group(1).lower())
+    u = _BJ_WORDS.get(w) or (int(w) if w.isdigit() else 0)
+    u = 11 if u == 1 else u
+    kind, n = (me.group(1), me.group(2)) if me.group(2) else (me.group(3), me.group(4))
+    n = int(n)
+    if not 2 <= u <= 11 or not 4 <= n <= 21 or (kind or "").lower() == "soft" and n < 12:
+        return None
+    return n, (kind or "").lower() == "soft", u
+
+
+def blackjack_text(ctx: dict, q: str) -> str | None:
+    h = _bj_hand(q)
+    if not h:
+        return None
+    n, soft, u = h
+    if soft:
+        dbl = (u in (5, 6) if n in (13, 14) else 4 <= u <= 6 if n in (15, 16) else 3 <= u <= 6 if n in (17, 18)
+               else False)
+        move = ("D" if dbl else "S" if n >= 19 or (n == 18 and u in (2, 7, 8)) else "H")
+    else:
+        dbl = (3 <= u <= 6 if n == 9 else u <= 9 if n == 10 else u <= 10 if n == 11 else False)
+        move = ("D" if dbl else "S" if n >= 17 or (13 <= n <= 16 and u <= 6) or (n == 12 and 4 <= u <= 6) else "H")
+    fallback = "stand" if soft and n == 18 else "hit"
+    say = {"D": f"double down (past two cards you can't, so {fallback})", "S": "stand",
+           "H": "hit"}[move]
+    up = "an ace" if u == 11 else f"a {u}"
+    return (f"{'Soft' if soft else 'Hard'} {n} against a dealer showing {up}: {say}. That's basic strategy for the Pit "
+            "(dealer stands on every 17, double on your first two cards, no splits).")
 
 
 def rules2_text(ctx: dict, q: str) -> str | None:
@@ -1403,6 +1461,9 @@ def lw_pick_text(ctx: dict, q: str) -> str | None:
 
 MISS_MARGIN = re.compile(r"\bhow (bad|badly|close|much|far off) (did|was) (i|my)\b|\bby how much did (i|my)\b|"
                          r"\bhow (bad|close) (was|is) (my|that)\b", re.I)
+# 'What was my worst pick last week?' (flub rg-20261119-13: got Picky's shakiest pick this week)
+MY_WORST_LW = re.compile(r"\b(my|i)\b[^?.!]{0,20}\b(worst|biggest miss|ugliest|baddest)\b"
+                         r"|\b(worst|ugliest)\b[^?.!]{0,12}\b(pick|miss|call)\b[^?.!]{0,12}\b(i made|i had|of mine)\b", re.I)
 PREMISE_ASK = re.compile(r"\bi thought i (was|had|went)\b|\bwhy did i (take|pick|go with|ride|back)\b|\b(covered|cover|won|lost|ended|finished|beat)\b[^?]{0,40}"
                          r"\b(right|correct|yeah|yea|yes|no)\s*\?|\bended \d{1,2}\s*-\s*\d{1,2}\b", re.I)
 
@@ -1799,6 +1860,41 @@ ATS_POLITE = re.compile(r"\b((can|could|would|will) (you|u) )?(tell|show|give|ge
 _ATS_SPLITS = (("dog", r"\b(dog|underdog)s?\b", "as an underdog"), ("fav", r"\bfav\w*\b", "as a favorite"),
                ("home", r"\bhome\b", "at home"), ("road", r"\broad\b|\baway\b", "on the road"))
 _ATS_SAY = {k: say for k, _, say in _ATS_SPLITS}
+
+
+# 'What are all 8 teams that we are picking this week records against the spread this season' (flub rg-20261119-1):
+# every pool team's ATS record, from the same team sheets as the one-team lane
+SLATE_ATS = re.compile(r"\b(all|every|each|(4|four|8|eight) teams|teams|pool|slate|board|we('re| are)? picking)\b", re.I)
+SLATE_ATS_NOT = re.compile(r"\b(my|mine|i|i'?m|me|am i|you|u|ur|your|picky|career|last (week|wk)|week \d+)\b", re.I)
+
+
+def slate_ats_ask(t: str) -> bool:
+    return bool(ATS_PROFILE_ASK.search(t) and SLATE_ATS.search(t) and not SLATE_ATS_NOT.search(t)
+                and not factstore.teams_named(t))
+
+
+def slate_ats_text(ctx: dict, q: str) -> str | None:
+    games = [g for g in ctx.get("games_this_week") or [] if not g.get("tiebreaker")]
+    parts, used = [], []
+    for g in games:
+        side = []
+        for name in (g["away"], g["home"]):
+            t = factstore.team(name)
+            p = (t or {}).get("ats_profile")
+            facts = list((t or {}).get("facts") or [])
+            if t and not p:
+                p = factstore.ats_profile(t.get("results") or [])
+                facts += factstore.ats_profile_facts(t["name"], p, t.get("as_of") or "")
+            f = next((x for x in facts if x["kind"] == "ats" and x["id"].endswith(".calc_overall")), None)
+            if not p or not p["games"] or not f:
+                side.append(f"{name} (no lines on record)")
+                continue
+            used.append(f)
+            side.append(f"{name} {factstore.wlp_text(p['overall'])}")
+        parts.append(" at ".join(side))
+    if not used:
+        return None
+    return factstore.answer("Against the spread this season (CFBD lines): " + "; ".join(parts) + ".", used)
 
 
 def _ats_verdict(p: dict, role_rec: list | None, role_say: str, label: str | None, opp_label: str | None) -> str:
@@ -2244,6 +2340,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "change_mind", "CHANGE_MIND"  # 'what would change your mind': computed triggers from the ledger's game
     if LW_PICK_ASK.search(t):
         return "lw_pick", "LW_PICK_ASK"  # 'who did Clam take in Wake Forest vs SMU last week?': revealed, code-answered
+    if MY_WORST_LW.search(t) and LAST_WK_Q.search(t):
+        return "results", "MY_WORST_LW"  # 'what was my worst pick last week?': his biggest miss, not Picky's shakiest
     if MISS_MARGIN.search(t):
         return "results", "MISS_MARGIN"  # 'how bad did I miss on Boise last week?' (fact exam real miss)
     if PREMISE_ASK.search(t):
@@ -2281,6 +2379,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "weather_alt_travel", "situational.ASK"  # forecast as a forecast, both elevations, trip + body clock
     if CAREER_ATS.search(t):
         return "career_ats", "CAREER_ATS"  # coach career ATS splits aren't in the data: say so + this season's team ATS
+    if slate_ats_ask(ATS_POLITE.sub(" ", t)):
+        return "slate_ats", "SLATE_ATS"  # 'all 8 teams we're picking, records against the spread': every pool team
     if ATS_PROFILE_ASK.search(t) and not ATS_NOT.search(ATS_POLITE.sub(" ", t)) and factstore.teams_named(t):
         return "ats_profile", "ATS_PROFILE_ASK"  # 'how's Duke against the number': the team sheet's ATS profile
     if (COACH_ASK.search(t) and not NOT_COACH.search(t)) or (
@@ -2373,7 +2473,7 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "pick", "PICK_ASK"
     if WHO_COVERS_TAIL.search(t) and factstore.teams_named(t):
         return "pick", "WHO_COVERS_TAIL"
-    if chat.slate_ask(t) and SLATE_READ.search(t):
+    if (chat.slate_ask(t) or (SLATE_WHICH.search(t) and not factstore.teams_named(t))) and SLATE_READ.search(t):
         return "slate", "SLATE_READ"
     if GAP_FIRST_ASK.search(t):  # 'how many points is Ackbar behind first?' (fact exam 2026-11-17: got the scoring rules)
         return "standings", "GAP_FIRST_ASK"
@@ -2433,6 +2533,8 @@ def classify(q: str) -> Route:
         return Route("jailbreak", why="burn_book._JAILBREAK" if p == "jailbreak" else "PRIVACY_PROBE")
     if callbacks.is_recall(t):  # 'remember what you said about Boise?': his own logged call, code-written
         return Route("fact", "recall", why="callbacks.is_recall")
+    if _bj_hand(t):  # 'dealer has a 6 and I have a soft 17, what should I do': a Pit hand, not pick strategy
+        return Route("fact", "blackjack", why="BJ_HAND")
     if pick_strategy.wants(t):  # 'should I go against the field?': strategy, written in code from the standings
         return Route("fact", "strategy", why="pick_strategy.ASK")
     fi = fact_intent(t)
@@ -3816,6 +3918,13 @@ def last_week_text(kind: str, ctx: dict, q: str) -> str | None:
         hit = [r["label"] for r in rows if r["result"] == "WIN"]
         miss = [r for r in rows if r["result"] != "WIN"]
         who = "You" if team == me else team
+        if MY_WORST_LW.search(q or ""):
+            whose = "Your" if team == me else f"{team}'s"
+            if not miss:
+                return f"{who} didn't miss in week {wk}: {_and(hit)} all covered."
+            w = max(miss, key=lambda r: r.get("margin") or 0)
+            by = f": missed the cover by {chat._num(abs(w['margin']))}" if w.get("margin") is not None else ", a miss"
+            return f"{whose} worst pick in week {wk} was {w['label']}{by}."
         head = f"{who} went {len(hit)}-{len(miss)} in week {wk}"
         if not miss:  # Charlie flagged a 4-cover recital on 'Howd the week go': short, like a person says it
             return f"{head}, clean sweep: {_and(hit)} all covered."
@@ -3928,8 +4037,9 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "conf_race": conf_race_text, "lookahead_slate": lookahead_slate_text,
               "lookahead_game": lookahead_game_text, "rest_game": rest_game_text,
               "career_ats": career_ats_text, "hypo_value": hypo_value_text, "ats_profile": ats_profile_text,
+              "slate_ats": slate_ats_text,
               "interim": situational.interim_text, "weather_alt_travel": situational.weather_alt_travel_text,
-              "strategy": pick_strategy.answer,
+              "strategy": pick_strategy.answer, "blackjack": blackjack_text,
               "picky_record": picky_record_text, "premise": premise_text, "lw_pick": lw_pick_text, "read": read_text, "pool_games": pool_games_text,
               "ghost_player": ghost_player_text, "recap": recap_text,
               "ghost_school": ghost_school_text, "unit_matchup": unit_lane.answer,

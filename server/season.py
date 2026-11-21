@@ -22,7 +22,7 @@ OFFSEASON_GAP = dt.timedelta(days=21)
 WEEK_KINDS = frozenset({
     "lock", "slate", "pick", "pool_games", "my_picks", "score", "line_move", "lines_locked", "lines_now",
     "spread", "upset", "qb", "flip", "defend", "others", "short", "value", "hidden", "compare", "lock_pick",
-    "pick_ctx", "fade", "read", "weeks_left", "hypo_value", "keynum", "qb_status", "lookahead_slate", "channel",
+    "pick_ctx", "fade", "read", "weeks_left", "hypo_value", "keynum", "qb_status", "lookahead_slate", "channel", "slate_ats",
 })
 
 
