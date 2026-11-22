@@ -1031,6 +1031,7 @@ def picky_claude_raw() -> bool:
 async def _raw_facts() -> str:
     if _RAW_FACTS["text"] and time.time() - _RAW_FACTS["at"] < _RAW_TTL:
         return _RAW_FACTS["text"]
+    side = os.environ.get("PICKY_SIDE")
     try:
         import flub_loop
         f = (await asyncio.to_thread(flub_loop.build_facts))["facts"]
@@ -1047,6 +1048,9 @@ async def _raw_facts() -> str:
         _RAW_FACTS.update(at=time.time(), text=f)
     except Exception as e:  # noqa: BLE001
         log.warning("raw facts failed: %s", e)
+    finally:  # build_facts imports eval/run.py, which sets PICKY_SIDE=1: the live sidecar must stay live
+        if side is None:
+            os.environ.pop("PICKY_SIDE", None)
     return _RAW_FACTS["text"]
 
 
