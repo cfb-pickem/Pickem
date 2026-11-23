@@ -292,12 +292,14 @@ def extract_sql(defs: dict[str, str]) -> dict:
     f["jackpot"] = {"base": float(m.group(1)), "quiet_pulls": int(m.group(2)),
                     "step": float(m.group(3)), "max": float(m.group(4))}
     s = _code(_fn(defs, "slots_jackpot_odds_for"))
-    m = re.search(r"cap\s+constant\s+numeric\s*:=\s*([\d.]+)", s)
-    f["jackpot"]["regular_cap"] = float(m.group(1)) if m else None
+    m = re.search(r"survive\s+constant\s+numeric\s*:=\s*([\d.]+)", s)
+    f["jackpot"]["regular_survive"] = float(m.group(1)) if m else None
+    m = re.search(r"min_per_week\s+constant\s+numeric\s*:=\s*([\d.]+)", s)
+    f["jackpot"]["regular_min_pulls_per_week"] = float(m.group(1)) if m else None
     f["jackpot"]["one_pop_per_regular_season"] = bool(re.search(r"else\s+return\s+0\s*;", s, re.I))
-    f["jackpot"]["regular_floor_one_over_remaining"] = bool(re.search(r"1\.0\s*/\s*greatest\(pulls_remaining", s))
-    if f["jackpot"]["regular_cap"] is None:
-        raise ExtractError("slots_jackpot_odds_for: cap not found")
+    f["jackpot"]["regular_weeks_left_ramp"] = bool(re.search(r"weeks_left\s*\*\s*pulls_per_week", s))
+    if f["jackpot"]["regular_survive"] is None or f["jackpot"]["regular_min_pulls_per_week"] is None:
+        raise ExtractError("slots_jackpot_odds_for: weeks-left ramp not found")
     s = _code(_fn(defs, "resolve_slot_picks"))
     f["jackpot"]["coin_flip_side"] = bool(re.search(r"random\(\)\s*<\s*0\.5\s+then\s+r\.away", s, re.I))
     f["jackpot"]["one_pop_per_batch"] = "paid_out" in s
@@ -713,11 +715,13 @@ def jackpot_odds(pulls: int, facts: dict | None = None) -> float:
     return min(j["base"] + max((pulls or 0) - j["quiet_pulls"], 0) * j["step"], j["max"])
 
 
-def regular_season_odds(pulls: int, pulls_remaining: int, popped_this_season: bool, facts: dict | None = None) -> float:
+def regular_season_odds(pulls: int, weeks_left: int, pulls_per_week: float, popped_this_season: bool,
+                        facts: dict | None = None) -> float:
     j = (facts or FACTS)["jackpot"]
     if popped_this_season:
         return 0.0
-    return max(min(1.0 / max(pulls_remaining, 1), j["regular_cap"]), jackpot_odds(pulls, facts))
+    n = max(weeks_left, 1) * max(pulls_per_week, j["regular_min_pulls_per_week"])
+    return max(1 - j["regular_survive"] ** (1 / n), jackpot_odds(pulls, facts))
 
 
 def blackjack_payout(bet: int, facts: dict | None = None) -> int:
@@ -804,14 +808,16 @@ def render_sections(f: dict) -> dict[str, list[str]]:
         if j.get("coin_flip_side") else "- Instead of picking a side, you can choose \"Let the slots decide\".",
         "- Every slots pick is one pull on the league jackpot (the football); flipping a pick back and forth doesn't add pulls. "
         "If it pops on your pull, you get an AUTO WIN: a point for that game no matter who covers, scored when the game is graded.",
-        # slots_jackpot_odds_for: max(min(1/pulls left, cap), the ramp), so the ramp can top the cap (Brian 11-18)
-        (f"- Regular season: the football pops at most once a season. Its odds climb the longer it goes without a pop "
-         f"and get a boost (up to {_pct(j['regular_cap'])} a pull) as the season's slots picks run out; once it has "
-         f"popped, no more regular-season pops."
+        # slots_jackpot_odds_for: max(1 - survive^(1/(weeks_left * pulls/week)), the meter ramp)
+        (f"- Regular season: the football pops at most once a season, and an unhit football gets likelier every week "
+         f"as the season runs out. Each week's chance of a pop is 1 - {j['regular_survive']:g}^(1/weeks left), counting this "
+         f"week: {_pct(1 - j['regular_survive'])} in the last jackpot week (conference championship week), "
+         f"{_pct(1 - j['regular_survive'] ** 0.5)} the week before, lower earlier. That is split across the league's "
+         f"usual slots picks per week, so every slots pick that week has the same odds. Once it has popped, no more "
+         f"regular-season pops."
          if j.get("one_pop_per_regular_season") else ""),
         f"- Playoffs: the odds start at {_pct(j['base'])} a pull and climb after {j['quiet_pulls']} pulls without a pop, up to {_pct(j['max'])}.",
-        "- The jackpot is rare. The site keeps the exact odds secret on purpose: the football on the picks page shows "
-        "how many pulls since the last pop, not the odds.",
+        "- The football on the picks page shows how many pulls since the last pop, not the live odds.",
     ]
     po = f.get("playoffs") or {}
     S["STANDINGS AND PLAYOFFS"] = [

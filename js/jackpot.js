@@ -285,6 +285,13 @@ function paytable() {
         'pops it \u2014 then it is back to a new ball for everyone. ' +
         '<b>Nobody is told how close it is.</b> That is the point of it.' +
       '</p>' +
+      '<p class="jp-pay-note">' +
+        'It goes at most once a regular season, and the longer it hangs on, the ' +
+        'likelier it gets as the season runs out. If nobody has popped it, the ' +
+        'second-to-last week of the regular season is a coin flip to go, and ' +
+        'conference championship week is 3 in 4. Every slots pick in a week ' +
+        'gets the same shot.' +
+      '</p>' +
     '</div>'
   );
 }
