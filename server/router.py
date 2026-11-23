@@ -3707,10 +3707,11 @@ def weeks_left_text(ctx: dict, q: str) -> str | None:
     cw = ctx.get("current_week")
     if not isinstance(cw, int):
         return None
-    if cw > LAST_REGULAR_WEEK:
+    last = playoff_race.last_pool_week(ctx.get("season")) if ctx.get("season") else LAST_REGULAR_WEEK
+    if cw > last:
         return "The regular season's done. It's playoff time: the top 4 pick the College Football Playoff games."
-    n = LAST_REGULAR_WEEK - cw
-    return (f"This is week {cw}. The regular season runs through week {LAST_REGULAR_WEEK} (conference championship "
+    n = last - cw
+    return (f"This is week {cw}. The regular season runs through week {last} (conference championship "
             f"week), so {n} more week{'s' if n != 1 else ''} after this one, then the top 4 go to the playoffs.")
 
 

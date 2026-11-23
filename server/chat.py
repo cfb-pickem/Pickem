@@ -46,6 +46,7 @@ import board_voice
 import freshness
 import game_cards
 import league_rules
+import playoff_race
 import live_flag
 import ollama_gate
 import live_games
@@ -4930,10 +4931,11 @@ def race_note(ctx: dict, question: str) -> str:
         return ""
     st = ctx.get("standings_ytd") or []
     wk = ctx.get("current_week")
-    if not st or wk is None or int(wk) > REGULAR_SEASON_LAST_WEEK:
+    last = playoff_race.last_pool_week(ctx.get("season")) if ctx.get("season") else REGULAR_SEASON_LAST_WEEK
+    if not st or wk is None or int(wk) > last:
         return ""
     left_now = sum(1 for g in ctx.get("games_this_week") or [] if not g.get("winner") and not g.get("tiebreaker"))
-    avail = left_now + 4 * (REGULAR_SEASON_LAST_WEEK - int(wk))
+    avail = left_now + 4 * (last - int(wk))
     if len(st) <= PLAYOFF_SPOTS:
         return ""
     cut = sorted((r["w"] for r in st), reverse=True)[PLAYOFF_SPOTS - 1]
@@ -4956,9 +4958,9 @@ def race_note(ctx: dict, question: str) -> str:
         keep.append(f"{rest} more team{'s' * (rest != 1)} sit more than 3 points behind the cut line"
                     + (f" (ELIMINATED, can't reach it even winning out: {', '.join(elim)})" if elim else ""))
     rows = keep
-    return (f"PLAYOFF RACE (computed; top {PLAYOFF_SPOTS} after week {REGULAR_SEASON_LAST_WEEK} make the league "
+    return (f"PLAYOFF RACE (computed; top {PLAYOFF_SPOTS} after week {last} make the league "
             f"playoffs): the cut line is {cut} points (4th place right now). Points still available this regular "
-            f"season: {avail} ({left_now} left this week + 4 a week through week {REGULAR_SEASON_LAST_WEEK}).\n"
+            f"season: {avail} ({left_now} left this week + 4 a week through week {last}).\n"
             + "\n".join(f"- {x}" for x in rows))
 
 

@@ -87,10 +87,10 @@ HAND = {
     "buy_in": 75,  # commissioner (Charlie), 2026-11-14; the site never prints it
     "buy_in_source": "confirmed by the commissioner, 2026-11-14; the site itself doesn't print it",
     "championship_week_note": (
-        "When: week 15 is conference championship week, the last week of the regular season. The league "
-        "playoffs start after conference championship week, and the playoff games are the College Football "
-        "Playoff games. (2025: no pool games the week right after, Army-Navy week; the first playoff games "
-        "were Dec 19-20.)"),
+        "When: conference championship week is the last week of the regular season (2026: week 14, Dec 5; "
+        "week 15, Army-Navy week, has no pool games; 2025 it was week 15). The league playoffs start after "
+        "conference championship week, and the playoff games are the College Football Playoff games, week 16 "
+        "on. (2025: the first playoff games were Dec 19-20.)"),
 }
 
 

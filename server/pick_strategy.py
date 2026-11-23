@@ -24,6 +24,8 @@ from __future__ import annotations
 import collections
 import re
 
+import playoff_race
+
 PLAYOFF_SPOTS = 4
 LAST_WEEK = 15
 GAMES_PER_WEEK = 4
@@ -45,10 +47,11 @@ def note(ctx: dict, q: str) -> str:
     me = (ctx.get("you") or {}).get("team_name")
     wk = ctx.get("current_week")
     row = next((r for r in st if r.get("team") == me), None)
-    if not st or not row or wk is None or int(wk) > LAST_WEEK or len(st) <= PLAYOFF_SPOTS:
+    last = playoff_race.last_pool_week(ctx.get("season")) if ctx.get("season") else LAST_WEEK
+    if not st or not row or wk is None or int(wk) > last or len(st) <= PLAYOFF_SPOTS:
         return ""
     left_now = sum(1 for g in ctx.get("games_this_week") or [] if not g.get("winner") and not g.get("tiebreaker"))
-    left = left_now + GAMES_PER_WEEK * (LAST_WEEK - int(wk))
+    left = left_now + GAMES_PER_WEEK * (last - int(wk))
     pts = sorted((r["w"] for r in st), reverse=True)
     cut, fifth, top = pts[PLAYOFF_SPOTS - 1], pts[PLAYOFF_SPOTS], pts[0]
     w = row["w"]
@@ -71,7 +74,7 @@ def note(ctx: dict, q: str) -> str:
     where = (f"in a playoff spot, {cushion} ahead of 5th place ({fifth})" if inside
              else f"{behind} behind the cut line (4th place has {cut})")
     return (f"PICK STRATEGY (computed for {me}, {row['w']}-{row['l']}, {_ord(row.get('rank'))}): {lead}; {where}; "
-            f"about {left} picks left in the regular season (weeks through {LAST_WEEK}).\n"
+            f"about {left} picks left in the regular season (weeks through {last}).\n"
             f"League rules that decide it: top {PLAYOFF_SPOTS} make the playoffs and points RESET there; regular-season "
             f"points are only playoff tiebreaker #2. A tie for 4th goes to the conference-championship tiebreaker picks first.\n"
             f"Recommendation: {posture}")
