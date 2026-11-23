@@ -87,6 +87,17 @@ def test_elo_is_each_teams_newest_and_fpi_and_srs_come_from_the_cache():
     assert c["SP+"] == {"A": 20.0}, c
 
 
+def test_elo_prefers_the_last_final_over_a_stale_upcoming_pregame():
+    ds = {"games": [{"homeTeam": "Alabama", "awayTeam": "X", "completed": True, "startDate": "2026-11-21",
+                     "homePregameElo": 1990, "homePostgameElo": 2002},
+                    {"homeTeam": "Auburn", "awayTeam": "Alabama", "completed": False, "startDate": "2026-11-28",
+                     "awayPregameElo": 1979},
+                    {"homeTeam": "New U", "awayTeam": "Y", "completed": False, "startDate": "2026-11-28",
+                     "homePregameElo": 1400}]}
+    elo = bcs.computers_from(ds)["Elo"]
+    assert elo["Alabama"] == 2002.0 and elo["New U"] == 1400.0, elo
+
+
 # --- bracket: auto bids + seeding ----------------------------------------------------------------------
 
 ORDER = ["Georgia", "Ohio State", "Texas", "Oregon", "Notre Dame", "Penn State", "Alabama", "Indiana", "Tennessee",

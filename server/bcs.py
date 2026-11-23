@@ -177,16 +177,18 @@ def computers_from(ds: dict) -> dict[str, dict[str, float]]:
            "FPI": {r["team"]: r.get("fpi") for r in ds.get("fpi") or [] if r.get("team") and r.get("fpi") is not None},
            "SRS": {r["team"]: r.get("rating") for r in ds.get("srs") or [] if r.get("team") and r.get("rating") is not None},
            "Elo": {}}
-    newest: dict[str, tuple[str, float]] = {}
+    # the newest POSTGAME Elo of a completed game; an upcoming game's pregame Elo can lag the last result
+    # (Alabama's wk 13 pregame 1979 vs its wk 12 postgame 2002), so pregame only for a team with no final yet
+    newest: dict[str, tuple[bool, str, float]] = {}
     for g in ds.get("games") or []:
         for side in ("home", "away"):
             t = g.get(f"{side}Team")
-            elo = g.get(f"{side}PostgameElo") if g.get("completed") else None
-            elo = elo if elo is not None else g.get(f"{side}PregameElo")
-            when = str(g.get("startDate") or "")
-            if t and elo is not None and (t not in newest or when > newest[t][0]):
-                newest[t] = (when, float(elo))
-    out["Elo"] = {t: v for t, (_, v) in newest.items()}
+            post = g.get(f"{side}PostgameElo") if g.get("completed") else None
+            elo = post if post is not None else g.get(f"{side}PregameElo")
+            key = (post is not None, str(g.get("startDate") or ""))
+            if t and elo is not None and (t not in newest or key > newest[t][:2]):
+                newest[t] = (*key, float(elo))
+    out["Elo"] = {t: v for t, (_, _, v) in newest.items()}
     return out
 
 
