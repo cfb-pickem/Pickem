@@ -14,9 +14,14 @@ Run:  ./.venv/bin/python3 -I test_bcs.py
 
 from __future__ import annotations
 
+import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, ".")
+_FLUX = Path("/Users/Agent/cfb-pickem/server/.venv-flux/bin/python3")  # Pillow lives in the image venv
+if not (Path(".venv-flux/bin/python3").exists() or os.environ.get("PICKY_PIL_PY")) and _FLUX.exists():
+    os.environ["PICKY_PIL_PY"] = str(_FLUX)  # a git worktree has no venvs of its own
 import bcs  # noqa: E402
 import cfp_rules  # noqa: E402
 
@@ -233,6 +238,90 @@ def test_now_asks_keep_cfp_now_and_league_playoff_asks_never_hit_the_bracket():
               "who's in the league playoffs", "projected playoff seeds in our league", "playoff bracket for the pool?",
               "Is the playoff committee biased toward the SEC?", "who should make the CFP?"):
         assert (router.fact_intent(q) or ("",))[0] != "cfp_bracket", (q, router.fact_intent(q))
+
+
+# --- the picture -------------------------------------------------------------------------------------
+
+def _card_data():
+    b = bcs.bracket(ORDER, CONF, CHAMPS, RULES)
+    recs = {t: "10-1" for _, t in b["seeds"]} | {t: "8-3" for t in b["first_out"]}
+    return {"bracket": {k: v for k, v in b.items() if k != "rank"}, "records": recs, "week": 13,
+            "text": bcs.text(b, 13), "facts": bcs.facts(b, 13, "2026-11-22")}
+
+
+def test_render_is_a_valid_png_of_the_expected_size():
+    import struct
+    import bracket_card
+    d = _card_data()
+    sp = bracket_card.spec(d["bracket"], d["records"], 13, RULES)
+    assert sp["title"] == "Picky's bracket, BCS formula, wk 13", sp["title"]
+    assert [(g["bye"], g["a"], g["b"]) for g in sp["games"]] == [(1, 8, 9), (4, 5, 12), (3, 6, 11), (2, 7, 10)]
+    assert sp["tags"]["Clemson"] == "ACC champ" and sp["tags"]["Boise State"] == "G6 auto", sp["tags"]
+    img = bcs.card_png(d, RULES)
+    assert img and img[:8] == b"\x89PNG\r\n\x1a\n", img[:16] if img else img
+    w, h = struct.unpack(">II", img[16:24])
+    assert w == 1200 and h == 130 + 4 * (2 * 58 + 34) + 120, (w, h)
+
+
+def test_render_failure_returns_none():
+    import bracket_card
+    real, real_py = bracket_card.draw, bracket_card.PIL_PY
+    try:
+        bracket_card.draw = lambda sp: (_ for _ in ()).throw(ImportError("no PIL"))
+        bracket_card.PIL_PY = Path("/nonexistent/python3")
+        assert bcs.card_png(_card_data(), RULES) is None
+    finally:
+        bracket_card.draw, bracket_card.PIL_PY = real, real_py
+
+
+def test_bracket_picture_and_its_text_fallbacks():
+    import base64
+    import group_chat
+    import group_outbox
+    d = _card_data()
+    reply = d["text"] + " Chalk with a side of chaos."
+    sent = []
+    saved = (group_outbox.img_ready, group_outbox.post_picture, bcs.current, bcs.card_png)
+    try:
+        bcs.current = lambda: d
+        bcs.card_png = lambda d_, rules=None: b"\x89PNG\r\n\x1a\nfake"
+        group_outbox.post_picture = lambda chat, text, b64, **kw: sent.append((chat, text, b64)) or "queued"
+        group_outbox.img_ready = lambda now=None: True
+        assert group_chat.bracket_picture(reply, "chat-guid") == "Chalk with a side of chaos."
+        assert sent and sent[0][0] == "chat-guid" and base64.b64decode(sent[0][2]).startswith(b"\x89PNG")
+        assert group_chat.bracket_picture(d["text"], "chat-guid") == group_chat.BRACKET_TAKE  # no voice line
+        sent.clear()
+        # fallbacks: no picture watcher, no chat, render failed, the outbox paused, the code text got cut
+        group_outbox.img_ready = lambda now=None: False
+        assert group_chat.bracket_picture(reply, "chat-guid") is None
+        group_outbox.img_ready = lambda now=None: True
+        assert group_chat.bracket_picture(reply, "") is None
+        bcs.card_png = lambda d_, rules=None: None
+        assert group_chat.bracket_picture(reply, "chat-guid") is None
+        bcs.card_png = lambda d_, rules=None: b"\x89PNG\r\n\x1a\nfake"
+        group_outbox.post_picture = lambda chat, text, b64, **kw: "paused"
+        assert group_chat.bracket_picture(reply, "chat-guid") is None
+        assert group_chat.bracket_picture("My bracket (BCS formula, wk 13): cut", "chat-guid") is None
+        assert not sent
+    finally:
+        group_outbox.img_ready, group_outbox.post_picture, bcs.current, bcs.card_png = saved
+
+
+def test_img_ready_follows_the_watcher_poll():
+    import time
+    import tempfile
+    import group_outbox
+    real_file, real_pause = group_outbox.IMG_OK_FILE, group_outbox.PAUSE_FILE
+    try:
+        tmp = Path(tempfile.mkdtemp())
+        group_outbox.IMG_OK_FILE, group_outbox.PAUSE_FILE = tmp / "img_ok", tmp / "PAUSED"
+        assert not group_outbox.img_ready()
+        group_outbox.IMG_OK_FILE.touch()
+        assert group_outbox.img_ready() and not group_outbox.img_ready(now=time.time() + 3600)
+        group_outbox.PAUSE_FILE.touch()
+        assert not group_outbox.img_ready()
+    finally:
+        group_outbox.IMG_OK_FILE, group_outbox.PAUSE_FILE = real_file, real_pause
 
 
 if __name__ == "__main__":
