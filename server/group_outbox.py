@@ -429,10 +429,11 @@ def post_dm(team: str, handle: str, texts: list[str], key: str, expires_s: int =
 
 
 def post_picture(chat_guid: str, text: str, image_b64: str | None, expires_s: int = 1800,
-                 now: dt.datetime | None = None) -> str:
+                 now: dt.datetime | None = None, fallback: str | None = None) -> str:
     """A finished picture (or a short 'the brush slipped' line) back to the chat that asked: the group or a
     DM (review R2: pictures are async). Not a proactive post: no once-only key, no daily cap, no quiet hours;
-    the kill switch still holds it. Only a watcher that says img_ok gets it. Returns queued | paused | empty."""
+    the kill switch still holds it. Only a watcher that says img_ok gets it. Returns queued | paused | empty.
+    `fallback`: text queued to the same chat if the picture fails to send or expires unsent (the text bracket)."""
     now = now or dt.datetime.now(CT)
     texts = [text.strip()] if text and text.strip() else []
     if not chat_guid or not (texts or image_b64):
@@ -443,9 +444,19 @@ def post_picture(chat_guid: str, text: str, image_b64: str | None, expires_s: in
     item = {"id": uuid.uuid4().hex[:12], "kind": "picture", "key": f"picture:{uuid.uuid4().hex[:8]}",
             "texts": texts, "chat": chat_guid, "image": image_b64, "reply": True,
             "created": now.timestamp(), "expires": now.timestamp() + expires_s}
+    if image_b64 and fallback and fallback.strip():
+        item["fallback"] = fallback.strip()
     _write_private(OUTBOX / f"{int(now.timestamp())}-{item['id']}.json", json.dumps(item))
     log_event("picture-queued", id=item["id"], chat="..." + chat_guid[-6:], image=bool(image_b64))
     return "queued"
+
+
+def _picture_fallback(item: dict, why: str) -> None:
+    """A picture that failed or expired unsent: its fallback text goes to the same chat instead (text only,
+    no further fallback)."""
+    if item.get("fallback") and item.get("chat"):
+        st = post_picture(item["chat"], item["fallback"], None)
+        log_event("picture-fallback", id=item.get("id"), why=why[:100], result=st)
 
 
 def next_item(now: float | None = None, dm_ok: bool = False, img_ok: bool = False) -> dict | None:
@@ -466,6 +477,7 @@ def next_item(now: float | None = None, dm_ok: bool = False, img_ok: bool = Fals
         if item.get("expires", 0) < now:
             log_event("expired", id=item.get("id"), kind=item.get("kind"), key=item.get("key"))
             p.unlink(missing_ok=True)
+            _picture_fallback(item, "expired")
             continue
         if item.get("to") and not dm_ok:
             continue
@@ -491,5 +503,7 @@ def ack(item_id: str, sent: int, ok: bool, error: str = "") -> bool:
         log_event(("dm-" if item.get("to") else "") + ("delivered" if ok else "delivery-failed"), id=item_id,
                   kind=item.get("kind"),
                   key=item.get("key"), sent=sent, of=len(item.get("texts") or []), error=error[:200])
+        if not ok:
+            _picture_fallback(item, error or "delivery failed")
         return True
     return False

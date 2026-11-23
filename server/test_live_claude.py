@@ -191,6 +191,22 @@ with patch.object(pc, "CLAUDE", str(fake)), patch.object(chat, "_ollama_stream_r
     check("CLI `live off` turns it off", pc.live_config().get("on") is False and pc.live_why_not() == "off")
     pc.main(["live", "on", "--model", "sonnet"])
     check("CLI `live on --model sonnet`", pc.live_config() == {**pc.live_config(), "on": True, "model": "sonnet"})
+    # a stale "raw": true must not survive `live on` (2026-11-23: it put Picky in raw Opus mode, canary broke)
+    switch({"on": False, "model": "opus", "raw": True})
+    pc.main(["live", "on", "--model", "opus"])
+    check("CLI `live on` resets a stale raw:true to false", pc.live_config().get("raw") is False, pc.live_config())
+    pc.main(["live", "on", "--raw"])
+    check("CLI `live on --raw` turns raw on", pc.live_config().get("raw") is True, pc.live_config())
+    pc.main(["live", "off"])
+    check("CLI `live off` leaves raw alone", pc.live_config().get("raw") is True, pc.live_config())
+    pc.main(["live", "on"])
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        pc.main(["live", "status"])
+    last = buf.getvalue().strip().splitlines()[-1]
+    check("CLI `live status` summary line shows raw", "raw false" in last and pc.live_config().get("raw") is False, last)
 
 if FAILED:
     print(f"\n{len(FAILED)} FAILED")

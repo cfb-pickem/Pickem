@@ -342,6 +342,17 @@ def test_check_adapts_and_hedges_without_opus():
         L._cache["key"] = None
 
 
+def test_watcher_can_import_picky_claude_under_dash_I():
+    """com.pickem.rules-watch runs `python3 -I league_rules.py --check` from another cwd: the Opus review's
+    lazy `import picky_claude` must resolve (it failed with ModuleNotFoundError on 2026-11-23)."""
+    import subprocess
+    code = ("import runpy, sys; runpy.run_path(sys.argv[1], run_name='lr'); "
+            "import picky_claude; print(picky_claude.__file__)")
+    p = subprocess.run([sys.executable, "-I", "-c", code, str(Path(L.__file__).resolve())],
+                       cwd="/", capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr[-400:]
+
+
 def test_flagged_sections_make_picky_hedge():
     old = os.environ.get("PICKY_RULES_LIVE")
     try:

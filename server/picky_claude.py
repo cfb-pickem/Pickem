@@ -31,7 +31,8 @@ Every call goes through run() (or the `run` CLI below for shell scripts):
 
 CLI:
   picky_claude.py usage [--days N]       calls and minutes per day and caller
-  picky_claude.py live on|off|status [--model opus|sonnet] [--until ISO]   the live-reply switch (below)
+  picky_claude.py live on|off|status [--model opus|sonnet] [--until ISO] [--raw]   the live-reply switch (below);
+      `on` sets raw false unless --raw is given
   picky_claude.py run --caller NAME --timeout S [--tools T | --all-tools] [--format text|json]
                   [--cwd DIR] [-- extra claude args]
       prompt on stdin, claude's stdout/stderr passed through, exit = claude's
@@ -345,10 +346,13 @@ def live_on() -> bool:
     return not live_why_not()
 
 
-def live_set(on: bool, why: str = "", model: str | None = None, until: str | None = None) -> dict:
-    """Write the switch (keeps model / until unless given)."""
+def live_set(on: bool, why: str = "", model: str | None = None, until: str | None = None,
+             raw: bool | None = None) -> dict:
+    """Write the switch (keeps model / until / raw unless given)."""
     cfg = dict(live_config())
     cfg["on"] = bool(on)
+    if raw is not None:
+        cfg["raw"] = bool(raw)
     if model:
         cfg["model"] = model
     if until is not None:
@@ -511,14 +515,16 @@ def main(argv=None) -> int:
     lv.add_argument("action", choices=("on", "off", "status"))
     lv.add_argument("--model", default=None, help="opus | sonnet | haiku")
     lv.add_argument("--until", default=None, help="ISO time it turns itself off ('' = never)")
+    lv.add_argument("--raw", action="store_true", help="raw Opus mode (with `on`; `on` without it sets raw false)")
     a = ap.parse_args(argv)
     if a.cmd == "live":
         if a.action != "status":
-            live_set(a.action == "on", f"by hand ({a.action})", a.model, a.until)
+            live_set(a.action == "on", f"by hand ({a.action})", a.model, a.until,
+                     raw=a.raw if a.action == "on" else None)
         cfg, why = live_config(), live_why_not()
         print(json.dumps(cfg))
         print(f"live replies on Claude: {'ON (' + str(cfg.get('model')) + ')' if not why else 'off: ' + why}; "
-              f"{live_count()} live calls today")
+              f"raw {'true' if cfg.get('raw') else 'false'}; {live_count()} live calls today")
         return 0
     if a.cmd == "usage":
         for d in usage(a.days):

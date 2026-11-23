@@ -50,6 +50,7 @@ import tempfile
 from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent
+sys.path.insert(0, str(SERVER))  # launchd runs `python3 -I` (no script dir on the path): the Opus review imports picky_claude
 ROOT = SERVER.parent
 MD = SERVER / "league_rules.md"
 CACHE = SERVER / "cache"

@@ -307,6 +307,51 @@ def test_bracket_picture_and_its_text_fallbacks():
         group_outbox.img_ready, group_outbox.post_picture, bcs.current, bcs.card_png = saved
 
 
+def test_failed_or_expired_bracket_picture_falls_back_to_the_text_bracket():
+    import json
+    import tempfile
+    import time
+    import group_chat
+    import group_outbox as go
+    d = _card_data()
+    names = ("PRIVATE", "CONFIG_FILE", "PAUSE_FILE", "OUTBOX", "SEND_LOG")
+    saved = {n: getattr(go, n) for n in names} | {"img_ready": go.img_ready}
+    saved_bcs = (bcs.current, bcs.card_png)
+    try:
+        tmp = Path(tempfile.mkdtemp())
+        go.PRIVATE, go.CONFIG_FILE, go.PAUSE_FILE = tmp, tmp / "cfg.json", tmp / "PAUSED"
+        go.OUTBOX, go.SEND_LOG = tmp / "outbox", tmp / "sends.jsonl"
+        go.CONFIG_FILE.write_text(json.dumps({"group_guid": "group-guid", "dry_run": False}))
+        go.img_ready = lambda now=None: True
+        bcs.current = lambda: d
+        bcs.card_png = lambda d_, rules=None: b"\x89PNG\r\n\x1a\nfake"
+        # the lane queues the picture with the text bracket as its fallback
+        assert group_chat.bracket_picture(d["text"] + " Chalk.", "chat-guid") == "Chalk."
+        item = go.next_item(dm_ok=True, img_ok=True)
+        assert item and item["image"] and item["chat"] == "chat-guid" and not item["texts"], item
+        # the watcher says the image didn't send: the text bracket goes to that chat instead
+        go.ack(item["id"], 0, False, "image send failed")
+        fb = go.next_item(dm_ok=True, img_ok=True)
+        assert fb and fb["chat"] == "chat-guid" and fb["texts"] == [d["text"]] and not fb["image"], fb
+        go.ack(fb["id"], 1, True)
+        assert go.next_item(dm_ok=True, img_ok=True) is None
+        # a picture that expires unsent: the text bracket too
+        go.post_picture("dm-guid", "", "aW1n", expires_s=60, fallback=d["text"])
+        assert go.next_item(now=time.time() + 120, dm_ok=True, img_ok=True) is None  # expired, fallback queued
+        fb = go.next_item(dm_ok=True, img_ok=True)
+        assert fb and fb["chat"] == "dm-guid" and fb["texts"] == [d["text"]] and not fb["image"], fb
+        # the fallback itself failing ends there (no loop); a delivered picture queues nothing
+        go.ack(fb["id"], 0, False, "send failed")
+        assert go.next_item(dm_ok=True, img_ok=True) is None
+        go.post_picture("chat-guid", "", "aW1n", fallback=d["text"])
+        go.ack(go.next_item(dm_ok=True, img_ok=True)["id"], 0, True)
+        assert go.next_item(dm_ok=True, img_ok=True) is None
+    finally:
+        for n, v in saved.items():
+            setattr(go, n, v)
+        bcs.current, bcs.card_png = saved_bcs
+
+
 def test_img_ready_follows_the_watcher_poll():
     import time
     import tempfile

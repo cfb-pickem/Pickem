@@ -1122,7 +1122,7 @@ def bracket_picture(reply: str, chat_id: str) -> str | None:
         img = bcs.card_png(d)
         if not img:
             return None
-        if group_outbox.post_picture(chat_id, "", base64.b64encode(img).decode()) != "queued":
+        if group_outbox.post_picture(chat_id, "", base64.b64encode(img).decode(), fallback=d["text"]) != "queued":
             return None
     except Exception as e:  # noqa: BLE001 - the text bracket always works
         log.warning("bracket picture failed, sending text: %s", e)
