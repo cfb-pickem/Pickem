@@ -176,8 +176,9 @@ fri = dt.datetime(2026, 11, 27, 11, 0, tzinfo=CT)
 gs = [{"Away": "Nebraska", "Home": "Iowa", "line": -4.5, "Start (CT)": "2026-11-27T11:00:00"},
       {"Away": "Michigan", "Home": "Ohio State", "line": -9.5, "Start (CT)": "2026-11-28T11:00:00"}]
 t = wb.picks_up_text(13, gs, fri, None, 450)
-check(t.startswith("Week 13 picks are up, lock is Friday 11am. Heads up: Nebraska at Iowa kicks off Friday 11am"),
-      "Friday lock game named", t)
+check(t == "Week 13 picks are up. Heads up: Nebraska at Iowa kicks Friday at 11am, so all 4 picks lock then, not "
+      "Saturday.\nNebraska at Iowa -4.5\nMichigan at Ohio State -9.5\n@Picky me or DM me if you want my read.",
+      "Friday lock game named, Charlie's wording", t)
 check("Heads up" not in wb.picks_up_text(13, gs[1:], dt.datetime(2026, 11, 28, 11, 0, tzinfo=CT), None, 450),
       "Saturday lock: no heads-up line")
 
@@ -225,11 +226,9 @@ G4 = FakeLeague().games
 LONG = ["intro"] + [f"Away{i} at Home{i}\nShort angle for game {i}, run D is bad.\n" + "Filler line. " * 40
                     + f"\nLean: Away{i}" for i in range(1, 5)]
 pu = wb.picks_up_text(12, G4, lock, LONG, 450)
-check(len(pu) <= 450 and pu.count("\n") == 5 and "Away1 -2.5 at Home1: Short angle for game 1" in pu
-      and "Filler" not in pu and "Lean" not in pu, "picks-up text: one short angle per game, no filler, no lean", pu)
-pu = wb.picks_up_text(12, G4, lock, LONG, 200)
-check(len(pu) <= 200 and "Week 12 picks are up" in pu and "Away4 at Home4" in pu,
-      "a tight cap drops angles before it drops a game line", pu)
+check(pu == "Week 12 picks are up, lock is Saturday 11am.\nAway1 -2.5 at Home1\nAway2 at Home2 -3.5\n"
+      "Away3 -2.5 at Home3\nAway4 at Home4 -3.5\n@Picky me or DM me if you want my read.",
+      "picks-up text: head, bare lines, no per-game notes, no lean", pu)
 check(len(wb.picks_up_text(12, G4, lock, None, 280)) <= 280, "announcement alone fits one 280-character text")
 check(wb.angle_of("Hdr\n" + "x" * 200 + "\nLean: A\nshort one") == "short one" and wb.angle_of("Hdr\nLean: A") is None,
       "angle_of: first short non-lean line after the header")

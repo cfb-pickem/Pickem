@@ -674,28 +674,21 @@ def angle_of(text: str) -> str | None:
 
 def picks_up_text(week: int, games: list[dict], lock: dt.datetime, game_texts: list[str] | None,
                   limit: int) -> str:
-    """The picks-up post as ONE text under `limit` (Charlie, 2026-11-19: "make sure the posts aren't too
-    long"): what's due when, the 4 lines, the @Picky line, then one short angle per game (from the verified
-    breakdown) for as many games as fit. Code-assembled, so it can't run long."""
+    """The picks-up post as ONE text under `limit`, in Charlie's wording (2026-11-23): the head, a heads-up
+    when a non-Saturday kickoff sets the lock, the bare lines (live at post time), the @Picky line. No
+    per-game notes; game_texts is unused. Code-assembled, so it can't run long."""
     import group_outbox as ob
-    head = f"Week {week} picks are up, lock is {lock_text(lock)}."
     import group_posts as gp
-    early = [g for g in games if lock.astimezone(CT).weekday() != 5 and gp.kick(g) == lock]
-    if early:  # a non-Saturday kickoff sets the lock (Charlie, 2026-11-23: make sure everyone knows)
-        head += f" Heads up: {early[0]['Away']} at {early[0]['Home']} kicks off {lock_text(lock)}, so that's the lock for all 4."
+    lk = lock.astimezone(CT)
+    early = [g for g in games if lk.weekday() != 5 and gp.kick(g) == lock]
+    if early:
+        t = lk.strftime("%-I:%M%p").lower().replace(":00", "")
+        head = (f"Week {week} picks are up. Heads up: {early[0]['Away']} at {early[0]['Home']} kicks "
+                f"{lk.strftime('%A')} at {t}, so all 4 picks lock then, not Saturday.")
+    else:
+        head = f"Week {week} picks are up, lock is {lock_text(lock)}."
     lines = [favorite_text(g["Away"], g["Home"], g["line"]) for g in games]
-    ask = "@Picky me or DM me for the rest."
-
-    def text(ls):
-        return "\n".join([head] + ls + [ask])
-    texts = list(game_texts or [])[-len(games):] if game_texts and len(game_texts) >= len(games) else []
-    for i, t in enumerate(texts):
-        a = angle_of(t)
-        if a:
-            cand = lines[:i] + [f"{lines[i]}: {a}"] + lines[i + 1:]
-            if len(text(cand)) <= limit:
-                lines = cand
-    return ob.clip([text(lines)], limit)[0]
+    return ob.clip(["\n".join([head] + lines + ["@Picky me or DM me if you want my read."])], limit)[0]
 
 
 def cards_ready(week: int, games: list[dict]) -> bool:
