@@ -692,6 +692,9 @@ def no_model() -> int:
     server, failed = HERE.parent, []
     env = {**os.environ, "PICKEM_CHAT_MODEL": "qwen3.5:9b-q4_K_M", "PICKY_OLLAMA_THINK": "false"}
     env.pop("PICKY_SIDE", None)  # fake-Ollama suites must not stall on a real live text
+    # no Claude either (as alltests.sh runs the server tests): with the live-Claude switch on (11-19), a live-priority
+    # call in a test went to Opus instead of the faked Ollama (test_gate_wiring got [True], a real live call spent)
+    env["PICKY_NO_ANTHROPIC"] = "1"
     tmp = tempfile.mkdtemp(prefix="picky-nomodel-")  # ... or on the real low slot (ollama_gate)
     env.update(PICKY_LIVE_FLAG_DIR=tmp + "/live", PICKY_LOW_LOCK=tmp + "/low.lock")
     for f in NO_MODEL_TESTS:
