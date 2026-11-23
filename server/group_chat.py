@@ -103,6 +103,7 @@ import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
 import answer_first  # noqa: E402  (helpful first: insist follow-ups, tone asks, honest data gaps)
 import dm_memes  # noqa: E402  (per-member meme GIF on 1-on-1 DM replies only, never the group or the site)
 import picky_brain  # noqa: E402
+import picky_coach  # noqa: E402  (Opus coach mode: review prompt, checks, lessons; the call is _coach below)
 import freeze  # noqa: E402
 import pictures  # noqa: E402
 import picky_zh  # noqa: E402
@@ -169,12 +170,18 @@ def _keychain(service: str) -> str | None:
 # '@Picky', and the iPhone forms of his handle: '@pickempicky', '@pickempicky@gmail.com', or the
 # mention pill's bare 'pickempicky@gmail.com' (live 2026-11-15: TG's '@pickempicky@gmail.com ...' got
 # no reply). The watcher keeps the same regex.
-TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?![\w@])|(?<![\w.])@?\s?pickempicky(?:@gmail\.com)?(?![\w@])", re.I)
+# @Picky / his handle anywhere, or a text that STARTS with the word "Picky" (Charlie 2026-11-23: "Picky what...",
+# "picky, who...", "PICKY!"; not "Pickyyy", "Pickle" or "picky" mid-sentence). Same regex in the watcher.
+TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?![\w@])|(?<![\w.])@?\s?pickempicky(?:@gmail\.com)?(?![\w@])"
+                     r"|^\s*picky(?![\w@])", re.I)
+MENTION = re.compile(TRIGGER.pattern.rsplit("|", 1)[0], re.I)  # the @ forms only: what a DM's text loses
 
 
-def strip_trigger(text: str) -> str:
-    out = re.sub(r"\s+", " ", TRIGGER.sub(" ", text or ""))
-    return re.sub(r"\s+([,.!?;:])", r"\1", out).strip(" ,:;-") or "hey"
+def strip_trigger(text: str, dm: bool = False) -> str:
+    """The text without its trigger. A DM keeps a leading "Picky" (DMs never needed one: their text is unchanged)."""
+    out = re.sub(r"\s+", " ", (MENTION if dm else TRIGGER).sub(" ", text or ""))
+    out = re.sub(r"\s+([,.!?;:])", r"\1", out).strip(" ,:;-")
+    return out if re.search(r"\w", out) else "hey"  # just the trigger ("PICKY!", "@Picky?"): a hello
 
 
 def norm_handle(h: str) -> str:
@@ -1008,7 +1015,7 @@ LEAGUE FACTS:
 
 def picky_claude_raw() -> bool:
     import picky_claude
-    return not ollama_gate.is_low() and picky_claude.live_on() and bool(picky_claude.live_config().get("raw"))
+    return not ollama_gate.is_low() and picky_claude.live_on() and picky_claude.live_mode() == "raw"
 
 
 async def _raw_facts() -> str:
@@ -1054,6 +1061,111 @@ async def _raw_answer(handle: str, q: str, dm: bool, recent: list | None) -> dic
     return {"reply": out, "image": None, "mode": "dm" if dm else "group"}
 
 
+# ---- Opus coach mode (Charlie 2026-11-23, approved plan; picky_claude MODES "coach"). Picky drafts on gemma
+# through the full router, lanes and guards (_answer); then ONE Opus review gets the question, the recent group
+# chat, raw mode's facts bundle (member pick lines stripped) and the draft, and returns {verdict, score, answer,
+# lesson, category}. Pass = the draft goes out. Fix = Opus's answer, only if its numbers are grounded, it makes no
+# member pick claim the chat didn't already make, and Picky's send-point safety guards leave it as is; otherwise
+# the draft. A failed / slow (picky_coach.TIMEOUT) / bad-JSON review = the draft: the coach never blocks a reply.
+# Test traffic (canary, health, exams: TEST_REQ or the low gate) and the site widget never reach it.
+def coach_on(web=None) -> bool:
+    import picky_claude
+    if web or TEST_REQ.get():
+        return False
+    return not ollama_gate.is_low() and picky_claude.live_on() and picky_claude.live_mode() == "coach"
+
+
+def _coach_members() -> list[str]:
+    ctx = (CTX_BOX.get() or {}).get("ctx") or {}
+    out = [r.get("team") for r in ctx.get("standings_ytd") or []]
+    for m in load_members().values():
+        out += [m.get("team"), m.get("name")] + [w for w in str(m.get("name") or "").split() if len(w) >= 3]
+    return [x for x in dict.fromkeys(out) if x]
+
+
+def _coach_rules(q: str) -> str:
+    """The rules facts Picky's own user turn carries for a rules question (chat._user_turn: the computed rules
+    answer, the written rules on the topic, the payout math): the coach must know at least what Picky knew."""
+    try:
+        if not chat.wants_rules(q):
+            return ""
+        ctx = (CTX_BOX.get() or {}).get("ctx") or {}
+        n = len(ctx.get("teams") or []) or None
+        parts = [chat.league_rules.answer(q, n_teams=n), chat.rules_for(q),
+                 chat.payout_text(n) if n and chat._MONEY_ASK.search(q) else ""]
+        return "\n\nLEAGUE RULES (for this question):\n" + "\n".join(x for x in parts if x)
+    except Exception as e:  # noqa: BLE001
+        log.warning("coach rules facts failed: %s", e)
+        return ""
+
+
+async def _coach_safety(reply: str, q: str, s: "Sender", mode: str, route, key: str, charlie: bool) -> str:
+    """Picky's send-point safety guards (the fact / leak half of _answer's chain; the repeat screens, nemesis
+    tail and gap line are about Picky's own drafts and don't re-run on a coach answer)."""
+    reply = fact_final(reply, q)
+    reply = live_games.final_guard(reply) if route.lane != "fact" else reply
+    reply = matchup_guard.fix(reply)
+    reply = memory_check(reply, s.team, q, mode != "group")
+    reply = charlie_guard(reply, s.team, key) if charlie else reply
+    return await sides_guard(reply, q, mode, route, key)
+
+
+async def _coach(draft: str, *, q: str, s: "Sender", mode: str, route, key: str, charlie: bool,
+                 facts_task: asyncio.Task | None = None) -> str:
+    """The reply to send: Picky's draft, or the coach's checked fix. Never raises."""
+    import picky_claude
+    if not draft or (route.lane == "fact" and route.kind == "cfp_bracket"):  # the code bracket goes out verbatim
+        return draft
+    if not picky_coach.sample_hit(picky_claude.live_sample()):
+        return draft
+    side, t0, review, why = ("group" if mode == "group" else "dm"), time.time(), None, ""
+    try:
+        facts = await (facts_task if facts_task is not None else _raw_facts())
+        facts = facts + _coach_rules(q) if facts else facts
+        recent = RECENT.get() if mode == "group" else ""
+        if not facts:
+            why = "no facts bundle"
+        else:
+            system, user = picky_coach.prompt(q, draft, facts, who=s.name or s.team or "", team=s.team,
+                                              dm=mode != "group", recent=recent)
+            raw = None
+            if not ollama_gate.is_low() and picky_claude.live_on():
+                raw = await picky_claude.live_reply([{"role": "system", "content": system},
+                                                     {"role": "user", "content": user}], kind="coach",
+                                                    schema=picky_coach.SCHEMA, timeout=picky_coach.TIMEOUT)
+            review = picky_coach.parse(raw, draft)
+            why = "" if review else ("review failed or timed out" if raw is None else "bad review JSON")
+    except Exception as e:  # noqa: BLE001 - the coach never blocks a reply
+        log.warning("coach failed: %s", e)
+        review, why = None, f"error {type(e).__name__}"
+    sent, out = "draft", draft
+    if review and review["verdict"] == "fix":
+        try:
+            ans, recent = review["answer"], RECENT.get() if mode == "group" else ""
+            bad = picky_coach.ungrounded(ans, facts, draft, q, recent)
+            claims = [] if bad else picky_coach.pick_claims(ans, _coach_members(), draft, q, recent)
+            if bad:
+                why = f"ungrounded numbers {bad[:5]}"
+            elif claims:
+                why = f"member pick claim {claims[:2]}"
+            else:
+                ans = router.nick_names(ans, chat.member_nicknames())  # team names, never real names
+                if await _coach_safety(ans, q, s, mode, route, key, charlie) != ans:
+                    why = "a send-point guard changed it"
+                else:
+                    sent, out = "answer", ans
+        except Exception as e:  # noqa: BLE001
+            log.warning("coach checks failed: %s", e)
+            why = f"checks error {type(e).__name__}"
+    secs = time.time() - t0
+    picky_coach.record(review, q=q, draft=draft, sent=sent, side=side, team=s.team, lane=route.label(), why=why,
+                       secs=secs)
+    log.info("coach: %s%s %.1fs, sent %s%s", (review or {}).get("verdict") or "no review",
+             f" ({review['category'] or '-'}, score {review['score']})" if review else "", secs, sent,
+             f" ({why})" if why else "")
+    return out
+
+
 async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                  allowlisted: bool = False, recent: list | None = None, web: dict | None = None) -> dict | None:
     """{"reply", "image"}, or None when a DM sender isn't allowed. A Chinese
@@ -1061,12 +1173,12 @@ async def answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     every filter and guard included, and the checked reply is translated
     (picky_zh; numbers verified in code). English texts are untouched."""
     allowlisted = allowlisted or (dm and is_guest(handle))
-    if picky_claude_raw() and not (web or chat.wants_image(strip_trigger(text))):
+    if picky_claude_raw() and not (web or chat.wants_image(strip_trigger(text, dm))):
         if not (dm and not allowlisted and not load_members().get(norm_handle(handle))):
-            out = await _raw_answer(handle, strip_trigger(text), dm, recent)
+            out = await _raw_answer(handle, strip_trigger(text, dm), dm, recent)
             if out:
                 return out
-    q0 = strip_trigger(text)
+    q0 = strip_trigger(text, dm)
     zh = picky_zh.mode(q0)
     if not zh:
         return await _answer(handle, text, chat_id, dm, allowlisted, recent, web)
@@ -1193,7 +1305,7 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
     stok = chat.SKIP_RATE.set(True)  # in-process: one shared session, the watcher rate-limits (chat.SKIP_RATE)
     ctok = CTX_BOX.set({})
     try:
-        q = strip_trigger(text)[:2000]
+        q = strip_trigger(text, dm)[:2000]
         live_games.LIVE_NEED.set({})  # filled by the drafts below (chat -> live_games.required_fact)
         # the group calls him "blinky": tag the real team name, the way chat.py
         # tags follow-ups, so he isn't OFF-TOPIC and his results get checked
@@ -1282,6 +1394,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             route.lane, route.kind, route.why = "full", "", "recall: nothing callable in this chat"
         messages = (web["history"] if web else load_history(key, sender=who)) + [{"role": "user", "content": q}]
         body = json.dumps({"messages": messages, "supabase_jwt": jwt, "mode": "leaderboard"}).encode()
+        coach = coach_on(web)
+        facts_task = asyncio.create_task(_raw_facts()) if coach else None  # the coach's facts load while Picky drafts
 
         async def receive():
             return {"type": "http.request", "body": body, "more_body": False}
@@ -1334,6 +1448,9 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
                 # a data ask he can't answer: say so and offer what he has, never a roast instead (Brian 11-18)
                 log.info("data ask, no data in the reply: honest gap line instead of %r", reply[:160])
                 reply = answer_first.gap_reply(q, group=mode == "group")
+        if coach and reply and not image:  # Opus coach mode: the draft, or the coach's checked fix
+            reply = await _coach(reply, q=q, s=s, mode=mode, route=route, key=key or chat_id, charlie=charlie,
+                                 facts_task=facts_task)
         rare_bits.note_sent(reply)  # a milk line going out spends the once-a-month budget
         log.info("lane: %s", route.label())
         await save_turn(key, q_hist, reply, who, lane=route.label())
@@ -1468,7 +1585,7 @@ async def group(req: Request):
     if dm:  # a flagged member's DM gets a meme after the answer (dm_memes.py); the group and /web never get here
         out = dm_memes.attach(out, VIEWER.sender(handle).team_id, dm, test=test)
     if out.get("reply") and not test:
-        callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text), out.get("reply_en") or out["reply"],
+        callbacks.hook(chat_id, VIEWER.sender(handle).team, strip_trigger(text, dm), out.get("reply_en") or out["reply"],
                        is_dm=dm)
     log.info("%s reply sender=%s mapped=%s %.1fs chars=%d image=%s lane=%s", out["mode"], handle[-4:] or "?",
              bool(VIEWER.sender(handle).team), time.time() - t0, len(out["reply"] or ""), bool(out["image"]),
@@ -1510,7 +1627,7 @@ async def answer_clump(handle: str, texts: list[str], chat_id: str, allowlisted:
         if k and k not in seen:
             seen.add(k)
             uniq.append(t)
-    qs = [t for t in uniq if router.classify(strip_trigger(t)).lane != "banter" or "?" in t]
+    qs = [t for t in uniq if router.classify(strip_trigger(t, True)).lane != "banter" or "?" in t]
     qs = (qs or uniq[-1:])[-CLUMP_MAX:]
     parts, lanes, last = [], [], None
     for t in qs:
@@ -1586,14 +1703,14 @@ def flag_reply(handle: str, text: str, chat_id: str, dm: bool) -> dict | None:
     """A mapped member's "bad picky" / "that's wrong": the previous Picky exchange in this chat goes
     to the private flub queue (flag_flub.py) for tonight's flub loop. Returns the /group response
     (no reply in the group, a one-word ack in a DM), or None when this isn't a member's flag."""
-    if not flag_flub.is_flag(strip_trigger(text)) or not load_members().get(norm_handle(handle)):
+    if not flag_flub.is_flag(strip_trigger(text, dm)) or not load_members().get(norm_handle(handle)):
         return None
     key = history_key(chat_id, handle, dm)
     turns = load_history(key)
     ctx = [{"q": u["content"], "a": a["content"]} for u, a in zip(turns[-2::2], turns[-1::2])
            if u["role"] == "user" and a["role"] == "assistant"]
     try:
-        fid = flag_flub.log_flub(strip_trigger(text), source="dm" if dm else "group", chat=key or "",
+        fid = flag_flub.log_flub(strip_trigger(text, dm), source="dm" if dm else "group", chat=key or "",
                                  context=ctx or None)
         log.info("flub flagged by sender=%s: %s", handle[-4:] or "?", fid)
     except (OSError, ValueError):
@@ -1670,7 +1787,8 @@ WARM = {"inflight": 0, "last": 0.0, "hash": None, "at": 0.0, "built": 0.0, "task
 
 def data_sig() -> tuple:
     """Mtimes of the files a prefix is built from (review R3: rebuild on data change, not only a timer):
-    the live poller's cache (scores, lines, state), lore, game cards and the CFBD cache."""
+    the live poller's cache (scores, lines, state), lore, game cards and the CFBD cache; plus the coach
+    lessons block's hash (picky_coach.rules_block, in the prefix)."""
     cache = Path(chat.__file__).with_name("cache")
     out = []
     for p in (live_games.CACHE, cache / "lore.json", cache / "cfbd.sqlite"):
@@ -1678,6 +1796,7 @@ def data_sig() -> tuple:
             out.append(p.stat().st_mtime)
         except OSError:
             out.append(None)
+    out.append(picky_coach.block_sig())  # the coach lessons block in the prefix changed: re-prime
     try:
         cards = cache / "game_cards"
         out.append(max([cards.stat().st_mtime] + [d.stat().st_mtime for d in cards.iterdir()]))

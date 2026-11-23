@@ -294,7 +294,7 @@ async def _json_call(prefix: str, tail: str, user: str, schema: dict, temperatur
         payload["think"] = chat.OLLAMA_THINK == "true"
     if CODE_ONLY.get():
         raise PrimeSlow("code only (test traffic)")
-    if not ollama_gate.is_low() and picky_claude.live_on():  # live-Claude switch (temporary): gemma if it fails
+    if not ollama_gate.is_low() and picky_claude.live_on() and picky_claude.live_mode() == "direct":  # gemma if it fails
         kind = {UNDERSTAND_TAIL: "understand", JUDGE_TAIL: "judge", router.BANTER_TAIL: "banter",
                 router.FACT_TAIL: "fact"}.get(tail, "json")
         raw = await picky_claude.live_reply(payload["messages"], kind, schema=schema)

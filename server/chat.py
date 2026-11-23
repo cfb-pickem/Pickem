@@ -51,6 +51,7 @@ import live_flag
 import ollama_gate
 import live_games
 import picky_claude  # live replies: ONLY the switch-gated live_reply (temporary, see LIVE_SWITCH in picky_claude.py)
+import picky_coach  # Opus coach lessons block for prompt_prefix (pure code, no model)
 import season  # offseason rider in _system_tail (zero maintenance)
 import matchup_guard
 import news
@@ -2404,6 +2405,7 @@ def prompt_prefix(ctx: dict) -> str:
         "still miss the cover. Never call a pick a win or a loss because of who "
         "won the game.\n\n"
         + EXAMPLES
+        + picky_coach.rules_block()  # Opus coach lessons: global, refreshed at most every 30 min (no restart)
         + "\n\nLEAGUE DATA:\n"
         + render_context(ctx)
         + picky_player_block(ctx)
@@ -5606,9 +5608,10 @@ def start_prime(prefix: str) -> asyncio.Task:
 async def _ollama_stream(messages: list[dict], prefix: str | None = None):
     """Yield SSE-framed assistant tokens from Ollama, through the live-first gate (ollama_gate): member texts
     go straight through; tests/exams/batch calls wait for them and restart if one arrives before the first token.
-    With the live-Claude switch on (LIVE_SWITCH in picky_claude.py, temporary), a member text's generation goes to
-    Claude instead; any failure falls through to Ollama for this reply."""
-    if not ollama_gate.is_low() and picky_claude.live_on():
+    With the live-Claude switch on in direct mode (LIVE_SWITCH in picky_claude.py, temporary), a member text's
+    generation goes to Claude instead; any failure falls through to Ollama for this reply. Coach mode drafts here
+    on Ollama as usual (the Opus review runs after, in group_chat._coach)."""
+    if not ollama_gate.is_low() and picky_claude.live_on() and picky_claude.live_mode() == "direct":
         text = await picky_claude.live_reply(messages, "draft")
         if text is not None:
             yield _sse({"content": text})

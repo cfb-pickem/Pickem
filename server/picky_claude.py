@@ -31,8 +31,9 @@ Every call goes through run() (or the `run` CLI below for shell scripts):
 
 CLI:
   picky_claude.py usage [--days N]       calls and minutes per day and caller
-  picky_claude.py live on|off|status [--model opus|sonnet] [--until ISO] [--raw]   the live-reply switch (below);
-      `on` sets raw false unless --raw is given
+  picky_claude.py live on|off|status [--model opus|sonnet] [--until ISO] [--mode coach|direct|raw] [--raw]
+                  [--sample N]   the live-reply switch (below); `on` = coach mode (every reply, or 1 in N with
+      --sample) unless --mode / --raw say otherwise; it sets raw false unless raw mode is asked for
   picky_claude.py run --caller NAME --timeout S [--tools T | --all-tools] [--format text|json]
                   [--cwd DIR] [-- extra claude args]
       prompt on stdin, claude's stdout/stderr passed through, exit = claude's
@@ -284,12 +285,18 @@ def run(prompt: str, *, timeout: float, caller: str | None = None, cwd=None, too
 # guard / filter / fact check still runs on the output. Any failure (error, LIVE_TIMEOUT, empty, cap) = None,
 # and the caller falls back to gemma for that reply. A usage-limit / login message or LIVE_MAX_FAILS failures
 # in a row flips the switch off (off_reason in the file). Off by hand: `picky_claude.py live off`.
+# MODES (key "mode"; a file without one is from before coach mode: "raw" if raw is true, else "direct"):
+#   coach   (Charlie 2026-11-23, what `live on` means now) Picky drafts on gemma through every lane and guard,
+#           then ONE Opus review fixes a bad draft (group_chat._coach, picky_coach.py). "sample": N reviews 1 in N.
+#   direct  the 11-19 behavior above: a member text's generation goes to Claude instead of gemma.
+#   raw     raw Opus mode (group_chat._raw_answer): no router, lanes or guards.
 # -----------------------------------------------------------------------------------------------------------
 LIVE_SWITCH = Path(os.environ.get("PICKY_LIVE_CLAUDE", "/Users/Agent/cfb-pickem-private/picky_live_claude.json"))
 LIVE_TIMEOUT = 45.0
 LIVE_DAILY_CALLS = 600      # live calls per CT day (a full-lane reply is ~2: brief + draft); over it = gemma
 LIVE_MAX_FAILS = 3          # failures in a row that flip the switch off
 LIVE_MODELS = {"opus": MODEL, "sonnet": SONNET, "haiku": HAIKU}
+LIVE_MODES = ("coach", "direct", "raw")
 LIVE_CWD = Path(os.environ.get("TMPDIR", "/tmp")) / "picky-live-claude"   # empty dir: no project CLAUDE.md
 _LIMIT = re.compile(r"(?i)usage limit|limit reached|hit your limit|out of (extra )?usage|rate.?limit|"
                     r"/login|not logged in|log ?in again|invalid api key|credit balance|unauthori[sz]ed")
@@ -346,13 +353,43 @@ def live_on() -> bool:
     return not live_why_not()
 
 
+def live_mode(cfg: dict | None = None) -> str:
+    """coach | direct | raw (see MODES above). Says nothing about on/off: callers check live_on() too."""
+    cfg = live_config() if cfg is None else cfg
+    mode = str(cfg.get("mode") or "")
+    if mode in LIVE_MODES:
+        return mode
+    return "raw" if cfg.get("raw") else "direct"
+
+
+def live_sample(cfg: dict | None = None) -> int:
+    """Coach spot-check rate: review 1 reply in N (1 = every reply)."""
+    cfg = live_config() if cfg is None else cfg
+    try:
+        return max(1, int(cfg.get("sample") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def live_set(on: bool, why: str = "", model: str | None = None, until: str | None = None,
-             raw: bool | None = None) -> dict:
-    """Write the switch (keeps model / until / raw unless given)."""
+             raw: bool | None = None, mode: str | None = None, sample: int | None = None) -> dict:
+    """Write the switch (keeps model / until / raw / mode / sample unless given). raw and mode stay in step:
+    mode "raw" is raw true, any other mode raw false; raw alone (older callers) sets mode raw / leaves a
+    non-raw mode alone."""
     cfg = dict(live_config())
     cfg["on"] = bool(on)
-    if raw is not None:
+    if mode is not None:
+        if mode not in LIVE_MODES:
+            raise ValueError(f"mode must be one of {LIVE_MODES}")
+        cfg["mode"], cfg["raw"] = mode, mode == "raw"
+    elif raw is not None:
         cfg["raw"] = bool(raw)
+        if raw:
+            cfg["mode"] = "raw"
+        elif cfg.get("mode") == "raw":
+            cfg["mode"] = "direct"
+    if sample is not None:
+        cfg["sample"] = max(1, int(sample))
     if model:
         cfg["model"] = model
     if until is not None:
@@ -515,16 +552,23 @@ def main(argv=None) -> int:
     lv.add_argument("action", choices=("on", "off", "status"))
     lv.add_argument("--model", default=None, help="opus | sonnet | haiku")
     lv.add_argument("--until", default=None, help="ISO time it turns itself off ('' = never)")
-    lv.add_argument("--raw", action="store_true", help="raw Opus mode (with `on`; `on` without it sets raw false)")
+    lv.add_argument("--raw", action="store_true", help="raw Opus mode (= --mode raw; `on` without it sets raw false)")
+    lv.add_argument("--mode", default=None, choices=LIVE_MODES,
+                    help="coach (default for `on`): gemma drafts, Opus reviews | direct: Claude drafts | raw: Opus only")
+    lv.add_argument("--sample", type=int, default=None, help="coach mode: review 1 reply in N (default 1 = every reply)")
     a = ap.parse_args(argv)
     if a.cmd == "live":
-        if a.action != "status":
-            live_set(a.action == "on", f"by hand ({a.action})", a.model, a.until,
-                     raw=a.raw if a.action == "on" else None)
+        if a.action == "on":
+            mode = a.mode or ("raw" if a.raw else "coach")
+            live_set(True, f"by hand (on, {mode})", a.model, a.until, mode=mode, sample=a.sample or 1)
+        elif a.action == "off":
+            live_set(False, "by hand (off)", a.model, a.until)
         cfg, why = live_config(), live_why_not()
+        mode, n = live_mode(cfg), live_sample(cfg)
         print(json.dumps(cfg))
         print(f"live replies on Claude: {'ON (' + str(cfg.get('model')) + ')' if not why else 'off: ' + why}; "
-              f"raw {'true' if cfg.get('raw') else 'false'}; {live_count()} live calls today")
+              f"mode {mode}" + (f" (reviews 1 in {n})" if mode == "coach" and n > 1 else "")
+              + f"; raw {'true' if cfg.get('raw') else 'false'}; {live_count()} live calls today")
         return 0
     if a.cmd == "usage":
         for d in usage(a.days):

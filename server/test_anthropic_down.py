@@ -115,8 +115,8 @@ gate_bad = []
 for name in LIVE_MODS:
     for i, line in enumerate((HERE / name).read_text().splitlines(), 1):
         for use in re.findall(r"picky_claude\.(\w+)", line):
-            # "py": a comment naming the file; "live_config": reads the switch file only (raw key, 9a81c63)
-            if use not in ("live_on", "live_reply", "live_config", "py"):
+            # "py": a comment naming the file; "live_config" / "live_mode" / "live_sample": read the switch file only
+            if use not in ("live_on", "live_reply", "live_config", "live_mode", "live_sample", "py"):
                 gate_bad.append(f"{name}:{i}: picky_claude.{use}")
         if "picky_claude.live_on()" in line and "not ollama_gate.is_low()" not in line:
             gate_bad.append(f"{name}:{i}: live_on without the member-priority check")

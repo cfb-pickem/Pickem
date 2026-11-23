@@ -23,7 +23,9 @@ is optional and wrapped).
             filter drops, fact-check drops, results guard, fact reply lost part, undodge, banter cut,
             prime failed, reply secs), member pushback (the same chat's next text within 10 min:
             "wrong", "huh", "that's not", ...) and the private flub queue (flag_flub.py, top
-            priority; consumed here) -> flubs/harvest-<date>.json
+            priority; consumed here), then the Opus coach's lessons in the window (coach/lessons.jsonl:
+            Picky's draft the live coach fixed, priority "coach", always a flub, so each one becomes a
+            never-twice fixture and goes to the fix round) -> flubs/harvest-<date>.json
   classify  ONE offline Opus pass (picky_claude; Claude unavailable or --dry = code-only signals):
             flub y/n, category, why, a proposed exam item, against the facts bundle (eval/run.py
             truth_bundle + checked CFB notes + this week's game cards) -> flubs/classify-<date>.json
@@ -52,7 +54,7 @@ is optional and wrapped).
             branches through release.sh. Saturday 10:00-24:00 CT there's no fix round at all (no exams).
             No exam starts after FIX_DEADLINE (02:30 CT, so its exams end before genius-nightly at 03:30 and
             improve-nightly at 04:00 take the exam lock): the fix waits as flub-ungated/<date> for the next night.
-  report    flubs/report-<date>.md
+  report    flubs/report-<date>.md (+ the Opus coach scorecard: picky_coach.scorecard, report only)
   nightly   all of the above
 
 --dry: everything except Opus calls, merges and service reloads (and the queue isn't consumed).
@@ -74,6 +76,7 @@ from zoneinfo import ZoneInfo
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import flag_flub  # noqa: E402  (light: queue path, chat hash)
+import picky_coach  # noqa: E402  (light: coach lessons + scorecard, pure code)
 import freeze  # noqa: E402  (game-day freeze + no-exam window)
 
 CT = ZoneInfo("America/Chicago")
@@ -435,6 +438,21 @@ def harvest(date: str, dry: bool = False, since: float | None = None, until: flo
         if row:
             taken.add(id(row))
         cands.append(c)
+    # the Opus coach's fixes (live coach mode): Picky's own draft is the flub, the coach's answer what went out
+    coach_n = 0
+    for rec in picky_coach.read_lessons(start, end):
+        row = next((r for r in rows if id(r) not in taken and _plain(r.get("q")) == _plain(rec.get("question"))
+                    and abs(float(r.get("ts") or 0) - float(rec.get("ts") or 0)) <= 180), None)
+        if row:
+            taken.add(id(row))
+        side = rec.get("side") if rec.get("side") in ("group", "dm") else "dm"
+        cands.append({"ts": rec.get("ts"), "mode": (row or {}).get("mode") or side, "team": rec.get("team"),
+                      "q": rec.get("question"), "a": rec.get("draft"), "lane": rec.get("lane"),
+                      "secs": (row or {}).get("secs"), "priority": "coach", "coach_answer": rec.get("answer"),
+                      "coach_category": rec.get("category") or "",
+                      "note": f"Opus coach ({rec.get('category') or '?'}, score {rec.get('score')}): {rec.get('lesson')}",
+                      "signals": [{"type": "coach", "text": str(rec.get("lesson") or "")[:240]}]})
+        coach_n += 1
     order = {"pushback": 1, "reasked": 1, "fact_lost": 2, "results_guard": 2, "fact_check_drop": 2, "undodge": 2, "slow": 3}
     rest = [r for r in rows if id(r) not in taken]
     rest.sort(key=lambda r: (min([order.get(s["type"], 4) for s in r["signals"]] or [9]), r["ts"]))
@@ -457,7 +475,7 @@ def harvest(date: str, dry: bool = False, since: float | None = None, until: flo
            "skipped": skipped, "skipped_by_mode": skipped_by_mode, "not_reviewed": not_reviewed, "signals": sig_counts,
            "latency": {"n": len(secs), "p50": pct(secs, .5), "p95": pct(secs, .95), "max": max(secs, default=0.0),
                        "slow": sum(s > SLOW_S for s in secs)},
-           "queue_ids": [c["queue_id"] for c in cands if c.get("queue_id")], "candidates": cands}
+           "queue_ids": [c["queue_id"] for c in cands if c.get("queue_id")], "coach": coach_n, "candidates": cands}
     write_private(FLUB_DIR / f"harvest-{date}.json", json.dumps(out, indent=1))
     if out["queue_ids"] and not dry:
         mark_consumed(set(out["queue_ids"]), date)
@@ -524,7 +542,7 @@ SCHEMA = {"type": "object", "properties": {"verdicts": {"type": "array", "items"
 
 PROMPT = """You review the real conversations since the last review between members of a college-football pick'em league and "Picky", the league's trash-talking bot (a small local model behind code guards). "mode" says where: group (the league's group text), dm (a direct text) or web (the league site's chat widget; same brain as a DM). Find Picky's FLUBS and turn each fixable one into a regression exam item.
 
-A flub is one of: wrong fact (contradicts the FACT SHEET), didn't answer, dodge (deflected a real question), wrong sub-question (answered a different part than asked), repeat (same line/angle as before), tone/robotic (report-like, template, bot tells), slow (reply > 60 s), privacy (revealed a pick before kickoff, or member data in the wrong place). Wit and opinions are not flubs. Candidates marked "queue" were flagged by a member or the commissioner as bad: look hard at those (flag_text / note say what was wrong). "signals" are what the code guards saw (sentence-filter drops, fact-check drops, results guard, a fact reply that lost part of its answer, slow replies, a member's pushback in their next text); a signal alone is not a flub.
+A flub is one of: wrong fact (contradicts the FACT SHEET), didn't answer, dodge (deflected a real question), wrong sub-question (answered a different part than asked), repeat (same line/angle as before), tone/robotic (report-like, template, bot tells), slow (reply > 60 s), privacy (revealed a pick before kickoff, or member data in the wrong place). Wit and opinions are not flubs. Candidates marked "queue" were flagged by a member or the commissioner as bad: look hard at those (flag_text / note say what was wrong). Candidates marked "coach" are Picky's own drafts the live Opus coach judged bad and replaced (note = its lesson, coach_answer = what was sent instead): they are flubs; write the item so Picky's draft fails it and an answer like coach_answer passes. "signals" are what the code guards saw (sentence-filter drops, fact-check drops, results guard, a fact reply that lost part of its answer, slow replies, a member's pushback in their next text); a signal alone is not a flub.
 
 For each candidate return {{cid, flub, category ("" if no flub), why (one short sentence)}} and, for a flub a better reply could fix (never for "slow"), an item:
 - turns: the member's text(s) as they'd send them (no "@Picky"); make it generic when the question doesn't need a person.
@@ -544,6 +562,10 @@ CANDIDATES (JSON):
 Return JSON only: {{"verdicts": [...]}}, one per candidate."""
 
 
+COACH_CATS = {"fact": "wrong fact", "dodge": "dodge", "unhelpful": "didn't answer", "leak": "tone/robotic",
+              "voice": "tone/robotic", "length": "tone/robotic"}  # picky_coach.CATEGORIES -> CATEGORIES
+
+
 def code_verdicts(h: dict) -> list[dict]:
     """No Anthropic: flubs only where the code is sure (a member/commissioner flag, pushback, a fact
     reply the guards had to replace, a slow reply); everything else is just a signal."""
@@ -552,6 +574,8 @@ def code_verdicts(h: dict) -> list[dict]:
         types = {s["type"] for s in c.get("signals") or []}
         if c.get("priority") == "queue":
             v = (True, "", "flagged: " + (c.get("flag_text") or c.get("note") or "bad picky")[:120])
+        elif c.get("priority") == "coach":
+            v = (True, COACH_CATS.get(c.get("coach_category") or "", ""), (c.get("note") or "Opus coach fix")[:200])
         elif "pushback" in types:
             v = (True, "", "member pushback: " + next(s["text"] for s in c["signals"] if s["type"] == "pushback")[:120])
         elif "reasked" in types:
@@ -602,7 +626,8 @@ def classify(date: str, dry: bool = False, facts: dict | None = None, opus=None)
         out["note"] = "dry run" if dry else "no facts bundle"
         out["verdicts"] = code_verdicts(h)
     else:
-        keep = ("cid", "priority", "mode", "team", "q", "a", "lane", "secs", "signals", "flag_text", "note")
+        keep = ("cid", "priority", "mode", "team", "q", "a", "lane", "secs", "signals", "flag_text", "note",
+                "coach_answer")
         cands = [{k: c.get(k) for k in keep if c.get(k) not in (None, "", [])} for c in h["candidates"]]
         prompt = PROMPT.format(personas=json.dumps(facts.get("personas") or {}), facts=facts["facts"],
                                cands=json.dumps(cands, indent=0))
@@ -615,6 +640,11 @@ def classify(date: str, dry: bool = False, facts: dict | None = None, opus=None)
         except Exception as e:  # noqa: BLE001  (kill switch, timeout, bad JSON: fall back to code signals)
             out["error"] = f"opus failed: {e!r}"[:300]
             out["verdicts"] = code_verdicts(h)
+    # every coach fix is a flub (approved plan 2026-11-23: each lesson becomes a never-twice fixture)
+    flubbed = {v["cid"] for v in out["verdicts"] if v.get("flub")}
+    coach = {v["cid"]: v for v in code_verdicts({"candidates": [c for c in h["candidates"] if c.get("priority") == "coach"]})}
+    out["verdicts"] = [v for v in out["verdicts"] if v.get("cid") not in coach or v["cid"] in flubbed] + \
+        [v for cid, v in coach.items() if cid not in flubbed]
     write_private(FLUB_DIR / f"classify-{date}.json", json.dumps(out, indent=1))
     return out
 
@@ -877,6 +907,8 @@ FIX_PROMPT = """You are fixing flubs in "Picky", a college-football pick'em leag
 - REGRESSION: a flub that was fixed before and broke again. Top priority: fix every one of these first.
 - NEW: tonight's flubs (real member texts, classified offline).
 - BACKLOG: older flubs still failing their regression check.
+A NEW entry with "coach" is a draft the live Opus coach replaced: "coach" is its lesson, "coach_answer" what it
+sent instead. Lessons that keep coming back are the ones to turn into code fixes.
 "checks" is the regression fixture the nightly replay grades (answers = regexes a good reply matches,
 must_not = regexes it never matches, not_exact = replies that must never come back word for word,
 not_lanes = router lanes the ask must not take); "last_replay" says how it failed last night.
@@ -1096,6 +1128,7 @@ def fix_list(date: str) -> list[dict]:
         out.append({"priority": "NEW", "id": (fx or {}).get("id", ""), "category": v.get("category"),
                     "why": v.get("why"), "mode": c.get("mode"), "q": c.get("q"), "a": c.get("a"),
                     "signals": [s["type"] for s in c.get("signals") or []],
+                    **({"coach": c.get("note"), "coach_answer": c.get("coach_answer")} if c.get("priority") == "coach" else {}),
                     "checks": _fx_entry("", fx, last)["checks"] if fx else {},
                     "last_replay": last.get((fx or {}).get("id", ""), "")})
         if fx:
@@ -1275,6 +1308,7 @@ def report(date: str, dry: bool = False) -> str:
          f"{lat.get('n', 0)}; {lat.get('slow', 0)} over {SLOW_S:.0f}s",
          "- Code signals: " + (", ".join(f"{k} {v}" for k, v in sorted((h.get("signals") or {}).items())) or "none"),
          f"- Flag queue: {len(h.get('queue_ids') or [])} flagged" + (" (not consumed: dry)" if dry and h.get("queue_ids") else ""),
+         f"- Opus coach fixes harvested: {h.get('coach', 0)}",
          ""]
     flubs = [v for v in cl.get("verdicts") or [] if v.get("flub")]
     L.append(f"## Flubs: {len(flubs)} (by {cl.get('by', 'code')}" + (f"; {cl['note']}" if cl.get("note") else "")
@@ -1334,6 +1368,10 @@ def report(date: str, dry: bool = False) -> str:
                      f"newly broken {rp.get('newly_broken') or 'none'}")
     elif st.get("replay"):
         L += ["", f"## Regression replay on main: {st['replay'].get('status')}"]
+    try:  # the Opus coach scorecard (report only; GRADUATION_READY is written the first night the bar is met)
+        L += [""] + picky_coach.scorecard(date, write_flag=not dry)
+    except Exception as e:  # noqa: BLE001  a scorecard problem never costs the report
+        L += ["", f"## Opus coach: scorecard failed ({e!r})"[:200]]
     text = "\n".join(L) + "\n"
     write_private(FLUB_DIR / f"report-{date}.md", text)
     return text

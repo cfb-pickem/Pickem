@@ -133,6 +133,28 @@ daily cap (12 calls / 45 min). Every booster falls back to code / local gemma on
 | league rules re-verify (`league_rules.py --check`) | Opus review | code verification, unconfirmable change flagged "verify" |
 | exam judges (not capped), flub loop, feed repairs (hand only) | Opus | skipped |
 
+## Opus coach mode (`picky_coach.py`, live switch mode "coach")
+
+What `picky_claude.py live on` means since 2026-11-23 (Charlie approved): Picky drafts every group / DM reply on
+the local model through the full router, lanes and guards, then ONE Opus review (`group_chat._coach`, 25 s
+budget) gets the question, the recent group chat, raw mode's facts bundle (member pick lines stripped) and the
+draft, and returns `{verdict pass|fix, score 1-10, answer, lesson, category}` (fact, dodge, unhelpful, leak,
+voice, length; helpful first, then reliable, voice, wit). Pass = the draft goes out; fix = the coach's answer,
+only if every number in it is grounded, it makes no member pick claim the chat didn't already make, and Picky's
+send-point safety guards leave it as is. Anything else (call failed, timeout, bad JSON, a refused fix) = the
+draft. Test traffic (canary, deep health, exams, no-model eval) and the site widget never reach the coach.
+
+- Switch: `live on` (coach, every reply) | `--sample N` (review 1 in N) | `--mode direct` (Claude drafts) |
+  `--mode raw` / `--raw` (Opus only) | `live off` | `live status` (shows the mode).
+- Lessons: every fix verdict -> `cfb-pickem-private/coach/lessons.jsonl` (no phone numbers). The 10 most
+  frequent / recent distinct lessons ride in `prompt_prefix` (refreshed at most every 30 min, keep-warm
+  re-primes; `PICKY_COACH_LESSONS=0` drops them). The nightly flub loop harvests each fix as a flub (private
+  never-twice fixture, then the fix round).
+- Scorecard: the nightly flub report (`flubs/report-<date>.md`) has the "Opus coach" lines: checked, passed,
+  fixed, pass-rate trend, average draft score, top lesson categories, and the weekly graduation line (>= 95%
+  pass over >= 100 checks in 7 days, 0 fact fixes, avg >= 8; first time: `coach/GRADUATION_READY`). Never texted.
+- Tests: `test_coach.py`.
+
 ## Game dossiers (`dossier.py`)
 
 Per-game injury / availability / insider notes for the open pool week,

@@ -25,7 +25,7 @@ os.environ.update({"PICKY_EXCHANGE_LOG": str(FIX / "exchanges.jsonl"),
                    "PICKY_FLUB_ITEMS_PRIVATE": str(TMP / "flubs" / "items-private.json"),
                    "PICKY_FLUB_KILL_FILE": str(TMP / "FLUB_AUTOFIX_OFF"),
                    "PICKY_GROUP_MEMBERS": str(TMP / "members.json"), "PICKY_CLAUDE_USAGE_DIR": str(TMP / "usage"),
-                   "PICKY_REPLAY_DIR": str(TMP / "replay")})
+                   "PICKY_REPLAY_DIR": str(TMP / "replay"), "PICKY_COACH_DIR": str(TMP / "coach")})
 os.environ.pop("PICKY_NO_ANTHROPIC", None)
 os.environ.pop("PICKY_FLUB_AUTOFIX", None)
 sys.path.insert(0, str(HERE))

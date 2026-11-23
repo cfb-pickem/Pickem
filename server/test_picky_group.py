@@ -30,8 +30,11 @@ YES = ["@Picky who's winning?", "@picky", "@PICKY you there", "@ Picky who's fir
        "hey (@picky)", "@Picky's take?", "what do you think @picky?",
        # iPhone forms of his handle (live 2026-11-15: TG's got no reply)
        "@pickempicky@gmail.com you're a pussy", "@pickempicky hi", "@PickemPicky", "pickempicky@gmail.com you there",
-       "yo @ pickempicky, thoughts?"]
-NO = ["picky who's winning", "Picky is dumb", "@Pickyy hi", "@pickyface", "email picky-bot@example.com",
+       "yo @ pickempicky, thoughts?",
+       # a text that STARTS with the word "Picky" (Charlie 2026-11-23)
+       "Picky what's the spread?", "picky, who's first?", "PICKY!", "Picky - for those asking, buy-in?", "  picky who's winning",
+       "picky who's winning", "Picky is dumb", "Picky", "picky?", "Picky's take?", "@Picky Picky hi"]
+NO = ["Pickyyy hi", "Pickle ball tonight?", "lol picky is dumb", "so Picky what do you think", "@Pickyy hi", "@pickyface", "email picky-bot@example.com",
       "x@picky", "so picky about picks", "@ pickyy", "@Pick y", "", "x.pickempicky@gmail.com", "@pickempickyy",
       "notpickempicky@gmail.com"]
 
@@ -42,14 +45,15 @@ def test_trigger_matching():
             assert rx.search(s), f"should trigger: {s!r}"
         for s in NO:
             assert not rx.search(s), f"should NOT trigger: {s!r}"
-    assert watcher.triggered("@Picky hi") and not watcher.triggered("picky hi")
+    assert watcher.triggered("@Picky hi") and watcher.triggered("picky hi") and not watcher.triggered("hi picky")
+    assert not watcher.triggered("Pickyyy") and not watcher.triggered("Pickle")
 
 
 def test_confirmed_mention_triggers():
     body = b"\x04\x0bstreamtyped...NSString\x01\x94\x84\x01+\x0bPicky hello__kIMMentionConfirmedMention...picky-bot@example.com"
-    assert watcher.triggered("Picky hello", body)
+    assert watcher.triggered("hey Picky hello", body)
     other = body.replace(b"picky-bot@example.com", b"someone@else.com")
-    assert not watcher.triggered("Picky hello", other)
+    assert not watcher.triggered("hey Picky hello", other)
 
 
 def test_strip_trigger():
@@ -59,6 +63,14 @@ def test_strip_trigger():
     assert gc.strip_trigger("@Picky") == "hey"
     assert gc.strip_trigger("@pickempicky@gmail.com you're a pussy") == "you're a pussy"
     assert gc.strip_trigger("pickempicky@gmail.com what's up") == "what's up"
+    # a text starting with "Picky" (group): the word goes; a DM's text is unchanged
+    assert gc.strip_trigger("Picky what's the spread?") == "what's the spread?"
+    assert gc.strip_trigger("picky, who's first?") == "who's first?"
+    assert gc.strip_trigger("Picky - for those asking, buy-in?") == "for those asking, buy-in?"
+    assert gc.strip_trigger("PICKY!") == "hey"
+    assert gc.strip_trigger("Picky is dumb", dm=True) == "Picky is dumb"
+    assert gc.strip_trigger("@Picky hi", dm=True) == "hi"
+    assert gc.strip_trigger("so picky about picks") == "so picky about picks"
 
 
 def test_norm_handle():
@@ -78,7 +90,9 @@ def _row(**kw):
 def test_should_act():
     now = time.time()
     assert watcher.should_act(_row(), now) == (True, "ok")
-    assert watcher.should_act(_row(text="picky hi"), now)[0] is False
+    assert watcher.should_act(_row(text="picky hi"), now) == (True, "ok")  # starts with "Picky" (2026-11-23)
+    assert watcher.should_act(_row(text="lol picky hi"), now) == (False, "no-trigger")
+    assert watcher.should_act(_row(text="Pickyyy hi"), now) == (False, "no-trigger")
     # DMs: no @Picky needed; the sidecar decides who gets answered
     assert watcher.should_act(_row(style=45, text="how about that SMU game?"), now) == (True, "ok")
     assert watcher.should_act(_row(style=45, text=None), now) == (False, "empty")

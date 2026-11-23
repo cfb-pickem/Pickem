@@ -97,14 +97,17 @@ APPLE_EPOCH = 978307200  # 2001-01-01 in unix time
 GROUP_STYLE = 43         # chat.style: 43 group, 45 one-to-one
 
 # '@Picky', '@pickempicky', '@pickempicky@gmail.com' or a bare 'pickempicky@gmail.com' (the sidecar's copy matches)
-TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?![\w@])|(?<![\w.])@?\s?pickempicky(?:@gmail\.com)?(?![\w@])", re.I)
+# @Picky / his handle anywhere, or a text that STARTS with the word "Picky" (Charlie 2026-11-23). Same regex as
+# server/group_chat.py TRIGGER.
+TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?![\w@])|(?<![\w.])@?\s?pickempicky(?:@gmail\.com)?(?![\w@])"
+                     r"|^\s*picky(?![\w@])", re.I)
 MENTION_MARK = b"__kIMMentionConfirmedMention"
 
 log = logging.getLogger("picky-imessage")
 
 
 def triggered(text: str | None, body: bytes | None = None) -> bool:
-    """@Picky in the text, or iMessage's confirmed mention of Picky's own
+    """@Picky in the text (or a text starting with "Picky"), or iMessage's confirmed mention of Picky's own
     handle (picking the contact from the @ menu drops the '@' from the text)."""
     if text and TRIGGER.search(text):
         return True
