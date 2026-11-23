@@ -1008,7 +1008,7 @@ LEAGUE FACTS:
 
 def picky_claude_raw() -> bool:
     import picky_claude
-    return bool(picky_claude.live_config().get("raw")) and picky_claude.live_on()
+    return not ollama_gate.is_low() and picky_claude.live_on() and bool(picky_claude.live_config().get("raw"))
 
 
 async def _raw_facts() -> str:
