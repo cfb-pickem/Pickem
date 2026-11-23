@@ -64,17 +64,31 @@ def pre_board() -> dict:
     return {k: {**g, "state": "pre", "start": soon} for k, g in (gameday.games() or {}).items()}
 
 
+def _row_ok(r: dict, rt) -> bool:
+    ok = not r["ok"] or rt.label() in r["ok"] or rt.lane in r["ok"]
+    return ok and not any(rt.label() == x or (":" not in x and rt.lane == x) for x in r.get("not") or [])
+
+
 def check_rows(rows: list[dict]) -> list[dict]:
+    """QB_STATUS_ASK takes the qb_status lane only when this week's sourced notes (factstore intel) cover the ask
+    (1bb392a), so classify reads data that changes every week: each row is classified with a note and without
+    one and passes if either routes it right. The table pins the rules, never the week's intel."""
+    import router
+    from unittest.mock import patch
     out, board = [], None
     for r in rows:
-        rt = classify(r["q"])
-        if r.get("src") == "genius":  # a DM: group_chat's game-day precedence rule applies (gameday.override)
-            import gameday
-            board = pre_board() if board is None else board
-            rt = gameday.override(rt, TRIGGER.sub("", r["q"]).strip(), "", board)
-        ok = not r["ok"] or rt.label() in r["ok"] or rt.lane in r["ok"]
-        if any(rt.label() == x or (":" not in x and rt.lane == x) for x in r.get("not") or []):
-            ok = False
+        rts = []
+        for note in ("note", None):
+            with patch.object(router, "_qb_status_intel", lambda ctx, q, _n=note: _n):
+                rt = classify(r["q"])
+            if r.get("src") == "genius":  # a DM: group_chat's game-day precedence rule applies (gameday.override)
+                import gameday
+                board = pre_board() if board is None else board
+                rt = gameday.override(rt, TRIGGER.sub("", r["q"]).strip(), "", board)
+            rts.append(rt)
+        good = [rt for rt in rts if _row_ok(r, rt)]
+        ok = bool(good)
+        rt = good[0] if good else rts[-1]
         st = ("XPASS" if ok else "XFAIL") if r.get("xfail") else ("PASS" if ok else "FAIL")
         out.append({**r, "got": rt.label(), "why_rule": rt.why, "status": st})
     return out
