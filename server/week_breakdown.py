@@ -679,6 +679,10 @@ def picks_up_text(week: int, games: list[dict], lock: dt.datetime, game_texts: l
     breakdown) for as many games as fit. Code-assembled, so it can't run long."""
     import group_outbox as ob
     head = f"Week {week} picks are up, lock is {lock_text(lock)}."
+    import group_posts as gp
+    early = [g for g in games if lock.astimezone(CT).weekday() != 5 and gp.kick(g) == lock]
+    if early:  # a non-Saturday kickoff sets the lock (Charlie, 2026-11-23: make sure everyone knows)
+        head += f" Heads up: {early[0]['Away']} at {early[0]['Home']} kicks off {lock_text(lock)}, so that's the lock for all 4."
     lines = [favorite_text(g["Away"], g["Home"], g["line"]) for g in games]
     ask = "@Picky me or DM me for the rest."
 
