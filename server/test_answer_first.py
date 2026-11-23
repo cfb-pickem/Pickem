@@ -110,7 +110,8 @@ def test_slots_answers_match_the_rules():
 def test_rules_text_on_the_jackpot():
     txt = league_rules.section("LET THE SLOTS DECIDE", Path(HERE / "league_rules.md").read_text())
     assert "shown on the football" not in txt and "never above" not in txt, txt
-    assert "secret on purpose" in txt and "up to 5% a pull" in txt, txt
+    # 50f699b replaced the capped boost ('up to 5% a pull', odds 'secret on purpose') with the weeks-left ramp
+    assert "up to 5% a pull" not in txt and "75% in the last jackpot week" in txt and "not the live odds" in txt, txt
 
 
 # --- the web path (group_chat._answer with the brain faked) -----------------------------------------------------

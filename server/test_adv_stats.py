@@ -322,21 +322,27 @@ def test_swap_unknown_team_drops_nothing_it_cant_replace():
 # the unit lane on the real cache: Minnesota-Northwestern (a week-12 pool game; skipped when it isn't on the slate)
 # ---------------------------------------------------------------------------
 
-def _lane(q):
+def _lane(q, game=None):
+    """game=(away, home) pins the matchup: the live slate changes weekly (week 12 had Minnesota-Northwestern, week
+    13 doesn't, and factstore.find_game then falls back to the first named team's game)."""
     import os
     os.environ["PICKY_LANES_OFF"] = ""
     import unit_lane
-    return unit_lane.build(q, {"games_this_week": []})
+    src = None
+    if game:
+        class _Pinned(unit_lane.CfbdSource):
+            def game(self, q, ctx=None):
+                return {"away": game[0], "home": game[1], "league": False, "spread": None, "total": None}
+        src = _Pinned()
+    return unit_lane.build(q, {"games_this_week": []}, src=src)
 
 
 def test_minnesota_run_game_is_epa_and_success_rate():
     if not units._row("Minnesota", units.table()):
         print("  (no CFBD cache: skipped)")
         return
-    b = _lane("Can Minnesota run the ball on Northwestern?")
-    if not b:
-        print("  (Minnesota-Northwestern not on the slate: skipped)")
-        return
+    b = _lane("Can Minnesota run the ball on Northwestern?", game=("Minnesota", "Northwestern"))
+    assert b
     t = b["text"]
     tab = units.table()
     m, nw = units._row("Minnesota", tab), units._row("Northwestern", tab)
@@ -380,14 +386,17 @@ def test_lane_numbers_are_all_sourced():
 def test_content_gate_flags_raw_ypg_and_unranked_unit_answers():
     sys.path.insert(0, str(Path(__file__).resolve().parent / "eval" / "genius"))
     import content_check as C
+    from unittest.mock import patch
     q = "Can Minnesota run the ball on Northwestern?"
-    bad = C.check_turn(q, "fact:unit_matchup", "Minnesota averages 92.8 rushing yards per game, Northwestern allows 151.2.")
-    assert any("raw yards" in e for e in bad) and any("EPA" in e for e in bad), bad
-    good = ("Not much: Minnesota's run game is #136 in rushing EPA/play and #131 in rush success rate, Northwestern's "
-            "run D #62 and #106, so Northwestern's run D has the edge.")
-    assert not C.check_turn(q, "fact:unit_matchup", good), C.check_turn(q, "fact:unit_matchup", good)
-    assert any("raw yards" in e for e in C.check_turn(q, "full", "Minnesota puts up 299.4 total yards per game."))
-    assert not C.check_turn("how many yards per game does Minnesota average?", "full", "Minnesota: 299.4 yards per game.")
+    # no slate game: the gate checks the two teams the question names (the live slate's Minnesota game changes weekly)
+    with patch.object(C.factstore, "find_game", return_value=(None, None)):
+        bad = C.check_turn(q, "fact:unit_matchup", "Minnesota averages 92.8 rushing yards per game, Northwestern allows 151.2.")
+        assert any("raw yards" in e for e in bad) and any("EPA" in e for e in bad), bad
+        good = ("Not much: Minnesota's run game is #136 in rushing EPA/play and #131 in rush success rate, Northwestern's "
+                "run D #62 and #106, so Northwestern's run D has the edge.")
+        assert not C.check_turn(q, "fact:unit_matchup", good), C.check_turn(q, "fact:unit_matchup", good)
+        assert any("raw yards" in e for e in C.check_turn(q, "full", "Minnesota puts up 299.4 total yards per game."))
+        assert not C.check_turn("how many yards per game does Minnesota average?", "full", "Minnesota: 299.4 yards per game.")
 
 
 def test_unit_lane_is_on_by_default():

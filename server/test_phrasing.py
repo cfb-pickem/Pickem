@@ -416,16 +416,17 @@ def test_interim_verdict():
 
 
 def test_h2h_has_a_verdict_and_keeps_the_facts():
-    orig_find, orig_lm = router.slate_cards.find_game, router.slate_cards.last_meeting
+    # h2h_text reads factstore since cd96879 (was slate_cards): patch there, or the live slate answers
+    orig_find, orig_lm = router.factstore.find_game, router.factstore.last_meeting
     try:
-        router.slate_cards.find_game = lambda q, ctx, idx=None: ({"awayTeam": "Clemson", "homeTeam": "Duke"}, None)
-        router.slate_cards.last_meeting = lambda g: "  Last meeting (2025): Duke won 46-45 at Clemson, line Clemson -4: Duke covered by 5"
+        router.factstore.find_game = lambda q, ctx: ({"awayTeam": "Clemson", "homeTeam": "Duke"}, None)
+        router.factstore.last_meeting = lambda g: "  Last meeting (2025): Duke won 46-45 at Clemson, line Clemson -4: Duke covered by 5"
         out = router.h2h_text({}, "last time Clemson played Duke?")
         for f in ("2025", "Duke", "46-45", "Clemson -4", "5"):
             assert f in out, (f, out)
         assert re.search(r"tiebreaker|not a reason|doesn'?t move the number", out, re.I), out
     finally:
-        router.slate_cards.find_game, router.slate_cards.last_meeting = orig_find, orig_lm
+        router.factstore.find_game, router.factstore.last_meeting = orig_find, orig_lm
 
 
 ST = [{"rank": 1, "team": "Alpha", "w": 30, "l": 18}, {"rank": 2, "team": "Ack", "w": 28, "l": 20},
