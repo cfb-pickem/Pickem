@@ -263,10 +263,24 @@ def compute(polls_d: dict | None = None, db_path=None, rules: dict | None = None
              if any(r.get("points") is None for r in p.get("ranks") or [])]
     gaps += [f"no {k} ratings" for k in COMPUTERS if not comps.get(k)]
     projected = len(won) < len(p4)
+    tot = {r["team"]: r.get("total") or {} for r in ds.get("records") or []}
+    records = {t: f"{tot[t].get('wins', 0)}-{tot[t].get('losses', 0)}" for _, t in b["seeds"] if t in tot}
+    records.update({t: f"{tot[t].get('wins', 0)}-{tot[t].get('losses', 0)}" for t in b["first_out"] if t in tot})
     return {"season": cfbd.season_year(), "week": week, "as_of": as_of, "computed_ts": time.time(),
-            "rankings": rows[:40], "champs": champs, "title_games": won, "gaps": gaps,
+            "rankings": rows[:40], "champs": champs, "title_games": won, "gaps": gaps, "records": records,
             "bracket": {k: v for k, v in b.items() if k != "rank"},
             "text": text(b, week, projected), "facts": facts(b, week, as_of)}
+
+
+def card_png(d: dict, rules: dict | None = None) -> bytes | None:
+    """The bracket as a dark-mode PNG (bracket_card.py), or None when it can't be drawn (send the text then)."""
+    import bracket_card
+    import cfp_rules
+    try:
+        return bracket_card.png(bracket_card.spec(d["bracket"], d.get("records") or {}, d["week"],
+                                                  rules or cfp_rules.load()))
+    except Exception:  # noqa: BLE001 - a drawing bug never blocks the answer
+        return None
 
 
 def _path(season, week) -> Path:
@@ -306,6 +320,11 @@ def main(argv: list[str]) -> int:
     print(d["text"])
     if d["gaps"]:
         print("gaps:", "; ".join(d["gaps"]))
+    if "--png" in argv and argv.index("--png") + 1 < len(argv):
+        img = card_png(d)
+        if img:
+            Path(argv[argv.index("--png") + 1]).write_bytes(img)
+        print("png:", "written" if img else "FAILED (text bracket only)")
     if "--rank" in argv:
         for r in d["rankings"][:25]:
             print(f"{r['rank']:>2} {r['team']:<20} {r['score']:.4f}  AP {r['ap']:.3f}  Coaches {r['coaches']:.3f}  "
