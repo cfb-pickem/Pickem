@@ -750,7 +750,9 @@ def tick_picks_up(lg, week: int | None, now: dt.datetime, send, writer=None, rea
     if stale and ready(week, games):
         st = prepare(lg, week, games, lock, now, writer, hide=hide)
         did.append("prepared")
-    if not ob.done(ann_key(sea, week)) and post_window(now):
+    # st["not_before"] (epoch seconds, set by hand in the week's state file): hold this week's post until then.
+    held = now.timestamp() < float(st.get("not_before") or 0)
+    if not ob.done(ann_key(sea, week)) and post_window(now) and not held:
         expires = int(max(600, (lock - now).total_seconds()))
         lim = ob.limits("announce")[0]
         if st.get("texts") and (st.get("hidden") or not hide):

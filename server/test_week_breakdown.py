@@ -171,6 +171,17 @@ wb.tick_picks_up(FakeLeague(), 13, NOW[0], send, ready=lambda w, g: True)
 check(len(sent) == 1, "cards arriving later never cause a second text")
 check(wb.tick_picks_up(FakeLeague(), 12, NOW[0], send) in ("done", "locked"), "week 12 stays done")
 
+# a hand-set not_before holds the week's post (prepare still runs), then it posts on the first tick after
+sent.clear()
+lock = dt.datetime(2026, 12, 5, 11, 0, tzinfo=CT)
+wb.save_state(2026, 14, {"not_before": dt.datetime(2026, 12, 2, 9, 0, tzinfo=CT).timestamp()})
+NOW[0] = dt.datetime(2026, 12, 1, 9, 30, tzinfo=CT)
+r = wb.tick_picks_up(FakeLeague(), 14, NOW[0], send, ready=lambda w, g: True)
+check(not sent and r == "prepared" and not ob.done(wb.ann_key(2026, 14)), "not_before: held today, key not marked", r)
+NOW[0] = dt.datetime(2026, 12, 2, 9, 0, tzinfo=CT)
+wb.tick_picks_up(FakeLeague(), 14, NOW[0], send, ready=lambda w, g: True)
+check([s[0] for s in sent] == ["announce"] and ob.done(wb.ann_key(2026, 14)), "not_before passed: posts once")
+
 # --- Thursday refresh ---
 
 
