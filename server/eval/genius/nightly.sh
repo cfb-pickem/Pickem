@@ -12,8 +12,10 @@ TAG=nightly-$(date +%Y%m%d-%H%M)
 LOG=/Users/Agent/cfb-pickem-private/genius/nightly.log
 exec >> $LOG 2>&1
 echo "== $TAG"
-if [[ -d $WT ]]; then git -C $WT checkout -q --detach main || exit 1
-else git -C $REPO worktree add -q --detach $WT main || exit 1; fi
+# Fresh worktree every run: macOS's daily /tmp cleaner deletes files nobody touched for 3 days, and on
+# 2026-11-23 it took this worktree's .git file ("fatal: not a git repository", no exam that night).
+git -C $REPO worktree remove --force $WT 2>/dev/null; rm -rf $WT; git -C $REPO worktree prune
+git -C $REPO worktree add -q --detach $WT main || exit 1
 ln -sfn $REPO/server/cache $WT/server/cache
 /usr/bin/lockf -t 14400 /tmp/picky-exam.lock $WT/server/eval/genius/exam.sh $WT $TAG || { echo "exam failed"; exit 1; }
 cd $WT/server && $REPO/server/.venv/bin/python3 -I eval/genius/judge.py eval/genius/results/$TAG.json --history
