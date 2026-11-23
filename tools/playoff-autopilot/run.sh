@@ -17,4 +17,5 @@ sleep 1
 P=($PGBIN/psql -h $data -p 54329 -U postgres -d postgres -v ON_ERROR_STOP=1 -q -tA)
 $P -f $here/bootstrap.sql
 $P -f $root/supabase/migrations/20261116120000_playoff_autopilot.sql 2>&1 | grep -v NOTICE || true
+$P -f $root/supabase/migrations/20261123190000_last_pool_week_per_season.sql 2>&1 | grep -v NOTICE || true
 $P -f $here/test.sql 2>&1 | grep -E "ERROR|passed|CONTEXT"

@@ -380,4 +380,27 @@ end $$;
 reset role;
 rollback;
 
+-- 8. 2026: the last pool week is 14 (conference championships Dec 5); week 15 (Army-Navy) has no pool games.
+begin;
+select pg_temp.setup(array[50,45,40,35,30,25]);
+delete from picks where game_id between 2030151 and 2030154;
+delete from all_games where week = 15 and cfb_season = 2030;
+update all_games set cfb_season = 2026 where cfb_season = 2030;
+do $$ declare r jsonb; begin
+  assert last_pool_week(2026) = 14 and last_pool_week(2025) = 15 and last_pool_week(2030) = 15, 'last_pool_week';
+  r := playoff_compute(2026, false, '2024-12-20 12:00-06');
+  assert (r->>'ready')::boolean and pg_temp.codes(r) = '', '2026 weeks 1-14 done: ready ' || r::text;
+  r := playoff_compute(2026, false, '2024-11-30 10:00-06');
+  assert pg_temp.codes(r) = 'season_in_progress' and r::text like '%Week 14 hasn''t finished%', '2026 week 14 not kicked: ' || r::text;
+  r := playoff_compute(2026, false, '2024-11-30 20:00-06');
+  assert pg_temp.codes(r) = 'settling', '2026: 12h settle after week 14: ' || r::text;
+end $$;
+delete from picks where game_id between 2030141 and 2030144;
+delete from all_games where week = 14 and cfb_season = 2026;
+do $$ declare r jsonb; begin
+  r := playoff_compute(2026, false, '2024-12-20 12:00-06');
+  assert pg_temp.codes(r) = 'season_in_progress', '2026 week 14 not picked: never early ' || r::text;
+end $$;
+rollback;
+
 select 'playoff autopilot: all tests passed';

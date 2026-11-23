@@ -17,3 +17,45 @@ create table public.blackjack_bankrolls (team_id bigint, cfb_season integer, chi
 create or replace function public.is_commissioner() returns boolean language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.teams t where t.user_id = auth.uid() and t.commissioner is true); $$;
 grant select on all tables in schema public to anon, authenticated;
+
+-- calc_cfb_week (prod copy) for last_pool_week()
+CREATE OR REPLACE FUNCTION public.calc_cfb_week(start_ct timestamp without time zone)
+ RETURNS integer
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+declare
+  d date;
+  season_year int;
+  sep1 date;
+  labor_day date;
+  week1_sat date;
+  game_sat date;
+begin
+  if start_ct is null then
+    return null;
+  end if;
+
+  d := start_ct::date;
+
+  -- January and February belong to the previous season (bowls, playoff).
+  if extract(month from d) in (1,2) then
+    season_year := extract(year from d)::int - 1;
+  else
+    season_year := extract(year from d)::int;
+  end if;
+
+  sep1 := make_date(season_year, 9, 1);
+  labor_day := sep1 + (((1 - extract(dow from sep1)::int) + 7) % 7);
+  week1_sat := labor_day - 2;
+
+  -- The Saturday this game's week is anchored on (week runs Tue..Mon).
+  game_sat := case extract(dow from d)::int
+                when 0 then d - 1                        -- Sunday -> previous Saturday
+                when 1 then d - 2                        -- Monday -> previous Saturday
+                else d + (6 - extract(dow from d)::int)  -- Tue..Sat -> upcoming Saturday
+              end;
+
+  return ((game_sat - week1_sat) / 7)::int + 1;
+end;
+$function$;
