@@ -26,6 +26,13 @@ os.environ.setdefault("PICKY_NO_REPEAT_STATE", str(_TMP / "nr.json"))
 os.environ.setdefault("PICKY_CALLBACKS_STATE", str(_TMP / "cb.json"))
 os.environ["PICKY_MEMBER_MEMORY_DIR"] = tempfile.mkdtemp()
 import router  # noqa: E402
+import chat  # noqa: E402
+import datetime as dt  # noqa: E402
+
+# the checks below read week 12 between the Tuesday 11 AM line lock and the first Saturday kickoff: pin the clock
+# there (as test_game_cards does), or once week 12 kicked off (2026-11-21) every game reads as locked
+# (take_games -> none, so 'read on the northwestern game' -> None)
+chat._now_ct_naive = lambda: dt.datetime(2026, 11, 18, 9, 0)
 
 FAILS: list[str] = []
 

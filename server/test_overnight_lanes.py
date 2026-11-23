@@ -11,9 +11,13 @@ Run:  ./.venv/bin/python3 -I test_overnight_lanes.py
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 
+# Never pick up the rules watcher's live copy (cache/league_rules.live.md): when it flags a section, rules answers
+# turn into a "RULES CHANGED, VERIFY" hedge. Pin the committed digest, as test_rules.py does.
+os.environ["PICKY_RULES_LIVE"] = "/private/tmp/picky-test-no-such-dir/league_rules.live.md"
 sys.path.insert(0, ".")
 import factstore as FS  # noqa: E402
 import router  # noqa: E402

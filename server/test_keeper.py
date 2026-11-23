@@ -1,5 +1,6 @@
 """Overnight keeper (2026-11-16/17) sparring regressions: model-free, deterministic code paths only.
 Each test names the sparring convo that found it (cfb-pickem-private/spar/keeper/)."""
+import datetime as dt
 import os
 import sys
 import tempfile
@@ -11,6 +12,9 @@ _TMP = tempfile.mkdtemp()
 os.environ.setdefault("PICKY_NO_REPEAT_STATE", str(Path(_TMP) / "nr.json"))  # never the live ledger
 os.environ.setdefault("PICKY_CALLBACKS_STATE", str(Path(_TMP) / "cb.json"))
 
+# Never pick up the rules watcher's live copy (cache/league_rules.live.md): when it flags a section, rules answers
+# turn into a "RULES CHANGED, VERIFY" hedge. Pin the committed digest, as test_rules.py does.
+os.environ["PICKY_RULES_LIVE"] = "/private/tmp/picky-test-no-such-dir/league_rules.live.md"
 import chat  # noqa: E402
 import router  # noqa: E402
 from test_picky_brain import _stance_ctx  # noqa: E402
@@ -93,7 +97,10 @@ def test_last_week_results_for_a_member_or_the_sender():
         ctx["last_week"]["games"][0]["picks"]["TG"] = "Wake Forest"
         for i, t in ((2, "UTSA"), (3, "North Dakota State")):
             ctx["last_week"]["games"][i]["picks"]["TG"] = t
-        r = router.fact_answer("results", ctx, "Howd the week go")  # Monday, nothing started: last week
+        # Monday, nothing started: last week. Pin the clock to that Monday: week_started() reads the real clock and
+        # the fixture's week 12 kicked off 2026-11-21, so after that date the ask read this week instead
+        with patch.object(chat, "_now_ct_naive", lambda: dt.datetime(2026, 11, 16, 10, 0)):
+            r = router.fact_answer("results", ctx, "Howd the week go")
         assert r == ("You went 4-0 in week 11, clean sweep: Wake Forest -1.5, Oregon State +13.5, UTSA +2.5 and "
                      "North Dakota State -6.5 all covered."), r
 
