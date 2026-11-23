@@ -171,6 +171,16 @@ wb.tick_picks_up(FakeLeague(), 13, NOW[0], send, ready=lambda w, g: True)
 check(len(sent) == 1, "cards arriving later never cause a second text")
 check(wb.tick_picks_up(FakeLeague(), 12, NOW[0], send) in ("done", "locked"), "week 12 stays done")
 
+# a non-Saturday kickoff that sets the lock gets named in the head
+fri = dt.datetime(2026, 11, 27, 11, 0, tzinfo=CT)
+gs = [{"Away": "Nebraska", "Home": "Iowa", "line": -4.5, "Start (CT)": "2026-11-27T11:00:00"},
+      {"Away": "Michigan", "Home": "Ohio State", "line": -9.5, "Start (CT)": "2026-11-28T11:00:00"}]
+t = wb.picks_up_text(13, gs, fri, None, 450)
+check(t.startswith("Week 13 picks are up, lock is Friday 11am. Heads up: Nebraska at Iowa kicks off Friday 11am"),
+      "Friday lock game named", t)
+check("Heads up" not in wb.picks_up_text(13, gs[1:], dt.datetime(2026, 11, 28, 11, 0, tzinfo=CT), None, 450),
+      "Saturday lock: no heads-up line")
+
 # a hand-set not_before holds the week's post (prepare still runs), then it posts on the first tick after
 sent.clear()
 lock = dt.datetime(2026, 12, 5, 11, 0, tzinfo=CT)
