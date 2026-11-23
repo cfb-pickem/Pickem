@@ -1500,6 +1500,11 @@ CFP_NOW_WHAT = re.compile(r"\b(if (it|the season|things) ended|as it stands|righ
                           r"bracket|bubble|seeds?|seeding|byes?|who'?s in|who is in|who makes|who gets in|in or out|"
                           r"last (team|teams|four|4|two|2) in|first (team|teams|four|4|two|2) out|get in|make it|make the|"
                           r"chances?|in the hunt|where (does|do|is)|look like|looks like)\b", re.I)
+# Picky's OWN projection (bcs.py bracket): 'projected CFP bracket', 'who makes the CFP', 'first four out'. Asks pinned
+# to now ('if it ended today', 'right now', 'bubble') stay with cfp_now, the committee's current ranking.
+CFP_BRACKET_WHAT = re.compile(r"\b(project\w*|predict\w*|bracket|picture|seeds?|seeding|who makes|who'?s making|"
+                              r"who'?s in|who is in|who gets in|first (four|4) out|your (field|projection|cfp))\b", re.I)
+CFP_TODAY = re.compile(r"\b(if (it|the season|things) ended|as it stands|right now|today|currently|bubble)\b", re.I)
 NOT_CFP_NOW = re.compile(r"\b(news|latest|lates|rumou?r\w*|expan\w*|format|bias\w*|fair|unfair|rigged|should|deserve\w*|"
                          r"fight|money|revenue|24-team|16-team|14-team|my|our|league|pool)\b", re.I)
 # coaching carousel / hot seat / a coach's history or 'going back to X' (plan phase 5)
@@ -2255,6 +2260,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "picky_record", "PICKY_REC_ASK"  # 'how'd your picks do last week?' (fact exam: got this week's picks)
     if playoff_race.is_need_question(t) and not CFP_WORDS.search(t):
         return "playoff", "playoff_race.is_need_question"
+    if CFP_NOW_ASK.search(t) and CFP_BRACKET_WHAT.search(t) and not CFP_TODAY.search(t) and not NOT_CFP_NOW.search(t):
+        return "cfp_bracket", "CFP_BRACKET"  # Picky's own BCS-formula bracket (bcs.py), verbatim from code
     if CFP_NOW_ASK.search(t) and CFP_NOW_WHAT.search(t) and not NOT_CFP_NOW.search(t):
         return "cfp_now", "CFP_NOW_ASK"  # the real CFP field if it ended today: ESPN CFP + race leaders + cfp_rules
     if INJURY_IMPACT_ASK.search(t) and not re.search(r"\b(qb|quarterback)s?\b", t, re.I):
@@ -3934,11 +3941,14 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
               "ghost_player": ghost_player_text, "recap": recap_text,
               "ghost_school": ghost_school_text, "unit_matchup": unit_lane.answer,
               "coach": big_picture.coach_text, "cfp_now": big_picture.cfp_now_text,
+              "cfp_bracket": big_picture.cfp_bracket_text,
               "other_side": other_side_text, "change_mind": change_mind_text}.get(kind)
         if fn:
             out = fn(ctx, q)
             if out is None and kind == "results":
                 out = cover_text(ctx, q)
+            if out is None and kind == "cfp_bracket":  # no bracket (no checked polls): the committee's field
+                out = big_picture.cfp_now_text(ctx, q)
             if isinstance(out, factstore.Answer):  # a stat goes out with its source (facts_used) or not at all
                 out = factstore.drop_unsourced_stats(out)
             return out
@@ -3954,7 +3964,7 @@ def _fact_answer(kind: str, ctx: dict | None, q: str) -> str | None:
 STORE_LANES = (keynum_text, slate_move_text, h2h_text, conf_race_text, lookahead_slate_text, lookahead_game_text,
                situational.interim_text,
                career_ats_text, hypo_value_text, qb_status_text, big_picture.coach_text, big_picture.cfp_now_text,
-               backup_qb_text, injury_impact_text,
+               big_picture.cfp_bracket_text, backup_qb_text, injury_impact_text,
                ats_profile_text, other_side_text, change_mind_text)
 
 # code lanes built from the POOL games' cards: a text about another game goes to the full brain + slate card

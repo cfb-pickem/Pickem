@@ -1017,6 +1017,15 @@ async def _raw_facts() -> str:
         import flub_loop
         f = (await asyncio.to_thread(flub_loop.build_facts))["facts"]
         f = "\n".join(l for l in f.splitlines() if not _RAW_DROP.match(l))
+        try:  # Picky's own CFP bracket (bcs.py), computed in code: Claude repeats it, never re-seeds it
+            import bcs
+            b = await asyncio.to_thread(bcs.current)
+            if b and b.get("text"):
+                f += ("\n\nPICKY'S OWN CFP BRACKET (BCS formula, computed in code). When asked about the real College "
+                      "Football Playoff projection, bracket, seeds or who's in, send these lines exactly as written "
+                      "(you may add one short take after), don't invent or change any team or seed:\n" + b["text"])
+        except Exception as e:  # noqa: BLE001
+            log.warning("raw facts: bcs bracket failed: %s", e)
         _RAW_FACTS.update(at=time.time(), text=f)
     except Exception as e:  # noqa: BLE001
         log.warning("raw facts failed: %s", e)

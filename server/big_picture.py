@@ -9,6 +9,8 @@ router.conf_race_text (title_race.race through factstore.conf_race).
                          and ATS now, and whether it touches this week's line.
   cfp_now_text(ctx, q)   the 12-team field from the checked ESPN CFP ranking + the conference race leaders +
                          cfp_rules.json: seeds, byes, auto bids, bubble, who controls it, the next release.
+  cfp_bracket_text(ctx, q)  Picky's OWN projected bracket (bcs.py: BCS formula over AP, Coaches and four
+                         computers + cfp_rules.json), verbatim.
 """
 
 from __future__ import annotations
@@ -335,6 +337,15 @@ def cfp_field() -> dict | None:
 
 def _and_list(xs: list[str]) -> str:
     return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1] if xs else ""
+
+
+def cfp_bracket_text(ctx: dict, q: str) -> str | None:
+    """Picky's own projected bracket ('your CFP bracket', 'who makes the CFP', 'first four out'): bcs.py's text,
+    every seed from code; the fact lane adds one voice line after it. None (-> cfp_now) without one."""
+    b = factstore.bcs_bracket()
+    if not b or not b.get("text"):
+        return None
+    return factstore.answer(b["text"], b.get("facts") or [])
 
 
 def cfp_now_text(ctx: dict, q: str) -> str | None:
