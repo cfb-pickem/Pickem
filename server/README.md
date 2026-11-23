@@ -101,6 +101,14 @@ skipped). All in `edge.py`, weights documented at its top, tests in
 `test_edge.py`. Splits and Open-Meteo are fetched per breakdown question
 (20 / 60 minute caches, fail soft) and never touch the shared system prompt.
 
+Picky's own CFP bracket (`bcs.py`, on demand only: "projected CFP bracket", "who
+makes the CFP", "first four out"): BCS-style rankings (1/3 AP points share, 1/3
+Coaches, 1/3 the average of SP+ / FPI / Elo / SRS top-25 ranks, all cached) fed
+through `cfp_rules.json`. Router lane `cfp_bracket` sends the code text verbatim
+plus one voice line; "if it ended today" asks keep `cfp_now` (the committee's
+ranking). Cached in `cache/bcs/<season>-w<week>.json`, refreshed by the factstore
+tick. `bcs.py show --rank` prints it. Tests: `test_bcs.py`.
+
 ## Anthropic (optional, capped booster)
 
 Claude helps the scheduled advanced analysis when it's there; Picky never needs it, and live replies never

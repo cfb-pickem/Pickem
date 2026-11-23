@@ -69,10 +69,16 @@ def parse(raw: dict, records: list[dict] | None = None) -> dict:
             continue
         ranks = []
         for t in rk.get("ranks") or []:
-            ranks.append({"rank": t.get("current"), "team": team_name(t.get("team"), idx=idx),
-                          "record": t.get("recordSummary") or ""})
+            r = {"rank": t.get("current"), "team": team_name(t.get("team"), idx=idx),
+                 "record": t.get("recordSummary") or ""}
+            if t.get("points") is not None:  # voter polls only (the CFP has none)
+                r.update(points=t["points"], first=t.get("firstPlaceVotes") or 0)
+            ranks.append(r)
+        # points + first-place votes + others receiving votes feed bcs.py's poll shares
+        others = [{"team": team_name(t.get("team"), idx=idx), "points": t.get("points")}
+                  for t in rk.get("others") or [] if t.get("points")]
         out[kind] = {"date": (rk.get("date") or "")[:10], "source": "ESPN", "headline": rk.get("headline") or "",
-                     "ranks": ranks}
+                     "week": (rk.get("occurrence") or {}).get("number"), "ranks": ranks, "others": others}
     return out
 
 

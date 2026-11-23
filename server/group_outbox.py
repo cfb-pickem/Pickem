@@ -115,6 +115,18 @@ def paused() -> bool:
     return PAUSE_FILE.exists()
 
 
+IMG_OK_FILE = PRIVATE / "picky_watcher_img_ok"  # touched on each watcher poll that says img_ok
+IMG_OK_MAX_AGE = 600
+
+
+def img_ready(now: float | None = None) -> bool:
+    """A watcher that sends picture replies polled lately and the outbox isn't paused (else send text)."""
+    try:
+        return not paused() and (now or time.time()) - IMG_OK_FILE.stat().st_mtime < IMG_OK_MAX_AGE
+    except OSError:
+        return False
+
+
 def log_event(event: str, **fields) -> None:
     rec = {"ts": dt.datetime.now(CT).isoformat(timespec="seconds"), "event": event} | fields
     PRIVATE.mkdir(parents=True, exist_ok=True)

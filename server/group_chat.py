@@ -1018,6 +1018,15 @@ async def _raw_facts() -> str:
         import flub_loop
         f = (await asyncio.to_thread(flub_loop.build_facts))["facts"]
         f = "\n".join(l for l in f.splitlines() if not _RAW_DROP.match(l))
+        try:  # Picky's own CFP bracket (bcs.py), computed in code: Claude repeats it, never re-seeds it
+            import bcs
+            b = await asyncio.to_thread(bcs.current)
+            if b and b.get("text"):
+                f += ("\n\nPICKY'S OWN CFP BRACKET (BCS formula, computed in code). When asked about the real College "
+                      "Football Playoff projection, bracket, seeds or who's in, send these lines exactly as written "
+                      "(you may add one short take after), don't invent or change any team or seed:\n" + b["text"])
+        except Exception as e:  # noqa: BLE001
+            log.warning("raw facts: bcs bracket failed: %s", e)
         _RAW_FACTS.update(at=time.time(), text=f)
     except Exception as e:  # noqa: BLE001
         log.warning("raw facts failed: %s", e)
@@ -1093,6 +1102,32 @@ def picture_reply(s: Sender, q: str, chat_id: str, handle: str) -> str:
     pictures.start(q, who, deliver)
     log.info("picture started sender=%s", (handle or "?")[-4:])
     return random.choice(pictures.DRAWING)
+
+
+BRACKET_TAKE = "My bracket, BCS formula. Picture's on the way."
+
+
+def bracket_picture(reply: str, chat_id: str) -> str | None:
+    """The cfp_bracket answer as a picture: the PNG goes through the outbox to the chat that asked (the async
+    picture path), and the text reply shrinks to the one-line take. None = send the text bracket as is (no
+    chat, no picture-capable watcher, outbox paused, render failed, the code text didn't come through whole)."""
+    import base64
+    import bcs
+    try:
+        if not chat_id or not group_outbox.img_ready():
+            return None
+        d = bcs.current()
+        if not d or not d.get("text") or d["text"] not in (reply or ""):
+            return None
+        img = bcs.card_png(d)
+        if not img:
+            return None
+        if group_outbox.post_picture(chat_id, "", base64.b64encode(img).decode()) != "queued":
+            return None
+    except Exception as e:  # noqa: BLE001 - the text bracket always works
+        log.warning("bracket picture failed, sending text: %s", e)
+        return None
+    return reply.split(d["text"], 1)[1].strip() or BRACKET_TAKE
 
 
 def fact_final(reply: str, q: str) -> str:
@@ -1276,6 +1311,8 @@ async def _answer(handle: str, text: str, chat_id: str = "", dm: bool = False,
             route=route, chat_id=key or chat_id,
             prior_q=" ".join(str(m["content"]) for m in messages[:-1] if m["role"] == "user")[-400:],
             dm=mode != "group", charlie=charlie)
+        if route.lane == "fact" and route.kind == "cfp_bracket" and not web and not image and not TEST_REQ.get():
+            reply = bracket_picture(reply, chat_id) or reply  # the bracket as a PNG + one-line take, else text
         if not image:
             reply = router.debot(reply, q, route.lane, picky_asked=bool(chat._PICKY_ASK.search(q)),
                                  group=mode == "group", recall=callbacks.is_recall(q))
@@ -1587,6 +1624,11 @@ async def outbox(req: Request):
     if isinstance(body, dict) and isinstance(body.get("groups"), list):
         group_outbox.update_group(body["groups"])
     ok = isinstance(body, dict)
+    if ok and body.get("img_ok") is True:
+        try:  # group_outbox.img_ready(): the bracket goes as a picture only to a watcher that sends them
+            group_outbox.IMG_OK_FILE.touch()
+        except OSError:
+            pass
     return {"item": group_outbox.next_item(dm_ok=ok and body.get("dm_ok") is True,
                                            img_ok=ok and body.get("img_ok") is True)}
 

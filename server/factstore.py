@@ -1418,6 +1418,12 @@ def cfp_rules() -> dict:
     return (load() or {}).get("cfp_rules") or {}
 
 
+def bcs_bracket() -> dict | None:
+    """Picky's own CFP bracket (bcs.py: BCS-style rankings + cfp_rules.json): {text, facts, week, ...} or None."""
+    import bcs
+    return bcs.current()
+
+
 # =============================================================================================================
 # the facts_used contract
 # =============================================================================================================
@@ -1521,7 +1527,13 @@ def refresh() -> dict:
         picture_prompt.refresh()  # team mascot + colors for picture prompts (30-day TTL, free)
     except Exception as e:  # noqa: BLE001
         log.warning("factstore: team looks refresh failed: %r", e)
-    return build()
+    out = build()
+    try:
+        import bcs
+        bcs.refresh()  # Picky's BCS bracket: new polls / finals land in cache/bcs/<season>-w<week>.json
+    except Exception as e:  # noqa: BLE001
+        log.warning("factstore: bcs bracket refresh failed: %r", e)
+    return out
 
 
 def main(argv: list[str]) -> int:
