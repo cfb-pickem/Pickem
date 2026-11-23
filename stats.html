@@ -1244,7 +1244,9 @@
         const scheduledWeeks = new Set(regular.map(g => Number(g.week)));
         const lastScheduled = Math.max(-1, ...scheduledWeeks);
         let unknownGames = open.filter(g => !startedWeeks.has(Number(g.week))).length;
-        for (let w = lastScheduled + 1; w <= LAST_REGULAR_WEEK; w++) unknownGames += GAMES_PER_WEEK;
+        // Last week with pool games = conference championship week (2026: week 14; week 15 is Army-Navy, no pool).
+        const LAST_POOL_WEEK = ({ 2026: 14 })[season] ?? LAST_REGULAR_WEEK;
+        for (let w = lastScheduled + 1; w <= LAST_POOL_WEEK; w++) unknownGames += GAMES_PER_WEEK;
 
         const agreement = measureAgreement([...decidedById.values()].map(g =>
           (picksByGame.get(g.GameId) || []).map(p => sideOf(p, g)).filter(Boolean)));

@@ -144,6 +144,23 @@ def test_summary_lines():
     assert "Chuck P" in s or "Charlie" in s
 
 
+
+def test_last_pool_week_2026_is_14():
+    """2026: conference championships (Dec 5) are week 14; week 15 (Army-Navy) has no pool games."""
+    assert pr.last_pool_week(2026) == 14 and pr.last_pool_week("2026") == 14
+    assert pr.last_pool_week(2025) == 15 and pr.last_pool_week(None) == 15
+    teams = ["A", "B"]
+    slate13 = {13: {"locked": False, "picks": {}, "games": [{"id": i, "final": False} for i in range(4)]}}
+    rem = pr.remaining_points(teams, slate13, 13, last_week=pr.last_pool_week(2026))
+    assert rem == {"A": 8, "B": 8}, rem  # week 13's 4 + week 14's 4: 2 weeks / 8 points left
+    import pick_strategy
+    ctx = {"season": 2026, "current_week": 13, "you": {"team_name": "A"},
+           "standings_ytd": [{"team": t, "w": 30 - i, "l": 20, "rank": i + 1} for i, t in enumerate("ABCDEF")],
+           "games_this_week": [{"winner": None} for _ in range(4)]}
+    n = pick_strategy.note(ctx, "what's my strategy")
+    assert "about 8 picks left" in n and "weeks through 14" in n, n
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_") and callable(v)]
     failed = 0

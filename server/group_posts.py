@@ -688,8 +688,8 @@ def stakes_facts(lg: League) -> list[str]:
     top = "; ".join(f"{_ord(rk[t])} {lg.nick(t)} {w}" for t, w, _ in rows[:5])
     out = [f"Standings (points): {top}. Cut line for the top 4 playoff spots: {rows[3][1]} points."]
     if meta["weeks_left"] > 0:
-        out.append(f"{meta['weeks_left']} regular-season weeks left, including this one; week 15 is conference "
-                   "championship week, then the league playoffs start and scores reset.")
+        out.append(f"{meta['weeks_left']} regular-season weeks left, including this one; week {meta.get('last_week', 15)} is "
+                   "conference championship week, then the league playoffs start and scores reset.")
     return out
 
 

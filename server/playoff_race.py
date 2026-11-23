@@ -38,7 +38,17 @@ import re
 import zoneinfo
 
 SPOTS = 4
-LAST_REGULAR_WEEK = 15
+LAST_REGULAR_WEEK = 15  # the SQL regular/playoff split: playoffs are week 16 on
+# The last week with pool games = conference championship week. 2026: Dec 5 = week 14 (week 15, Army-Navy,
+# has no pool games). Seasons not listed use LAST_REGULAR_WEEK.
+LAST_POOL_WEEK_BY_SEASON = {2026: 14}
+
+
+def last_pool_week(season) -> int:
+    try:
+        return LAST_POOL_WEEK_BY_SEASON.get(int(season), LAST_REGULAR_WEEK)
+    except (TypeError, ValueError):
+        return LAST_REGULAR_WEEK
 GAMES_PER_WEEK = 4
 CT = zoneinfo.ZoneInfo("America/Chicago")
 
@@ -221,7 +231,7 @@ def model_block(res: dict, meta: dict, names: dict | None = None) -> str:
         return ""
     rows = sorted(res.values(), key=lambda r: (-r["points"], r["team"]))
     lines = [f"PLAYOFF RACE (computed exactly; quote these, never do your own math): top {SPOTS} after week "
-             f"{LAST_REGULAR_WEEK} make the league playoffs; {meta.get('weeks_left', 0)} regular-season weeks "
+             f"{meta.get('last_week', LAST_REGULAR_WEEK)} make the league playoffs; {meta.get('weeks_left', 0)} regular-season weeks "
              f"left, {meta.get('points_left', 0)} points still available, cut line {rows[0]['cut']} (4th place)."]
     for r in rows:
         lines.append(f"- {need_answer(r['team'], _who(r['team'], names), res, meta, names, you=False)}")
@@ -315,8 +325,9 @@ def load(db, now: dt.datetime | None = None) -> tuple[dict, dict]:
         slates[w] = {"locked": locked, "picks": picks,
                      "games": [{"id": g["GameId"], "tiebreaker": bool(g.get("tiebreaker")) or not g.get("picked"),
                                 "final": bool(g.get("winner"))} for g in wg]}
-    rem = remaining_points(teams, slates, first)
-    weeks_left = max(0, LAST_REGULAR_WEEK - first + 1)
-    meta = {"season": season, "first_week": first, "weeks_left": weeks_left,
+    last = last_pool_week(season)
+    rem = remaining_points(teams, slates, first, last_week=last)
+    weeks_left = max(0, last - first + 1)
+    meta = {"season": season, "first_week": first, "weeks_left": weeks_left, "last_week": last,
             "points_left": max(rem.values()) if rem else 0}
     return race(pts, rem), meta
