@@ -61,7 +61,7 @@ def test_drafts_share_the_primed_prefix():
 
 
 async def test_prime_checkpoints_the_stable_part():
-    sent = []
+    sent, load = [], {"ns": 0}
 
     class FakeClient:
         async def post(self, url, json=None, timeout=None):
@@ -72,19 +72,40 @@ async def test_prime_checkpoints_the_stable_part():
 
                 @staticmethod
                 def json():
-                    return {"prompt_eval_duration": 1}
+                    return {"prompt_eval_duration": 1, "load_duration": load["ns"]}
             return R()
 
+    c3 = test_leader.ctx(games=(test_leader.G1, dict(test_leader.G2, line=-15.5), test_leader.TB))
+    c4 = test_leader.ctx(games=(test_leader.G1, dict(test_leader.G2, line=-16.5), test_leader.TB))
+    p3, p4 = chat.prompt_prefix(c3), chat.prompt_prefix(c4)
+    other = chat.prompt_prefix({**c1, "standings_ytd": c1["standings_ytd"][:2]})  # the stable part changed
     fc = FakeClient()
-    with patch.object(chat, "MODEL", "gemma4:12b-it-qat"), patch.dict(chat._PRIMED, {"prefix": None}):
+    with patch.object(chat, "MODEL", "gemma4:12b-it-qat"), patch.dict(chat._PRIMED, {"prefix": None, "stable": None}):
         await chat._prime(fc, p1)
-        check("a new prefix: the stable part first, then the prefix", sent == [s1, p1], str([len(x) for x in sent]))
+        check("first prime: the stable part alone first, then the prefix", sent == [s1, p1], str([len(x) for x in sent]))
         sent.clear()
         await chat._prime(fc, p1)
         check("the same prefix again: one prime, no extra call", sent == [p1])
         sent.clear()
         await chat._prime(fc, p2)
-        check("refreshed data: the stable part again (cheap, it's cached), then the new prefix", sent == [s2, p2])
+        check("refreshed games, same stable part: one prime (its checkpoint is already there)", sent == [p2])
+        sent.clear()
+        await chat._prime(fc, other)
+        check("the stable part changed: it's primed alone first again",
+              sent == [chat.STABLE_PART[other], other] and chat.STABLE_PART[other] != s1)
+        sent.clear()
+        load["ns"] = 5_000_000_000
+        await chat._prime(fc, p3)
+        load["ns"] = 0
+        await chat._prime(fc, p3)
+        check("a model reload doesn't re-prime the same prefix twice", sent == [s1, p3, p3], str(len(sent)))
+        sent.clear()
+        load["ns"] = 5_000_000_000
+        await chat._prime(fc, p2)  # the model reloaded under this prime: checkpoints gone
+        load["ns"] = 0
+        sent.clear()
+        await chat._prime(fc, p4)
+        check("after a reload the next new prefix re-primes the stable part", sent == [s1, p4], str(len(sent)))
         sent.clear()
         await chat._prime(fc, "some other prefix")
         check("a prefix prompt_prefix didn't build: one prime as before", sent == ["some other prefix"])

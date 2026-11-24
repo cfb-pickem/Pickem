@@ -5578,7 +5578,7 @@ def looping(text: str) -> bool:
 # end; the real request then processes only the tail. When the checkpoint is
 # already there (the usual case) the prime costs ~0.1 s; after a data change
 # (kickoff, final, ESPN refresh) or a model reload it rebuilds it once.
-async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
+async def _prime(c: httpx.AsyncClient, prefix: str) -> dict | None:
     # the raw prime uses qwen's chat template. gemma4 is sliding-window: llama.cpp
     # only keeps checkpoints near the END of each prompt, so two members' prompts
     # (same prefix, different tail) re-prefill all ~8k tokens (~55 s) unless a
@@ -5593,10 +5593,11 @@ async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
         if OLLAMA_THINK is not None:
             payload["think"] = OLLAMA_THINK == "true"
         stable = STABLE_PART.get(prefix)
-        if stable and prefix != _PRIMED["prefix"]:
-            # new data: first a checkpoint at the end of prompt_prefix's stable part (~0.2 s when it's cached),
-            # so this prime and the next refresh re-read only this week's games, not all ~8k tokens
-            await _prime(c, stable)
+        if stable and stable != _PRIMED["stable"] and prefix != _PRIMED["prefix"]:
+            # the stable part changed (or the model reloaded): prime it alone first, which leaves a checkpoint
+            # inside it that survives later refreshes, so those re-read only this week's games, not all ~8k
+            # tokens. Not on every refresh: a late change reuses the checkpoint near the prefix end instead.
+            _PRIMED["stable"] = stable if await _prime(c, stable) is not None else None
     elif "qwen" in MODEL.lower():
         endpoint = "generate"
         payload.update(prompt="<|im_start|>system\n" + prefix, raw=True)
@@ -5611,11 +5612,14 @@ async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
             log.info("prime: %.1fs (prefix %s)", (d.get("prompt_eval_duration") or 0) / 1e9,
                      format(hash(prefix) & 0xffffff, "06x"))
             _PRIMED["prefix"] = prefix
+            if (d.get("load_duration") or 0) > 1e9:  # the model (re)loaded: its checkpoints are gone
+                _PRIMED["stable"] = None
+            return d
     except (httpx.HTTPError, ValueError) as e:  # ValueError: a non-JSON body
         log.warning("prime failed: %s", e)
 
 
-_PRIMED: dict = {"prefix": None}  # the last prefix this process primed (its stable part is checkpointed)
+_PRIMED: dict = {"prefix": None, "stable": None}  # last prefix primed + stable part checkpointed, this process
 _BG_PRIMES: set = set()
 
 
