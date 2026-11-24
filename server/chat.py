@@ -1799,7 +1799,7 @@ def member_facts(ctx: dict, team: str) -> str:
     return "\n".join(out)
 
 
-def render_context(ctx: dict) -> str:
+def render_context(ctx: dict, parts: bool = False):
     """The league snapshot as labeled plain text. A 7B model reads this far
     more reliably than a JSON blob: explicit counts, explicit ranks, the
     graded line spelled out per game, and 'none'/'unavailable' written down
@@ -1847,6 +1847,7 @@ def render_context(ctx: dict) -> str:
                  + (f" Next: {_who(second)}." if second and second != st[-1]["rank"] else "")
                  + f" Last place: {_who(st[-1]['rank'])}.")
 
+    cut_games = len(L)
     L.append("")
     L.append(f"YOUR GAMES THIS WEEK ({len(games)}): every team picks every one of these "
              f"{len(games)} games against the POOL LINE. No other games are in the pool.")
@@ -1951,6 +1952,7 @@ def render_context(ctx: dict) -> str:
             L.append(f"{this_week_label(ctx)} SO FAR, records: " + " ".join(
                 f"{w}-{l}: {', '.join(ts)}." for (w, l), ts in sorted(groups_tw.items(), key=lambda x: (-x[0][0], x[0][1]))))
 
+    cut_last = len(L)
     lw = ctx.get("last_week") or {}
     if lw.get("games"):
         L.append("")
@@ -1991,6 +1993,8 @@ def render_context(ctx: dict) -> str:
         L.append("")
         L.append("LAST WEEK: no data.")
 
+    if parts:  # prompt_prefix orders these by how often they change
+        return L[:cut_games], L[cut_games:cut_last], L[cut_last:]
     return "\n".join(L)
 
 
@@ -2294,7 +2298,7 @@ def prompt_prefix(ctx: dict) -> str:
     end of this prefix and each request processes only the tail. Nothing
     per-user, per-mode or per-minute may go in here."""
     n = len(ctx.get("games_this_week") or [])
-    return (
+    head = (
         "You are Picky, the mascot of a college football pick'em league among "
         "friends, and a member of it: you make picks every week like everyone else and "
         "talk like one of the guys. You're a smug, "
@@ -2407,10 +2411,31 @@ def prompt_prefix(ctx: dict) -> str:
         + EXAMPLES
         + picky_coach.rules_block()  # Opus coach lessons: global, refreshed at most every 30 min (no restart)
         + "\n\nLEAGUE DATA:\n"
-        + render_context(ctx)
-        + picky_player_block(ctx)
-        + "\n(End of league data.)"
     )
+    # gemma4 is sliding-window: llama.cpp reuses a cached prompt only up to a checkpoint, and it keeps those near
+    # the end of each prompt. So the league data that changes rarely (week, standings, last week, Picky's own
+    # block) goes first and this week's games (market lines, headlines, weather: they change all day) go last;
+    # _prime leaves a checkpoint at the end of the stable part, so a data refresh re-reads only the games.
+    if ctx.get("error"):
+        stable, volatile = head + render_context(ctx) + picky_player_block(ctx), ""
+    else:
+        top, games, last = render_context(ctx, parts=True)
+        stable = head + "\n".join(top + last) + picky_player_block(ctx)
+        volatile = "\n" + "\n".join(games)
+    out = stable + volatile + "\n(End of league data.)" + ANSWER_REMINDER
+    STABLE_PART[out] = stable
+    while len(STABLE_PART) > 8:
+        STABLE_PART.pop(next(iter(STABLE_PART)))
+    return out
+
+
+STABLE_PART: dict[str, str] = {}  # prompt_prefix -> its rarely-changing start (_prime's second checkpoint)
+
+# Fixed text after the games, nearest the question: with the games last, rules 1-2 sat ~4k tokens back and a
+# two-part ask ("X and Y?") got one answer about "they" that dropped X (replay fixture 20261117-g06, 2026-11-24).
+ANSWER_REMINDER = ("\n\nBEFORE YOU ANSWER: answer every part of the question. Asked about two or more people or "
+                   "things, name each one in your answer, never just 'they'. Facts only from LEAGUE DATA: anything "
+                   "not there, say you don't have it.")
 
 
 # -----------------------------------------------------------------------------
@@ -5559,7 +5584,7 @@ def looping(text: str) -> bool:
 # end; the real request then processes only the tail. When the checkpoint is
 # already there (the usual case) the prime costs ~0.1 s; after a data change
 # (kickoff, final, ESPN refresh) or a model reload it rebuilds it once.
-async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
+async def _prime(c: httpx.AsyncClient, prefix: str) -> dict | None:
     # the raw prime uses qwen's chat template. gemma4 is sliding-window: llama.cpp
     # only keeps checkpoints near the END of each prompt, so two members' prompts
     # (same prefix, different tail) re-prefill all ~8k tokens (~55 s) unless a
@@ -5573,6 +5598,12 @@ async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
         payload["messages"] = [{"role": "system", "content": prefix}]
         if OLLAMA_THINK is not None:
             payload["think"] = OLLAMA_THINK == "true"
+        stable = STABLE_PART.get(prefix)
+        if stable and stable != _PRIMED["stable"] and prefix != _PRIMED["prefix"]:
+            # the stable part changed (or the model reloaded): prime it alone first, which leaves a checkpoint
+            # inside it that survives later refreshes, so those re-read only this week's games, not all ~8k
+            # tokens. Not on every refresh: a late change reuses the checkpoint near the prefix end instead.
+            _PRIMED["stable"] = stable if await _prime(c, stable) is not None else None
     elif "qwen" in MODEL.lower():
         endpoint = "generate"
         payload.update(prompt="<|im_start|>system\n" + prefix, raw=True)
@@ -5586,10 +5617,15 @@ async def _prime(c: httpx.AsyncClient, prefix: str) -> None:
             d = r.json()
             log.info("prime: %.1fs (prefix %s)", (d.get("prompt_eval_duration") or 0) / 1e9,
                      format(hash(prefix) & 0xffffff, "06x"))
+            _PRIMED["prefix"] = prefix
+            if (d.get("load_duration") or 0) > 1e9:  # the model (re)loaded: its checkpoints are gone
+                _PRIMED["stable"] = None
+            return d
     except (httpx.HTTPError, ValueError) as e:  # ValueError: a non-JSON body
         log.warning("prime failed: %s", e)
 
 
+_PRIMED: dict = {"prefix": None, "stable": None}  # last prefix primed + stable part checkpointed, this process
 _BG_PRIMES: set = set()
 
 
