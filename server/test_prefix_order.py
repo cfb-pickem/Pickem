@@ -43,7 +43,10 @@ def test_stable_part_survives_a_refresh():
           "STANDINGS (" in s1 and "LAST WEEK (week 10) FINALS" in s1 and "GRADED ONLY AGAINST THE SPREAD" in s1)
     check("this week's games come after it", "YOUR GAMES THIS WEEK (3)" not in s1 and "Game 1:" not in s1
           and p1.index("YOUR GAMES THIS WEEK (3)") > p1.index("LAST WEEK (week 10) FINALS"))
-    check("the prefix still ends the league data", p1.endswith("\n(End of league data.)"))
+    check("the prefix ends the league data, then the fixed answer reminder",
+          p1.endswith("\n(End of league data.)" + chat.ANSWER_REMINDER) and p2.endswith(chat.ANSWER_REMINDER))
+    check("the reminder comes after this week's games, outside the stable part",
+          p1.index(chat.ANSWER_REMINDER) > p1.index("YOUR GAMES THIS WEEK (3)") and chat.ANSWER_REMINDER not in s1)
 
 
 def test_same_lines_only_moved():
@@ -53,7 +56,7 @@ def test_same_lines_only_moved():
           collections.Counter(data.split("\n")) == collections.Counter(want.split("\n")))
     err = {"error": "offline"}
     check("an error context keeps the old layout", chat.prompt_prefix(err).endswith(
-        "LEAGUE DATA UNAVAILABLE: offline\n(End of league data.)"))
+        "LEAGUE DATA UNAVAILABLE: offline\n(End of league data.)" + chat.ANSWER_REMINDER))
 
 
 def test_drafts_share_the_primed_prefix():

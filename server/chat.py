@@ -2422,7 +2422,7 @@ def prompt_prefix(ctx: dict) -> str:
         top, games, last = render_context(ctx, parts=True)
         stable = head + "\n".join(top + last) + picky_player_block(ctx)
         volatile = "\n" + "\n".join(games)
-    out = stable + volatile + "\n(End of league data.)"
+    out = stable + volatile + "\n(End of league data.)" + ANSWER_REMINDER
     STABLE_PART[out] = stable
     while len(STABLE_PART) > 8:
         STABLE_PART.pop(next(iter(STABLE_PART)))
@@ -2430,6 +2430,12 @@ def prompt_prefix(ctx: dict) -> str:
 
 
 STABLE_PART: dict[str, str] = {}  # prompt_prefix -> its rarely-changing start (_prime's second checkpoint)
+
+# Fixed text after the games, nearest the question: with the games last, rules 1-2 sat ~4k tokens back and a
+# two-part ask ("X and Y?") got one answer about "they" that dropped X (replay fixture 20261117-g06, 2026-11-24).
+ANSWER_REMINDER = ("\n\nBEFORE YOU ANSWER: answer every part of the question. Asked about two or more people or "
+                   "things, name each one in your answer, never just 'they'. Facts only from LEAGUE DATA: anything "
+                   "not there, say you don't have it.")
 
 
 # -----------------------------------------------------------------------------
