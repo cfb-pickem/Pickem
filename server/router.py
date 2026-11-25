@@ -2387,6 +2387,10 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         pass  # 'don't fight it' already said: no lean against a move nobody can explain
     elif m and m.group(2) != "coin flip":
         parts.append((1, say("lean", label=m.group(1), why=why.rstrip(".")) if why else say("lean_nowhy", label=m.group(1))))
+        if why:  # the SP+ projection and cover margin it states come from the card's lean engine: cite that line
+            extra.append({"id": f"lean.{factstore._slug(away + ' at ' + home)}.ats", "kind": "lean",
+                          "subject": f"{away} at {home}", "value": m.group(1), "text": why,
+                          "source": "card lean (CFBD SP+)", "as_of": ""})
     elif m:
         parts.append((1, say("coin", label=m.group(1))))
     return factstore.answer(phrasing.join(parts), factstore.facts(g) + extra)
