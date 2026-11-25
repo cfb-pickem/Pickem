@@ -177,9 +177,19 @@ TRIGGER = re.compile(r"(?<![\w@])@\s?picky(?![\w@])|(?<![\w.])@?\s?pickempicky(?
 MENTION = re.compile(TRIGGER.pattern.rsplit("|", 1)[0], re.I)  # the @ forms only: what a DM's text loses
 
 
+# 'Nebraska–Iowa' / 'Michigan–Ohio State' (en/em dash, no spaces; phones and copy-paste make them): the team resolver
+# only reads a hyphen there, so those asks found no game (genius w13: wind, total and h2h asks went to the full brain)
+_JOIN_DASH = re.compile(r"(?<=\S)[\u2010-\u2015](?=\S)")
+
+
+def norm_dashes(text: str) -> str:
+    """An en/em dash joining two words or numbers -> '-', a minus sign -> '-'. Spaced dashes are left alone."""
+    return _JOIN_DASH.sub("-", (text or "").replace("\u2212", "-"))
+
+
 def strip_trigger(text: str, dm: bool = False) -> str:
     """The text without its trigger. A DM keeps a leading "Picky" (DMs never needed one: their text is unchanged)."""
-    out = re.sub(r"\s+", " ", (MENTION if dm else TRIGGER).sub(" ", text or ""))
+    out = re.sub(r"\s+", " ", (MENTION if dm else TRIGGER).sub(" ", norm_dashes(text)))
     out = re.sub(r"\s+([,.!?;:])", r"\1", out).strip(" ,:;-")
     return out if re.search(r"\w", out) else "hey"  # just the trigger ("PICKY!", "@Picky?"): a hello
 

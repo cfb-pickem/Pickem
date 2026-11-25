@@ -1163,6 +1163,54 @@ def _status_rows() -> list[dict]:
     return _fallback[key]
 
 
+def _ct_day(iso: str | None) -> str:
+    """'2026-11-21' for a report's UTC time, in Central time (game dates in the QB ledger are CT dates)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        d = datetime.fromisoformat((iso or "").replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return (d.astimezone(ZoneInfo("America/Chicago")) if d.tzinfo else d).date().isoformat()
+
+
+def _started_since(r: dict) -> bool:
+    """A QB out-type row (out, doubtful, benched ...) the player has since contradicted by starting a game after the
+    report's day. Same-day reports stay (an in-game injury is reported the day he started); questionable/TBD stay
+    (they read with their day, 'last report Mon 11/2')."""
+    if r.get("status") not in OUT_STATUSES:
+        return False
+    me = next((x for x in qb_room(r.get("team") or "") if cfbd.norm(x["name"]) == cfbd.norm(r["player"])), None)
+    day = _ct_day(r.get("reported_at"))
+    return bool(me and me.get("last_start") and day and me["last_start"] > day)
+
+
+def qb_missed(name: str, qb: dict) -> tuple[int, dict | None]:
+    """(starts by the team's other QBs after this QB's last start, the QB who made the latest of them). A QB with
+    starts who sat the last 2+ while someone else started them is sidelined (hurt or benched; the data can't say
+    which), so he's never 'the backup' (genius w13: Nico Iamaleava, out for the season since Oct 10, was named
+    UCLA's backup; Sayin, out since Oct 17, read as Ohio State's)."""
+    if not qb.get("last_start"):
+        return 0, None
+    later = [(gm["date"], x) for x in qb_room(name) if x is not qb and cfbd.norm(x["name"]) != cfbd.norm(qb["name"])
+             for gm in x.get("start_games") or [] if gm.get("date", "") > qb["last_start"]]
+    if not later:
+        return 0, None
+    return len(later), max(later, key=lambda t: t[0])[1]
+
+
+def sidelined(name: str) -> set[str]:
+    """Normalized names of a team's QBs who missed the last 2+ starts, never took a snap outside their own starts
+    (a benched starter who still plays in relief, Tennessee's Faizon Brandon, is the real backup) and have no fresh
+    (<= 7 days) report clearing them."""
+    import personnel as PS
+    fresh_ok = {PS._norm(r["player"]) for r in player_status(team=name)
+                if r["age_days"] <= 7 and r["status"] in ("available", "probable")}
+    return {cfbd.norm(x["name"]) for x in qb_room(name)
+            if qb_missed(name, x)[0] >= 2 and ((x.get("line") or {}).get("games") or 0) <= (x.get("starts") or 0)
+            and PS._norm(x["name"]) not in fresh_ok}
+
+
 def player_status(team: str | None = None, player: str | None = None, game: dict | None = None) -> list[dict]:
     """Normalized availability rows (latest report per player), newest first, each with read-time wording:
     when ('Monday' / 'last report Mon 11/2'), stale (> 7 days) and age_days."""
@@ -1179,6 +1227,8 @@ def player_status(team: str | None = None, player: str | None = None, game: dict
         if teams_ and cfbd.norm(r["team"]) not in teams_:
             continue
         if player and cfbd.norm(r["player"]) != cfbd.norm(player):
+            continue
+        if _started_since(r):
             continue
         c = dict(r)
         c["when"], c["stale"] = PS.report_when(r.get("reported_at"), now)
