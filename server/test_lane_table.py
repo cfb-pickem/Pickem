@@ -2,8 +2,8 @@
 items, if it's on this box. A FAIL means a text now takes a lane it shouldn't; if the change was on purpose,
 run `eval/lane_table.py accept`. Expected-fail rows (queued flubs) never fail the suite.
 
-Coverage (fact-store phase 2): the private table holds every genius exam ask (all 75: the repo's questions plus
-the private game-theory items) and every distinct real ask from the exchange log."""
+Coverage (fact-store phase 2): the private table holds every genius exam ask (the week's questions plus the
+private game-theory items: 53 since the week-13 refresh, 75 before) and every distinct real ask from the exchange log."""
 import subprocess
 import sys
 from pathlib import Path
@@ -21,7 +21,7 @@ if LT.PRIVATE_TABLE.exists():
     real = {LT.norm(q) for q in LT.real_asks()} - {""}
     miss_g, miss_r = genius - have, real - have
     print(f"coverage: genius {len(genius - miss_g)}/{len(genius)}, real {len(real - miss_r)}/{len(real)}")
-    if len(genius) < 75 or miss_g or miss_r:
+    if len(genius) < 50 or miss_g or miss_r:  # weekly refresh writes 50 (+ private items); fewer = a file didn't load
         print(f"FAIL coverage: {len(genius)} genius asks found, {len(miss_g)} missing, {len(miss_r)} real missing"
               " (run eval/lane_table.py build)")
         fails += 1
