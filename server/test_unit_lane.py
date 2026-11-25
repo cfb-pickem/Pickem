@@ -455,8 +455,10 @@ def test_real_cache_smoke():
               f"Where does {a} have the edge on {h}?"]
     for q in shapes:
         assert router.classify(q).label() == "fact:unit_matchup", (q, router.classify(q).label())
-        t = unit_lane.answer({"games_this_week": []}, q)
-        assert t and len(t) <= 350 and a in t and h in t, (q, t)
+        b = unit_lane.build(q, {"games_this_week": []})
+        t = b and b["text"]
+        cap = 350 if b and len(b["units"]) == 1 else 400  # two units asked ('the trenches') get one more clause
+        assert t and len(t) <= cap and a in t and h in t, (q, t)
 
 
 if __name__ == "__main__":
