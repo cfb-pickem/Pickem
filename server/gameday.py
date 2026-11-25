@@ -254,6 +254,8 @@ def override(route, q: str, prev_q: str = "", gs: dict | None = None):
     gk = league_intent(q, gs=gs) or intent(q, prev_q, gs=gs)
     if not gk:
         return route
+    if gk == "gd_whatif" and route.lane == "fact" and route.kind == "cfp_now":
+        return route  # 'where did UCLA land in today's CFP rankings?' is the committee's ranking, not a what-if
     named = _named(q, gs)
     named_game = bool(named or _player_games(q, gs))
     unit_pre = route.lane == "fact" and route.kind == "unit_matchup" and not any(
