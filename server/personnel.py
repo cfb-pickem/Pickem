@@ -525,7 +525,12 @@ _ST_RX = [
             r"\bwill be without\b|"
             r"\bwill miss\b|\b(?:expected|set|going) to miss\b|\bnot expected to play\b|\bsidelined\b"),
     ("benched", r"\bbench(?:ed|ing)\b|(?<!decision )\b(?:to|will) sit\b|\bdemoted\b|\blost (?:his|the) (?:starting )?job\b"),
-    ("questionable", r"\bquestionable\b|\bgame[- ]time decision\b|\bday[- ]to[- ]day\b|\blimited in practice\b|"
+    # 'questionable staff moves' / 'a questionable call' is an adjective, not a status (genius w13: a CBS season
+    # recap made Sayin, out since Oct 17, "questionable"): a status 'questionable' isn't followed by a plain word
+    ("questionable", r"\bquestionable\b(?!\s+(?!(?:for|to|with|vs|against|this|on|at|in|after|again|heading|going|"
+                     r"ahead|but|and|or|the|a|as|until|entering|into|due|because|if|per|according|so|though|amid|"
+                     r"since|while|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tonight|tomorrow|"
+                     r"week|weekend|heading)\b)[a-z]+\b)|\bgame[- ]time decision\b|\bday[- ]to[- ]day\b|\blimited in practice\b|"
                      r"\buncertain\b|\bconcussion protocol\b|\b(?:has|suffered|sustained) a concussion\b|\bworking (?:toward|towards|to get) (?:being )?(?:ready|back|"
                      r"healthy|playing)\b|\bhop(?:es|eful|ing) to (?:play|return|go|be ready)\b|\btrying to (?:play|"
                      r"return|get back)\b"),

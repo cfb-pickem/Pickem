@@ -887,7 +887,7 @@ H2H_ASK = re.compile(r"\blast (time|year|season)\b[^?.!]{0,40}\b(play|played|met
 # 'Who's starting at QB for Tennessee vs LSU?', 'Is LaNorris Sellers playing vs Georgia?' (genius exam 2026-11-17:
 # the intel said 'has not named a starter' and the 12B said MacIntyre starts)
 QB_STATUS_ASK = re.compile(r"\b(who'?s|who is|who will be|whos)\s+(starting|the starter|gonna start|going to start|under center|"
-                           r"playing qb|the qb)\b|\bstarting (qb|quarterback)\b|\bis [A-Z][\w'.-]+(?: [A-Z][\w'.-]+)? "
+                           r"playing qb|playing quarterback|the qb)\b|\bstarting (qb|quarterback)\b|\bis [A-Z][\w'.-]+(?: [A-Z][\w'.-]+)? "
                            r"(playing|starting|going to play|gonna play|out|available|good to go|healthy|hurt)\b"
                            r"|\bwho'?s [A-Z][\w&'.]*(?: [A-Z][\w&'.]*)?(?:'s)? (qb|quarterback)\b|\b(qb|quarterback) situation\b"
                            r"|\blost (a|their|its|his) (starting )?(qb|quarterback)\b",
@@ -911,6 +911,32 @@ BACKUP_QB_ASK = re.compile(r"\bbackup (qb|quarterback)s?\b|\b(qb|quarterback) ?2
 FRESH_D = 10
 _PLAYER_STATUS_Q = re.compile(r"\b(?i:is|will)\s+[A-Z][\w'.-]+(?: [A-Z][\w'.-]+)?\s+(?i:playing|starting|out|available|"
                               r"healthy|hurt|good to go|going to play|gonna play)\b")
+# 'Is UCLA's quarterback playing Saturday? Who's the backup?': the status first (genius w13 got only a backup line)
+_TEAM_QB_STATUS_Q = re.compile(r"\b(qb|quarterback)\s+(playing|starting|healthy|hurt|out|available)\b", re.I)
+# 'With Nico Iamaleava back under center for UCLA, UCLA +7 looks like free money' (genius w13: he's out for the season;
+# the full brain let the premise slide): a named QB said to be back goes to his status, which corrects it
+QB_BACK_PREMISE = re.compile(r"\b(?i:with|now that|since|if)\s+([A-Z][\w'.-]+(?: [A-Z][\w'.-]+)?)\s+(?:is\s+|being\s+)?"
+                             r"(?i:back|returning|healthy|playing|starting)\b")  # group 1 = the name
+_QB_STAT_ASK = re.compile(r"\b(yards|yds|touchdowns?|tds?|ints?|interceptions?|stats?|completion|passer rating)\b", re.I)
+_BACKUP_SAID = re.compile(r"\b(backup|back-up|if not|if he can'?t|who replaces|next man|qb2)\b", re.I)
+
+
+def _store_qb_ask(t: str) -> bool:
+    """A status ask with no sourced intel note goes to the store's QB lane (genius w13: 'Is Bryce Underwood playing?',
+    'who's playing quarterback for Ohio State' went to the full brain) unless the card's QB lane already takes it
+    ('is chiles playing saturday') or it wants a stat line (yards asks keep the full brain)."""
+    return not _QB_STAT_ASK.search(t) and (not QB_ASK.search(t) or bool(_BACKUP_SAID.search(t)))
+
+
+def _names_player(name: str, hit: tuple | None) -> bool:
+    """The text's name is that player's full name, or just his last name ('Fernando Mendoza' isn't Alberto Mendoza)."""
+    if not hit:
+        return False
+    full, said = factstore.norm(hit[0]), factstore.norm(name)
+    return said == full or (len(name.split()) == 1 and full.split()[-1:] == [said])
+
+
+QBS_IN_GAME = re.compile(r"\b(quarterbacks|qbs)\b", re.I)
 _EVER_PLAYED = re.compile(r"\b(ever (played|started)|has he (played|started)|any experience|played much|started before|"
                           r"has he done|what'?s he done)\b", re.I)
 _BACKUP_WANTED = re.compile(r"\b(backup|back-up|if not|if he can'?t|if he doesn'?t|if he'?s out|who replaces|next man|"
@@ -925,6 +951,26 @@ def _q(s: str, cap: int = 240) -> str:
         cut = max(s.rfind(x, 0, cap - 3) for x in ("; ", ", ", ". "))
         return s[:cut if cut > 60 else cap - 3].rstrip(" ,;.") + "..."
     return s if s.endswith((".", "!", "?", "'", '"')) else s + "."
+
+
+def _md(iso: str) -> str:
+    """'2026-10-17' -> 'Oct 17'."""
+    import datetime as _dt
+    try:
+        d = _dt.date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return iso or ""
+    return f"{d.strftime('%b')} {d.day}"
+
+
+def _sat_fact(team: str, x: dict, by: dict | None = None, n: int = 0) -> dict:
+    """The QB-ledger fact behind 'X hasn't started since Oct 17 vs Indiana; Y has started the last 4'."""
+    gm = next((g for g in x.get("start_games") or [] if g.get("date") == x.get("last_start")), {})
+    txt = f"{x['name']} ({team}) last started {_md(x.get('last_start'))} ({x.get('last_start')}) vs {gm.get('opp')}"
+    if by:
+        txt += f"; {by['name']} started the {n} games since"
+    return {"id": f"qb_start.{factstore._slug(x['name'])}.last", "kind": "qb_start", "subject": x["name"],
+            "value": x.get("last_start"), "text": txt, "source": "CFBD box scores", "as_of": x.get("last_start")}
 
 
 def _qb_bio(x: dict, name: bool = True) -> str:
@@ -1098,7 +1144,7 @@ def qb_verdict(fx: list[tuple[dict, dict]], injury_ask: bool, seed: str) -> str 
     return None
 
 
-def qb_status_text(ctx: dict, q: str) -> str | None:
+def qb_status_text(ctx: dict, q: str, _team: str | None = None) -> str | None:
     """A QB's (or player's) latest status from the normalized availability list, verbatim with its source and
     day (TBD stays TBD; > 7 days old says 'last report <day>'). Out or doubtful: who's next (class, starts,
     SU/ATS as the starter, season line; never a QB who's out too), what that's worth and what the line has done.
@@ -1107,6 +1153,14 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
         return _qb_status_intel(ctx, q)
     named = factstore.teams_in(q)
     hit = factstore.find_player(q, named)
+    if not hit and len(named) >= 2 and QBS_IN_GAME.search(q or "") and not _team:
+        parts = [qb_status_text(ctx, q, _team=n) for n in named[:2]]
+        parts = [p_ for p_ in parts if p_]
+        if not parts:
+            return None
+        return factstore.answer(" ".join(parts), [f for p_ in parts for f in p_.facts_used])
+    if _team:
+        named, hit = [_team], None
     if hit:
         player, team = hit
     elif named:
@@ -1134,6 +1188,8 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     used, out, said = [], [], set()
     others = [x["name"] for x in room] + [r["player"] for r in factstore.player_status(team=team)]
     st = row["status"] if row else None
+    side = factstore.sidelined(team)
+    missed, by = factstore.qb_missed(team, me) if me else (0, None)
     if row:
         used.append(factstore.status_fact(row))
         clip = _clip(row, said, others)  # no quote marks: the filters split them (genius: dangling ")
@@ -1147,6 +1203,16 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
             clip = re.sub(r"^he (?=not\b)", "he's ", clip)  # '... Sellers not listed on ...' -> "he's not listed"
         out.append(f"{player} ({team}) is {factstore.STATUS_PHRASE.get(st, st)}, per {row['source_name']} "
                    f"({row['when']})" + (f": {clip}" if clip else "."))
+    elif missed and by:
+        # no report, but he sat out (genius w13: 'nothing in my sources has him hurt' for Sayin, out since Oct 17)
+        gm = next((x for x in me.get("start_games") or [] if x.get("date") == me["last_start"]), {})
+        out.append(f"{player} ({team}) hasn't started since {_md(me['last_start'])}"
+                   + (f" vs {gm['opp']}" if gm.get("opp") else "")
+                   + (f"; {by['name']} has started the last {missed}" if missed >= 2 and by.get("streak") == missed
+                      else f"; {by['name']} started the last game" if missed == 1 else f"; {by['name']} has started since")
+                   + ". Nothing in my sources says why or gives a status for this week.")
+        out.append(f"{by['name'].split()[-1]}: {_qb_bio(by, False)}.")
+        used += _qb_used(team, by["name"]) + [_sat_fact(team, me, by, missed)]
     else:
         out.append(f"{player} ({team}): nothing in my sources (news, ESPN's injury listings) has him hurt or out.")
     also = [r for k, r in outs.items() if k != factstore.norm(player) and not hit and r["age_days"] <= FRESH_D]
@@ -1161,7 +1227,9 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
     g, _ = factstore.find_game(team, ctx)
     replaced = bool(starter and me and starter is not me and starter.get("streak") and (me.get("starts") or 0) > 0
                     and factstore.norm(starter["name"]) not in outs)
-    nxt = factstore.backup_for(room, player, set(outs), team)
+    nxt = factstore.backup_for(room, player, set(outs) | side, team)
+    if missed and by and not row:
+        return factstore.answer(" ".join(out), used)
     if st in factstore.OUT_STATUSES and not hit and not replaced and nxt:
         out.insert(0, f"Looks like it's {nxt['name'].rstrip('.')} for {team}.")  # 'who's Clemson's QB?': the man playing, first
     if st in factstore.OUT_STATUSES:
@@ -1202,6 +1270,12 @@ def qb_status_text(ctx: dict, q: str) -> str | None:
                 out.append("The line's barely moved, so the market's waiting on him too.")
     elif me and me.get("starts") and me is starter and me.get("streak"):
         out.append(_streak(me))
+    if not hit and me is starter:
+        for x in room:
+            if x is not me and factstore.norm(x["name"]) in side and (x.get("starts") or 0) > (me.get("starts") or 0):
+                out.append(f"{x['name']} ({_qb_bio(x, False)}) hasn't started since {_md(x['last_start'])}.")
+                used += _qb_used(team, x["name"]) + [_sat_fact(team, x)]
+                break
     return factstore.answer(" ".join(out), used)
 
 
@@ -1235,7 +1309,13 @@ def backup_qb_text(ctx: dict, q: str) -> str | None:
     elif main is not cur and factstore.norm(main["name"]) in outs:
         out.append(f"{gone(main)}, so the backup already took over: {_qb_bio(cur)}.")
         lead = "Behind him: "
-    b = factstore.backup_for(room, cur["name"], set(outs), team)
+    side = factstore.sidelined(team)
+    if main is not cur and factstore.norm(main["name"]) in side and factstore.norm(main["name"]) not in outs:
+        used += _qb_used(team, main["name"]) + [_sat_fact(team, main)]
+        out.append(f"{main['name']} hasn't started since {_md(main['last_start'])}, so the backup already took over: "
+                   f"{_qb_bio(cur)}.")
+        lead = "Behind him: "
+    b = factstore.backup_for(room, cur["name"], set(outs) | side, team)
     if not b:
         return factstore.answer(" ".join(out), used) if out else None
     used += _qb_used(team, b["name"])
@@ -2365,9 +2445,18 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "cfp_now", "CFP_NOW_ASK"  # the real CFP field if it ended today: ESPN CFP + race leaders + cfp_rules
     if INJURY_IMPACT_ASK.search(t) and not re.search(r"\b(qb|quarterback)s?\b", t, re.I):
         return "injury_impact", "INJURY_IMPACT_ASK"  # 'any injuries that matter for X vs Y', 'Indiana lost a lineman?'
-    if BACKUP_QB_ASK.search(t) and not _PLAYER_STATUS_Q.search(t):
+    if (m_back := QB_BACK_PREMISE.search(t)) and factstore.has_personnel() and not factstore.teams_in(m_back.group(1)) \
+            and _names_player(m_back.group(1), factstore.find_player(m_back.group(1), factstore.teams_in(t))) \
+            and qb_status_text({}, t):
+        return "qb_status", "QB_BACK_PREMISE"  # 'with Nico back under center, UCLA +7 is free money?': his real status
+    if QBS_IN_GAME.search(t) and len(factstore.teams_in(t)) >= 2 and factstore.has_personnel():
+        return "qb_status", "QBS_IN_GAME"  # 'who are the quarterbacks in Nebraska-Iowa': both rooms, from the store
+    if BACKUP_QB_ASK.search(t) and not _PLAYER_STATUS_Q.search(t) and not _TEAM_QB_STATUS_Q.search(t) \
+            and not unit_lane.wants(t):
         return "backup_qb", "BACKUP_QB_ASK"  # 'who's Ohio State's backup QB': starts, record, line, first start
-    if QB_STATUS_ASK.search(t) and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and _qb_status_intel({}, t):
+    if (QB_STATUS_ASK.search(t) or (_TEAM_QB_STATUS_Q.search(t) and factstore.has_personnel())) \
+            and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and (
+            _qb_status_intel({}, t) or (factstore.has_personnel() and _store_qb_ask(t) and qb_status_text({}, t))):
         return "qb_status", "QB_STATUS_ASK"  # 'who's starting at QB for Tennessee': the sourced intel note, verbatim
     if CONF_RACE_ASK.search(t) and not re.search(r"\b(cfp|playoff|my|our|league)\b", t, re.I):
         return "conf_race", "CONF_RACE_ASK"  # 'what's the Big 12 title game picture': CFBD conference records
