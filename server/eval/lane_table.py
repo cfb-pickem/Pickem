@@ -212,7 +212,8 @@ def check(synthetic_only: bool = False, quiet: bool = False) -> int:
             if r["status"] == "FAIL" or (not quiet and r["status"] in ("XFAIL", "XPASS")):
                 q = r["q"] if name == "synthetic" else f"<{name} row, {len(r['q'])} chars>"
                 print(f"  {r['status']:5} got {r['got']} ({r['why_rule']}) want {r['ok']}"
-                      f"{' [' + r['xfail'] + ']' if r.get('xfail') else ''}: {q}")
+                      f"{' [' + r['xfail'] + ']' if r.get('xfail') else ''}"
+                      f"{' [flub ' + r['flub'] + ']' if r.get('flub') and r['status'] == 'FAIL' else ''}: {q}")
         bad += counts["FAIL"]
     return 1 if bad else 0
 

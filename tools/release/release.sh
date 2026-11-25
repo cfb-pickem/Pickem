@@ -7,7 +7,8 @@
 #   tools/release/release.sh --fail-canary ...  # rollback drill: a real release whose canary is forced to fail
 #   tools/release/release.sh --rollback         # put live back on the previous release tag
 #
-# Steps: game-day freeze check -> model-free suite on a fresh worktree of <ref> (must be green) -> tag
+# Steps: game-day freeze check -> model-free suite on a fresh worktree of <ref> (no NEW failures: anything it fails
+# must also fail on the live commit, and the HARD tests / fixed-flub lane rows must pass no matter what) -> tag
 # picky-live-<stamp> (pushed) -> under the exam lock: switch /Users/Agent/picky-live to the tag -> reload
 # the KeepAlive services (bootout + bootstrap, error 5 retried) -> deploy the watcher if it changed ->
 # deep /health + a model canary through /group (X-Picky-Test) -> on any failure, roll back to the previous
@@ -28,6 +29,10 @@ LOG=$PRIV/releases.jsonl
 RLOCK=/tmp/picky-release.lock
 ELOCK=/tmp/picky-exam.lock
 EXAM_WAIT=${PICKY_RELEASE_EXAM_WAIT:-3600}
+# guardrail / leak / live-Claude-switch checks: a failure blocks even if live fails it too (so does a fixed flub's
+# lane-table row, "[flub <id>]" in the test_lane_table.py log)
+HARD_TESTS=(test_privacy.py test_picky_reveal.py test_reveal_lanes.py test_fact_guard.py test_matchup_guard.py
+            test_anthropic_down.py)
 
 DRY=0; FAILC=0; MODE=release; REF=main; PHASE=""
 ORIG=("$@")
@@ -108,7 +113,7 @@ if [ "$PHASE" = live ]; then
   deploy_services "$PREV" "$SHA"
   if healthy && canary; then
     say "LIVE on $TAG (health + canary ok)"
-    record shipped
+    record shipped "${PICKY_RELEASE_TOLERATED:+\"tolerated\": \"$PICKY_RELEASE_TOLERATED\"}"
     exit 0
   fi
   say "health/canary FAILED on $TAG: rolling back to $PREV_TAG"
@@ -164,12 +169,29 @@ if [ $DRY = 1 ]; then say "[dry-run] suite: $HERE/alltests.sh on a worktree of $
   say "model-free suite on $WT (this takes a while)"
   OUT=$(/bin/zsh $WT/tools/release/alltests.sh $WT 2>&1 | tail -1)
   say "$OUT"
-  if [ "$OUT" != "FAILS: none" ]; then
-    record suite-failed "\"fails\": \"${OUT#FAILS: }\""
-    git -C $REPO worktree remove --force $WT
-    exit 1
-  fi
   git -C $REPO worktree remove --force $WT
+  if [ "$OUT" != "FAILS: none" ]; then  # gate: no NEW failures vs the live commit, HARD ones never
+    FAILS=(${=${OUT#FAILS: }}); BAD=(${FAILS:*HARD_TESTS})
+    grep -q '^  FAIL .*\[flub ' /tmp/kt-picky-release-wt-test_lane_table.py.log 2>/dev/null && BAD+=test_lane_table.py-flub-row
+    BASE=$(git -C $LIVE rev-parse HEAD 2>/dev/null)
+    if [ ${#BAD} = 0 ] && [ -n "$BASE" ]; then
+      BWT=/private/tmp/picky-release-base
+      say "baseline: the same suite on live ${BASE:0:10}"
+      $HERE/mkwt.sh $BWT $BASE >/dev/null && BOUT=$(/bin/zsh $BWT/tools/release/alltests.sh $BWT 2>&1 | tail -1)
+      git -C $REPO worktree remove --force $BWT 2>/dev/null
+      say "baseline $BOUT"
+      if [[ $BOUT == "FAILS: "* ]]; then
+        BFAILS=(${=${BOUT#FAILS: }}); BAD=(${FAILS:|BFAILS})
+      else BAD=(baseline-suite-did-not-run); fi
+    elif [ ${#BAD} = 0 ]; then BAD=(no-live-baseline); fi
+    if [ ${#BAD} -gt 0 ]; then
+      say "BLOCKED by: ${BAD[*]}"
+      record suite-failed "\"fails\": \"${OUT#FAILS: }\", \"blocking\": \"${BAD[*]}\""
+      exit 1
+    fi
+    export PICKY_RELEASE_TOLERATED="${FAILS[*]}"
+    say "TOLERATED as pre-existing (live ${BASE:0:10} fails them too): ${FAILS[*]}"
+  fi
 fi
 
 TAG=picky-live-$(date +%Y%m%d-%H%M%S)
