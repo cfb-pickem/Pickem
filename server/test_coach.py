@@ -293,6 +293,30 @@ with patch.object(pc, "CLAUDE", str(FAKE)), patch.object(pc, "live_reply", fake_
     check("(a) _answer: coach after the send-point guards, before the reply is saved",
           asrc.index("reply = await sides_guard(") < asrc.index("reply = await _coach(") < asrc.index("await save_turn(key, q_hist, reply, who, lane=route.label())\n        return {\"reply\": reply, \"image\": image"))
 
+# (i) rewrite style (Charlie 2026-11-26 on Rettino's "Suck me": the fix "Big talk from a guy sitting right on the cut
+# line at 29-23 who's 4-4 over his last 8. Cover a few this weekend and then you can make demands." "that sucked")
+RETTINO_DRAFT = "Streaks end, and i'll be here with a pen when yours does."
+sysm, _ = co.prompt("Suck me", RETTINO_DRAFT, FACTS, who="Rettino", team="Rettino")
+psys, _ = co.post_prompt("preview", "x", FACTS, max_chars=280)
+check("(i) both reviews carry the rewrite-style rules", co.VOICE in sysm and co.VOICE in psys)
+for rule in ("ONE punchy line", "ONE specific real fact", "never stack records", '"do X and then you can Y"',
+             "the answer first", "keep the joke"):
+    check(f"(i) the rewrite rules say: {rule}", rule in co.VOICE, co.VOICE)
+check("(i) the 'Suck me' stat dump is the bad example, a one-liner the good one",
+      "then you can make demands" in co.VOICE.split("Good fix:")[0] and "making requests?" in co.VOICE.split("Good fix:")[1])
+check("(i) no real record in the example (it can't leak into a fix as a fact)", not co._NUM.findall(co.VOICE.replace(
+    "last 8", "")), co._NUM.findall(co.VOICE))
+with patch.object(pc, "CLAUDE", str(FAKE)), patch.object(pc, "live_reply", fake_live_reply), \
+        patch.object(gc, "_raw_facts", fake_facts):
+    switch({"on": True, "model": "opus", "mode": "coach", "raw": False})
+    out = coach(draft=RETTINO_DRAFT, q="Suck me", mode="group", route=router.Route("banter", "insult"),
+                raw=fixjson("30-14 and you're making requests?", score=5, cat="fact",
+                            lesson="Don't invent a streak for a comeback; jab with one real record."))
+    check("(i) 'Suck me': the one-line fix goes out", out == "30-14 and you're making requests?", out)
+    rec = co.read_lessons()[-1]
+    check("(i) 'Suck me': logged as a banter fix", rec["lane"] == "banter:insult" and rec["side"] == "group"
+          and rec["draft"] == RETTINO_DRAFT, rec)
+
 # (f) coach mode drafts on gemma: direct mode's hook stays off
 GEMMA = []
 

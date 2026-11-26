@@ -8,10 +8,15 @@ or bad JSON = the draft. The Opus call itself lives in group_chat (switch-gated 
 module is pure code: the prompt, the JSON guard, the checks, the lesson / check logs, the lessons block Picky's
 local prompt carries (chat.prompt_prefix), and the nightly scorecard (flub_loop.report).
 
+Scheduled group posts (Charlie 2026-11-26, after the clipped preview:2026:13): every group_outbox.post() that
+would really queue gets the same one review (post_prompt; the call is group_outbox._coach_post): pass = the post as
+is, fix = the coach's one-text rewrite if it fits the post's cap and passes the same checks, error = the post as is.
+Logged with side "post"; those lessons stay out of Picky's reply prompt and the flub harvest (no member exchange).
+
 Files (cfb-pickem-private/coach, 0600, no phone numbers):
   lessons.jsonl   one line per fix verdict: ts, side group|dm, team, lane, question, draft, answer, lesson,
                   category, score, sent answer|draft (+ why the fix was refused)
-  checks.jsonl    one line per review: ts, side, verdict pass|fix|error, score, category, sent, why
+  checks.jsonl    one line per review: ts, side group|dm|post, verdict pass|fix|error, score, category, sent, why
   GRADUATION_READY  written the first night the weekly graduation bar is met (report only, nobody is texted)
 """
 from __future__ import annotations
@@ -65,6 +70,7 @@ text, no markdown, no lists unless asked, members by team name, never real names
 Every league fact and number must come from LEAGUE FACTS, the recent chat or the draft, copied exactly; never
 invent one, and if the facts don't have it, say so plainly. Nobody's picks for games that haven't kicked off are
 known: never guess or state them, Picky's own included.
+{voice}
 lesson = one general sentence Picky can follow next time: "Don't <what the draft did>; <what to do instead>." No
 member names, no numbers that go stale.
 score = 1-10 for the DRAFT (10: helpful, right, on-voice, right length).
@@ -74,6 +80,21 @@ Today is {today} (US Central).
 
 LEAGUE FACTS:
 {facts}"""
+
+# How a fix should sound (Charlie 2026-11-26, on "Suck me" -> a two-sentence stat dump with a canned closer: "that
+# sucked"). Shared by the reply and the scheduled-post reviews.
+VOICE = """How a fix sounds (it goes out under Picky's name, so it has to be good, not just correct):
+- A real question: the answer first, in plain words; then voice; a roast last, only if it fits.
+- Banter, insults, trash talk: ONE punchy line, like a text from the funniest guy in the chat. Not a stat sheet.
+- Build the dig on ONE specific real fact when one fits (a bad week, a spot in the standings, a pick that blew up),
+  said the way a friend would say it. At most one record or number in a roast; never stack records, streaks and
+  ranks.
+- No formula lines: no "do X and then you can Y" / "come back when" / "talk to me when" closers, no "big talk from a
+  guy who...", no explaining the joke.
+- If the draft's joke lands and one detail is wrong, fix the detail and keep the joke.
+- Example (X-Y = a real record from the facts). Member: "Suck me". Bad fix: "Big talk from a guy sitting right on
+  the cut line at X-Y who's X-Y over his last 8. Cover a few this weekend and then you can make demands." Good fix:
+  "X-Y your last 8 and you're making requests?\""""
 
 _PHONE = re.compile(r"(?<![\d-])(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?![\d-])|[\w.+-]+@[\w-]+\.[a-z]{2,}", re.I)
 _NUM = re.compile(r"\d+(?:\.\d+)?")
@@ -109,11 +130,83 @@ def prompt(q: str, draft: str, facts: str, *, who: str = "", team: str | None = 
            recent: str = "", now: dt.datetime | None = None) -> tuple[str, str]:
     """(system, user) for the review call."""
     now = now or dt.datetime.now(CT)
-    system = SYSTEM.format(today=now.strftime("%a %b %-d, %Y %-I:%M %p"), facts=facts)
+    system = SYSTEM.format(today=now.strftime("%a %b %-d, %Y %-I:%M %p"), facts=facts, voice=VOICE)
     user = (f"RECENT GROUP CHAT (context only):\n{recent}\n\n" if recent else "")
     user += f"[{'DM' if dm else 'group'} text from {who or 'a member'}" + (f" (team: {team})" if team else "") + "]\n"
     user += f"{q}\n\nPICKY'S DRAFT:\n{draft}\n\nReturn the JSON verdict."
     return system, user
+
+
+POST_SYSTEM = """You are the quality coach for Picky, the AI member of a college football pick'em league's iMessage
+group (the league picks 4 games a week against the spread, 1 point per cover). Picky's scheduled posts to the
+group (Thursday preview, picks-up announcement, reminders, recap, Saturday slate, live alerts) are written by code
+templates and cut to a length cap. Judge the POST before it goes out and fix it when it falls short.
+
+verdict "fix" when ANY of these is true (category = the main problem):
+- fact: wrong, or a claim LEAGUE FACTS and the full draft don't support
+- leak: garbled, cut off mid-thought, makes no sense on its own, or leaks internal text (labels, source names,
+  prompt words)
+- unhelpful: an item that isn't what the post says it is (e.g. a "how to watch" / TV listing headline sold as news
+  or as "what changed"), or the cut dropped what mattered and kept filler
+- voice: robotic or report-like where a plain sentence would do
+- length: over the cap
+Otherwise "pass": a plain, correct, readable post passes; don't rewrite for taste.
+
+On "fix", answer = the whole post as ONE text of at most {max_chars} characters, sent as is: plain words, Picky's
+voice, no markdown. Keep the post's purpose and its most important items (when the FULL DRAFT is longer than the
+POST, pick from it: whole items, most important first, never half an item). Every fact and number must come from
+the POST, the FULL DRAFT or LEAGUE FACTS, copied exactly; never invent one. Drop an item rather than guess. Never
+add Picky's own pick or lean in a game, or anyone's picks, that the POST doesn't already show (sides stay hidden
+until kickoff).
+{voice}
+lesson = one general sentence for the post writer: "Don't <what the post did>; <what to do instead>." No member
+names, no numbers that go stale.
+score = 1-10 for the POST (10: right, clear, useful, the right length).
+On "pass": answer "", lesson "", category "".
+
+Today is {today} (US Central).
+
+LEAGUE FACTS:
+{facts}"""
+
+
+def post_prompt(kind: str, post: str, facts: str, *, max_chars: int, full: str = "",
+                now: dt.datetime | None = None) -> tuple[str, str]:
+    """(system, user) for a scheduled group post's review. `full` = the post before group_outbox cut it to its cap
+    ('' when it wasn't cut)."""
+    now = now or dt.datetime.now(CT)
+    system = POST_SYSTEM.format(today=now.strftime("%a %b %-d, %Y %-I:%M %p"), facts=facts, voice=VOICE,
+                                max_chars=max_chars)
+    user = f"[scheduled group post, kind {kind}, cap {max_chars} characters, one text]\n"
+    if full and full.strip() != post.strip():
+        user += f"FULL DRAFT (before the length cut, {len(full)} characters):\n{full}\n\n"
+    user += f"POST (as it would send):\n{post}\n\nReturn the JSON verdict."
+    return system, user
+
+
+_PICK_LINES = re.compile(r"^\s*(picks in games|PICKY \(the bot's own)", re.I)  # = group_chat._RAW_DROP
+_post_facts = {"at": 0.0, "facts": "", "names": []}
+POST_FACTS_TTL = 600
+
+
+def post_facts() -> tuple[str, list[str]]:
+    """(facts bundle, member names) for a scheduled post's review: raw mode's bundle (flub_loop.build_facts, member
+    pick lines stripped), cached POST_FACTS_TTL. build_facts imports eval/run.py, which marks its process side
+    traffic (PICKY_SIDE=1): undone here, so a live process (close_cover) stays live. ('', []) on any failure."""
+    if _post_facts["facts"] and time.time() - _post_facts["at"] < POST_FACTS_TTL:
+        return _post_facts["facts"], _post_facts["names"]
+    side = os.environ.get("PICKY_SIDE")
+    try:
+        import flub_loop
+        d = flub_loop.build_facts()
+        f = "\n".join(ln for ln in d["facts"].splitlines() if not _PICK_LINES.match(ln))
+        _post_facts.update(at=time.time(), facts=f, names=list(d.get("names") or []))
+    except Exception:  # noqa: BLE001 - no bundle = no review (the post goes out as is)
+        return "", []
+    finally:
+        if side is None:
+            os.environ.pop("PICKY_SIDE", None)
+    return _post_facts["facts"], _post_facts["names"]
 
 
 def parse(raw: str | None, draft: str = "") -> dict | None:
@@ -225,6 +318,8 @@ def top_lessons(recs: list[dict] | None = None, n: int = LESSONS_N) -> list[str]
     recs = read_lessons() if recs is None else recs
     groups: list[dict] = []
     for d in recs[-LESSONS_SCAN:]:
+        if d.get("side") == "post":  # a scheduled post's lesson is for the code templates, not Picky's replies
+            continue
         text = " ".join(str(d.get("lesson") or "").split())
         w = _words(text)
         if len(w) < 3:

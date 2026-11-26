@@ -153,7 +153,15 @@ draft. Test traffic (canary, deep health, exams, no-model eval) and the site wid
 - Scorecard: the nightly flub report (`flubs/report-<date>.md`) has the "Opus coach" lines: checked, passed,
   fixed, pass-rate trend, average draft score, top lesson categories, and the weekly graduation line (>= 95%
   pass over >= 100 checks in 7 days, 0 fact fixes, avg >= 8; first time: `coach/GRADUATION_READY`). Never texted.
-- Tests: `test_coach.py`.
+- Scheduled group posts (2026-11-26): every `group_outbox.post()` that would really queue (preview, picks-up,
+  reminders, recap, Saturday, live / cover alerts) gets the same one review right before it's queued
+  (`picky_coach.post_prompt`, it sees the pre-cut text too). Fix = the rewrite only if it's one text under the
+  post's cap, grounded, no member pick claim, no hidden side; anything else = the post as is (fails open, same
+  on/off switch). Logged with side "post" (kept out of the reply lessons block and the flub harvest). Post flubs
+  get `via: "post"` replay fixtures (`real_replay.py post`: the post code re-run on recorded inputs).
+- Rewrite style: `picky_coach.VOICE` (one punchy line for banter, one real fact, no stacked stats, no formula
+  closers; answer first for real questions).
+- Tests: `test_coach.py`, `test_group_posts.py` (post coach).
 
 ## Game dossiers (`dossier.py`)
 

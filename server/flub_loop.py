@@ -441,6 +441,8 @@ def harvest(date: str, dry: bool = False, since: float | None = None, until: flo
     # the Opus coach's fixes (live coach mode): Picky's own draft is the flub, the coach's answer what went out
     coach_n = 0
     for rec in picky_coach.read_lessons(start, end):
+        if rec.get("side") == "post":  # a scheduled post's fix: no member exchange to replay (group_outbox._coach_post)
+            continue
         row = next((r for r in rows if id(r) not in taken and _plain(r.get("q")) == _plain(rec.get("question"))
                     and abs(float(r.get("ts") or 0) - float(rec.get("ts") or 0)) <= 180), None)
         if row:

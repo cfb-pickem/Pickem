@@ -27,6 +27,10 @@ run      inside the shared exam lock (/usr/bin/lockf /tmp/picky-exam.lock; re-ex
          as the fixture's member, DM history wiped per fixture; every turn in order, the last one graded).
          --original grades the replies logged live instead (no model, no lock). --confirm re-runs the
          failures once (a fail must repeat); --out writes {status_by_id, summary} (flub_loop's fix gate).
+post fixtures  {via: "post", post: {kind, season, week, now, max_chars, prepared, state_games, facts_for}}: a
+         scheduled group post (preview:2026:13, 11-26), re-run in code on its recorded inputs from the ref's
+         worktree (`real_replay.py post`, fixture JSON on stdin), cut to the post cap like group_outbox.post;
+         no sidecar, no model. Graded like a reply minus the pool-line check (a market move isn't a pool line).
 checks   lane (expected lane set), not_lane (a lane a flubbed dodge took), not_repeat (the flubbed reply
          word for word), privacy (eval/checks.check_privacy: no hidden pick or submission
          status before lock), answers (every sub-question regex matches), facts (record claims true
@@ -205,7 +209,7 @@ def grade(fx: dict, reply: str | None, lane: str | None, truth, dm: bool | None 
     _n, ok, d = ck.check_record_claims(reply, truth, fx.get("team"))
     if not ok:
         bad.append(f"record {d}")
-    lc = line_claims(reply, truth.games)
+    lc = line_claims(reply, truth.games) if fx.get("via") != "post" else []  # a post quotes market moves
     if lc:
         bad.append("line " + ", ".join(lc))
     bad += [f"must_not /{p}/" for p in exp.get("must_not") or [] if re.search(p, reply, re.I)]
@@ -369,6 +373,38 @@ def ask_all(fixtures: list[dict], port: int, tag: str, hist: Path | None = None)
     return out
 
 
+def post_answer(fx: dict) -> str:
+    """A scheduled-post fixture's post, from this checkout's code: the Thursday refresh re-run on the recorded
+    breakdown state + facts, then group_outbox's cap. '(no post)' when the code would skip it."""
+    import types
+    import group_outbox as ob
+    import week_breakdown as wb
+    p = fx["post"]
+    wb.load_state = lambda season, week: {"games": p["state_games"], "prepared": p["prepared"]}
+    wb.facts_for = lambda games, week, now=None, notes=None, client=None: p["facts_for"]
+    lg = types.SimpleNamespace(season=p["season"], week_games=lambda w: [])
+    texts = wb.refresh_texts(lg, p["week"], dt.datetime.fromisoformat(p["now"]), limit=p["max_chars"]) or []
+    return "\n".join(ob.clip(texts, p["max_chars"])) or "(no post)"
+
+
+def post_answers(fixtures: list[dict], wt: Path) -> dict[str, dict]:
+    """Every post fixture through `real_replay.py post` in the worktree (its code, not this one's)."""
+    out = {}
+    for fx in fixtures:
+        t0 = time.time()
+        try:
+            r = subprocess.run([str(wt / "server/.venv/bin/python3"), "-I", str(wt / "server/real_replay.py"), "post"],
+                               input=json.dumps(fx), capture_output=True, text=True, timeout=180)
+            lines = r.stdout.strip().splitlines()
+            reply = json.loads(lines[-1])["reply"] if r.returncode == 0 and lines else \
+                f"[ERROR rc={r.returncode}: {r.stderr.strip()[-160:]}]"
+        except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as e:
+            reply = f"[ERROR {e!r}]"
+        out[fx["id"]] = {"reply": reply, "lane": "post", "secs": round(time.time() - t0, 1)}
+        print(f"  {fx['id']} {out[fx['id']]['secs']:5.1f}s {'post':<14} {_clip(reply, 90)}", flush=True)
+    return out
+
+
 def replay(fixtures: list[dict], ref: str = "HEAD", port: int = 8807) -> tuple[dict[str, dict], str]:
     """Side sidecar from a worktree of `ref`; every fixture asked once. Caller holds the exam lock."""
     import httpx
@@ -392,7 +428,10 @@ def replay(fixtures: list[dict], ref: str = "HEAD", port: int = 8807) -> tuple[d
             time.sleep(2)
         else:
             raise RuntimeError("side sidecar never came up")
-        return ask_all(fixtures, port, str(os.getpid()), run_dir / "hist.json"), sha
+        answers = ask_all([f for f in fixtures if f.get("via") != "post"], port, str(os.getpid()),
+                          run_dir / "hist.json")
+        answers.update(post_answers([f for f in fixtures if f.get("via") == "post"], wt))
+        return answers, sha
     finally:
         try:
             os.killpg(side.pid, signal.SIGTERM)
@@ -603,7 +642,7 @@ def cmd_nightly(a, argv: list[str]) -> int:
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     ap = argparse.ArgumentParser(prog="real_replay.py")
-    ap.add_argument("cmd", choices=["build", "run", "nightly", "report"])
+    ap.add_argument("cmd", choices=["build", "run", "nightly", "report", "post"])
     ap.add_argument("path", nargs="?", default="")
     ap.add_argument("--date", default=None)
     ap.add_argument("--since", default="00:00")
@@ -614,6 +653,9 @@ def main(argv=None) -> int:
     ap.add_argument("--confirm", action="store_true", help="re-run failures once (FLAKY if they pass)")
     ap.add_argument("--out", default="", help="write {status_by_id, summary} here")
     a = ap.parse_args(argv)
+    if a.cmd == "post":  # one post fixture (JSON on stdin) -> {"reply": ...} on the last stdout line
+        print(json.dumps({"reply": post_answer(json.loads(sys.stdin.read()))}))
+        return 0
     if a.cmd in ("run", "nightly"):
         import freeze  # game day: no exams Sat 10:00-24:00 CT (review R9)
         freeze.exam_guard("real_replay")

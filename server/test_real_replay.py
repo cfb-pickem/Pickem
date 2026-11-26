@@ -203,5 +203,28 @@ check(hl["open ask"].get("xfail") == "o" and "xfail" not in hl["fixed ask"] and 
       and "context ask" not in hl and "two" not in hl,
       "lane rows: open flubs xfail, fixed ones hard (release-blocking), router-only and single-turn only")
 
+# scheduled-post fixtures (via "post", preview:2026:13 on 11-26): re-run in code on the recorded inputs
+SENT = ("Week 13, what's changed since the breakdown (Open-Meteo forecasts):\nIowa -2.5 at Illinois: new: How to watch "
+        "Iowa football vs. Illinois: Time, TV channel (Wire, 2026-11-19).")
+old_g = {"header": "Iowa -2.5 at Illinois", "lean": None, "market_home": 2.5, "forecast": {"temp": 50, "gust": 10, "precip": 0},
+         "news": [], "venue_city": "X", "away": "Iowa", "home": "Illinois"}
+new_g = dict(old_g, game_id=2, market_home=4.0, forecast={"temp": 30, "gust": 30, "precip": 60},
+             news=["How to watch Iowa football vs. Illinois: Time, TV channel (Wire, 2026-11-19)",
+                   "Illinois QB Smith ruled out (ESPN, 2026-11-19)"])
+pfx = {"id": "p1", "src": "flub", "mode": "group", "via": "post", "q": "[scheduled preview post]",
+       "turns": ["[scheduled preview post]"], "original": {"reply": SENT, "lane": "post"},
+       "post": {"kind": "preview", "season": 2026, "week": 13, "now": "2026-11-26T12:00:30-06:00", "max_chars": 140,
+                "prepared": 1795500000, "state_games": {"2": old_g}, "facts_for": [new_g]},
+       "expect": {"must_not": [r"how to (watch|stream|listen)", r"TV channel", r"\bvs\.$"], "not_exact": [SENT],
+                  "expected_fail": "p1"}}
+got = rr.post_answers([pfx], HERE.parent)["p1"]["reply"]
+check(got.startswith("Week 13, what's changed since the breakdown") and len(got) <= 140 and "How to watch" not in got
+      and "market moved to Iowa -4 (was Iowa -2.5)" in got, f"post fixture: re-run in code from the worktree {got!r}")
+check(rr.status(pfx, rr.grade(pfx, got, "post", T)) == "XPASS"
+      and rr.status(pfx, rr.grade(pfx, SENT, "post", T)) == "XFAIL",
+      "post fixture: the fixed post passes, the clipped TV-headline post fails")
+check(dict((n, ok) for n, ok, _ in rr.grade(pfx, "Iowa -4 now (was Iowa -2.5)", "post", T))["facts"],
+      "post fixture: a market move isn't graded as a wrong pool line")
+
 print(f"\n{'all green' if not fails else 'FAILED: ' + str(len(fails))}")
 sys.exit(1 if fails else 0)

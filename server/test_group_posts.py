@@ -19,6 +19,10 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 _TMP = tempfile.mkdtemp(prefix="picky-posts-test-")
 os.environ["PICKY_PRIVATE_DIR"] = _TMP
+_CTMP = tempfile.mkdtemp(prefix="picky-posts-coach-")  # the live Claude switch (absent = off) + coach logs
+os.environ["PICKY_LIVE_CLAUDE"] = str(Path(_CTMP) / "switch.json")
+os.environ["PICKY_COACH_DIR"] = str(Path(_CTMP) / "coach")
+os.environ["PICKY_CLAUDE_USAGE_DIR"] = str(Path(_CTMP) / "usage")
 import group_outbox as ob  # noqa: E402
 import group_posts as gp  # noqa: E402
 
@@ -387,6 +391,11 @@ def test_clip_keeps_lead_drops_tail():
     out = ob.clip(["My card: A -3 vs B; C +2 vs D; E -7 vs F."], 25)
     assert out == ["My card: A -3 vs B."], out
     assert ob.clip(["a" * 100, "b" * 100], 450, 2) == ["a" * 100, "b" * 100]  # long kinds: 2 short texts ok
+    # "vs." / "St." don't end an item: the 11-26 preview was cut after "Nebraska football vs." (half a headline)
+    out = ob.clip(["Week 13, what changed:\nNebraska at Iowa: new: How to watch Nebraska vs. Iowa: Time, TV channel; "
+                   "more filler here"], 60)
+    assert out == ["Week 13, what changed."], out
+    assert ob.clip(["Ohio St. at Michigan. Filler filler filler."], 25) == ["Ohio St. at Michigan."]
 
 
 def test_post_never_sends_the_long_one():
@@ -561,6 +570,118 @@ def test_ping_burst_is_one_short_text_and_waits():
         assert [g["GameId"] for g, _, _ in gp.due_pings(lg, None)] == [1]
     finally:
         gp.espn_status = old
+
+
+# -- the Opus coach on scheduled posts (Charlie 2026-11-26, after preview:2026:13 went out clipped to nonsense) --
+
+COACH_FACTS = "SEASON STANDINGS: 1. Chuck P 33-19. THIS WEEK: Nebraska at Iowa -4.5, market now Iowa -3.5."
+CLIPPED = ("Week 13, what's changed since the breakdown (Open-Meteo forecasts):\nNebraska at Iowa -4.5: new: How to "
+           "watch Nebraska football vs. Iowa: Time, TV channel (Cornhuskers Wire, 2026-11-26).")
+
+
+def _coach_run(raw, texts=None, kind="preview", key="pv", facts=COACH_FACTS, on=True, dry=False, status=None):
+    """One post() with the live switch on/off and a fake Opus review. Returns (result, queued texts, calls)."""
+    import contextlib
+    from unittest.mock import patch
+    import picky_claude as pc
+    import picky_coach as co
+    import picky_reveal
+    fresh()
+    ob.save_config(dry_run=dry, group_guid="any;+;league")
+    sw = Path(os.environ["PICKY_LIVE_CLAUDE"])
+    sw.write_text(json.dumps({"on": on, "model": "opus", "mode": "coach"}))
+    pc._live.update(mtime=None, fails=0)
+    calls = []
+
+    async def fake(messages, kind="reply", schema=None, timeout=None):
+        calls.append({"messages": messages, "kind": kind, "schema": schema, "timeout": timeout})
+        if isinstance(raw, Exception):
+            raise raw
+        return raw
+
+    def boom():
+        raise RuntimeError("facts down")
+    env = {k: v for k, v in os.environ.items() if k != "PICKY_NO_ANTHROPIC"}
+    with contextlib.ExitStack() as es:
+        es.enter_context(patch.dict(os.environ, env, clear=True))
+        es.enter_context(patch.object(pc, "CLAUDE", sys.executable))
+        es.enter_context(patch.object(pc, "live_reply", fake))
+        es.enter_context(patch.object(co, "post_facts", boom if facts is None else lambda: (facts, ["Chuck P", "Ackbar"])))
+        es.enter_context(patch.object(picky_reveal, "group_status", lambda: status or
+                                      {"revealed": False, "week": 13, "pool_teams": {"Nebraska", "Iowa"}}))
+        r = ob.post(kind, texts or [CLIPPED], key, echo=lambda *_: None)
+    item = next((json.loads(p.read_text()) for p in ob.OUTBOX.glob("*.json")), None) if ob.OUTBOX.exists() else None
+    return r, (item or {}).get("texts"), calls
+
+
+def _fix(answer, cat="unhelpful"):
+    return json.dumps({"verdict": "fix", "score": 2, "answer": answer, "category": cat,
+                       "lesson": "Don't sell a TV listing as what changed; post only real changes."})
+
+
+def _checks():
+    import picky_coach as co
+    f = co.COACH_DIR / "checks.jsonl"
+    return [json.loads(x) for x in f.read_text().splitlines()] if f.exists() else []
+
+
+GOOD_FIX = "Week 13 update: the market moved Nebraska at Iowa to Iowa -3.5."
+
+
+def test_coach_off_no_review():
+    n = len(_checks())
+    r, texts, calls = _coach_run(_fix(GOOD_FIX), on=False)
+    assert r == "queued" and texts == [CLIPPED] and not calls and len(_checks()) == n, (r, texts, calls)
+
+
+def test_coach_pass_fix_and_logs():
+    import picky_coach as co
+    r, texts, calls = _coach_run(json.dumps({"verdict": "pass", "score": 8, "answer": "", "lesson": "", "category": ""}))
+    assert r == "queued" and texts == [CLIPPED] and len(calls) == 1, (texts, calls)
+    c = calls[0]
+    assert c["kind"] == "coach-post" and c["schema"] == co.SCHEMA and c["timeout"] == co.TIMEOUT, c
+    sysm, user = c["messages"][0]["content"], c["messages"][1]["content"]
+    assert COACH_FACTS in sysm and "at most 280 characters" in sysm and CLIPPED in user and "kind preview" in user, user
+    assert _checks()[-1]["verdict"] == "pass" and _checks()[-1]["side"] == "post", _checks()[-1]
+    r, texts, _ = _coach_run(_fix(GOOD_FIX))
+    assert texts == [GOOD_FIX], texts
+    rec = co.read_lessons()[-1]
+    assert rec["side"] == "post" and rec["sent"] == "answer" and rec["draft"] == CLIPPED and rec["lane"] == "preview", rec
+    assert "TV listing" not in " ".join(co.top_lessons()), "a post lesson stays out of Picky's reply prompt"
+    ev = [e for e in _events() if e["event"] == "queued"][-1]
+    assert ev["texts"] == [GOOD_FIX], ev
+
+
+def test_coach_sees_the_text_before_the_cut():
+    full = "Week 13, what changed:\n" + "; ".join(f"item {i} is a longer thing" for i in range(40))
+    r, texts, calls = _coach_run(json.dumps({"verdict": "pass", "score": 7, "answer": "", "lesson": "", "category": ""}),
+                                 texts=[full], kind="remind", key="r1")
+    user = calls[0]["messages"][1]["content"]
+    assert "FULL DRAFT (before the length cut" in user and "item 39" in user and len(texts[0]) <= 280, user[:300]
+
+
+def test_coach_refused_fixes_send_the_post():
+    for answer, why in (("Week 13: Iowa is now -2.5 at home.", "ungrounded"),
+                        ("Week 13: " + "the market moved to Iowa -3.5. " * 12, "cap"),
+                        ("Chuck P took Iowa -3.5, bold.", "pick claim"),
+                        ("Market moved to Iowa -3.5 and I'd take Iowa there.", "side before the picks lock")):
+        r, texts, _ = _coach_run(_fix(answer))
+        assert texts == [CLIPPED], (why, texts)
+        assert _checks()[-1]["sent"] == "draft" and why.split()[0] in _checks()[-1]["why"], (why, _checks()[-1])
+
+
+def test_coach_fails_open():
+    for raw, facts, why in ((None, COACH_FACTS, "review failed"), ("{nope", COACH_FACTS, "bad review JSON"),
+                            (RuntimeError("boom"), COACH_FACTS, "error"), ("x", None, "error"), ("x", "", "no facts")):
+        r, texts, _ = _coach_run(raw, facts=facts)
+        assert r == "queued" and texts == [CLIPPED], (why, texts)
+        assert _checks()[-1]["verdict"] == "error" and why in _checks()[-1]["why"], (why, _checks()[-1])
+
+
+def test_coach_skips_dry_runs():
+    n = len(_checks())
+    r, texts, calls = _coach_run(_fix(GOOD_FIX), dry=True)
+    assert r == "dry-run" and not calls and len(_checks()) == n
 
 
 if __name__ == "__main__":

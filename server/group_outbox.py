@@ -27,6 +27,10 @@ Every proactive post has to get past, in order:
      max_chars_long (450) over at most 2 texts. Writers aim under it and get one
      rewrite, callers fall back to short code versions; anything still over is
      cut here at line/sentence boundaries (logged "clipped"). Never the long one.
+  8. the Opus coach (Charlie 2026-11-26), only while picky_claude's live switch is on in coach mode: one review
+     right before a post is queued (picky_coach.post_prompt, sees the pre-cut text too). Pass = as is; fix = the
+     coach's one-text rewrite if it fits the cap, its numbers are grounded, it claims no member pick and takes no
+     hidden side; anything else (Claude down, timeout, bad JSON) = the post as is. coach/checks.jsonl, side "post".
 Every attempt, skip, dry run, queue and delivery goes to the send log.
 
 Private files (never in the public repo), /Users/Agent/cfb-pickem-private/:
@@ -353,6 +357,7 @@ def post(kind: str, texts: list[str], key: str, expires_s: int = 6 * 3600, quiet
         log_event("skipped", kind=kind, key=key, why="empty")
         return "empty"
     lim, n_texts = limits(kind, cfg)
+    full = texts
     if not fits(texts, lim, n_texts):  # the last line of defense: never the long one
         short = clip(texts, lim, n_texts)
         log_event("clipped", kind=kind, key=key, before=sum(len(t) for t in texts), texts_before=len(texts),
@@ -383,12 +388,72 @@ def post(kind: str, texts: list[str], key: str, expires_s: int = 6 * 3600, quiet
         log_event("skipped", why="daily-cap", **base)
         mark(key, "capped")  # skipped for good: no backlog posting it hours late
         return "capped"
+    texts = _coach_post(kind, key, texts, full, lim)
+    base["texts"] = texts
     item = {"id": uuid.uuid4().hex[:12], "kind": kind, "key": key, "texts": texts,
             "created": now.timestamp(), "expires": now.timestamp() + expires_s}
     _write_private(OUTBOX / f"{int(now.timestamp())}-{item['id']}.json", json.dumps(item))
     mark(key, "queued")
     log_event("queued", id=item["id"], **base)
     return "queued"
+
+
+def _coach_post(kind: str, key: str, texts: list[str], full: list[str], lim: int) -> list[str]:
+    """The texts to queue: the post, or the Opus coach's checked one-text fix (step 8 above). Fails open: the
+    switch off / not coach mode = no review; any failure = the post as is. Never raises."""
+    try:
+        import picky_claude
+        if not (picky_claude.live_on() and picky_claude.live_mode() == "coach"):
+            return texts
+        import asyncio
+        import picky_coach
+    except Exception:  # noqa: BLE001
+        return texts
+    draft, src = "\n".join(texts), "\n".join(full)
+    t0, review, why, sent, out = time.time(), None, "", "draft", texts
+    try:
+        facts, names = picky_coach.post_facts()
+        if not facts:
+            why = "no facts bundle"
+        else:
+            system, user = picky_coach.post_prompt(kind, draft, facts, max_chars=lim, full=src)
+            raw = asyncio.run(picky_claude.live_reply([{"role": "system", "content": system},
+                                                       {"role": "user", "content": user}], kind="coach-post",
+                                                      schema=picky_coach.SCHEMA, timeout=picky_coach.TIMEOUT))
+            review = picky_coach.parse(raw, draft)
+            why = "" if review else ("review failed or timed out" if raw is None else "bad review JSON")
+        if review and review["verdict"] == "fix":
+            ans = review["answer"]
+            bad = picky_coach.ungrounded(ans, facts, src)
+            claims = [] if bad else picky_coach.pick_claims(ans, names, src)
+            if bad:
+                why = f"ungrounded numbers {bad[:5]}"
+            elif claims:
+                why = f"member pick claim {claims[:2]}"
+            elif not fits([ans], lim, 1):
+                why = f"over the {lim}-char cap"
+            elif _new_side(ans, src):
+                why = "takes a side before the picks lock"
+            else:
+                sent, out = "answer", [ans]
+    except Exception as e:  # noqa: BLE001 - the coach never blocks a post
+        why = f"error {type(e).__name__}"
+    secs = time.time() - t0
+    picky_coach.record(review, q=f"[scheduled {kind} post {key}]", draft=draft, sent=sent, side="post", lane=kind,
+                       why=why, secs=secs)
+    log_event("coach", kind=kind, key=key, verdict=(review or {}).get("verdict") or "error",
+              score=(review or {}).get("score"), sent=sent, why=why[:200], secs=round(secs, 1))
+    return out
+
+
+def _new_side(answer: str, src: str) -> bool:
+    """Does the coach's rewrite take a side in an open pool game the post didn't, before the picks lock
+    (HIDDEN SIDES)? Unknown = yes (fail closed: the post goes out as is)."""
+    import picky_reveal
+    if not picky_reveal.LEAN_TALK.search(answer) or picky_reveal.LEAN_TALK.search(src):
+        return False
+    st = picky_reveal.group_status()
+    return not st["revealed"] and picky_reveal.says_lean(answer, st["pool_teams"])
 
 
 def post_dm(team: str, handle: str, texts: list[str], key: str, expires_s: int = 3600,
