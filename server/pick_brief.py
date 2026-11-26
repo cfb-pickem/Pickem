@@ -1293,7 +1293,7 @@ def build(g: dict, notes: dict | None = None, idx: dict | None = None, extras: d
     for x in (f_total(g, mk), f_splits(g, (extras.get("splits") or {}).get(g.get("id")))):
         if x:
             factors.append(x)
-    items = {side: intel_for(side, intel or []) for side in (g["away"], g["home"])}
+    items = {side: intel_for(side, intel or [], now=now_ct.astimezone(dt.timezone.utc)) for side in (g["away"], g["home"])}
     for side, t, ns in ((g["away"], ta, "away"), (g["home"], th, "home")):
         factors += f_personnel(g, side, t, idx, (notes or {}).get(ns), items[side])
         factors += f_off_field(g, side, items[side])
