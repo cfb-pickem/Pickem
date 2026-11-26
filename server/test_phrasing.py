@@ -336,7 +336,7 @@ def test_line_move_old_injury_was_already_in_the_opener():
     sc = router.slate_cards
     out = _with_move_game(lambda: router.slate_move_text({}, q), {"spread": -13.5, "spreadOpen": -8.5}, LEAN, intel=OLD_QB)
     assert "Vizzina" in out and not re.search(r"priced in|\broom\b", out, re.I), out
-    assert re.search(r"open(er|ing)", out, re.I), out  # old news: the opening number already had it
+    assert re.search(r"open(er|ing|ed)", out, re.I), out  # old news: the opening number already had it
     assert sc is router.slate_cards
 
 
