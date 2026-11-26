@@ -44,6 +44,7 @@ import sqlite3
 from pathlib import Path
 
 import cfbd
+import market_open
 import rivalries
 import title_race
 
@@ -435,16 +436,19 @@ def market_home(notes: dict | None, g: dict, t_home: dict | None, t_away: dict |
     """{'now','open','ou','src'}: the market as a home spread. ESPN pickcenter
     first (10-min cache), CFBD's daily copy as the fallback."""
     m = (notes or {}).get("market") or {}
+    row = next((cg for t in (t_home, t_away) for cg in (t or {}).get("games") or []
+                if cfbd.norm(cg.get("homeTeam")) == cfbd.norm((t_home or {}).get("name")) and
+                cfbd.norm(cg.get("awayTeam")) == cfbd.norm((t_away or {}).get("name")) and cg.get("homeScore") is None),
+               None)
+    eo = market_open.early_open((row or {}).get("lines"))  # DraftKings' look-ahead opener vs another book's
     if m.get("home_now") is not None:
-        return {"now": float(m["home_now"]), "open": float(m["home_open"]) if m.get("home_open") is not None else None,
-                "ou": m.get("over_under"), "src": m.get("book") or "ESPN"}
-    for t in (t_home, t_away):
-        for cg in (t or {}).get("games") or []:
-            if cfbd.norm(cg.get("homeTeam")) == cfbd.norm((t_home or {}).get("name")) and \
-                    cfbd.norm(cg.get("awayTeam")) == cfbd.norm((t_away or {}).get("name")) and cg.get("homeScore") is None:
-                now, op, ou = _line(cg)
-                if now is not None:
-                    return {"now": now, "open": op, "ou": ou, "src": "CFBD"}
+        out = {"now": float(m["home_now"]), "open": float(m["home_open"]) if m.get("home_open") is not None else None,
+               "ou": m.get("over_under"), "src": m.get("book") or "ESPN"}
+        return market_open.fix(out, eo, "open", "now") if "DraftKings" in str(out["src"]) else out
+    if row:
+        now, op, ou = _line(row)
+        if now is not None:
+            return market_open.fix({"now": now, "open": op, "ou": ou, "src": "CFBD"}, eo, "open", "now")
     return None
 
 

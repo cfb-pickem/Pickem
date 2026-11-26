@@ -41,6 +41,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cfbd  # noqa: E402
+import market_open  # noqa: E402
 
 log = logging.getLogger("picky.factstore")
 VERSION = 1
@@ -360,12 +361,18 @@ def _market(g: dict, snaps: list[dict] | None, now: float) -> tuple[dict, dict]:
                   if cf["spread_home"] is not None and cf["open_spread_home"] is not None else None)
     cf["total_move"] = (round(cf["total"] - cf["open_total"], 1)
                         if cf["total"] is not None and cf["open_total"] is not None else None)
+    # DraftKings' look-ahead opener vs another book's open (market_open): the honest open, and the early number kept
+    eo = market_open.early_open(g.get("lines"))
+    if str(ln.get("provider")) == market_open.BOOK:
+        cf = market_open.fix(cf, eo, "open_spread_home", "spread_home", "open_total", "total")
     s = M.summary(str(g["id"]), rows=snaps) if snaps else None
     hard = MARKET_HARD_S[1 if _game_day(now) else 0]
     if s and s.get("spread_home") is not None and now - s["as_of_ts"] <= hard:
         es = {k: s.get(k) for k in ("spread_home", "open_spread_home", "total", "open_total", "move", "total_move",
                                      "ml_home", "ml_away", "n")}
         es.update(source=s["source"], as_of=_iso(s["as_of_ts"]), as_of_ts=s["as_of_ts"])
+        if market_open.BOOK in str(s["source"]):  # ESPN's open is DraftKings' open too
+            es = market_open.fix(es, eo, "open_spread_home", "spread_home", "open_total", "total")
         return es, cf
     return dict(cf), cf
 
@@ -447,6 +454,14 @@ def _game_sheets(ds: dict, teams: dict, intel: dict, weather: dict, snaps: dict,
             f.append(_fact("market", gid, "open", mk["open_spread_home"],
                            f"{away} at {home} opened {_fav(home, away, mk['open_spread_home'])}", mk["source"],
                            mk["as_of"]))
+        if mk.get("early_open"):
+            eo = mk["early_open"]
+            f.append(_fact("market", gid, "early_open", eo["spread"],
+                           f"{away} at {home}: {market_open._pos(eo['book'])} early opener was {_fav(home, away, eo['spread'])}"
+                           + (f" (total {eo['total']:g})" if eo.get("total") is not None else "")
+                           + f"; {eo['vs']} opened {_fav(home, away, eo['spread_open'])}"
+                           + (f" (total {eo['total_open']:g})" if eo.get("total_open") is not None else ""),
+                           f"CFBD lines ({eo['book']}, {eo['vs']})", mk["as_of"]))
         if mk.get("move"):
             f.append(_fact("market", gid, "move", mk["move"],
                            f"the line moved {abs(mk['move']):g} toward {home if mk['move'] < 0 else away}",
@@ -1112,7 +1127,7 @@ def market(row: dict) -> dict:
     m = market_for(sheet)
     return {"spread": m.get("spread_home"), "spreadOpen": m.get("open_spread_home"), "overUnder": m.get("total"),
             "overUnderOpen": m.get("open_total"), "move": m.get("move"), "total_move": m.get("total_move"),
-            "source": m.get("source"), "as_of": m.get("as_of")}
+            "source": m.get("source"), "as_of": m.get("as_of"), "early_open": m.get("early_open")}
 
 
 def facts(row: dict, kinds: tuple[str, ...] | None = None) -> list[dict]:

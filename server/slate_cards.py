@@ -29,6 +29,7 @@ import sqlite3
 from zoneinfo import ZoneInfo
 
 import cfbd
+import market_open
 import travel
 import units
 import weather
@@ -230,6 +231,11 @@ def market_line(g: dict, espn_market: dict | None) -> list[str]:
         total = ln.get("overUnder")
     if now is None:
         return ["  Market: no line posted yet."]
+    eo = market_open.early_open(g.get("lines")) if "DraftKings" in src else None
+    if eo and opn is not None and abs(opn - eo["spread"]) <= 0.5:
+        opn = eo["spread_open"]  # DK's look-ahead opener isn't a market: move from the other book's open
+    else:
+        eo = None
     fav, fsp = (home, now) if now < 0 else (away, -now)
     s = f"  Market ({src}): {_fmt_spread(fav, fsp)}"
     if opn is not None and opn != now:
@@ -239,12 +245,19 @@ def market_line(g: dict, espn_market: dict | None) -> list[str]:
         s += f", opened {_fmt_spread(ofav, osp)} (moved {moved:g} toward {toward})"
     elif opn is not None:
         s += " (no move from the open)"
+    if eo:
+        efav, esp = (home, eo["spread"]) if eo["spread"] < 0 else (away, -eo["spread"])
+        s += (f". {market_open._pos(eo['book'])} opener {_fmt_spread(efav, esp)} was an early number, not a move: "
+              f"{eo['vs']} opened {_fmt_spread(*((home, opn) if opn < 0 else (away, -opn)))}")
+        if eo.get("total") is not None and eo.get("total_open") is not None and \
+                abs(eo["total"] - eo["total_open"]) >= market_open.TOTAL_GAP:
+            s += f" (early total {eo['total']:g}, {eo['vs']} opened {eo['total_open']:g})"
     out = [s]
     if total:
         hi = (total + abs(now)) / 2
         lo = total - hi
         tot = f"  Total {total:g}"
-        if ln.get("overUnderOpen") and ln.get("overUnderOpen") != total and src.startswith("CFBD"):
+        if ln.get("overUnderOpen") and ln.get("overUnderOpen") != total and src.startswith("CFBD") and not eo:
             tot += f" (opened {ln['overUnderOpen']:g})"
         tot += f"; implied team totals {fav} {round(hi * 2) / 2:g}, {away if fav == home else home} {round(lo * 2) / 2:g}"
         out.append(tot)

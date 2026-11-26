@@ -51,6 +51,7 @@ import case_ledger  # the ranked reasons per game: pick / why / other_side / cha
 import unit_lane  # 'can X run on Y': unit matchups in code (plan 2026-11-18 phase 6)
 import channel  # the channel lane (drill 11/17)
 import big_picture  # coach + CFP-picture lanes from the fact store (plan 2026-11-18 phase 5)
+import market_open  # DraftKings early-opener check (nightly 11-26)
 import factstore  # the fact store: every football lane in STORE_LANES reads only this + ctx
 
 try:  # the rules lane's single source of truth (branch picky-rules-expert), once it's merged
@@ -2181,7 +2182,8 @@ def keynum_verdict(hooks: list[tuple], seed: str) -> str | None:
     return phrasing.say("keynum", "verdict_fav", seed, game=game, k=k, fav=fav)
 
 
-MOVE_WHY = re.compile(r"\bwhy('?d| did| is| has| was)?\b|\bwhat happened\b|\bwhat changed\b|\bwho got hurt\b|\bwhat'?s behind\b", re.I)
+MOVE_WHY = re.compile(r"\bwhy('?d| did| is| has| was)?\b|\bwhat happened\b|\bwhat changed\b|\bwho got hurt\b|\bwhat'?s behind\b|"
+                      r"\bwhat news\b|\bnews did i miss\b", re.I)
 MOVE_EVIDENCE = re.compile(r"\b(opened|opening|went from|moved?|moving|dropp(ed|ing)|jumped|double digits|early|from -?\d|to -?\d)\b",
                            re.I)
 KEYNUM_ASK = re.compile(r"\bkey numbers?\b|\bwhere does the hook\b|\bon (a|the) (key )?number\b|\bthe hook matter", re.I)
@@ -2253,7 +2255,11 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         return phrasing.say("line_move", slot, sd, **kw)
     parts = []  # (priority, sentence): 0 = the answer, higher = dropped first if it runs long
     moved = opn is not None and opn != now
-    if moved:
+    eo = ln.get("early_open")
+    flat = bool(eo) and (opn is None or abs(now - opn) <= 1)  # the 'move' was DK's early number: nothing to explain
+    if eo:  # DraftKings' look-ahead opener: say so instead of calling it a move (Pitt-Cal's '17-point swing')
+        parts.append((0, market_open.sentence(eo, now, away, home)))
+    elif moved:
         parts.append((0, say("move", fav_open=fav(opn), fav_now=fav(now), pts=f"{abs(now - opn):g}",
                              toward=home if now < opn else away)))
     else:
@@ -2317,7 +2323,8 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         try:
             for t in (away, home):
                 hits = [x for x in factstore.news_lines(t, f"{t} QB injury")
-                        if re.search(r"\b(QB|quarterback|out|injur\w*|miss(es)?|surgery|doubtful|questionable)\b", x, re.I)]
+                        if re.search(r"\b(QB|quarterback|out|injur\w*|miss(es)?|surgery|doubtful|questionable)\b", x, re.I)
+                        and re.search(rf"\b{re.escape(t.split()[0][:4])}", x, re.I)]  # about this team (not a UCLA story for Pitt)
                 if hits:
                     news_line, news_team = re.sub(r"^[^:]{0,120}?:\s*", "", hits[0]).strip(), t
                     break
@@ -2331,7 +2338,7 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         else:
             news_txt = " ".join(_per(r) for r in prs)
         # minor non-QB news yields to a long-out starting QB's context when it runs long (OSU: an RB vs Sayin)
-        parts.append((2 if old_qb and not any(r.get("pos") == "QB" for r in prs) else 0, say("news", news=news_txt)))
+        parts.append((2 if old_qb and not any(r.get("pos") == "QB" for r in prs) else 0, say("news_nomove" if flat else "news", news=news_txt)))
         out_qb = next((r for r in prs if r.get("pos") == "QB" and r["status"] in factstore.OUT_STATUSES), None)
         if out_qb and hit_team:  # who plays instead is the real story (Clemson: Pearman; North Texas: Jimerson)
             outs_n = {factstore.norm(r["player"]) for r in rows if r["status"] in factstore.OUT_STATUSES}
@@ -2341,13 +2348,13 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
                                  + (f", {nx['starts']} starts ({nx['su']} SU, {nx['ats']} ATS)" if nx.get("starts")
                                     else ", his first start this season") + "."))
     elif pick:
-        parts.append((0, say("news", news=" ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))))
+        parts.append((0, say("news_nomove" if flat else "news", news=" ".join(re.sub(r"\s+", " ", f["text"]).strip() for f in pick))))
         if starter:  # the first thing to go when the answer runs long
             parts.append((2, re.sub(r"\s+", " ", starter["text"]).strip()))
     elif news_line:
-        parts.append((0, say("news", news=news_line)))
+        parts.append((0, say("news_nomove" if flat else "news", news=news_line)))
     else:
-        parts.append((0, say("news_none", as_of=intel_as_of or "this week")))
+        parts.append((0, say("news_none_nomove" if flat else "news_none", as_of=intel_as_of or "this week")))
     if old_qb:
         st = factstore.qb_starter(hit_team)
         x = next((x for x in factstore.qb_room(hit_team) if x["name"] == st and factstore.norm(st) !=
@@ -2374,7 +2381,7 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
     unexplained_big = not pick and not prs and not news_line and opn is not None and abs(now - opn) >= 3
     q_out = [f for f in qb if (f.get("status") or "").lower() in ("questionable", "doubtful", "game-time decision")]
     q_rows = [r for r in prs if r.get("pos") == "QB" and r["status"] in ("questionable", "doubtful", "TBD")]
-    mv = move_verdict(abs(now - opn), qb_out, sd) if phrasing.on() and moved else None
+    mv = move_verdict(abs(now - opn), qb_out, sd) if phrasing.on() and moved and not flat else None
     if phrasing.on() and stale and not old_qb:
         mv = say("stale", when=_when(min(f.get("date") or "" for f in outs_hit)))
     if mv:
@@ -2382,7 +2389,7 @@ def slate_move_text(ctx: dict, q: str) -> str | None:
         if why and re.search(r"\bQB\b|quarterback", why, re.I) and (stale or abs(now - opn) >= 3):
             why = None  # the QB is in the number already: not a reason on top of it
     if q_rows or (not prs and q_out and q_out[0].get("players")):
-        parts.append((0, say("cond", player=q_rows[0]["player"] if q_rows else q_out[0]["players"][0])))
+        parts.append((0, say("cond_nomove" if flat else "cond", player=q_rows[0]["player"] if q_rows else q_out[0]["players"][0])))
     elif unexplained_big:
         pass  # 'don't fight it' already said: no lean against a move nobody can explain
     elif m and m.group(2) != "coin flip":

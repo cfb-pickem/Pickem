@@ -132,6 +132,30 @@
    "Careful: that news dates to {when}, before this line opened, so it isn't what moved it.",
    "That's been out there since {when}, so the opening number already reflected it. The move needs another reason.",
    "Old news ({when}): the opener already had it, so it's not the reason for the move by itself."
+  ],
+  "cond_nomove": [
+   "The real swing is {player}'s status. I'd wait on it before picking a side.",
+   "It comes down to {player}: I'd hold off on a side until there's word on him.",
+   "{player} is the story here, not the line. Wait on his status before you pick.",
+   "What matters is whether {player} plays. No side from me until that's clear.",
+   "Watch {player}'s status. That's what should move this one, so I'd wait on it.",
+   "I'd sit tight until there's news on {player}. That's the swing in this game."
+  ],
+  "news_nomove": [
+   "News on these teams this week: {news}",
+   "What's out there this week: {news}",
+   "For what it's worth, the news this week: {news}",
+   "The latest on these two: {news}",
+   "This week's news: {news}",
+   "Worth knowing this week: {news}"
+  ],
+  "news_none_nomove": [
+   "And there's no confirmed injury or news on either team in my sources (as of {as_of}), so nothing you missed.",
+   "You didn't miss anything: no confirmed injury or news on either team in my sources (as of {as_of}).",
+   "Nothing new on either team in my sources either (as of {as_of}). There's no move to explain.",
+   "No confirmed injury or news on either side in my sources (as of {as_of}), which fits a line that hasn't moved.",
+   "My sources have no confirmed injury or news on either team (as of {as_of}), so there's no story behind it.",
+   "No injury or news on either team in my sources as of {as_of}. Nothing to chase."
   ]
  },
  "fixtures": [
