@@ -767,12 +767,21 @@ def tick_picks_up(lg, week: int | None, now: dt.datetime, send, writer=None, rea
     return ",".join(did) or "waiting"
 
 
+# a "new:" refresh item is availability news (slate_cards._INJ: injury / QB / suspension / coaching), never a
+# viewing guide: "How to watch ...: Time, TV channel" went out as Week 13's "what changed" (preview:2026:13, 11-26)
+_WATCH = re.compile(r"(?i)\bhow to (?:watch|stream|listen)\b|\bwhere to watch\b|\bTV (?:channel|schedule|info)\b|"
+                    r"\blive ?stream")
+
+
 def refresh_texts(lg, week: int, now: dt.datetime, notes: dict | None = None,
-                  leans: bool = False) -> list[str] | None:
+                  leans: bool = False, limit: int | None = None) -> list[str] | None:
     """Thursday refresh: only what changed since the breakdown (market moves of 1+ point, new
     availability lines, forecast swings, a flipped lean only when `leans`: Picky's sides are
     revealed to the group, picky_reveal). None = no breakdown on file (use the
-    old preview); [] = nothing changed (skip the post)."""
+    old preview); [] = nothing changed (skip the post). Fitted to `limit` (the preview cap) by whole
+    items, never cut mid-item: a game's items go in while they fit, a game with none that fits is left out."""
+    import group_outbox as ob
+    import slate_cards
     st = load_state(lg.season, week)
     if not st.get("games"):
         return None
@@ -782,7 +791,7 @@ def refresh_texts(lg, week: int, now: dt.datetime, notes: dict | None = None,
     except Exception as e:  # noqa: BLE001
         log.warning("refresh facts failed: %r", e)
         return []
-    lines = []
+    found = []  # (header, [(kind, item)]), the items most telling first
     for gid, old in st["games"].items():
         new = cur.get(gid)
         if not new:
@@ -790,25 +799,40 @@ def refresh_texts(lg, week: int, now: dt.datetime, notes: dict | None = None,
         bits = []
         a, b = old.get("market_home"), new.get("market_home")
         if a is not None and b is not None and abs(float(a) - float(b)) >= 1:
-            bits.append(f"market moved to {fmt_line(new['home'], float(b)) if float(b) < 0 else fmt_line(new['away'], -float(b))}"
-                        f" (was {fmt_line(new['home'], float(a)) if float(a) < 0 else fmt_line(new['away'], -float(a))})")
-        since = dt.datetime.fromtimestamp(st.get("prepared", 0), CT).date().isoformat()
-        fresh = [x for x in new.get("news") or [] if x not in (old.get("news") or [])
-                 and (m := re.search(r"(\d{4}-\d{2}-\d{2})\)\s*(\[rumor\])?$", x)) and m.group(1) > since]
-        bits += [f"new: {x}" for x in fresh[:2]]
+            bits.append(("market", f"market moved to {fmt_line(new['home'], float(b)) if float(b) < 0 else fmt_line(new['away'], -float(b))}"
+                        f" (was {fmt_line(new['home'], float(a)) if float(a) < 0 else fmt_line(new['away'], -float(a))})"))
+        lo, ln = (old.get("lean") or {}).get("label"), (new.get("lean") or {}).get("label")
+        if leans and lo and ln and lo != ln:
+            bits.append(("lean", f"lean flipped: now {ln} (was {lo})"))
         fo, fn = old.get("forecast") or {}, new.get("forecast") or {}
         if fo and fn and (abs(fo["temp"] - fn["temp"]) >= 8 or abs(fo["gust"] - fn["gust"]) >= 10
                           or abs((fo.get("precip") or 0) - (fn.get("precip") or 0)) >= 30):
-            bits.append(f"forecast now {fn['temp']}F, gusts to {fn['gust']} mph, {round(fn.get('precip') or 0)}% chance "
-                        f"of precip (Tuesday's was {fo['temp']}F, gusts {fo['gust']}, {round(fo.get('precip') or 0)}%)")
-        lo, ln = (old.get("lean") or {}).get("label"), (new.get("lean") or {}).get("label")
-        if leans and lo and ln and lo != ln:
-            bits.append(f"lean flipped: now {ln} (was {lo})")
+            bits.append(("forecast", f"forecast now {fn['temp']}F, gusts to {fn['gust']} mph, {round(fn.get('precip') or 0)}% chance "
+                        f"of precip (Tuesday's was {fo['temp']}F, gusts {fo['gust']}, {round(fo.get('precip') or 0)}%)"))
+        since = dt.datetime.fromtimestamp(st.get("prepared", 0), CT).date().isoformat()
+        fresh = [x for x in new.get("news") or [] if x not in (old.get("news") or [])
+                 and (m := re.search(r"(\d{4}-\d{2}-\d{2})\)\s*(\[rumor\])?$", x)) and m.group(1) > since
+                 and slate_cards._INJ.search(x) and not _WATCH.search(x)]
+        bits += [("news", f"new: {x}") for x in fresh[:2]]
         if bits:
-            lines.append(f"{new['header']}: " + "; ".join(bits))
-    if not lines:
+            found.append((new["header"], bits))
+    if not found:
         return []
-    return [f"Week {week}, what's changed since the breakdown (Open-Meteo forecasts):\n" + "\n".join(lines)]
+
+    def render(rows):
+        fc = any(k == "forecast" for _, bits in rows for k, _ in bits)
+        return (f"Week {week}, what's changed since the breakdown" + (" (Open-Meteo forecasts)" if fc else "") + ":\n"
+                + "\n".join(f"{h}: " + "; ".join(x for _, x in bits) for h, bits in rows))
+    limit = limit or ob.limits("preview")[0]
+    kept = []
+    for h, bits in found:
+        take = []
+        for bit in bits:  # an item that doesn't fit is skipped whole (a shorter one after it may still fit)
+            if len(render(kept + [(h, take + [bit])])) <= limit:
+                take.append(bit)
+        if take:
+            kept.append((h, take))
+    return [render(kept)] if kept else []
 
 
 # -----------------------------------------------------------------------------

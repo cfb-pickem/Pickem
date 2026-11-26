@@ -314,7 +314,7 @@ def fits(texts: list[str], max_chars: int, max_texts: int = 1) -> bool:
     return 0 < len(texts) <= max_texts and sum(len(t) for t in texts) <= max_chars
 
 
-_ITEM = re.compile(r"(?<=[.!?;])\s+")
+_ITEM = re.compile(r"(?<=[.!?;])(?<!\bvs\.)(?<!\bSt\.)\s+")  # "Nebraska vs. Iowa" / "Ohio St." are one item
 
 
 def clip(texts: list[str], max_chars: int, max_texts: int = 1) -> list[str]:

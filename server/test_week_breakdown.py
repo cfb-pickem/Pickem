@@ -214,12 +214,26 @@ moved = dict(same, market_home=4.0, forecast={"temp": 31, "gust": 28, "precip": 
 wb.facts_for = lambda games, week, now=None, notes=None, client=None: [moved]
 check("lean flipped" not in "\n".join(wb.refresh_texts(rl, 14, NOW[0]) or []),
       "refresh before Picky's sides are revealed: no flipped-lean line (default hides)")
-t = wb.refresh_texts(rl, 14, NOW[0], leans=True)
+t = wb.refresh_texts(rl, 14, NOW[0], leans=True, limit=600)  # room for every item (the cap is checked below)
 check(t and len(t) == 1, "refresh is one text", t)
 body = t[0] if t else ""
 check("market moved to Away1 -4 (was Away1 -2.5)" in body, "refresh: market move framed from the home line")
 check("QB X is out" in body and "old line" not in body, "refresh: only news dated after the breakdown")
 check("forecast now 31F" in body and "lean flipped: now Home1 +2.5" in body, "refresh: forecast swing + flipped lean")
+# preview:2026:13 (11-26): a "how to watch" headline went out as what changed, clipped mid-item to 185 chars
+watch = dict(same, news=["How to watch Away1 football vs. Home1: Time, TV channel (Wire, 2026-11-19)",
+                         "Away1 named Outland Trophy finalist (Wire, 2026-11-19)"])
+wb.facts_for = lambda games, week, now=None, notes=None, client=None: [watch]
+check(wb.refresh_texts(rl, 14, NOW[0]) == [], "refresh: a TV listing / award headline isn't a change (no post)",
+      wb.refresh_texts(rl, 14, NOW[0]))
+wb.facts_for = lambda games, week, now=None, notes=None, client=None: [dict(moved, news=watch["news"] + moved["news"])]
+t = wb.refresh_texts(rl, 14, NOW[0], leans=True, limit=150)
+body = t[0] if t else ""
+check(t and len(body) <= 150 and body.startswith("Week 14, what's changed since the breakdown:\n"),
+      "refresh fits its cap by itself (no forecast item kept: no Open-Meteo in the header)", t)
+check("market moved to Away1 -4 (was Away1 -2.5)" in body and "How to watch" not in body and "Tuesday" not in body
+      and not body.endswith((";", ":")), "refresh at the cap: whole items, most telling first, never half an item", t)
+check(wb.refresh_texts(rl, 14, NOW[0], limit=40) == [], "refresh: nothing fits = no post, never a cut item")
 
 # --- length: the picks-up post is ONE text under the cap, angles only while they fit ---
 G4 = FakeLeague().games
