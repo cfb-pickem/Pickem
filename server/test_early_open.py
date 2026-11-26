@@ -107,6 +107,23 @@ def test_pool_card_market_uses_the_honest_open():
     assert mk["open"] == -6.5 and "early_open" not in mk
 
 
+def test_non_pool_brief_reads_one_market_not_two(monkeypatch):
+    """A non-pool game's lean ran pick_brief with no market notes, so pick_brief took CFBD's daily copy as 'the
+    market' and the store's line as 'the league': 'the league has Texas -10.5' on a game with no league line."""
+    import pick_brief
+    import slate_cards
+    import slate_intel
+    seen = {}
+    monkeypatch.setattr(pick_brief, "build", lambda cg, notes, idx, extras, intel: seen.update(cg=cg, notes=notes) or {})
+    monkeypatch.setattr(slate_intel, "claims_for", lambda gid: ([], None))
+    monkeypatch.setattr(pick_brief, "news_intel", lambda cache, teams: [])
+    g = {"id": 7, "awayTeam": "Texas", "homeTeam": "Texas A&M", "startDate": None,
+         "lines": [{"provider": "ESPN DraftKings", "spread": 10.5, "spreadOpen": 11.5, "overUnder": 40.5}]}
+    slate_cards.brief_for(g, {"teams": {}}, None)
+    mk = seen["notes"]["market"]
+    assert seen["cg"]["line"] == 10.5 and mk["home_now"] == 10.5 and mk["home_open"] == 11.5, seen
+
+
 class _MP:
     """The bit of pytest's monkeypatch these tests use (the suite runs test files as plain scripts)."""
     def __init__(self):

@@ -390,7 +390,14 @@ def brief_for(g: dict, idx: dict, espn_notes: dict | None) -> dict | None:
         mk = (espn_notes or {}).get("market") or {}
         home_now = mk.get("home_now")
         if home_now is None:
-            home_now = (_line(g) or {}).get("spread")
+            ln = _line(g) or {}
+            home_now = ln.get("spread")
+            if home_now is not None:  # one market for both sides: without it pick_brief read CFBD's daily copy as
+                # 'the market' against this line as 'the league', a phantom 'line value' on a non-pool game
+                # (genius 11-26 lv-tex-tamu-move: 'the league has Texas -10.5' with no league line)
+                espn_notes = dict(espn_notes or {}, market={
+                    "home_now": home_now, "home_open": ln.get("spreadOpen"), "over_under": ln.get("overUnder"),
+                    "book": ln.get("provider") or "market"})
         if home_now is None:
             return None
         away, home = g["awayTeam"], g["homeTeam"]
