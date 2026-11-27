@@ -130,6 +130,7 @@ daily cap (12 calls / 45 min). Every booster falls back to code / local gemma on
 | analyst takes, game-card cases | Opus (weekly) | previous take/case while fresh, else code factors |
 | burn book, banter bank, hot takes, insider notes | Opus (Sun/Wed, insider ≤ daily) | last good copy + code pool / wire |
 | league material, member memory, week breakdown | no Claude | local gemma, validated |
+| group voice profile (`group_voice.py`, nightly with member memory) | Opus update when 25+ new member texts | last good profile / rider |
 | league rules re-verify (`league_rules.py --check`) | Opus review | code verification, unconfirmable change flagged "verify" |
 | exam judges (not capped), flub loop, feed repairs (hand only) | Opus | skipped |
 
@@ -162,6 +163,19 @@ draft. Test traffic (canary, deep health, exams, no-model eval) and the site wid
 - Rewrite style: `picky_coach.VOICE` (one punchy line for banter, one real fact, no stacked stats, no formula
   closers; answer first for real questions).
 - Tests: `test_coach.py`, `test_group_posts.py` (post coach).
+
+## Group voice (`group_voice.py`, 2026-11-27)
+
+Picky reads the league group's whole thread in his own chat.db (read-only, incremental by ROWID; his account joined
+2026-11-15, iMessage never backfills) into the PRIVATE `cfb-pickem-private/group_voice/` (raw export, stats, 0600),
+and a profile of how the group talks (`cfb-pickem-private/group_voice.md`) yields two style riders: `rider` (~450
+tokens) for the Opus prompts on group texts (coach review, beef, raw mode) and `rider_local` (~150 tokens) for the
+local draft's group tail (`group_chat._system_tail`). Never in the shared `prompt_prefix` (same bytes for every process
+and mode, gemma's checkpoint), DMs or the site; the tail sits after the checkpoint, so it stays short. Style only:
+facts still come from the data, guardrails unchanged. Nightly: `member_memory.py nightly` calls
+`group_voice.refresh()` (export, stats, one capped Opus update at 25+ new member texts; a rider over the size cap or
+with a phone number / email / sensitive word is refused and the old one stays). `group_voice.py status | rider
+[--local] | refresh [--force]`; `PICKY_GROUP_VOICE=0` turns it off. Tests: `test_group_voice.py`.
 
 ## Game dossiers (`dossier.py`)
 

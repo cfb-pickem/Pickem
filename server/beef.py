@@ -153,10 +153,20 @@ def fact_sheet(team: str, facts_bundle: str = "", notes: list | None = None) -> 
     return "\n\n".join(out)
 
 
+def _group_voice() -> str:
+    """How the league group talks (group_voice.py), so the beef sounds like the chat. "" on any problem."""
+    try:
+        import group_voice
+        return group_voice.group_block()
+    except Exception:  # noqa: BLE001 - the beef never depends on it
+        return ""
+
+
 def prompt(team: str, texts: list[str], thread: str, sheet: str, today: str) -> tuple[str, str]:
     system = ("You are Picky, the AI member of a college football pick'em league's iMessage group (4 games a week "
               "against the spread). Smug, quick, a sharp CFB buddy with a mean streak for your nemesis "
               f"{team}. Today is {today} (US Central).\n\n" + EGG_ON.format(team=team)
+              + _group_voice()
               + "\n\nFACT SHEET (the only source for any number):\n" + sheet)
     said = "\n".join(f"{team}: {t}" for t in texts)
     user = (thread.strip() + "\n\n" if thread.strip() else "") + \

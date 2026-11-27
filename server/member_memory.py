@@ -28,7 +28,7 @@ stance_hint (cold -> sharp, warm -> friendly) when no record stance fires. See "
   exam sidecars (side=1) and old rows that no live reply line backs (pre-11/17 exam traffic) are
   skipped, the same way flub_loop.harvest does it. Web rows carry no team and are skipped.
 
-  NIGHTLY (LaunchAgent com.pickem.member-memory, 22:30 CT): every real row from the last
+  NIGHTLY (LaunchAgent com.pickem.member-memory, 22:30 CT; also runs group_voice.refresh()): every real row from the last
   LOOKBACK_DAYS not yet processed -> one offline local gemma pass per batch via local_llm (no Claude,
   JSON schema) -> code validation (the quote must be an exact substring of the member's own
   message, msg ids and speakers must match, game ids must exist, the sensitive filter) -> merge
@@ -1288,6 +1288,11 @@ def main(argv=None) -> int:
     today = dt.datetime.now(CT).date()
     if a.cmd == "nightly":
         rep = run_range((today - dt.timedelta(days=LOOKBACK_DAYS)).isoformat(), today.isoformat(), dry=a.dry)
+        try:  # the group voice rides this run (group_voice.py): new group messages + an Opus update when due
+            import group_voice
+            rep["group_voice"] = group_voice.refresh(dry=a.dry)
+        except Exception as e:  # noqa: BLE001 - never breaks member memory
+            rep["group_voice"] = {"why": f"failed: {e}"}
     elif a.cmd == "backfill":
         rep = run_range(a.since, today.isoformat(), dry=a.dry)
     else:

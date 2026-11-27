@@ -126,11 +126,21 @@ def sample_hit(n) -> bool:
 
 # ---- the review call's input / output ------------------------------------------------------------
 
+def _group_voice() -> str:
+    """How the league group talks (group_voice.py): a group fix should sound like the chat. "" on any problem."""
+    try:
+        import group_voice
+        return group_voice.group_block()
+    except Exception:  # noqa: BLE001 - the review never depends on it
+        return ""
+
+
 def prompt(q: str, draft: str, facts: str, *, who: str = "", team: str | None = None, dm: bool = False,
            recent: str = "", now: dt.datetime | None = None) -> tuple[str, str]:
     """(system, user) for the review call."""
     now = now or dt.datetime.now(CT)
-    system = SYSTEM.format(today=now.strftime("%a %b %-d, %Y %-I:%M %p"), facts=facts, voice=VOICE)
+    system = SYSTEM.format(today=now.strftime("%a %b %-d, %Y %-I:%M %p"), facts=facts,
+                           voice=VOICE + ("" if dm else _group_voice()))
     user = (f"RECENT GROUP CHAT (context only):\n{recent}\n\n" if recent else "")
     user += f"[{'DM' if dm else 'group'} text from {who or 'a member'}" + (f" (team: {team})" if team else "") + "]\n"
     user += f"{q}\n\nPICKY'S DRAFT:\n{draft}\n\nReturn the JSON verdict."

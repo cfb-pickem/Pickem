@@ -101,6 +101,7 @@ import matchup_guard  # noqa: E402
 import member_memory  # noqa: E402  (forget handler, receipt check, Charlie rule)
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
 import beef  # noqa: E402  (TEMP 2026-11-27: Opus-written replies to every text from the beef target)
+import group_voice  # noqa: E402  (how the league group talks: a style rider on group replies only)
 import answer_first  # noqa: E402  (helpful first: insist follow-ups, tone asks, honest data gaps)
 import dm_memes  # noqa: E402  (per-member meme GIF on 1-on-1 DM replies only, never the group or the site)
 import picky_brain  # noqa: E402
@@ -457,7 +458,8 @@ def _system_tail(ctx: dict) -> str:
         who = f" Call them \"{s.team}\" (their league team name), never a real first name."
     if not (s and s.team):
         who = " This group member isn't matched to a team: treat them as a league member and don't guess who."
-    return _orig_system_tail(ctx) + GROUP_RIDER + who + RECENT.get()
+    # the group-voice rider (group_voice.py): group replies only, in this per-caller tail, never the shared prefix
+    return _orig_system_tail(ctx) + GROUP_RIDER + who + group_voice.group_block(local=True) + RECENT.get()
 
 
 picky_brain.install()
@@ -1068,6 +1070,7 @@ async def _raw_answer(handle: str, q: str, dm: bool, recent: list | None) -> dic
     msg += f" (team: {who['team']})" if who.get("team") else ""
     msg += f"]\n{q}"
     sysmsg = RAW_SYSTEM.format(today=_dt.datetime.now().strftime("%a %b %-d, %Y %-I:%M %p"), facts=facts)
+    sysmsg += "" if dm else group_voice.group_block()
     out = await picky_claude.live_reply([{"role": "system", "content": sysmsg}, {"role": "user", "content": msg}],
                                         kind="raw", timeout=60)
     out = (out or "").strip()
