@@ -442,7 +442,7 @@ def _live_fail(kind: str, why: str, model: str, secs: float, limit: bool = False
 
 
 async def live_reply(messages: list[dict], kind: str = "reply", schema: dict | None = None,
-                     timeout: float | None = None) -> str | None:
+                     timeout: float | None = None, effort: str | None = None) -> str | None:
     """The reply text (schema: the structured output as a JSON string) from Claude, or None: the switch is
     off, or the call failed (logged, counted toward auto-off) and the caller uses gemma. Never raises."""
     if live_why_not():
@@ -454,7 +454,7 @@ async def live_reply(messages: list[dict], kind: str = "reply", schema: dict | N
     try:
         LIVE_CWD.mkdir(parents=True, exist_ok=True)
         proc = await asyncio.create_subprocess_exec(
-            *live_command(system, model, str(cfg.get("effort", "low") or ""), schema),
+            *live_command(system, model, effort or str(cfg.get("effort", "low") or ""), schema),
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             cwd=str(LIVE_CWD), env=env())
         try:

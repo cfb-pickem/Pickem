@@ -195,13 +195,20 @@ ORDER BY m.ROWID DESC
 LIMIT ?
 """
 RECENT_N = 8
+BEEF_RECENT_N = 20  # TEMP beef mode: the fight's thread for Opus
+BEEF_HANDLES: set[str] = set()  # TEMP beef mode (2026-11-27): group texts from these get forwarded, @Picky or not;
+# the sidecar's /outbox poll sets it (server/beef.py), so ending the beef there stops the forwarding
 
 
-def recent_messages(db: sqlite3.Connection | None, chat_guid: str, rowid: int) -> list[dict]:
+def beef_row(row: dict) -> bool:
+    return row["style"] == GROUP_STYLE and (row.get("handle") or "") in BEEF_HANDLES
+
+
+def recent_messages(db: sqlite3.Connection | None, chat_guid: str, rowid: int, n: int = RECENT_N) -> list[dict]:
     if db is None:
         return []
     try:
-        rows = db.execute(RECENT_MESSAGES, (chat_guid, rowid, RECENT_N)).fetchall()
+        rows = db.execute(RECENT_MESSAGES, (chat_guid, rowid, n)).fetchall()
     except sqlite3.Error as e:
         log.warning("recent messages unreadable: %s", e)
         return []
@@ -293,7 +300,7 @@ def should_act(row: dict, now: float) -> tuple[bool, str]:
     if row.get("associated_message_type"):
         return False, "tapback"
     if row["style"] == GROUP_STYLE:
-        if not triggered(text, row["attributedBody"]):
+        if not triggered(text, row["attributedBody"]) and not (beef_row(row) and (text or "").strip()):
             return False, "no-trigger"
     elif not (text or "").strip():
         return False, "empty"  # DMs: any text, no @Picky needed (the sidecar checks the sender)
@@ -311,12 +318,15 @@ def ask_bot(handle: str, text: str, secret: str, chat: str = "", dm: bool = Fals
             recent: list | None = None, texts: list | None = None) -> dict:
     """{"reply": str|None, "image": base64 png|None}. `texts`: several DMs from one handle, oldest first
     (`text` is the latest); the sidecar answers them with one reply."""
+    forwarded = not dm and handle in BEEF_HANDLES and not TRIGGER.search(text)  # TEMP beef mode, no @Picky
     if not dm and not TRIGGER.search(text):  # mention-only messages: hand the sidecar a literal trigger
         text = "@Picky " + text
     payload = {"handle": handle, "text": text, "chat": chat, "dm": dm,
                "allowlisted": dm and handle in TEST_DM_HANDLES, "recent": [] if dm else (recent or [])}
     if texts and len(texts) > 1:
         payload["texts"] = texts
+    if forwarded:
+        payload["forwarded"] = "beef"
     req = urllib.request.Request(
         BOT_URL, data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "X-Picky-Group-Secret": secret}, method="POST")
@@ -424,10 +434,16 @@ def drain_outbox(db: sqlite3.Connection, secret: str, rate: RateLimit, groups: l
     payload["dm_ok"] = True
     payload["img_ok"] = True  # async picture replies (review R2)
     try:
-        item = _post(OUTBOX_URL, payload, secret).get("item")
+        res = _post(OUTBOX_URL, payload, secret)
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         log.debug("outbox unreachable: %s", e)
         return
+    beef = {str(h) for h in res.get("beef_handles") or [] if h}
+    if beef != BEEF_HANDLES:
+        log.info("beef handles now %s", sorted("..." + h[-4:] for h in beef) or "none")
+        BEEF_HANDLES.clear()
+        BEEF_HANDLES.update(beef)
+    item = res.get("item")
     if not item:
         return
     chat, texts = item.get("chat") or "", [t for t in item.get("texts") or [] if t]
@@ -487,6 +503,9 @@ def dm_batch(rows: list[dict], i: int, ready) -> list[dict]:
     """Pure: rows[i] is a DM to answer; the unanswered DMs after it from the same handle in the same chat
     (`ready(row)` = would be acted on now) ride along as one ask. Group rows never batch."""
     first = rows[i]
+    if beef_row(first):  # TEMP beef mode: his quick group texts ride along as one ask
+        return [first] + [r for r in rows[i + 1:] if r["chat_guid"] == first["chat_guid"]
+                          and r["handle"] == first["handle"] and ready(r)]
     if first["style"] == GROUP_STYLE:
         return [first]
     out = [first]
@@ -696,7 +715,8 @@ def handle_one(row: dict, secret: str, rate: RateLimit, db: sqlite3.Connection |
     if out is None:
         t0 = time.time()
         try:
-            recent = [] if dm else recent_messages(db, row["chat_guid"], row["ROWID"])
+            recent = [] if dm else recent_messages(db, row["chat_guid"], row["ROWID"],
+                                                   BEEF_RECENT_N if beef_row(row) else RECENT_N)
             out = ask_bot(handle, text, secret, chat=row["chat_guid"], dm=dm, recent=recent,
                           texts=[row_text(b) for b in batch] if len(batch) > 1 else None)
         except urllib.error.HTTPError as e:

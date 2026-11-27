@@ -131,6 +131,8 @@ MILK_OK: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_milk_ok", 
 # rerolls included: in a burst the 11th call in a minute raised 429 and that ask got no reply. The
 # watcher caps group replies itself (10 s gap, 60/h); site asks are still counted once at /chat.
 SKIP_RATE: contextvars.ContextVar[bool] = contextvars.ContextVar("picky_skip_rate", default=False)
+# TEMP beef mode (group_chat / beef.py, 2026-11-27): the egg-on rider when Opus couldn't write the beef reply
+BEEF_RIDER: contextvars.ContextVar[str] = contextvars.ContextVar("picky_beef_rider", default="")
 _BLINKS_ASK = re.compile(r"\bblink(?:stradamus|y|ie|s)\b", re.I)
 BLINKS_BIT = ("RUNNING BIT about Blinkstradamus (he, not the user). True origin: at a bachelor party he was "
               "just walking along the roadside holding a carton of milk when girls in a top-off Jeep yelled "
@@ -7675,6 +7677,12 @@ async def _chat(req: Request, test: bool, hold: int | None, brain: bool = True):
         body, q = convo[-1]["content"], last.get("content", "")
         en = escalate_note(ctx, facts_above="THE USER is the team" in body)
         body = (body[: -len(q)] + en + "\n\n" + q) if q and body.endswith(q) else (en + "\n\n" + body)
+        convo[-1] = {"role": "user", "content": body}
+
+    rider = BEEF_RIDER.get()  # TEMP beef mode fallback: keep the fight going
+    if rider and convo[-1]["role"] == "user":
+        body, q = convo[-1]["content"], last.get("content", "")
+        body = (body[: -len(q)] + rider + "\n\n" + q) if q and body.endswith(q) else (rider + "\n\n" + body)
         convo[-1] = {"role": "user", "content": body}
 
     # don't open the same way twice in one conversation (Charlie: no templates, no robot)

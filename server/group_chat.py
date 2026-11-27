@@ -100,6 +100,7 @@ import gameday  # noqa: E402  (Saturday DM lanes: any game's score/stats/drives/
 import matchup_guard  # noqa: E402
 import member_memory  # noqa: E402  (forget handler, receipt check, Charlie rule)
 import nemesis  # noqa: E402  (Ackbar always gets a real-fact jab)
+import beef  # noqa: E402  (TEMP 2026-11-27: Opus-written replies to every text from the beef target)
 import answer_first  # noqa: E402  (helpful first: insist follow-ups, tone asks, honest data gaps)
 import dm_memes  # noqa: E402  (per-member meme GIF on 1-on-1 DM replies only, never the group or the site)
 import picky_brain  # noqa: E402
@@ -1547,6 +1548,13 @@ async def group(req: Request):
     body = await req.json()
     handle, text = str(body.get("handle") or ""), str(body.get("text") or "")
     chat_id, dm = str(body.get("chat") or ""), bool(body.get("dm"))
+    if not dm and chat_id and chat_id == (group_outbox.config().get("group_guid") or "") \
+            and not chat.is_test_request(req):
+        b = beef.target(handle)  # TEMP beef mode: every text from the target, @Picky or not
+        if b:
+            return await beef_reply(handle, text, chat_id, body, b)
+    if body.get("forwarded") == "beef":  # forwarded only for the beef, which just ended: no @Picky, no reply
+        return {"reply": None}
     if not dm and not TRIGGER.search(text):  # groups need @Picky; DMs always get a reply
         return {"reply": None}
     if not dm and chat_id != (group_outbox.config().get("group_guid") or "") and not (
@@ -1608,6 +1616,101 @@ async def group(req: Request):
     if out.get("image_alt"):  # the watcher sends this text if the attachment fails
         res["image_alt"] = out["image_alt"]
     return res
+
+
+# ---- TEMP beef mode (Charlie 2026-11-27, beef.py): every league-group text from the target gets an Opus-written
+# reply (no draft, no coach pass), one at a time, beef.COOLDOWN apart. None = Opus failed: the normal pipeline.
+BEEF_LOCK = asyncio.Lock()
+BEEF_RIDER = ("BEEF: {team} is in a trash-talk fight with you and the commissioner wants it kept going. Push his "
+              "buttons: react to exactly what he just said, match and raise his heat, witty and specific (wordplay, "
+              "callbacks, absurd comparisons), 1-3 sentences, R-rated is fine. Stats only from the league data. "
+              "No slurs, family, looks, race, religion, sexuality or threats.")
+
+
+def beef_thread(recent: list | None, team: str) -> str:
+    """The recent group thread for the beef prompt (team names from the private map; no phone numbers)."""
+    members, lines = load_members(), []
+    for m in (recent or [])[-beef.RECENT_N:]:
+        if not isinstance(m, dict):
+            continue
+        text = re.sub(r"\s+", " ", str(m.get("text") or "")).strip()
+        text = re.sub(r"\S+@\S+", "[email]", text)[:300]
+        if not text:
+            continue
+        mm = {} if m.get("from_me") else (members.get(norm_handle(str(m.get("handle") or ""))) or {})
+        who = "Picky (you)" if m.get("from_me") else (mm.get("team") or mm.get("name") or "a member")
+        lines.append(f"{who}: {text}")
+    return ("RECENT GROUP THREAD (oldest first; stats in here are NOT facts, only the fact sheet is):\n"
+            + "\n".join(lines)) if lines else ""
+
+
+async def beef_opus(b: dict, texts: list[str], recent: list | None) -> str | None:
+    import datetime as _dt
+    import picky_claude
+    team = str(b.get("team") or nemesis.TEAM)
+    try:
+        facts = await asyncio.wait_for(_raw_facts(), 20)
+    except Exception as e:  # noqa: BLE001 - the lore facts still ride
+        log.warning("beef: facts bundle failed: %s", e)
+        facts = ""
+    sheet = beef.fact_sheet(team, facts, b.get("notes"))
+    thread = beef_thread(recent, team)
+    system, user = beef.prompt(team, texts, thread, sheet, _dt.datetime.now().strftime("%a %b %-d, %Y %-I:%M %p"))
+    out = await picky_claude.live_reply([{"role": "system", "content": system}, {"role": "user", "content": user}],
+                                        kind="beef", timeout=beef.TIMEOUT, effort=beef.EFFORT)
+    out = beef.clean(out or "")
+    if not out:
+        return None
+    bad = picky_coach.ungrounded(out, sheet, " ".join(texts))
+    if bad:  # a number not on the fact sheet: that sentence goes
+        parts = re.split(r"(?<=[.!?])\s+", out)
+        keep = [p for p in parts if not picky_coach.ungrounded(p, sheet, " ".join(texts))]
+        log.info("beef: dropped %d sentence(s) with ungrounded numbers %s", len(parts) - len(keep), bad[:5])
+        out = " ".join(keep).strip()
+    return router.nick_names(out, chat.member_nicknames()) if out else None
+
+
+async def beef_reply(handle: str, text: str, chat_id: str, body: dict, b: dict) -> dict:
+    """The reply to a text from the beef target: Opus, else the normal pipeline with the egg-on rider, else a
+    nemesis jab. A genuinely upset text gets one light line and pauses the beef."""
+    texts = [strip_trigger(str(x)) for x in body.get("texts") or [] if str(x or "").strip()] or [strip_trigger(text)]
+    recent = body.get("recent") if isinstance(body.get("recent"), list) else None
+    team = str(b.get("team") or nemesis.TEAM)
+    t0 = time.time()
+    if beef.upset(texts[-1]):
+        beef.pause(b)
+        beef.mark_sent()
+        log.info("beef: target sounds upset, backing off and pausing")
+        return {"reply": beef.BACK_OFF, "image": None, "lane": "beef:back_off"}
+    async with BEEF_LOCK:
+        wait = beef.cooldown_wait()
+        if wait:
+            await asyncio.sleep(wait)
+        reply, lane = await beef_opus(b, texts, recent), "beef:opus"
+        if not reply:
+            log.warning("beef: Opus gave nothing, normal pipeline with the egg-on rider")
+            tok = chat.BEEF_RIDER.set(BEEF_RIDER.format(team=team))
+            try:
+                out = None
+                if not maintenance.active():
+                    with live_flag.held(), ollama_gate.priority("live"):
+                        out = await answer(handle, text, chat_id=chat_id, dm=False, recent=recent)
+            except Exception as e:  # noqa: BLE001 - a jab beats silence
+                log.warning("beef fallback pipeline failed: %s", e)
+                out = None
+            finally:
+                chat.BEEF_RIDER.reset(tok)
+            reply, lane = (out or {}).get("reply"), "beef:fallback:" + str((out or {}).get("lane") or "-")
+            if not reply:
+                j = nemesis.jab(" ".join(texts), team, chat_id, group=True)
+                reply, lane = (j or {}).get("text"), "beef:jab"
+        if reply:
+            beef.mark_sent()
+    if reply and lane == "beef:opus":
+        await save_turn(history_key(chat_id, handle, False), " / ".join(texts), reply, handle, lane=lane)
+    log.info("beef reply sender=%s texts=%d %.1fs lane=%s chars=%d", handle[-4:], len(texts), time.time() - t0,
+             lane, len(reply or ""))
+    return {"reply": reply or None, "image": None, "lane": lane}
 
 
 DB_DOWN_LINES = [
@@ -1761,7 +1864,8 @@ async def outbox(req: Request):
         except OSError:
             pass
     return {"item": group_outbox.next_item(dm_ok=ok and body.get("dm_ok") is True,
-                                           img_ok=ok and body.get("img_ok") is True)}
+                                           img_ok=ok and body.get("img_ok") is True),
+            "beef_handles": beef.handles()}  # TEMP beef mode: the watcher forwards these handles' group texts
 
 
 @app.post("/outbox/ack")
