@@ -1937,7 +1937,9 @@ def career_ats_text(ctx: dict, q: str) -> str | None:
 ATS_PROFILE_ASK = re.compile(
     r"\bATS\b|\bagainst the (number|spread|line)\b|\b(vs\.?|versus) the (number|spread)\b"
     r"|\bcover(ing|ed|s)? (lately|this (year|season)|machine|streak|record)\b|\bbeen covering\b"
-    r"|\bas an? (fav\w*|dog|underdog|road (fav\w*|dog)|home (fav\w*|dog))\b", re.I)
+    r"|\bas an? (fav\w*|dog|underdog|road (fav\w*|dog)|home (fav\w*|dog))\b"
+    r"|\b(has|have)n'?t covered\b|\bcovered in a while\b", re.I)  # 'Ohio State hasn't covered in a while, right?'
+ATS_DROUGHT = re.compile(r"\b(has|have)n'?t covered (in a while|lately|in \w+ (games|weeks))\b|\bcovered in a while\b", re.I)
 ATS_NOT = re.compile(r"\b(my|our|i|i'?m|me|am i|you|u|ur|your|picky|career|last (week|wk)|week \d+|did|who covers?|"
                      r"who (do|would|should) (you|i|u)|take|pick|lean)\b", re.I)
 # 'can you tell me Michigan's ATS record': the ask wrapper isn't about Picky's or the asker's own ATS
@@ -2011,23 +2013,166 @@ def _ats_verdict(p: dict, role_rec: list | None, role_say: str, label: str | Non
     return "That's a coin flip against the number, so the ATS history doesn't move me " + (on if label else "either way") + "."
 
 
-def ats_profile_text(ctx: dict, q: str) -> str | None:
-    """'how's Duke against the number / Indiana ATS / Houston as a favorite': the team sheet's ATS profile (results
-    vs the number), the split that matches THIS week's role first (or the split asked for), recent form, then a
-    computed verdict in lean words. Every number comes from facts_used."""
-    named = factstore.teams_named(q)
-    t = factstore.team(named[0]) if named else None
-    if not t:
-        return None
+def _ats_team(ctx: dict, t: dict, q: str) -> dict | None:
+    """One team's ATS pieces for the ats_profile lane: profile, facts, this week's role/venue and side labels."""
     name = t["name"]
     p = t.get("ats_profile")
     facts = list(t.get("facts") or [])
     if not p:  # a store built before the profile existed: same computation from the sheet's results
         p = factstore.ats_profile(t.get("results") or [])
         facts += factstore.ats_profile_facts(name, p, t.get("as_of") or "")
+    if not p["games"]:
+        return {"name": name, "p": p}
     fx = {f["id"].rsplit(".", 1)[-1]: f for f in facts if f["kind"] == "ats"}
+    d = {"name": name, "p": p, "fx": fx, "t": t, "role": None, "venue": None, "label": None, "opp_label": None,
+         "week": None, "game": None, "used": []}
+    g, _ = factstore.find_game(name, ctx)
+    if g and factstore.norm(name) in (factstore.norm(g["awayTeam"]), factstore.norm(g["homeTeam"])):
+        d["game"] = g
+        home = factstore.norm(name) == factstore.norm(g["homeTeam"])
+        sp = factstore.market(g).get("spread")
+        neutral = bool((g.get("sheet") or {}).get("neutral"))
+        if sp is not None:
+            mine = sp if home else -sp
+            opp = g["awayTeam"] if home else g["homeTeam"]
+            d["role"] = "fav" if mine < 0 else "dog" if mine > 0 else None
+            d["venue"] = None if neutral else ("home" if home else "road")
+            d["used"] += factstore.facts(g, ("market",))[:1]
+            where = " at a neutral site" if neutral else " at home" if home else " on the road"
+            num = f"{abs(mine):g}"
+            what = (f"{'an' if num.startswith(('8', '11', '18')) else 'a'} {num}-point "
+                    f"{'favorite' if mine < 0 else 'underdog'}") if mine else "a pick'em"
+            # the side in words, never 'Texas -7.5' (fact exam: no spread label on a non-pool team)
+            d["label"] = f"{name} {'laying it' if mine < 0 else 'with the points'}" if mine else name
+            d["opp_label"] = f"{opp} {'with the points' if mine < 0 else 'laying it'}" if mine else opp
+            d["week"] = f"This week they're {what}{where} vs {opp}"
+    return d
+
+
+def _ats_split(d: dict, k: str, used: list) -> str:
+    p = d["p"]
+    if not sum(p[k]):
+        return f"yet to play a game {_ATS_SAY[k]}"
+    used.append(d["fx"][k])
+    return f"{factstore.wlp_text(p[k])} {_ATS_SAY[k]}"
+
+
+def _ats_form(d: dict, used: list) -> list[str]:
+    p, fx, form = d["p"], d["fx"], []
+    s = p.get("streak")
+    if s and s["n"] >= 4:
+        form.append(f"{'covered' if s['kind'] == 'cover' else 'missed'} {s['n']} straight")
+        used.append(fx["streak"])
+    elif p.get("last4"):
+        form.append(f"covered {p['last4'][0]} of the last 4")
+        used.append(fx["last4"])
+        if s and s["n"] >= 2:
+            form[-1] += f" ({s['n']} straight {'covers' if s['kind'] == 'cover' else 'misses'})"
+            used.append(fx["streak"])
+    return form
+
+
+# 'what happened last year' / 'last year's game' next to an ATS ask: the last meeting rides along (genius
+# ah-neb-iowa-h2h / ah-usc-ucla-ats / ah-iron-bowl: the lane answered the ATS half and dropped last year's game)
+ATS_H2H = re.compile(r"\bhappened\b[^?.!]{0,40}\blast (year|season|time)\b|\blast (year|season)'?s? (game|meeting|matchup)\b"
+                     r"|\blast (year|season|time)\b[^?.!]{0,12}\?|\bATS last (year|season)\b", re.I)
+# one team named but the ask is about the matchup's two sides ('how have both teams done ATS')
+ATS_BOTH = re.compile(r"\bboth\b|\beach (team|side)\b|\bthe other (team|side)\b", re.I)
+
+
+def _ats_meeting(g: dict | None, used: list) -> str | None:
+    """Last season's meeting in words: winner, score, the line as a role (no 'Team -7' label) and who covered."""
+    if not g:
+        return None
+    sheet = g.get("sheet") or ((factstore.load() or {}).get("games") or {}).get(str(g.get("id"))) or {}
+    m = sheet.get("meeting")
+    f = next((x for x in factstore.facts(g, ("meeting",))), None)
+    if not m or not f:
+        return None
+    used.append(f)
+    s = f"Last meeting ({m['season']}): {m['winner']} won {m['score']} {m['where']}"
+    lm = re.match(r"(.+?) -(\d+(?:\.\d+)?)$", m.get("line") or "")
+    if lm:
+        fav, num = lm.group(1), lm.group(2)
+        s += f" as {'an' if num.startswith(('8', '11', '18')) else 'a'} {num}-point " \
+             f"{'favorite' if factstore.norm(fav) == factstore.norm(m['winner']) else 'underdog'}"
+        if not m.get("cover_by"):
+            s += ", a push against the number"
+        elif factstore.norm(m["covered"]) == factstore.norm(m["winner"]):
+            s += f" and covered by {m['cover_by']:g}"
+        else:
+            s += f", but {m['covered']} covered by {m['cover_by']:g}"
+    return s + "."
+
+
+def _ats_pair_text(ctx: dict, a: dict, b: dict, q: str, h2h: bool) -> str | None:
+    """Both teams of an ATS ask ('Houston ATS? And Baylor?', 'who's been better ATS, USC or UCLA?'): each team's
+    record with this week's role splits and form, last year's meeting if asked, then one comparison in lean words."""
+    used, out = [], []
+    asked = [k for k, rx, _ in _ATS_SPLITS if re.search(rx, q or "", re.I)]
+    for d in (a, b):
+        if "fx" not in d:
+            out.append(f"I don't have any lines on record for {d['name']} this season.")
+            continue
+        used.append(d["fx"]["calc_overall"])
+        used += d["used"]
+        keys = [k for k in [d["role"], d["venue"]] + asked if k]
+        keys = list(dict.fromkeys(keys))
+        bits = [_ats_split(d, k, used) for k in keys]
+        bits += [f.replace(" (", ", ").rstrip(")") for f in _ats_form(d, used)]
+        s = f"{d['name']} is {factstore.wlp_text(d['p']['overall'])} against the number this year"
+        out.append(s + (f" ({', '.join(bits)})" if bits else "") + ".")
+    if h2h:
+        lm = _ats_meeting(a.get("game") or b.get("game"), used)
+        if lm:
+            out.append(lm)
+    if "fx" not in a or "fx" not in b:
+        return factstore.answer(" ".join(out), used) if used else None
+    pct = []
+    for d in (a, b):
+        w, l_ = d["p"]["overall"][:2]
+        pct.append(w / (w + l_) if w + l_ else 0.5)
+    gap = pct[0] - pct[1]
+    better, worse = (a, b) if gap > 0 else (b, a)
+    same_game = a.get("game") and b.get("game") and a["game"].get("id") == b["game"].get("id")
+    if abs(gap) < 0.25 or min(sum(a["p"]["overall"][:2]), sum(b["p"]["overall"][:2])) < 4:
+        out.append("Not much daylight between them against the number, so the ATS history is a coin flip here.")
+    else:
+        side = better["label"] if same_game and better.get("label") else better["name"]
+        word = "lean" if abs(gap) >= 0.45 else "slight lean"
+        out.append(f"{better['name']} has been the better ATS team, but books price that in: a {word} on {side} "
+                   "at most, not a reason on its own." if same_game else
+                   f"{better['name']} has been the better ATS team; they don't play each other this week.")
+    return factstore.answer(" ".join(out), used)
+
+
+def ats_profile_text(ctx: dict, q: str) -> str | None:
+    """'how's Duke against the number / Indiana ATS / Houston as a favorite': the team sheet's ATS profile (results
+    vs the number), the split that matches THIS week's role first (or the split asked for), recent form, then a
+    computed verdict in lean words. Every number comes from facts_used. Two teams named (or 'both teams') = both
+    sides' records and one comparison; 'what happened last year' adds last season's meeting."""
+    named = factstore.teams_named(q)
+    t = factstore.team(named[0]) if named else None
+    if not t:
+        return None
+    h2h = bool(ATS_H2H.search(q or "") or H2H_ASK.search(q or ""))
+    d = _ats_team(ctx, t, q)
+    t2 = factstore.team(named[1]) if len(named) > 1 else None
+    if not t2 and ATS_BOTH.search(q or "") and d.get("game"):
+        g = d["game"]
+        opp = g["awayTeam"] if factstore.norm(g["homeTeam"]) == factstore.norm(t["name"]) else g["homeTeam"]
+        t2 = factstore.team(opp)
+    if t2 and factstore.norm(t2["name"]) != factstore.norm(t["name"]):
+        out = _ats_pair_text(ctx, d, _ats_team(ctx, t2, q), q, h2h)
+        s = (d.get("p") or {}).get("streak")
+        if out and ATS_DROUGHT.search(q or "") and s and s["kind"] == "miss" and s["n"] >= 2:
+            out = factstore.answer("Yeah, " + out, out.facts_used)  # 'X hasn't covered in a while, right?': true
+        return out
+    name = t["name"]
+    p = d["p"]
     if not p["games"]:
         return f"I don't have any lines on record for {name} this season, so no ATS read."
+    fx = d["fx"]
     used = [fx["calc_overall"]]
     rec = factstore.wlp_text(p["overall"])
     avg = p["avg_margin"]
@@ -2041,55 +2186,25 @@ def ats_profile_text(ctx: dict, q: str) -> str | None:
         used.append(fx["avg_margin"])
     out = [head + "."]
     asked = [k for k, rx, _ in _ATS_SPLITS if re.search(rx, q or "", re.I)]
-
-    def split(k: str) -> str:
-        if not sum(p[k]):
-            return f"yet to play a game {_ATS_SAY[k]}"
-        used.append(fx[k])
-        return f"{factstore.wlp_text(p[k])} {_ATS_SAY[k]}"
-    g, _ = factstore.find_game(name, ctx)
-    role, venue, label, opp_label = None, None, None, None
-    if g and factstore.norm(name) in (factstore.norm(g["awayTeam"]), factstore.norm(g["homeTeam"])):
-        home = factstore.norm(name) == factstore.norm(g["homeTeam"])
-        sp = factstore.market(g).get("spread")
-        neutral = bool((g.get("sheet") or {}).get("neutral"))
-        if sp is not None:
-            mine = sp if home else -sp
-            opp = g["awayTeam"] if home else g["homeTeam"]
-            role = "fav" if mine < 0 else "dog" if mine > 0 else None
-            venue = None if neutral else ("home" if home else "road")
-            used += factstore.facts(g, ("market",))[:1]
-            where = " at a neutral site" if neutral else " at home" if home else " on the road"
-            num = f"{abs(mine):g}"
-            what = (f"{'an' if num.startswith(('8', '11', '18')) else 'a'} {num}-point "
-                    f"{'favorite' if mine < 0 else 'underdog'}") if mine else "a pick'em"
-            # the side in words, never 'Texas -7.5' (fact exam: no spread label on a non-pool team)
-            label = f"{name} {'laying it' if mine < 0 else 'with the points'}" if mine else name
-            opp_label = f"{opp} {'with the points' if mine < 0 else 'laying it'}" if mine else opp
-            week = f"This week they're {what}{where} vs {opp}"
+    role, venue, label, opp_label, week = d["role"], d["venue"], d["label"], d["opp_label"], d["week"]
+    used += d["used"]
     lead = asked or [k for k in (role, venue) if k]
     if asked:
-        out.append("They're " + ", ".join(split(k) for k in asked) + ".")
+        out.append("They're " + ", ".join(_ats_split(d, k, used) for k in asked) + ".")
     if role or venue or label:
         rest = [k for k in (role, venue) if k and k not in asked]
-        out.append(week + (": " + ", ".join(split(k) for k in rest) if rest else "") + ".")
-    form = []
-    s = p.get("streak")
-    if s and s["n"] >= 4:
-        form.append(f"{'covered' if s['kind'] == 'cover' else 'missed'} {s['n']} straight")
-        used.append(fx["streak"])
-    elif p.get("last4"):
-        form.append(f"covered {p['last4'][0]} of the last 4")
-        used.append(fx["last4"])
-        if s and s["n"] >= 2:
-            form[-1] += f" ({s['n']} straight {'covers' if s['kind'] == 'cover' else 'misses'})"
-            used.append(fx["streak"])
+        out.append(week + (": " + ", ".join(_ats_split(d, k, used) for k in rest) if rest else "") + ".")
+    form = _ats_form(d, used)
     m = p.get("biggest_miss")
     if m:
         form.append(f"worst miss was {-m['cover']:g} short vs {m['opp']}")
         used.append(fx["biggest_miss"])
     if form:
         out.append("They've " + " and their ".join(form) + ".")
+    if h2h:
+        lm = _ats_meeting(d.get("game"), used)
+        if lm:
+            out.append(lm)
     vk = next((k for k in (role, venue) if k), None) or (lead[0] if lead else None)  # this week's role decides
     role_rec = p[vk] if vk and sum(p[vk]) else None
     out.append(_ats_verdict(p, role_rec, _ATS_SAY[vk] if vk else "", label, opp_label))
@@ -2440,7 +2555,7 @@ def fact_intent(q: str) -> tuple[str, str] | None:
         return "results", "MY_WORST_LW"  # 'what was my worst pick last week?': his biggest miss, not Picky's shakiest
     if MISS_MARGIN.search(t):
         return "results", "MISS_MARGIN"  # 'how bad did I miss on Boise last week?' (fact exam real miss)
-    if PREMISE_ASK.search(t):
+    if PREMISE_ASK.search(t) and not ATS_DROUGHT.search(t):  # a season ATS drought isn't a checkable result claim
         return "premise", "PREMISE_ASK"  # 'Hawai'i covered last week right?' / 'why did I take SMU?': code checks it
     if re.search(r"^\W*(and |what about |how about )?(the )?week before (that|last week|last)\W*$", t, re.I):
         return "record", "WEEK_BEFORE"  # 'and the week before that?' after 'how'd I do last week?'
@@ -2469,7 +2584,8 @@ def fact_intent(q: str) -> tuple[str, str] | None:
             and not re.search(r"\b(news|latest|rumou?r\w*)\b", t, re.I) and (
             _qb_status_intel({}, t) or (factstore.has_personnel() and _store_qb_ask(t) and qb_status_text({}, t))):
         return "qb_status", "QB_STATUS_ASK"  # 'who's starting at QB for Tennessee': the sourced intel note, verbatim
-    if CONF_RACE_ASK.search(t) and not re.search(r"\b(cfp|playoff|my|our|league)\b", t, re.I):
+    if CONF_RACE_ASK.search(t) and not re.search(r"\b(cfp|playoff|my|our|league)\b", t, re.I) \
+            and not (LOOKAHEAD_GAME.search(t) and factstore.teams_named(t)):  # 'title game next week, lookahead spot?'
         return "conf_race", "CONF_RACE_ASK"  # 'what's the Big 12 title game picture': CFBD conference records
     if LOOKAHEAD_SLATE.search(t) and len(slate_cards.cfbd.other_teams_named(t, [], slate_cards.cfbd.load_index() or {"teams": {}})
                                          if slate_cards.cfbd.load_index() else []) == 0:
