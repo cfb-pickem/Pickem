@@ -251,6 +251,7 @@ BOOSTERS = {
     ("flub_loop.py", "_fix"): "test_flub_loop_is_optional_and_skips_cleanly",
     ("feed_monitor.py", "call_claude"): "test_feed_monitor_never_repairs_on_the_schedule",
     ("news_qa.py", "run"): "test_news_qa_is_hand_only",
+    ("group_voice.py", "_opus"): "test_group_voice_falls_back_to_last_profile",
 }
 
 
@@ -431,6 +432,25 @@ def test_burn_book_falls_back_to_last_book_and_code_pool():
             res = bb.tick()  # the book is 2+ weeks old: a refresh is due, Claude can't do it
         assert res.get("recheck") == {"ok": True}, (kind, res)
         assert json.loads(out.read_text())["types"]["insult"][0]["text"] == "keep", kind
+
+
+def test_group_voice_falls_back_to_last_profile():
+    import group_voice as gv
+    d = TMP / "group_voice"
+    d.mkdir(exist_ok=True)
+    rider = "Keep this rider. " * 30
+    rows = [{"rowid": i, "ts": 1795800000 + i, "at": "2026-11-27 10:00", "who": "A", "text": f"text {i}"}
+            for i in range(1, 40)]
+    with patch.multiple(gv, DIR=d, RAW=d / "raw.jsonl", STATE=d / "state.json", STATS=d / "stats.json",
+                        PROFILE_JSON=d / "group_voice.json", PROFILE_MD=d / "group_voice.md"), \
+            patch.object(gv, "export", lambda: {"new": 0}):
+        gv.RAW.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        for kind in WORLDS:
+            gv.PROFILE_JSON.write_text(json.dumps({"rider": rider, "rider_local": rider[:300], "distilled_upto_rowid": 0}))
+            with world(kind, "member_memory.py"):  # the nightly that runs it
+                r = gv.refresh()  # 39 new member texts: an update is due, Claude can't do it
+            assert not r["distilled"] and "skipped" in r["why"], (kind, r)
+            assert json.loads(gv.PROFILE_JSON.read_text())["rider"] == rider, kind
 
 
 def test_banter_falls_back_to_last_bank():
