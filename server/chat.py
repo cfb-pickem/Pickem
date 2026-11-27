@@ -1783,8 +1783,9 @@ def member_facts(ctx: dict, team: str) -> str:
            + (f", {gap} point{'s' * (gap != 1)} behind first place" if gap else "") + "."]
     out.append(f"- {this_week_results(ctx, team)}")
     picks = {p["game_id"]: p["pick"] for p in (ctx.get("revealed_picks_this_week") or {}).get(team, [])}
+    # a revealed row can carry pick=None (a slots pull with no side yet): skip it, join() can't take None
     pend = [pick_label(None, g, picks[g["id"]]) for g in ctx.get("games_this_week") or []
-            if g["id"] in picks and not g.get("winner") and not g.get("tiebreaker")]
+            if picks.get(g["id"]) and not g.get("winner") and not g.get("tiebreaker")]
     hidden = [g for g in ctx.get("games_this_week") or [] if g["id"] not in picks
               and g["id"] not in set(ctx.get("revealed_game_ids") or [])]
     if pend:
@@ -2067,7 +2068,7 @@ def value_calls(ctx: dict, team: str) -> str:
     notes_all = ctx.get("espn") or {}
     groups = {"value side": [], "WRONG side of value": [], "no edge": []}
     for g in ctx.get("games_this_week") or []:
-        if g["id"] not in picks or g.get("winner"):  # decided: graded WIN/LOSS, value is moot
+        if not picks.get(g["id"]) or g.get("winner"):  # decided: graded WIN/LOSS, value is moot (or pick=None)
             continue
         lab = pick_label(notes_all.get(g["id"]), g, picks[g["id"]])
         m = re.match(r"(.+) \((value side|wrong side of value|no edge)\)$", lab)

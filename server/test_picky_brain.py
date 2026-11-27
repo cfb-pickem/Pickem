@@ -636,6 +636,19 @@ def test_last_week_guard_monday_after_a_final_week():
         assert "week 10, two weeks ago" in chat.roast_pick_lines(c, "Chuck P")
 
 
+def test_member_facts_skips_a_pending_pick_with_no_side():
+    """Live 2026-11-27 11:31: a revealed pick row with pick=None (Chuck's slots pull) crashed member_facts
+    ("sequence item 3: expected str"), so every group ask naming Chuck got a 500 and the canned line."""
+    c = _wk11_ctx(final=False)
+    pending = c["games_this_week"][3]["id"]
+    rows = c["revealed_picks_this_week"]["Chuck P"]
+    rows[:] = [r for r in rows if r["game_id"] != pending] + [{"game_id": pending, "pick": None,
+                                                               "by_slots": True, "jackpot": False}]
+    out = chat.member_facts(c, "Chuck P")
+    assert "Chuck P's season" in out and "None" not in out, out
+    chat.value_calls(c, "Chuck P")  # same row crashed this one too
+
+
 def test_last_week_guard_off_saturday_and_sunday():
     """Mid-week Saturday (week 11 not final) and the weekend after it, week 10 really is last week."""
     sat_live, bad = _wk11_ctx(final=False), "You let LSU get blown out last week."
