@@ -156,6 +156,19 @@ def test_drought_premise_confirmed_when_true():
     assert out.startswith("Yeah, ") == (s["kind"] == "miss" and s["n"] >= 2), (s, out)
 
 
+def test_neutral_site_is_neither_home_nor_road():
+    rows = [{"cover": 5.5, "spread": 6.5, "home": False, "neutral": True},   # week 1 at a neutral site
+            {"cover": 3.0, "spread": 3.5, "home": False, "neutral": False},
+            {"cover": -2.0, "spread": -3.5, "home": True, "neutral": False}]
+    for i, r in enumerate(rows):
+        r.update(opp=f"T{i}", date=f"2026-09-0{i + 1}")
+    p = FS.ats_profile(rows)
+    assert p["overall"] == [2, 1, 0] and p["road"] == [1, 0, 0] and p["home"] == [0, 1, 0], p
+    assert p["dog"] == [2, 0, 0], p  # the role split still counts it
+    old = FS.ats_profile([{k: v for k, v in r.items() if k != "neutral"} for r in rows])
+    assert old["road"] == [2, 0, 0], old  # rows from a store built before the flag: unchanged behaviour
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

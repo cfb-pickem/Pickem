@@ -230,6 +230,7 @@ def _team_sheets(ds: dict, polls_d: dict, now: float) -> dict[str, dict]:
             if s.get("year") == season and s.get("school"):
                 coach[s["school"]] = f"{c.get('firstName', '')} {c.get('lastName', '')}".strip()
     results: dict[str, list] = {}
+    neutral = {str(g["id"]) for g in ds.get("games") or [] if g.get("neutralSite")}  # /lines rows don't carry it
     for g in sorted(ds.get("lines") or [], key=lambda g: g.get("startDate") or ""):
         if g.get("homeScore") is None or g.get("awayScore") is None or g.get("seasonType") not in (None, "regular"):
             continue
@@ -240,7 +241,7 @@ def _team_sheets(ds: dict, polls_d: dict, now: float) -> dict[str, dict]:
             my_sp = (sp_home if side == "home" else -sp_home) if sp_home is not None else None
             results.setdefault(g[f"{side}Team"], []).append({
                 "game_id": str(g["id"]), "date": (g.get("startDate") or "")[:10], "opp": g[f"{opp}Team"],
-                "home": side == "home", "pts": mine, "opp_pts": theirs, "spread": my_sp,
+                "home": side == "home", "neutral": str(g["id"]) in neutral, "pts": mine, "opp_pts": theirs, "spread": my_sp,
                 "cover": (mine - theirs + my_sp) if my_sp is not None else None})
     out = {}
     for r in ds.get("records") or []:
@@ -301,7 +302,9 @@ def ats_profile(results: list[dict]) -> dict:
     rows = [r for r in results if r.get("cover") is not None and r.get("spread") is not None]
     p = {"games": len(rows), "overall": _wlp(rows),
          "fav": _wlp([r for r in rows if r["spread"] < 0]), "dog": _wlp([r for r in rows if r["spread"] > 0]),
-         "home": _wlp([r for r in rows if r["home"]]), "road": _wlp([r for r in rows if not r["home"]]),
+         # a neutral-site game is neither (Baylor-Auburn week 1 had made Baylor '4-1 on the road', CFBD: 3-1)
+         "home": _wlp([r for r in rows if r["home"] and not r.get("neutral")]),
+         "road": _wlp([r for r in rows if not r["home"] and not r.get("neutral")]),
          "last4": _wlp(rows[-4:]) if len(rows) >= 4 else None, "streak": None, "avg_margin": None,
          "biggest_miss": None}
     if rows:
