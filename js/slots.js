@@ -80,6 +80,9 @@ import { ensureStage, dismissStage, deflateJackpot, primeMeter, ballRig } from '
 import { scheduleClick, scheduleStop, strainStart, strainStop, pop, hold, fanfare } from './slotsound.js';
 import celebrateJackpot, { playerNameFor } from './celebrate.js';
 
+// The full-screen AUTO WIN party after a jackpot reveal. Off: see footballAct.
+const CELEBRATE_JACKPOT = false;
+
 // One transform and/or one tint per symbol, combined at random, so a dozen
 // classes give plenty of distinct nonsense without needing a dozen more. The
 // landing symbol gets NONE of them — that is the whole gag.
@@ -633,7 +636,12 @@ async function footballAct(popped, reels, poppedCells = []) {
   // AND THEN THE WHOLE SCREEN, once a year. Everything else in this reveal is
   // built to survive being watched fifty times; this is built to be watched once
   // and remembered, which wants the opposite restraint entirely.
-  if (popped) {
+  //
+  // OFF (Charlie, 2026-11-27). The reveal replays on every page load, so the
+  // once-a-year screen was greeting everybody with "AUTO WIN Chuck P" on every
+  // visit. The cell still spins and lands on AUTO WIN; only the full-screen
+  // party is held back. Flip CELEBRATE_JACKPOT to bring it back.
+  if (popped && CELEBRATE_JACKPOT) {
     fanfare();
     await celebrateJackpot(playerNameFor(poppedCells[0]?.td));
   }
