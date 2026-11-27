@@ -1071,7 +1071,8 @@ async def fact_reply(st: dict, prefix: str, answer: str) -> str:
     try:
         raw = await _json_call(prefix, router.FACT_TAIL, router.fact_user(st["q"], answer, st.get("sender", ""),
                                                                           jab=rt.mixed and not charlie_caller(st),
-                                                                          leader=leader, warm=charlie_caller(st)),
+                                                                          leader=leader, warm=charlie_caller(st),
+                                                                          kelly="KELLY ON THE CALL (" in chat.kelly_note(st["q"])),
                                router.FACT_SCHEMA, 0.6, router.FACT_TOKENS, 30.0, prime_wait=PRIME_WAIT)
         line = (json.loads(raw[raw.find("{"): raw.rfind("}") + 1]) or {}).get("line") if "{" in (raw or "") else ""
     except (httpx.HTTPError, ValueError, AttributeError) as e:

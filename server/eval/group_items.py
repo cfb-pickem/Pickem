@@ -28,6 +28,8 @@ MAIN_SLICE = [
     "offtopic-taxes", "opinion-freeman", "take-casual", "rules-deadline", "race-how-far",
     # league rules expert (checklist 14): rules answers from league_rules.py
     "rules-push", "rules-season-tiebreak", "rules-playoff-picks", "rules-playoff-format", "race-ended-today",
+    # Brian Kelly bit (Charlie 2026-11-27): jab on mention, mute joke on a known Kelly game, nothing otherwise
+    "kelly-jab", "kelly-game-mute", "kelly-unlisted", "kelly-unrelated",
 ]
 
 CEREALS = (r"cheerios|frosted flakes|froot loops|fruit loops|cap'?n crunch|lucky charms|cinnamon toast crunch|"

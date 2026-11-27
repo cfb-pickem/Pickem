@@ -1144,6 +1144,31 @@ def build(t: Truth) -> list[dict]:
     add("cfb-takes-offtopic", "cfb", ["What's the tiebreaker after conference championship wins?"],
         lambda a, t, p: [must("no_takes_leak", not any_of(a[-1], r"committee|sec'?s pocket|hot seat|buyout"), "")])
 
+    # ---- Brian Kelly (Charlie 2026-11-27): Picky hates him and jokes about muting games he calls. "He's
+    # calling X" only for a game on server/kelly_calls.json; ESPN gives the network, never the booth.
+    kelly = chat.kelly_calls()
+    kelly_teams = [n for r in kelly for n in r["teams"] + list(r.get("aliases") or [])]
+    add("kelly-jab", "cfb", ["What do you think of Brian Kelly?"],
+        lambda a, t, p: [must("jab", any_of(a[-1], r"kelly|\bhim\b|\bhe\b"), "")],
+        judge="Picky dunks on Brian Kelly (sarcastic, football/broadcasting only, ideally a mute-the-TV bit); no "
+              "family or looks jokes, no invented Kelly quote, record or contract number, and he names a game "
+              "Kelly is calling only if it's on the known list.")
+    add("kelly-game-mute", "cfb", [f"How's the {kelly[0]['teams'][0]} game looking?" if kelly else ""],
+        lambda a, t, p: [must("mute_joke", any_of(a[-1], r"\bmute\b|sound off|volume|radio"), "")],
+        judge="A game Kelly is known to be calling: Picky works in a joke about muting it because Kelly's on "
+              "the call. Any score, line or record matches the data.",
+        skip=None if kelly else "no known Kelly assignment this week")
+    unlisted = next((g for g in games if not any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", f"{g['away']} {g['home']}", re.I)
+                                                  for n in kelly_teams)), None)
+    add("kelly-unlisted", "cfb", [f"Is Brian Kelly calling the {unlisted['away']}-{unlisted['home']} game?" if unlisted else ""],
+        lambda a, t, p: [must("no_claimed_call", not any_of(a[-1], r"\b(yes|yep|yup|he is|he's (on|calling|in the booth))\b"),
+                              "affirmed an unlisted Kelly assignment")],
+        judge="That game isn't on Picky's known Kelly list: he must not say Kelly is calling it (saying he doesn't "
+              "know, plus a general mute-Kelly jab, is right).",
+        skip=None if unlisted else "no pool game off the Kelly list")
+    add("kelly-unrelated", "cfb", ["How does the jackpot work?"],
+        lambda a, t, p: [must("no_kelly", not any_of(a[-1], r"\bkelly\b|\bmute\b"), "")])
+
     # ---- off-topic ---------------------------------------------------------------------------
     def c_off(a, t, p):
         x = a[-1]

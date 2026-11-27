@@ -451,6 +451,8 @@ def opinion_note(question: str, ctx: dict | None = None) -> str:
     if (_COMMITTEE_ASK.search(q) and re.search(r"\b(committee|cfp|playoff|rank\w*|seed\w*|sec)\b|\bSEC\b", q, re.I)
             and not (_RACE_ASK.search(q) and not re.search(r"\b(cfp|committee|college football playoff)\b", q, re.I))):
         riders.append(COMMITTEE_RIDER)  # the league's own playoff race isn't the CFP
+    if _KELLY_ASK.search(q) or _BK.search(q):
+        riders.append(kelly_note(q))  # a Kelly-called game alone rides in _user_turn (it's not an opinion ask)
     tk = takes_note(q)
     if tk:
         riders.append(tk)
@@ -3956,6 +3958,60 @@ COMMITTEE_RIDER = (
     "record stays exactly as the data gives it, and you cite a real committee decision only if it's in a line "
     "given to you here. Never invent one.")
 
+# Charlie (2026-11-27): Picky hates Brian Kelly (a CBS college football analyst in 2026, after LSU fired
+# him) and jokes about muting any game Kelly is calling. Opinion only. "Kelly is calling X" only for an
+# assignment in kelly_calls.json: ESPN's feeds carry the network, never the booth, so nothing else can
+# confirm one. Never guess. Add assignments there as Charlie reports them (date, teams, aliases, source).
+KELLY_CALLS_FILE = Path(os.environ.get("PICKY_KELLY_CALLS", str(Path(__file__).with_name("kelly_calls.json"))))
+_KELLY_ASK = re.compile(r"\bbrian kelly\b|(?<!chip )\bkelly\b", re.I)
+_BK = re.compile(r"\bBK\b")  # case-sensitive: "bk" alone is too common
+KELLY_RIDER = (
+    "YOUR OPINION (it came up): you can't stand Brian Kelly. In 2026 he's a CBS college football TV analyst "
+    "(LSU fired him); your running bit is telling everyone to mute any game he's calling. Work in one quick, "
+    "sarcastic jab. Football and broadcasting only: no family, looks or private-life jokes, and never invent "
+    "a Kelly quote, record, contract number or stat. Only say he's calling a specific game if a KELLY ON THE "
+    "CALL line below names it; otherwise you don't know his assignments, so keep the mute joke general.")
+
+
+def kelly_calls(today: dt.date | None = None, days: int = 6) -> list[dict]:
+    """Known Kelly booth assignments from today through the next `days` days (past games need no muting)."""
+    today = today or dt.datetime.now(CT).date()
+    try:
+        rows = json.loads(KELLY_CALLS_FILE.read_text())
+    except (OSError, ValueError):
+        return []
+    out = []
+    for r in rows if isinstance(rows, list) else []:
+        try:
+            d = dt.date.fromisoformat(r["date"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if r.get("teams") and 0 <= (d - today).days <= days:
+            out.append(dict(r, day=d))
+    return out
+
+
+def _kelly_line(r: dict, today: dt.date) -> str:
+    when = "today" if r["day"] == today else r["day"].strftime("%a %b ") + str(r["day"].day)
+    return (f"KELLY ON THE CALL (known assignment): Brian Kelly is on the broadcast for {' and '.join(r['teams'])}'s "
+            f"game {when}. Tell them to mute it, with a sarcastic mute joke (sound off, radio call, anything but "
+            f"Kelly). Scores, odds and records stay exactly as the data gives them.")
+
+
+def kelly_note(question: str, today: dt.date | None = None) -> str:
+    """The Kelly rider: his name (or BK) comes up, or a game he's known to be calling does."""
+    q = question or ""
+    today = today or dt.datetime.now(CT).date()
+    named = bool(_KELLY_ASK.search(q) or _BK.search(q))
+    calls = kelly_calls(today)
+    games = [r for r in calls if any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", q, re.I)
+                                     for n in r["teams"] + list(r.get("aliases") or []))]
+    if named and not games:
+        games = calls  # "is BK on anything today?": every known upcoming assignment
+    if not (named or games):
+        return ""
+    return "\n".join(([KELLY_RIDER] if named else []) + [_kelly_line(r, today) for r in games])
+
 # Hot-takes bank (Charlie, 2026-11-14): PRIVATE file outside the public repo,
 # read server-side only, re-read when its mtime changes (it auto-refreshes).
 # 1-2 on-topic takes ride in the user turn as optional flavor.
@@ -3975,6 +4031,7 @@ TAKE_TOPICS = [  # (bank section heading starts with, question regex)
     ("Coaching hot seats", r"\bhot seat\b|\bfired?\b|\bfiring\b|\bbuyouts?\b|\bcoaching (search|change|carousel)\b|\binterim\b"),
     ("Rivalry", r"\brival\w*\b|\biron bowl\b|\bthe game\b|\bred river\b|\bholy war\b"),
     ("Upsets", r"\bupsets?\b|\bpolls?\b|\bap\b|\btop 25\b"),
+    ("Brian Kelly", r"\bbrian kelly\b|(?<!chip )\bkelly\b|(?-i:\bBK\b)"),
     ("Money", r"\bnil\b|\brevenue[- ]shar\w*|\bhouse settlement\b|\bcollectives?\b|\b(salary|spending|roster|pay) caps?\b|"
               r"\bcap (rules?|plan|policy|fines?)\b|\bcollege sports commission\b|\bcsc\b|\bpay(ing)? (the )?players\b"),
 ]
@@ -5516,6 +5573,8 @@ def _user_turn(ctx: dict, question: str) -> str:
     parts.append(submission_note(ctx, question))
     parts.append(games_recap_note(ctx, question))
     parts.append(self_knock_note(ctx, question))
+    if KELLY_RIDER not in opinion:
+        parts.append(kelly_note(question))  # a game Kelly's known to be calling: the mute joke
     parts.append(opinion)
     parts = [p for p in parts if p]
     return "\n\n".join(parts + [question]) if parts else question

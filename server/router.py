@@ -4305,8 +4305,12 @@ FACT_SCHEMA = {"type": "object", "properties": {"line": {"type": "string"}}, "re
 FACT_TOKENS = 32
 
 
-def fact_user(q: str, answer: str, sender: str = "", jab: bool = False, leader: bool = False, warm: bool = False) -> str:
+def fact_user(q: str, answer: str, sender: str = "", jab: bool = False, leader: bool = False, warm: bool = False,
+              kelly: bool = False) -> str:
     L = [f"Sent by: {sender}" if sender else "Sent by: a league member", f"NEWEST TEXT: {q}", f"THE ANSWER: {answer}"]
+    if kelly:  # Charlie 2026-11-27: a game Brian Kelly is known to be calling (chat.kelly_calls) gets the mute bit
+        L.append("Brian Kelly is on the TV call for that game and you can't stand him: make your line a quick "
+                 "mute-the-TV joke about Kelly. Say 'Kelly', never 'he'.")
     if warm:  # Charlie: always nice (2026-11-17); a game-day fact line read 'start checking your own attitude' (drill)
         L.append("He's your buddy and the commissioner: make your line warm and friendly. No digs, no telling him "
                  "what to do.")
